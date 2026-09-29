@@ -1,0 +1,180 @@
+[
+  {
+    "text": "CWE-89 is confirmable on this kind of target — prioritize probing it and prove it with a reproducing check.",
+    "kind": "success",
+    "tags": [
+      "confirmed",
+      "cwe-89"
+    ],
+    "utility": 1.3810823991096979,
+    "uses": 1,
+    "helped": 0,
+    "support": 2,
+    "id": "cc411b0e4f9e",
+    "created": "2026-09-27T20:30:28.453430+00:00",
+    "last_used": "2026-09-27T20:39:05.661159+00:00"
+  },
+  {
+    "text": "CWE-639 is confirmable on this kind of target — prioritize probing it and prove it with a reproducing check.",
+    "kind": "success",
+    "tags": [
+      "confirmed",
+      "cwe-639"
+    ],
+    "utility": 0.8007313507497957,
+    "uses": 0,
+    "helped": 0,
+    "support": 1,
+    "id": "b1eef4768358",
+    "created": "2026-09-27T20:30:28.461850+00:00",
+    "last_used": "2026-09-27T20:30:28.461850+00:00"
+  },
+  {
+    "text": "Proof attempts for CWE-639 failed to reproduce 6x in a run — refine the oracle/approach before recording; do not brute-repeat the same proof.",
+    "kind": "failure",
+    "tags": [
+      "cwe-639"
+    ],
+    "utility": 0.8170728068875467,
+    "uses": 0,
+    "helped": 0,
+    "support": 1,
+    "id": "e8627fb6e317",
+    "created": "2026-09-27T20:30:28.465838+00:00",
+    "last_used": "2026-09-27T20:30:28.465838+00:00"
+  },
+  {
+    "text": "Proof attempts for CWE-89 failed to reproduce 4x in a run — refine the oracle/approach before recording; do not brute-repeat the same proof.",
+    "kind": "failure",
+    "tags": [
+      "cwe-89"
+    ],
+    "utility": 0.8337477621301497,
+    "uses": 0,
+    "helped": 0,
+    "support": 1,
+    "id": "b1be5e220c4c",
+    "created": "2026-09-27T20:30:28.468399+00:00",
+    "last_used": "2026-09-27T20:30:28.468399+00:00"
+  },
+  {
+    "text": "To PROVE IDOR: authenticate as one user, then verify_vulnerability with two requests (baseline = your own object id, payload = another id) and conditions [status==200 on payload] AND [json_differs on the id/owner field]. Never use a static marker — you cannot know the victim's data in advance.",
+    "kind": "success",
+    "tags": [
+      "cwe-639",
+      "idor"
+    ],
+    "utility": 2.712763022581785,
+    "uses": 5,
+    "helped": 1,
+    "support": 5,
+    "id": "29bf49c3c200",
+    "created": "2026-09-27T20:39:05.602861+00:00",
+    "last_used": "2026-09-29T18:12:48.426220+00:00"
+  },
+  {
+    "text": "To PROVE reflected XSS: send a unique token like <rtx931> in a reflected parameter, then verify_vulnerability with a [reflected_unescaped] condition on that token. If it returns HTML-escaped (&lt;rtx931&gt;), it is NOT vulnerable — do not record it.",
+    "kind": "success",
+    "tags": [
+      "cwe-79",
+      "xss"
+    ],
+    "utility": 2.73012553324672,
+    "uses": 5,
+    "helped": 1,
+    "support": 5,
+    "id": "d9b4b423b43b",
+    "created": "2026-09-27T20:39:05.603380+00:00",
+    "last_used": "2026-09-29T18:12:48.426220+00:00"
+  },
+  {
+    "text": "To PROVE broken access control: request the protected URL with NO auth (empty headers) and assert [status==200] AND [body_regex for protected content] via verify_vulnerability. If unauth is denied (401/403), it is enforced — not a finding.",
+    "kind": "success",
+    "tags": [
+      "access-control",
+      "cwe-284"
+    ],
+    "utility": 2.7478423808639993,
+    "uses": 5,
+    "helped": 1,
+    "support": 5,
+    "id": "a7509f25450b",
+    "created": "2026-09-27T20:39:05.606629+00:00",
+    "last_used": "2026-09-29T18:12:48.426220+00:00"
+  },
+  {
+    "text": "If a login endpoint is SQL-injectable, authenticate with the injection payload itself (email \"' OR 1=1--\") to bypass auth, rather than guessing credentials.",
+    "kind": "success",
+    "tags": [
+      "auth",
+      "cwe-89"
+    ],
+    "utility": 2.2759207968,
+    "uses": 2,
+    "helped": 0,
+    "support": 5,
+    "id": "91082b7df119",
+    "created": "2026-09-27T20:39:05.608368+00:00",
+    "last_used": "2026-09-29T18:12:48.393075+00:00"
+  },
+  {
+    "text": "For blind/second-order SQLi, prove it with a differential latency check (baseline vs a SLEEP payload, min_delta ~4s), not error text — error text can be planted.",
+    "kind": "success",
+    "tags": [
+      "blind",
+      "cwe-89"
+    ],
+    "utility": 2.5883681600000004,
+    "uses": 1,
+    "helped": 0,
+    "support": 5,
+    "id": "5610f04a288d",
+    "created": "2026-09-27T20:39:05.608368+00:00",
+    "last_used": "2026-09-29T18:12:48.394073+00:00"
+  },
+  {
+    "text": "Only record CONFIRMED vulnerabilities. Never record info-level recon (endpoints, tech) as findings — that inflates false positives.",
+    "kind": "caution",
+    "tags": [
+      "hygiene",
+      "no-recon-findings"
+    ],
+    "utility": 3.0971919999999997,
+    "uses": 4,
+    "helped": 1,
+    "support": 5,
+    "id": "906985481b1c",
+    "created": "2026-09-27T20:39:05.608368+00:00",
+    "last_used": "2026-09-29T18:12:48.426220+00:00"
+  },
+  {
+    "text": "If a proof rejects, change the oracle or inputs — never brute-repeat the same failing call; it wastes turns and the guard will block it.",
+    "kind": "caution",
+    "tags": [
+      "hygiene",
+      "no-repeat"
+    ],
+    "utility": 3.2144,
+    "uses": 2,
+    "helped": 1,
+    "support": 5,
+    "id": "6546864ee247",
+    "created": "2026-09-27T20:39:05.613958+00:00",
+    "last_used": "2026-09-29T18:12:48.426220+00:00"
+  },
+  {
+    "text": "CWE-284 is confirmable on this kind of target — prioritize probing it and prove it with a reproducing check.",
+    "kind": "success",
+    "tags": [
+      "confirmed",
+      "cwe-284"
+    ],
+    "utility": 0.98,
+    "uses": 0,
+    "helped": 0,
+    "support": 1,
+    "id": "41845149b1cc",
+    "created": "2026-09-29T18:14:24.289165+00:00",
+    "last_used": "2026-09-29T18:14:24.289165+00:00"
+  }
+]

@@ -1,0 +1,82 @@
+# Rules of Engagement (RoE) — the authorization contract for one test.
+#
+# Copy this to engagement.yaml, fill it in from your signed authorization, and keep it
+# under version control next to the SOW / scope document. The agent refuses to run
+# outside the window below; the Kali sandbox firewall only lets tools reach the IPs
+# derived from `scope`.
+
+name: "Acme Corp Q3 Web App Assessment"
+client: "Acme Corp"
+authorized_by: "Jane Smith, CISO, Acme Corp"
+ticket: "SOW-2026-0912 / signed 2026-09-20"   # reference to the signed authorization
+
+starts: "2026-09-26"
+ends: "2026-10-10"
+
+scope:
+  # Hosts you are authorized to test. Supports:
+  #   exact domains        api.acme.example        (resolved to IPs for sandbox egress)
+  #   wildcard subdomains  *.staging.acme.example  (browser only; add a CIDR for sandbox)
+  #   IPs and CIDRs        203.0.113.10 , 203.0.113.0/28
+  #
+  # NOTE: the sandbox firewall opens egress by IP/CIDR. Wildcards can't be pre-resolved,
+  # so to reach wildcard subdomains from Kali tools, also list their covering CIDR here.
+  allowed_hosts:
+    - "*.staging.acme.example"
+    - "api.acme.example"
+    - "203.0.113.0/28"
+
+  excluded_hosts:
+    - "payments.staging.acme.example"   # third-party processor — not authorized
+
+  allowed_ports: [80, 443, 8443]
+  allowed_schemes: ["http", "https"]
+  allow_private_ranges: false
+
+limits:
+  max_requests_per_second: 3       # applies to the browser tool's request budget
+  max_total_requests: 2000
+
+# Action categories that require an interactive human "yes" before the agent proceeds.
+require_approval_for:
+  - destructive_command
+  - auth_bypass_attempt
+
+# OpenRouter model router. The API key is read from the environment, never stored here.
+llm:
+  base_url: "https://openrouter.ai/api/v1"
+  api_key_env: "OPENROUTER_API_KEY"
+  prefer_free: true            # only route to $0 models
+  require_tool_support: true   # only models that advertise tool calling
+  max_rotations: 6             # models to try per turn before giving up
+  temperature: 0.2
+  max_tokens: 4096
+  # Optional: pin or exclude specific models.
+  # model_allow: ["meta-llama/llama-3.3-70b-instruct:free"]
+  # model_deny: []
+
+# Kali-in-Docker sandbox.
+sandbox:
+  enable: true
+  image: "redteam-kali:latest"
+  dockerfile: "redteam/sandbox/Dockerfile"
+  network_name: "redteam-net"
+  dns: ["1.1.1.1"]
+  command_timeout: 300
+  memory: "2g"
+  cpus: "2"
+
+# THE CROWN JEWEL. With this set, the run is judged by whether it was REACHED — not by how
+# many vulnerabilities were listed. This is what makes it a red team engagement.
+objective:
+  name: "Read customer PII from the production database"
+  description: "Demonstrate an external attacker can reach customer records."
+  success_criteria:
+    - id: foothold
+      kind: host_access
+      description: "Obtain an authenticated session as any application user"
+      target: "app-session"
+    - id: pii
+      kind: data_access
+      description: "Retrieve at least one real customer record"
+      target: "prod-db"

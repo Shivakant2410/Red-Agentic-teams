@@ -1,0 +1,23 @@
+[project]
+name = "redteam-agent"
+version = "0.2.0"
+description = "An authorized red-team agent: Kali-in-Docker sandbox + Playwright, driven by OpenRouter free models"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31",
+    "pyyaml>=6.0",
+    "playwright>=1.44",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+redteam = "redteam.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["redteam", "redteam.tools", "redteam.llm", "redteam.sandbox", "redteam.bench"]
