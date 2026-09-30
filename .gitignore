@@ -7,6 +7,10 @@ secrets.env
 # Run outputs (findings, audit logs, reports, graphs)
 runs/
 
+# Proven-proof templates can embed literal auth headers/credentials — keep local.
+memory/skills.json
+memory/skills_nuclei.json
+
 # Python
 __pycache__/
 *.pyc
