@@ -1,0 +1,233 @@
+<title>Red Team Agent Logbook</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --paper:#f6f7f5; --panel:#fdfdfc; --ink:#15191d; --ink-soft:#4a545c;
+    --rule:#d7dbd6; --proof:#2f6f6b; --warn:#a8641b; --crit:#8f2f2a; --bar:#bfd2cf;
+    --display:"Newsreader",Georgia,"Times New Roman",serif;
+    --body:"IBM Plex Sans",-apple-system,Segoe UI,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme:dark;
+      --paper:#101417; --panel:#171c20; --ink:#e7eae6; --ink-soft:#9aa5ab;
+      --rule:#2a3237; --proof:#6fb3ac; --warn:#d69a4e; --crit:#d97a72; --bar:#2f4a49;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme:dark;
+    --paper:#101417; --panel:#171c20; --ink:#e7eae6; --ink-soft:#9aa5ab;
+    --rule:#2a3237; --proof:#6fb3ac; --warn:#d69a4e; --crit:#d97a72; --bar:#2f4a49;
+  }
+  * { box-sizing:border-box; }
+  body { background:var(--paper); color:var(--ink); font-family:var(--body);
+         font-size:16px; line-height:1.65; margin:0; }
+  .wrap { max-width:78ch; margin:0 auto; padding-inline:20px; padding-block:56px 72px; }
+  .col { max-width:65ch; }
+  h1 { font-family:var(--display); font-size:clamp(2.1rem,5.2vw,3.1rem); line-height:1.12;
+       font-weight:600; margin:0 0 .5rem; text-wrap:balance; letter-spacing:-.015em; }
+  h2 { font-family:var(--display); font-size:1.5rem; font-weight:600; margin:3.2rem 0 .6rem;
+       text-wrap:balance; }
+  h3 { font-family:var(--body); font-size:.98rem; font-weight:600; margin:0 0 .35rem; }
+  p { margin:0 0 1rem; }
+  .lede { font-size:1.1rem; color:var(--ink-soft); }
+  .eyebrow { font-family:var(--mono); font-size:.7rem; letter-spacing:.14em;
+             text-transform:uppercase; color:var(--proof); margin:0 0 1rem; }
+  code { font-family:var(--mono); font-size:.86em;
+         background:color-mix(in srgb,var(--rule) 45%,transparent);
+         padding:.08em .34em; border-radius:3px; }
+  .stats { display:flex; flex-wrap:wrap; gap:1.75rem; margin:2rem 0 0;
+           padding-top:1.5rem; border-top:1px solid var(--rule); }
+  .stat b { display:block; font-family:var(--mono); font-size:1.5rem; font-weight:500;
+            font-variant-numeric:tabular-nums; line-height:1.2; }
+  .stat span { font-size:.82rem; color:var(--ink-soft); }
+  .tablewrap { overflow-x:auto; margin:1.2rem 0 .4rem; }
+  table { width:100%; border-collapse:collapse; font-size:.9rem; min-width:34rem; }
+  thead th { font-family:var(--mono); font-size:.68rem; letter-spacing:.1em;
+             text-transform:uppercase; color:var(--ink-soft); text-align:left; font-weight:500;
+             padding:0 .7rem .5rem 0; border-bottom:1px solid var(--rule); white-space:nowrap; }
+  td { padding:.62rem .7rem .62rem 0; border-bottom:1px solid var(--rule); vertical-align:top; }
+  td.n { font-family:var(--mono); color:var(--ink-soft); width:2.2rem;
+         font-variant-numeric:tabular-nums; }
+  td.chg { min-width:17rem; }
+  .note { display:block; font-size:.79rem; color:var(--ink-soft); margin-top:.15rem; }
+  td.num { font-family:var(--mono); font-variant-numeric:tabular-nums; width:4.2rem;
+           white-space:nowrap; }
+  td.barcell { width:7.5rem; white-space:nowrap; }
+  .bar { display:inline-block; height:7px; background:var(--bar); border-radius:2px;
+         vertical-align:middle; min-width:2px; }
+  .pip { display:inline-block; width:8px; height:8px; border-radius:50%;
+         border:1px solid var(--rule); margin-right:3px; vertical-align:middle; }
+  .pip.on { background:var(--proof); border-color:var(--proof); }
+  .tone { display:inline-block; width:1.2em; font-family:var(--mono); font-weight:500; }
+  .tone.gain { color:var(--proof); }
+  .tone.loss { color:var(--warn); }
+  .bugs { display:grid; gap:1rem; margin:1.4rem 0; }
+  .bug { background:var(--panel); border:1px solid var(--rule); border-left:3px solid var(--crit);
+         border-radius:4px; padding:1rem 1.1rem; }
+  .bug p { font-size:.9rem; margin:0 0 .6rem; }
+  .fix { margin:0; color:var(--ink-soft); font-size:.86rem; }
+  .fixlabel { font-family:var(--mono); font-size:.66rem; letter-spacing:.1em;
+              text-transform:uppercase; color:var(--proof); margin-right:.5rem; }
+  .verdicts { display:flex; flex-wrap:wrap; gap:.45rem; margin:1rem 0 1.4rem; padding:0;
+              list-style:none; }
+  .verdicts li { font-family:var(--mono); font-size:.76rem; padding:.2rem .5rem;
+                 border:1px solid var(--rule); border-radius:3px; color:var(--ink-soft); }
+  .verdicts li b { color:var(--proof); font-weight:500; }
+  blockquote { margin:1.2rem 0; padding:.2rem 0 .2rem 1.1rem; border-left:2px solid var(--proof);
+               font-family:var(--display); font-size:1.08rem; font-style:italic;
+               color:var(--ink-soft); }
+  footer { margin-top:3.5rem; padding-top:1.2rem; border-top:1px solid var(--rule);
+           font-size:.82rem; color:var(--ink-soft); }
+  @media (max-width:420px) { .wrap { padding-block:36px 48px; } .stats { gap:1.1rem; } }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Engineering logbook &middot; 13 measured runs</p>
+  <div class="col">
+    <h1>Building an autonomous red team agent</h1>
+    <p class="lede">A record of how this system was built against a benchmark, including the
+      reversals. Six of the thirteen runs made it worse, four defects were invisible to a green
+      test suite, and one headline number had to be corrected downward after the fact.</p>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><b>13</b><span>benchmark runs</span></div>
+    <div class="stat"><b>260</b><span>tests passing</span></div>
+    <div class="stat"><b>7,092</b><span>lines in the agent</span></div>
+    <div class="stat"><b>0.60</b><span>best recall reached</span></div>
+    <div class="stat"><b>1 / 3</b><span>best objective score</span></div>
+  </div>
+
+  <div class="col">
+    <h2>What the system is</h2>
+    <p>An authorized red team agent. It maps a target, forms a hypothesis, runs a cheap
+      experiment, and records a finding only when that finding reproduces <em>and</em> a benign
+      control fails to reproduce it. Rented intelligence, owned harness: the models are free
+      OpenRouter endpoints, and everything defensible lives in the scaffolding around them &mdash;
+      a knowledge graph of the target, an access graph of what the operator holds, a kill chain,
+      and a verifier.</p>
+    <p>Every claim carries one of four verdicts. A claim that cannot earn the first one is not
+      recorded:</p>
+    <ul class="verdicts">
+      <li><b>confirmed</b></li><li>not_reproducible</li><li>falsified</li><li>rejected</li>
+    </ul>
+  </div>
+
+  <div class="col">
+    <h2>The run ledger</h2>
+    <p>Each run changed one thing. Recall is the share of planted vulnerabilities found; precision
+      is the share of claims that were real. The bar tracks recall.</p>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>#</th><th>What changed</th><th>Recall</th><th>Prec.</th><th></th></tr></thead>
+      <tbody>
+        <tr><td class="n">1</td><td class="chg">Baseline agent, flat checklist planner, small free model</td><td class="num">0.20</td><td class="num">1.00</td><td class="barcell"><span class="bar" style="width:20%"></span><span class="tone"></span></td></tr>
+        <tr><td class="n">2</td><td class="chg">Added the adversarial attack tree, so a foothold is pressed forward<span class="note">recall doubled</span></td><td class="num">0.40</td><td class="num">1.00</td><td class="barcell"><span class="bar" style="width:40%"></span><span class="tone gain">&uarr;</span></td></tr>
+        <tr><td class="n">3</td><td class="chg">Added chained-attack tools for authentication, IDOR and access control<span class="note">regression: sixteen failed logins in a row</span></td><td class="num">0.20</td><td class="num">1.00</td><td class="barcell"><span class="bar" style="width:20%"></span><span class="tone loss">&darr;</span></td></tr>
+        <tr><td class="n">4</td><td class="chg">Added a repetition guard to break the retry spiral<span class="note">spiral fell from sixteen to seven, still no session</span></td><td class="num">0.20</td><td class="num">1.00</td><td class="barcell"><span class="bar" style="width:20%"></span><span class="tone"></span></td></tr>
+        <tr><td class="n">5</td><td class="chg">Switched reasoning to a 550B free model<span class="note">authenticated twice, never confirmed anything</span></td><td class="num">0.00</td><td class="num">&mdash;</td><td class="barcell"><span class="bar" style="width:1%"></span><span class="tone loss">&darr;</span></td></tr>
+        <tr><td class="n">6</td><td class="chg">Told it to prove rather than browse, and raised the step budget<span class="note">best result of the vulnerability era; precision 1.00 after duplicates merged</span></td><td class="num">0.60</td><td class="num">1.00</td><td class="barcell"><span class="bar" style="width:60%"></span><span class="tone gain">&uarr;</span></td></tr>
+        <tr><td class="n">7</td><td class="chg">Replaced rigid tools with a proof primitive the agent designs itself<span class="note">six false positives; freedom cost precision</span></td><td class="num">0.40</td><td class="num">0.25</td><td class="barcell"><span class="bar" style="width:40%"></span><span class="tone loss">&darr;</span></td></tr>
+        <tr><td class="n">8</td><td class="chg">Multi-agent swarm: a recon specialist and an exploit specialist<span class="note">coordination cost more and delivered less</span></td><td class="num">0.20</td><td class="num">0.50</td><td class="barcell"><span class="bar" style="width:20%"></span><span class="tone loss">&darr;</span></td></tr>
+        <tr><td class="n">9</td><td class="chg">Seeded the memory with written tradecraft recipes<span class="note">knowledge in context did not become capability</span></td><td class="num">0.20</td><td class="num">1.00</td><td class="barcell"><span class="bar" style="width:20%"></span><span class="tone"></span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="col">
+    <h2>Changing the scoreboard</h2>
+    <p>Recall against a vulnerability list is a scanner's metric, and optimising it kept producing
+      a better scanner. From run 10 the measure became the one a red team is actually judged on:
+      was the objective reached, by what path, how fast, and how loudly. Findings became a
+      secondary signal. Each dot is one objective criterion &mdash; a foothold, administrator
+      access, and confidential data retrieved.</p>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>#</th><th>What changed</th><th>Criteria</th><th></th></tr></thead>
+      <tbody>
+        <tr><td class="n">10</td><td class="chg">Re-founded the system on an objective instead of a vulnerability list<span class="note">agent authenticated but never told the state model</span></td><td class="num">0 / 3</td><td class="barcell"><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="tone loss">&darr;</span></td></tr>
+        <tr><td class="n">11</td><td class="chg">Derived state from what happened rather than from self-reports<span class="note">my own null-content bug killed the run at step four</span></td><td class="num">0 / 3</td><td class="barcell"><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="tone loss">&darr;</span></td></tr>
+        <tr><td class="n">12</td><td class="chg">Fixed the replay bug<span class="note">degenerate model responses were still read as agent silence</span></td><td class="num">0 / 3</td><td class="barcell"><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="tone loss">&darr;</span></td></tr>
+        <tr><td class="n">13</td><td class="chg">Rotated past degenerate responses<span class="note">first scored 2 of 3, corrected down after the label bug</span></td><td class="num">1 / 3</td><td class="barcell"><span class="pip on"></span><span class="pip"></span><span class="pip"></span><span class="tone gain">&uarr;</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="col">
+    <h2>What the tests could not see</h2>
+    <p>The suite was green throughout. Three of these four defects existed only in the live
+      request-and-replay path, which fakes never exercise; the fourth was a scoring rule that
+      flattered us.</p>
+  </div>
+  <div class="bugs">
+    <article class="bug">
+      <h3>Null content replayed to the API</h3>
+      <p>A model that stops often returns <code>content: null</code>. That was harmless while the
+        loop broke immediately, but once the loop continued the message was replayed and
+        <strong>every model answered HTTP 400</strong>. Run 11 died after four turns.</p>
+      <p class="fix"><span class="fixlabel">Fix</span>Normalise null content before replay. A
+        regression test asserts that no replayed message ever carries it.</p>
+    </article>
+    <article class="bug">
+      <h3>Degenerate responses read as decisions</h3>
+      <p>Free endpoints regularly answer with no content, no tool calls and no usage. These were
+        logged as success and interpreted as the agent choosing not to act, so the loop concluded
+        it had finished. Measured at roughly <strong>20% of calls</strong>.</p>
+      <p class="fix"><span class="fixlabel">Fix</span>A response with neither content nor tool
+        calls is a failed attempt, and the router rotates to another model. Every earlier run was
+        measured through this noise.</p>
+    </article>
+    <article class="bug">
+      <h3>A label satisfied a privilege claim</h3>
+      <p>The agent named its own session <code>admin</code>. Scoring matched that string against
+        the "become administrator" criterion, so a privilege claim needed
+        <strong>no evidence at all</strong>.</p>
+      <p class="fix"><span class="fixlabel">Fix</span>Privilege criteria may only be credited by a
+        differential proof: the action succeeds as the elevated identity and fails as the lower
+        one. Run 13 was re-scored from 2 of 3 down to 1 of 3.</p>
+    </article>
+    <article class="bug">
+      <h3>Unbounded response reads</h3>
+      <p>The HTTP layer read a full response body with no ceiling, so a target could return an
+        endless body and exhaust the agent's memory. An older package in this same repository had
+        already solved this, and the newer code did not borrow it.</p>
+      <p class="fix"><span class="fixlabel">Fix</span>Bodies are streamed and capped at 256 KB with
+        an explicit truncation marker.</p>
+    </article>
+  </div>
+
+  <div class="col">
+    <h2>Corrections to the record</h2>
+    <p>Run 13 was reported as 2 of 3 criteria. The administrator criterion had been credited
+      because the agent named its own session <code>admin</code>, so it was never evidenced. The
+      honest figure is 1 of 3, and the better-looking number was withdrawn.</p>
+    <p>Roughly a fifth of all model calls in runs 1 through 12 returned degenerate responses that
+      were counted as the agent declining to act, so every comparison drawn from those runs was
+      noisier than it was presented to be. Recall also swung between 0.20 and 0.60 on
+      near-identical configurations, which makes the single-run comparisons in this ledger weak
+      evidence. Later measurement reports distributions instead.</p>
+    <blockquote>A check that cannot fail correctly is worse than no check. One secret scan here
+      reported a leaked API key that did not exist, because the shell tested the wrong exit
+      status.</blockquote>
+  </div>
+
+  <div class="col">
+    <h2>Where it stands</h2>
+    <p>The verifier is the part that works. Across every run it never recorded a finding it could
+      not reproduce, and the negative control correctly refuses a claim when a benign request
+      produces the same signal. Precision is the moat.</p>
+    <p>The gap is exploitation depth. The agent can plan a kill chain but cannot yet walk one: no
+      traffic interception, no way to write its own exploit, and until recently its sandbox could
+      not reach a target on localhost at all. That, rather than caution, is what made it read as a
+      scanner, and it is what the next phase builds.</p>
+  </div>
+
+  <footer>
+    Generated from the run artefacts in this repository: thirteen scorecards, hash-chained audit
+    logs, and the access graph each run produced.
+  </footer>
+</div>
