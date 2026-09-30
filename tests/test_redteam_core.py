@@ -191,5 +191,9 @@ def test_authenticate_records_foothold_without_model_self_report(tmp_path, monke
                         lambda c, req: (200, '{"authentication":{"token":"T"}}', 0.1, {}))
     AuthenticateTool().run(ctx, label="userA", url="https://api.acme.example/login",
                            token_json_path="authentication.token")
-    assert ctx.access.reached("userA") and ctx.access.reached("app-session")
+    # principals are namespaced by session label so a label cannot impersonate an
+    # identity like "admin"; the generic foothold node is what criteria match.
+    assert ctx.access.reached("session:userA")
+    assert ctx.access.reached("app-session")
+    assert not ctx.access.reached("userA")
     assert ctx.killchain.status(INITIAL_ACCESS) == ACHIEVED

@@ -22,6 +22,12 @@ FLAG = "flag"                     # capture a specific token (labs/CTF)
 
 KINDS = (DATA_ACCESS, PRIVILEGE, HOST_ACCESS, FLAG)
 
+# Criterion kinds that may ONLY be credited by a specific proving mechanism (the access
+# node's `source`). Anything absent here may be credited by any evidenced held node.
+REQUIRED_SOURCE = {
+    PRIVILEGE: ("prove_privilege",),   # must be a proven privilege boundary, not a label
+}
+
 
 @dataclass
 class SuccessCriterion:
@@ -83,22 +89,37 @@ class Objective:
 
 
     def autoevaluate(self, access) -> list[str]:
-        """Mark criteria whose target we DEMONSTRABLY hold.
+        """Mark criteria whose target we DEMONSTRABLY hold, by an acceptable mechanism.
 
-        We derive progress from the access graph rather than trusting the agent to claim
-        it. A weak model reliably forgets to self-report; what it actually achieved is a
-        fact we already have. Only demonstrated (`held`) access counts, so this cannot
-        inflate progress."""
+        Progress is derived from the access graph rather than trusted to the agent: a weak
+        model reliably forgets to self-report, while what it actually achieved is a fact we
+        already have. Two guards keep this from flattering us:
+
+        1. Only `held` (demonstrated) access counts, and it must carry EVIDENCE.
+        2. Some criterion kinds may only be credited by a mechanism that actually proves
+           them. A `privilege` criterion requires `prove_privilege` — which shows the
+           action succeeds as the elevated identity and FAILS as the lower one. Without
+           this, an agent that merely *labels* its session "admin" would satisfy an
+           "become admin" criterion from a self-chosen string, which is how run 13 credited
+           admin without proof.
+        """
         newly: list[str] = []
         if access is None:
             return newly
         for c in self.outstanding():
             if not c.target:
                 continue
-            node = next((n for n in access.held() if n.key == c.target), None)
-            if node is not None:
-                self.mark(c.id, node.evidence or f"holding {node.kind}:{node.key}")
+            for node in access.held():
+                if node.key != c.target:
+                    continue
+                required = REQUIRED_SOURCE.get(c.kind)
+                if required and node.source not in required:
+                    continue          # not established by a mechanism that proves this kind
+                if not node.evidence:
+                    continue          # demonstrated access must be evidenced
+                self.mark(c.id, f"{node.evidence} [via {node.source or 'unknown'}]")
                 newly.append(c.id)
+                break
         return newly
 
     def save(self, path) -> None:
