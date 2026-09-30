@@ -7,6 +7,7 @@ dependencies = [
     "requests>=2.31",
     "pyyaml>=6.0",
     "playwright>=1.44",
+    "python-dotenv>=1.0",   # agentic_setup.config.load_local_environment
 ]
 
 [project.optional-dependencies]
@@ -20,4 +21,6 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["redteam", "redteam.tools", "redteam.llm", "redteam.sandbox", "redteam.bench"]
+packages = ["redteam", "redteam.tools", "redteam.llm", "redteam.sandbox",
+            "redteam.bench", "redteam.importers", "agentic_setup"]
+package-dir = {"agentic_setup" = "src/agentic_setup"}

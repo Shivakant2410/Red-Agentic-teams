@@ -159,6 +159,11 @@ class OpenRouterClient:
                 "temperature": self._cfg.temperature,
                 "max_tokens": self._cfg.max_tokens,
             }
+            if self._cfg.prefer_free:
+                # Server-side guarantee that we are never billed. Filtering the catalogue
+                # client-side is not enough: a stale fallback entry or a mid-run pricing
+                # change would silently cost money. OpenRouter refuses the route instead.
+                payload["provider"] = {"max_price": {"prompt": 0, "completion": 0}}
             if tools:
                 payload["tools"] = tools
                 payload["tool_choice"] = "auto"

@@ -53,3 +53,39 @@ challenges on a public network.
 - Keygraph PentestGPT README: repository link above (accessed 2026-09-26).
 - pentestkit README: repository link above (accessed 2026-09-26).
 - XBOW benchmark README: repository link above (accessed 2026-09-26).
+
+---
+
+## 2026-09-30 — Architecture pivot recorded (supersedes the constraints above)
+
+This document was written as the design charter for `src/agentic_setup/`: a read-only,
+loopback-only assessor whose governing principle was *"the model is a selector, never an
+actuator."* The project has since deliberately pivoted to `redteam/`, an authorized red team
+agent. The pivot is intentional, and this note exists so the charter is not read as current
+policy.
+
+**What the charter forbade that `redteam/` now does, on purpose:**
+
+| Charter constraint | Current reality in `redteam/` |
+|---|---|
+| "Do not copy unrestricted tool execution" | `kali_exec` gives the model a general shell, and `run_exploit` executes model-authored Python |
+| "Neither workflow … transmits response bodies to a model" | Response bodies are returned to the model as evidence (now capped at 256 KB) |
+| Loopback-only targets | Targets are whatever the signed Rules of Engagement authorize |
+| Findings are `severity: info`; "no exploit actions ran" | Findings are exploited and proven; severity is real |
+
+**The charter's criticism now partly applies to us.** It faulted GreyDGL for relying "on
+deployment isolation rather than a second tool/filesystem sandbox" — and `redteam/` does rely on
+container isolation (egress firewall, non-root, dropped capabilities, resource limits) rather than
+a second sandbox. That is an accepted trade, not an oversight.
+
+**What carried over, because it was right:** deterministic enforcement independent of the model
+(`redteam/scope.py`, the egress firewall), durable evidence for every claim (`redteam/verify.py`,
+`redteam/falsify.py`, the hash-chained audit log), bounded capabilities (response caps, call
+budgets, audited denials), and free-model cost control — now enforced server-side with
+`provider.max_price = 0` rather than client-side filtering alone.
+
+**What the charter demanded and we still owe:** *"held-out, permissioned tasks with known outcomes
+**and refusal cases**."* `redteam/bench` has no refusal cases and no safe-fixture negative control,
+so its false-positive number is not yet trustworthy. The paired `lab/` profiles
+(`LAB_AUTHZ_PROFILE=safe|broken-owner-check`) exist precisely to fix this and are the next
+validation gate.

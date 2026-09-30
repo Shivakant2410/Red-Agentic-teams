@@ -17,6 +17,12 @@ from . import ToolContext
 
 _MARKER = "__RT_STATUS__"
 
+# Hard ceiling on how much of a response body we will hold in memory. A target can
+# return an arbitrarily large body (or stream forever); reading it unbounded lets the
+# target exhaust our memory. Bodies are evidence, not payloads, so a cap is free.
+MAX_RESPONSE_BYTES = 256 * 1024
+TRUNCATION_MARKER = " [truncated]"
+
 
 def _shq(s: str) -> str:
     return "'" + str(s).replace("'", "'\\''") + "'"
@@ -29,9 +35,15 @@ def _host_request(req: dict):
     body = req.get("body")
     start = time.monotonic()
     try:
+        # stream=True so we can stop reading instead of buffering a huge body first.
         r = requests.request(method, url, headers=headers, data=body,
-                             timeout=20, allow_redirects=False)
-        return r.status_code, r.text or "", time.monotonic() - start, dict(r.headers)
+                             timeout=20, allow_redirects=False, stream=True)
+        raw = r.raw.read(MAX_RESPONSE_BYTES + 1, decode_content=True) or b""
+        truncated = len(raw) > MAX_RESPONSE_BYTES
+        text = raw[:MAX_RESPONSE_BYTES].decode(r.encoding or "utf-8", errors="replace")
+        if truncated:
+            text += TRUNCATION_MARKER
+        return r.status_code, text, time.monotonic() - start, dict(r.headers)
     except requests.RequestException:
         return 0, "", time.monotonic() - start, {}
 
@@ -67,12 +79,29 @@ def _sandbox_request(ctx: ToolContext, req: dict):
             if ":" in line:
                 k, _, v = line.partition(":")
                 resp_headers[k.strip()] = v.strip()
+    if len(body_text) > MAX_RESPONSE_BYTES:
+        body_text = body_text[:MAX_RESPONSE_BYTES] + TRUNCATION_MARKER
     return status, body_text, elapsed, resp_headers
+
+
+def _check_scope_recording_denial(ctx: ToolContext, req: dict) -> None:
+    """Scope-check a request and AUDIT the refusal before raising.
+
+    A blocked request is evidence in its own right: it shows the boundary held, and a
+    client reviewing the audit log can see exactly what was attempted and stopped. Letting
+    the denial exist only as a string returned to the model loses that record."""
+    from ..scope import ScopeViolation
+    try:
+        ctx.scope.check(req["url"])
+    except ScopeViolation as exc:
+        ctx.audit.record("tool.denied", tool="http", method=(req.get("method") or "GET"),
+                         url=req.get("url"), outcome="scope-denied", reason=str(exc))
+        raise
 
 
 def fetch_once(ctx: ToolContext, req: dict):
     """Single scope-checked request -> (status, body, elapsed, headers)."""
-    ctx.scope.check(req["url"])
+    _check_scope_recording_denial(ctx, req)
     if ctx.sandbox is not None:
         return _sandbox_request(ctx, req)
     return _host_request(req)
@@ -80,7 +109,7 @@ def fetch_once(ctx: ToolContext, req: dict):
 
 def make_fetch(ctx: ToolContext, req: dict):
     """A re-runnable fetch() -> (status, body, elapsed) for the verification engine."""
-    ctx.scope.check(req["url"])
+    _check_scope_recording_denial(ctx, req)
 
     def fetch():
         status, body, elapsed, _ = (_sandbox_request(ctx, req) if ctx.sandbox is not None
