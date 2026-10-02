@@ -76,11 +76,20 @@ class AccessGraph:
 
     def observe(self, kind: str, key: str, attrs: dict | None = None,
                 source: str = "") -> AccessNode:
-        """Record that something EXISTS (not that we hold it)."""
+        """Record that something EXISTS (not that we hold it).
+
+        A node is commonly observed first (discovery) and held later (proof) — e.g. a
+        resource is noticed, then a verified finding proves it's reachable. `source`
+        therefore upgrades on re-observation when a new one is given: without this, a bare
+        `source=""`/"agent" first-touch would permanently stick, and no later proving
+        mechanism could ever satisfy a REQUIRED_SOURCE gate in objective.py (this silently
+        defeated the DATA_ACCESS/HOST_ACCESS gating the first time it was exercised)."""
         node = AccessNode(kind=kind, key=key, attrs=dict(attrs or {}), source=source)
         existing = self._nodes.get(node.id)
         if existing:
             existing.attrs.update(attrs or {})
+            if source:
+                existing.source = source
             return existing
         self._nodes[node.id] = node
         self._flush()

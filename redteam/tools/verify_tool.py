@@ -123,7 +123,12 @@ class VerifyVulnerabilityTool:
                                "note": "proof did not reproduce; refine requests/conditions or drop it."})
 
         # Adversarial falsification: a benign control must NOT produce the same signal.
-        control_note = "no negative control supplied (weaker evidence)"
+        # This is still run here because an obviously-falsified claim should never even
+        # reach pending (no sense queuing a dead finding for independent re-check), but
+        # a PASSING control at this stage is only self-administered evidence — it does
+        # not promote the finding. Only tools/independent_verify.py, run in a separate
+        # context, may set confidence="confirmed".
+        control_note = "no negative control supplied (weaker evidence — independent re-check will try one)"
         if negative_control:
             try:
                 c_headers = _session_headers(ctx, negative_control.get("session_label"),
@@ -146,29 +151,20 @@ class VerifyVulnerabilityTool:
             control_note = fal.detail
 
         poc = "; ".join(f"{n}: {s.get('method','GET')} {s.get('url','')}" for n, s in requests.items())
+        check_spec = {"requests": requests, "conditions": conditions,
+                      "negative_control": negative_control, "control_replaces": control_replaces}
         f = ctx.findings.add(Finding(
             title=title, severity=severity, target=target, summary=summary,
             evidence="\n".join(result.details) + "\nControl: " + control_note,
             recommendation=recommendation, cwe=cwe,
-            confidence="confirmed", verification_verdict=result.verdict,
-            reproductions=result.reproductions, trials=result.trials, poc=poc))
+            confidence="pending_verification", verification_verdict=result.verdict,
+            reproductions=result.reproductions, trials=result.trials, poc=poc,
+            check_type="proof", check_spec=check_spec))
         if ctx.graph is not None:
             ctx.graph.observe(ENDPOINT, target, attrs={"finding": title}, source="verify_vulnerability")
 
-        # Voyager gating: a proof enters the skill library only on verified success.
-        skill_id = None
-        if ctx.skills is not None:
-            try:
-                skill = ctx.skills.capture(
-                    name=title[:60],
-                    description=f"Proves {cwe or 'a vulnerability'}: {summary[:160]}",
-                    requests=requests, conditions=conditions, cwe=cwe)
-                skill_id = skill.id
-                ctx.audit.record("skill.captured", skill_id=skill.id, cwe=cwe,
-                                 successes=skill.successes)
-            except Exception as exc:
-                ctx.audit.record("skill.capture_error", error=str(exc))
-
-        return json.dumps({"verdict": "confirmed", "recorded": True, "finding_id": f.id,
+        return json.dumps({"verdict": "pending_verification", "recorded": True, "finding_id": f.id,
                            "reproductions": result.reproductions, "trials": result.trials,
-                           "control": control_note, "skill_saved": skill_id})
+                           "control": control_note,
+                           "note": "Does not count yet — an independent re-check must reproduce "
+                                   "this before it is CONFIRMED, credited, or saved as a skill."})

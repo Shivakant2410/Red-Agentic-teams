@@ -23,9 +23,16 @@ FLAG = "flag"                     # capture a specific token (labs/CTF)
 KINDS = (DATA_ACCESS, PRIVILEGE, HOST_ACCESS, FLAG)
 
 # Criterion kinds that may ONLY be credited by a specific proving mechanism (the access
-# node's `source`). Anything absent here may be credited by any evidenced held node.
+# node's `source`). Every kind is listed — "any evidenced held node" was the hole that let
+# record_access(held=True, source="agent") self-label its way to credit. The sources below
+# are exactly the ones that now require an independently-verified finding to reach `hold()`
+# (see tools/independent_verify.py, tools/access_tools.py) or a real single-shot probe
+# (try_credential) — never a bare agent assertion.
 REQUIRED_SOURCE = {
-    PRIVILEGE: ("prove_privilege",),   # must be a proven privilege boundary, not a label
+    PRIVILEGE: ("prove_privilege",),           # proven privilege boundary, not a label
+    HOST_ACCESS: ("verified_finding", "prove_privilege"),
+    DATA_ACCESS: ("verified_finding", "prove_privilege"),
+    FLAG: ("verified_finding", "prove_privilege", "try_credential"),
 }
 
 

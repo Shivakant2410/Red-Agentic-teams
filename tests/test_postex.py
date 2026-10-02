@@ -116,7 +116,11 @@ def test_privilege_proof_requires_control_to_fail(tmp_path, monkeypatch):
     assert ctx.findings.all() == []
 
 
-def test_privilege_proof_confirms_when_boundary_is_real(tmp_path, monkeypatch):
+def test_privilege_proof_pending_until_independently_verified(tmp_path, monkeypatch):
+    """PHASE 1: prove_privilege's own (real, k-of-n + control) proof still only reaches
+    pending_verification — it is self-administered by the proposing context. The access
+    graph / kill chain are only written once verify_finding_independently reproduces it
+    in a FRESH context. This is the run-13 fix applied consistently, not just to labels."""
     ctx = _ctx(tmp_path)
     ctx.sessions.set("high", {"Authorization": "Bearer hi"})
     ctx.sessions.set("low", {"Authorization": "Bearer lo"})
@@ -130,9 +134,23 @@ def test_privilege_proof_confirms_when_boundary_is_real(tmp_path, monkeypatch):
                                    high_session_label="high", low_session_label="low",
                                    privileged_marker="admin panel",
                                    from_principal="customer", to_principal="admin")
-    assert '"escalated": true' in out.lower()
+    assert '"escalated_pending": true' in out.lower()
     f = ctx.findings.all()[0]
-    assert f.cwe == "CWE-269" and f.confidence == "confirmed"
+    assert f.cwe == "CWE-269" and f.confidence == "pending_verification"
+    assert f.check_type == "privilege"
+    # Not yet credited — independent verification hasn't run.
+    assert not ctx.access.reached("admin")
+    assert ctx.killchain.status(PRIVILEGE_ESCALATION) != ACHIEVED
+
+    # Independent re-check, same sessions still available (same process) but a SEPARATE
+    # tool/context — this is the only path allowed to promote and credit it. It imports
+    # make_fetch into its own module namespace, so patch it there too.
+    import redteam.tools.independent_verify as iv
+    monkeypatch.setattr(iv, "make_fetch", fake_make_fetch)
+    from redteam.tools.independent_verify import VerifyFindingIndependentlyTool
+    verdict = VerifyFindingIndependentlyTool().run(ctx, finding_id=f.id)
+    assert '"verdict": "confirmed"' in verdict
+    assert ctx.findings.get(f.id).confidence == "confirmed"
     assert ctx.access.reached("admin")                          # principal now held
     assert ctx.killchain.status(PRIVILEGE_ESCALATION) == ACHIEVED
     assert ctx.access.distance_to("admin") == 0

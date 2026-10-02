@@ -52,7 +52,9 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     from .browser import (BrowserClickTool, BrowserContentTool, BrowserFillTool,
                           BrowserNavigateTool, BrowserScreenshotTool)
     from .confirm import ConfirmFindingTool
+    from .independent_verify import VerifyFindingIndependentlyTool
     from .kali import KaliExecTool
+    from .logic import VerifyWorkflowAbuseTool
     from .skill_tools import ApplySkillTool
     from .template_search import ApplyTemplateTool, FindAttackTemplatesTool
     from .verify_tool import VerifyVulnerabilityTool
@@ -61,10 +63,15 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     tools: list[Tool] = []
     tools.append(ConfirmFindingTool())       # simple single/differential HTTP proofs
     # authenticate to hold identities; verify_vulnerability = the general agent-designed
-    # proof primitive; apply_skill = re-run a PROVEN proof instead of designing a new one;
-    # find/apply_template = research the corpus on demand instead of memorizing it.
-    tools += [AuthenticateTool(), VerifyVulnerabilityTool(), ApplySkillTool(),
-              FindAttackTemplatesTool(), ApplyTemplateTool()]
+    # proof primitive; verify_workflow_abuse = the business-logic primitive (ordered
+    # sequences, single-run + control — see tools/logic.py); apply_skill = re-run a
+    # PROVEN proof instead of designing a new one; find/apply_template = research the
+    # corpus on demand instead of memorizing it.
+    # verify_finding_independently = the only tool that may promote a finding to
+    # "confirmed" — meant to be called from a separate context (see orchestrator.VERIFY).
+    tools += [AuthenticateTool(), VerifyVulnerabilityTool(), VerifyWorkflowAbuseTool(),
+              VerifyFindingIndependentlyTool(), ApplySkillTool(), FindAttackTemplatesTool(),
+              ApplyTemplateTool()]
     # Operator tools: track what we hold and what it unlocks; claim the objective.
     tools += [RecordAccessTool(), ClaimObjectiveTool()]
     # Post-exploitation: harvest -> use -> prove the privilege boundary moved.
