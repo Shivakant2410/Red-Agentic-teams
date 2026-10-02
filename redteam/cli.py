@@ -73,6 +73,14 @@ def main(argv: list[str] | None = None) -> int:
                         help="Use the orchestrator + specialist swarm (recon + exploit) instead of one agent.")
     parser.add_argument("--yes-to-all", action="store_true",
                         help="Auto-approve every action. Use ONLY in an isolated lab.")
+    parser.add_argument("--semantic-memory", action="store_true",
+                        help="Use HelixDB (graph+vector) for semantic recall of past "
+                             "lessons and app-shape patterns, instead of plain tag "
+                             "matching. Requires Docker; starts a local HelixDB "
+                             "container for the run. NOTE: this container's data does "
+                             "not currently persist across restarts (see "
+                             "memory_backend/helix_backend.py) — it upgrades recall "
+                             "quality within a run, not yet cross-session durability.")
     args = parser.parse_args(argv)
 
     try:
@@ -120,6 +128,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("\nStarting Kali sandbox (this can take a while on first build)...")
                 plan = sandbox.start()
                 print(f"Sandbox egress allows: {', '.join(plan.allowed_cidrs) or '(none)'}")
+                print("Egress self-test: PASS (confirmed an out-of-scope destination is unreachable)")
                 for w in plan.warnings:
                     print(f"  ! {w}")
             except SandboxError as exc:
@@ -145,7 +154,25 @@ def main(argv: list[str] | None = None) -> int:
         # Cross-engagement memory: a single global store the agent learns into over time,
         # bootstrapped with curated tradecraft (correct oracle recipes) on first use.
         from .memory import ExperienceStore, seed_tradecraft
-        memory = ExperienceStore(Path("memory/experience.json"))
+        helix_server = None
+        backend = None
+        if args.semantic_memory:
+            from .memory_backend.embedder import Embedder
+            from .memory_backend.helix_backend import HelixBackend
+            from .memory_backend.helix_server import HelixServer, HelixServerError
+            helix_server = HelixServer()
+            try:
+                print("\nStarting HelixDB (semantic memory)...")
+                helix_server.start()
+                backend = HelixBackend(helix_server.client(), Embedder())
+                print("Semantic memory: ON (lessons/app-patterns recalled by meaning, not just tags)")
+            except HelixServerError as exc:
+                print(f"HelixDB failed to start: {exc}", file=sys.stderr)
+                print("Continuing with plain tag-matched memory (memory/experience.json).")
+                helix_server = None
+        # path is ignored by ExperienceStore whenever a backend is supplied, so passing
+        # it unconditionally is harmless and keeps the JSON fallback path explicit.
+        memory = ExperienceStore(Path("memory/experience.json"), backend=backend)
         seed_tradecraft(memory)
 
         tools = build_registry(enable_sandbox=sandbox is not None, enable_browser=use_browser)
@@ -168,6 +195,22 @@ def main(argv: list[str] | None = None) -> int:
         mode = "multi-agent swarm" if args.multi_agent else "single agent"
         print(f"\nStarting {mode}... (drop a file named STOP in {out} to halt cleanly)\n")
         driver.run(args.objective, on_text=lambda t: print(t, "\n"))
+
+        if not args.multi_agent:
+            # Single-agent mode has no built-in VERIFY phase — its own checks only ever
+            # reach pending_verification (see tools/confirm.py, tools/verify_tool.py,
+            # tools/postex.py), so without this nothing here would ever count toward the
+            # objective. Run the independent re-check in a FRESH context; never let the
+            # same continuous run grade its own findings.
+            from .orchestrator import run_verify_pass
+            print("\nRunning independent verification pass over pending findings...\n")
+            still_pending = run_verify_pass(engagement, tools, ctx, client, args.objective,
+                                            budget=budget,
+                                            on_text=lambda t: print(t, "\n"))
+            if still_pending:
+                print(f"  ! {still_pending} finding(s) still pending verification "
+                      f"(budget/steps ran out).")
+
         print(f"\nBudget used: {budget.status()}")
 
         # Credit the recalled lessons by whether this run actually confirmed anything, so
@@ -177,11 +220,21 @@ def main(argv: list[str] | None = None) -> int:
         learned = memory.reflect_on_run(findings.all(), audit.read_all())
         if learned:
             print(f"Learned {len(learned)} lesson(s) into memory ({memory.summary()['lessons']} total).")
+
+        # Distill APP-SHAPE patterns (auth flow shape, ID format, ...) before the graph
+        # is discarded at process exit — this is the piece that actually closes the
+        # "model goes blind on a new target" gap; reflect_on_run above only covers
+        # vuln-PROVING technique, not what the app itself looked like.
+        from .memory_backend.app_patterns import reflect_app_patterns
+        for description, tags in reflect_app_patterns(graph, audit.read_all()):
+            memory.learn_pattern(description, tags=tags)
     finally:
         if browser is not None:
             browser.close()
         if sandbox is not None:
             sandbox.stop()
+        if helix_server is not None:
+            helix_server.stop()
 
     report_path = out / "report.md"
     report_path.write_text(build_report(engagement, findings, requests_used=limiter.used),

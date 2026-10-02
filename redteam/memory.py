@@ -198,12 +198,51 @@ class ExperienceStore:
 
     def briefing(self, query: str = "", tags: list[str] | None = None, k: int = 5) -> str:
         lessons = self.recall(query=query, tags=tags, k=k)
-        if not lessons:
-            return ""
-        lines = ["[LESSONS FROM PAST ENGAGEMENTS]"]
-        for les in lessons:
-            lines.append(f"  ({les.kind}) {les.text}")
+        lines: list[str] = []
+        if lessons:
+            lines.append("[LESSONS FROM PAST ENGAGEMENTS]")
+            for les in lessons:
+                lines.append(f"  ({les.kind}) {les.text}")
+
+        # Semantic recall of APP-SHAPE patterns, when the backend supports it (see
+        # memory_backend/helix_backend.py). This is additive, never a replacement: a
+        # LocalJSONBackend-backed store (no semantic_recall_lessons/recall_patterns)
+        # simply skips this and behaves exactly as before. It's the piece tag-matched
+        # Lesson recall structurally cannot do — a new target that only RESEMBLES a past
+        # one in meaning (not shared vocabulary) still surfaces what worked there.
+        if query and hasattr(self._backend, "semantic_recall_lessons"):
+            try:
+                semantic = self._backend.semantic_recall_lessons(query, k=3)
+            except Exception:
+                semantic = []
+            seen = {l.text for l in lessons}
+            fresh = [h for h in semantic if h.get("text") not in seen]
+            if fresh:
+                lines.append("[SIMILAR TECHNIQUES FROM PAST ENGAGEMENTS — matched by meaning, not keywords]")
+                for h in fresh:
+                    lines.append(f"  ({h.get('kind', '?')}) {h.get('text', '')}")
+        if query and hasattr(self._backend, "recall_patterns"):
+            try:
+                patterns = self._backend.recall_patterns(query, k=3)
+            except Exception:
+                patterns = []
+            if patterns:
+                lines.append("[APP-SHAPE PATTERNS SEEN BEFORE — may apply to this target too]")
+                for p in patterns:
+                    lines.append(f"  - {p.get('description', '')}")
+
         return "\n".join(lines)
+
+    def learn_pattern(self, description: str, tags: list[str] | None = None) -> None:
+        """Distill an APP-SHAPE fact (auth flow shape, ID format, endpoint naming
+        convention) — not a vuln-proving technique — so the NEXT target gets a head start
+        even when it's a different app entirely. No-op on a backend that doesn't support
+        it (e.g. LocalJSONBackend): this is additive capability, not a required one."""
+        if hasattr(self._backend, "learn_pattern"):
+            try:
+                self._backend.learn_pattern(description, tags=tags)
+            except Exception:
+                pass
 
     def all(self) -> list[Lesson]:
         return sorted(self._lessons.values(), key=lambda l: l.utility, reverse=True)
