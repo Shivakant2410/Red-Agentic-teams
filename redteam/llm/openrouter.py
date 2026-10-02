@@ -61,6 +61,14 @@ def _supports_tools(model: dict) -> bool:
     return "tools" in params
 
 
+# How many consecutive 429s a model gets within one run before we stop retrying it
+# first every turn. Without this, a daily-quota-exhausted model (which 429s on every
+# single call for the rest of the day) gets retried at the front of the candidate list
+# on every turn, burning a full round-trip per turn for nothing — observed costing 100+
+# wasted calls in a single run once one free model's daily cap was hit (see Phase 5 notes).
+_COOLDOWN_AFTER_CONSECUTIVE_429S = 2
+
+
 class ModelRouter:
     """Discovers free tool-capable models and serves per-role candidate lists."""
 
@@ -70,6 +78,19 @@ class ModelRouter:
         self._candidates: list[str] = []
         self._context_lens: dict[str, int] = {}
         self._pools: dict[str, list[str]] = {"cheap": [], "strong": []}
+        # model_id -> consecutive 429 count this run. Reset to 0 on any non-429 response
+        # (success or a different kind of failure) so a model gets a fresh chance later —
+        # this is a same-run circuit breaker, not a permanent ban.
+        self._consecutive_429s: dict[str, int] = {}
+
+    def on_rate_limited(self, model: str) -> None:
+        self._consecutive_429s[model] = self._consecutive_429s.get(model, 0) + 1
+
+    def on_other_result(self, model: str) -> None:
+        self._consecutive_429s[model] = 0
+
+    def is_cooling_down(self, model: str) -> bool:
+        return self._consecutive_429s.get(model, 0) >= _COOLDOWN_AFTER_CONSECUTIVE_429S
 
     def discover(self) -> list[str]:
         """Build the candidate list + cheap/strong pools from the live catalog (best effort)."""
@@ -115,9 +136,15 @@ class ModelRouter:
         # A model pinned to this role (e.g. a frontier model on 'plan') is tried first;
         # the free pool remains as fallback if it errors or rate-limits.
         pinned = (self._cfg.role_models or {}).get(role)
-        if pinned:
-            return [pinned] + [m for m in pool if m != pinned]
-        return pool
+        ordered = [pinned] + [m for m in pool if m != pinned] if pinned else list(pool)
+        # Models that have 429'd repeatedly THIS RUN (almost always a daily quota hit,
+        # which won't clear until tomorrow) move to the back instead of staying pinned
+        # first every turn — without this a dead model gets retried at the front of
+        # every single turn for the rest of the run, each retry a wasted round-trip.
+        cooling, ready = [], []
+        for m in ordered:
+            (cooling if self.is_cooling_down(m) else ready).append(m)
+        return ready + cooling
 
     @property
     def exhausted_after(self) -> int:
@@ -182,18 +209,23 @@ class OpenRouterClient:
                 retry_after = resp.headers.get("retry-after")
                 self._log("llm.rotate", model=model, status=resp.status_code,
                           retry_after=retry_after)
-                # brief pause on rate limit, then move to the next free model
-                if resp.status_code == 429 and retry_after and attempt == 0:
-                    try:
-                        time.sleep(min(float(retry_after), 5.0))
-                    except ValueError:
-                        pass
+                if resp.status_code == 429:
+                    self.router.on_rate_limited(model)
+                    # brief pause on rate limit, then move to the next free model
+                    if retry_after and attempt == 0:
+                        try:
+                            time.sleep(min(float(retry_after), 5.0))
+                        except ValueError:
+                            pass
+                else:
+                    self.router.on_other_result(model)
                 last_error = RuntimeError(f"{resp.status_code}: {resp.text[:300]}")
                 continue
 
             if resp.status_code >= 400:
                 last_error = RuntimeError(f"{resp.status_code}: {resp.text[:300]}")
                 self._log("llm.error", model=model, status=resp.status_code)
+                self.router.on_other_result(model)
                 continue
 
             body = resp.json()
@@ -208,9 +240,11 @@ class OpenRouterClient:
             if not has_content and not has_calls:
                 self._log("llm.degenerate", model=model,
                           finish_reason=choice.get("finish_reason"))
+                self.router.on_other_result(model)   # it answered — not quota-exhausted
                 last_error = RuntimeError(f"{model} returned an empty response")
                 continue
 
+            self.router.on_other_result(model)   # a real success clears any cooldown
             self._log("llm.ok", model=model, finish_reason=choice.get("finish_reason"),
                       usage=body.get("usage"))
             return ChatResult(
