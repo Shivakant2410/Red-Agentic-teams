@@ -64,17 +64,50 @@ def _write_engagement(target, path: Path) -> None:
     path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
 
 
+def _start_compose(target, container: str) -> None:
+    if not target.compose_dir:
+        raise RuntimeError(
+            f"{target.name} is a compose-based target but compose_dir is unset — "
+            "set the XBEN_001_DIR environment variable to a local copy of the challenge "
+            "directory (clone github.com/KeygraphHQ/xbow-validation-benchmarks and point "
+            "it at benchmarks/XBEN-001-24/) before running this target."
+        )
+    compose_dir = Path(target.compose_dir)
+    if not (compose_dir / "docker-compose.yml").exists():
+        raise RuntimeError(f"no docker-compose.yml at {compose_dir} — check XBEN_001_DIR")
+    subprocess.run(["docker", "compose", "down", "-v"], cwd=compose_dir, capture_output=True)
+    build = subprocess.run(
+        ["docker", "compose", "build", "--build-arg", f"flag={target.compose_flag}",
+         "--build-arg", f"FLAG={target.compose_flag}"],
+        cwd=compose_dir, capture_output=True, text=True)
+    if build.returncode != 0:
+        raise RuntimeError(f"failed to build compose target: {build.stderr[-2000:]}")
+    up = subprocess.run(["docker", "compose", "up", "-d", "--wait"],
+                        cwd=compose_dir, capture_output=True, text=True)
+    if up.returncode != 0:
+        raise RuntimeError(f"failed to start compose target: {up.stderr[-2000:]}")
+
+
+def _stop_compose(target) -> None:
+    if target.compose_dir:
+        subprocess.run(["docker", "compose", "down", "-v"], cwd=Path(target.compose_dir),
+                       capture_output=True)
+
+
 def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -> dict:
     target = get_target(target_name)
     out_dir = Path(out)
     out_dir.mkdir(parents=True, exist_ok=True)
     container = f"bench-{target_name}"
 
-    subprocess.run(["docker", "rm", "-f", container], capture_output=True)
     print(f"Starting target {target.name} ...")
-    proc = subprocess.run(target.docker_run(container), capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(f"failed to start target: {proc.stderr}")
+    if target.is_compose:
+        _start_compose(target, container)
+    else:
+        subprocess.run(["docker", "rm", "-f", container], capture_output=True)
+        proc = subprocess.run(target.docker_run(container), capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f"failed to start target: {proc.stderr}")
 
     try:
         if not _wait_for(target.base_url):
@@ -92,7 +125,10 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -
         subprocess.run(cmd, check=False)
         elapsed = time.time() - started
     finally:
-        subprocess.run(["docker", "rm", "-f", container], capture_output=True)
+        if target.is_compose:
+            _stop_compose(target)
+        else:
+            subprocess.run(["docker", "rm", "-f", container], capture_output=True)
 
     findings_path = out_dir / "findings.json"
     findings = json.loads(findings_path.read_text(encoding="utf-8")) if findings_path.exists() else []
