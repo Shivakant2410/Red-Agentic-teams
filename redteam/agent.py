@@ -126,6 +126,7 @@ class RedTeamAgent:
         guard = RepetitionGuard()
         last_progress = 0          # (graph_nodes + findings) snapshot for stall detection
         stall_turns = 0
+        stall_nudges_given = 0     # how many times the stall nudge below has fired
         nudges = 0                 # times we've refused an early "I'm done"
 
         final_text = ""
@@ -257,6 +258,18 @@ class RedTeamAgent:
                 stall_turns += 1
             if stall_turns >= 4:
                 stall_turns = 0
+                stall_nudges_given += 1
+                # One or two in-context nudges are worth trying (a model can genuinely
+                # change tack). Beyond that, more nudges in the SAME exhausted context
+                # just grind the remaining budget — better to end this specialist's turn
+                # now and let the orchestrator hand off to a different specialist (e.g.
+                # ACCESS or LOGIC) with a fresh context, than keep talking to a dead end.
+                if stall_nudges_given > 2:
+                    self._ctx.audit.record("agent.stalled_out", step=step,
+                                           stall_nudges=stall_nudges_given)
+                    self._update_manifest(status="completed", steps=step,
+                                          findings=len(self._ctx.findings.all()))
+                    return final_text or "[stalled — no progress after repeated nudges; ending this specialist's turn]"
                 messages.append({"role": "user", "content":
                     "[NO PROGRESS] Several turns produced no new endpoints or findings. "
                     "Change strategy: pick a different endpoint or vulnerability class from "

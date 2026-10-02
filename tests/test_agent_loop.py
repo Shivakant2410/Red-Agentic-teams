@@ -9,6 +9,7 @@ from redteam.agent import RedTeamAgent
 from redteam.config import Engagement, LlmConfig, SandboxConfig
 from redteam.findings import FindingStore
 from redteam.killchain import KillChain
+from redteam.knowledge import KnowledgeGraph
 from redteam.llm.openrouter import ChatResult
 from redteam.objective import DATA_ACCESS, Objective, SuccessCriterion
 from redteam.ratelimit import RateLimiter
@@ -66,3 +67,45 @@ def test_agent_pushes_back_before_giving_up_on_an_unmet_objective(tmp_path):
     RedTeamAgent(eng, {}, ctx, client, max_steps=8).run("reach the objective")
     # It should not accept the first "I'm done" while the objective is unmet.
     assert len(client.sent) > 1
+
+
+class NoOpToolCallClient:
+    """Calls a dummy tool every turn (so the agent never hits the no-tool-calls branch),
+    but nothing it does ever changes graph/findings — i.e. a model stuck on a dead end."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def chat(self, messages, tools=None, role="plan"):
+        self.calls += 1
+        tc = {"id": f"call{self.calls}", "type": "function",
+             "function": {"name": "noop_tool", "arguments": "{}"}}
+        return ChatResult(model="fake",
+                          message={"role": "assistant", "content": "trying again",
+                                   "tool_calls": [tc]},
+                          finish_reason="tool_calls", usage={})
+
+
+class NoopTool:
+    name = "noop_tool"
+
+    def schema(self):
+        return {"name": "noop_tool", "input_schema": {"type": "object", "properties": {}},
+                "strict": True}
+
+    def run(self, ctx, **kwargs):
+        return "did nothing useful"
+
+
+def test_agent_ends_its_turn_after_repeated_stalls_instead_of_grinding_to_max_steps(tmp_path):
+    """Phase 4: a specialist stuck on a dead end (no graph/finding progress for many turns
+    in a row) must stop well before max_steps, freeing the orchestrator to hand off to a
+    different specialist with a fresh context, rather than grinding in-context forever."""
+    eng, ctx = _ctx(tmp_path)
+    ctx.graph = KnowledgeGraph(tmp_path / "g.json")   # stall detection needs a graph to compare against
+    client = NoOpToolCallClient()
+    agent = RedTeamAgent(eng, {"noop_tool": NoopTool()}, ctx, client,
+                         max_steps=100, graph=ctx.graph)
+    agent.run("find something")
+    # 3 stall cycles of 4 turns each (nudged twice, stopped on the 3rd) is well under 100.
+    assert client.calls < 25

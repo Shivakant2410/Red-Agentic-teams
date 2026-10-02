@@ -27,6 +27,13 @@ class SandboxError(Exception):
     pass
 
 
+# TEST-NET-1 (RFC 5737) — reserved for documentation, never a real route, and never
+# something an engagement's allowed_hosts would legitimately list. Used as the egress
+# self-test's canary: if the sandbox can reach it, the firewall did not actually apply,
+# regardless of what the entrypoint log claims.
+_EGRESS_CANARY = "192.0.2.1"
+
+
 @dataclass
 class ExecResult:
     exit_code: int
@@ -131,7 +138,31 @@ class KaliSandbox:
                 + (logs.stdout + logs.stderr)[-1500:]
             )
         self._started = True
+
+        # The log line only proves the entrypoint script RAN to that point — not that the
+        # firewall rules actually took effect (a kernel without iptables support, a
+        # container runtime quirk, or a rule-ordering bug could all still print "ready"
+        # while egress stays wide open). Prove it instead: try to reach a destination that
+        # is never legitimately in scope (TEST-NET-1) and fail closed if that succeeds.
+        self._verify_egress_blocks_canary()
         return self._plan
+
+    def _verify_egress_blocks_canary(self) -> None:
+        probe = (f"curl -s -m 3 -o /dev/null -w '%{{http_code}}' "
+                f"--connect-timeout 2 http://{_EGRESS_CANARY}/ || echo BLOCKED")
+        result = self.exec(probe, timeout=10)
+        reached = not result.timed_out and "BLOCKED" not in result.stdout and result.exit_code == 0
+        self._log("sandbox.egress_selftest", canary=_EGRESS_CANARY,
+                  reached=reached, stdout=result.stdout[:200])
+        if reached:
+            self.stop()
+            raise SandboxError(
+                f"EGRESS SELF-TEST FAILED: the sandbox reached {_EGRESS_CANARY} "
+                "(a destination that should never be in scope), meaning the egress "
+                "firewall did not actually apply despite the entrypoint reporting ready. "
+                "Refusing to run any tool against a sandbox with unconfirmed scope "
+                "enforcement — this is fail-closed, not a false alarm to work around."
+            )
 
     def exec(self, command: str, timeout: int | None = None) -> ExecResult:
         if not self._started:
