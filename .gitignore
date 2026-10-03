@@ -6,10 +6,15 @@ secrets.env
 
 # Run outputs (findings, audit logs, reports, graphs)
 runs/
+runs_*.log
 
 # Proven-proof templates can embed literal auth headers/credentials — keep local.
 memory/skills.json
 memory/skills_nuclei.json
+# Cross-engagement learned state (lessons, bandit win-rates) — local to this machine's
+# run history, not something to ship in the repo.
+memory/experience.json
+memory/bandit.json
 
 # Python
 __pycache__/

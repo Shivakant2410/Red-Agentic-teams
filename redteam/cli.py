@@ -73,14 +73,16 @@ def main(argv: list[str] | None = None) -> int:
                         help="Use the orchestrator + specialist swarm (recon + exploit) instead of one agent.")
     parser.add_argument("--yes-to-all", action="store_true",
                         help="Auto-approve every action. Use ONLY in an isolated lab.")
+    parser.add_argument("--source-dir", default="",
+                        help="Local source tree for the target (whitebox/benchmark runs). "
+                             "When set, route decorators are grepped directly and seeded "
+                             "into the knowledge graph before any LLM call — no token cost.")
     parser.add_argument("--semantic-memory", action="store_true",
                         help="Use HelixDB (graph+vector) for semantic recall of past "
                              "lessons and app-shape patterns, instead of plain tag "
                              "matching. Requires Docker; starts a local HelixDB "
-                             "container for the run. NOTE: this container's data does "
-                             "not currently persist across restarts (see "
-                             "memory_backend/helix_backend.py) — it upgrades recall "
-                             "quality within a run, not yet cross-session durability.")
+                             "container backed by a named Docker volume, so lessons "
+                             "and app-patterns persist across runs, not just within one.")
     args = parser.parse_args(argv)
 
     try:
@@ -101,8 +103,13 @@ def main(argv: list[str] | None = None) -> int:
     scope = ScopeGuard(engagement)
     from .knowledge import KnowledgeGraph
     graph = KnowledgeGraph(out / "graph.json")
+    # The bandit's learned win-rates are cross-ENGAGEMENT state (like memory/experience.json
+    # below), not per-run state — a fixed path, not out_dir, so technique selection keeps
+    # improving across many runs instead of resetting every time.
+    from .bandit import BanditStore
+    bandit = BanditStore(Path("memory/bandit.json"))
     from .attack_tree import AttackTree
-    attack_tree = AttackTree(out / "attack_tree.json")
+    attack_tree = AttackTree(out / "attack_tree.json", bandit=bandit)
     # Red-team core: what we hold, where we're going, and where we are in the kill chain.
     from .access import AccessGraph
     from .killchain import KillChain
@@ -117,6 +124,12 @@ def main(argv: list[str] | None = None) -> int:
 
     use_sandbox = engagement.sandbox.enable and not args.no_sandbox
     use_browser = not args.no_browser
+
+    from .recon import run_deterministic_recon
+    recon_summary = run_deterministic_recon(engagement, graph, attack_tree, audit=audit,
+                                            source_dir=args.source_dir)
+    if recon_summary.get("endpoints_discovered") or recon_summary.get("static_routes_found"):
+        print(f"Deterministic recon (no LLM calls): {recon_summary}")
 
     sandbox = None
     browser = None

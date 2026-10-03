@@ -388,6 +388,10 @@ class Orchestrator:
     def run(self, objective: str, on_text=None) -> str:
         self._ctx.audit.record("orchestrator.start", objective=objective)
 
+        # Phase 0 — deterministic recon runs once, before either driver starts (see
+        # cli.py's call to run_deterministic_recon) so single-agent and multi-agent runs
+        # get identical treatment instead of duplicating this per-driver.
+
         # Phase 1 — recon (breadth, cheap model).
         self._ctx.audit.record("orchestrator.phase", phase="recon")
         recon = self._make_specialist(RECON)

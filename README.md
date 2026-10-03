@@ -115,13 +115,34 @@ This starts a local HelixDB container for the run (same lifecycle pattern as the
 sandbox) and runs a small local embedding model (`all-MiniLM-L6-v2`, no API/network
 dependency, consistent with the free-tier-only design elsewhere in this project).
 
-**Known limitation:** the official `ghcr.io/helixdb/helixdb:v0.0.3` image did not persist
-data to a mounted Docker volume across container restarts in testing — writes made in one
-container's lifetime are gone after it restarts, regardless of mount path or settle time
-before stopping. This upgrades recall *quality* within a run's uptime; it is not yet
-durable *across* runs the way the plain-JSON path is. Treat `--semantic-memory` as a
-within-session upgrade until that's root-caused (`memory_backend/helix_backend.py` has
-the full note). The default (no flag) path is unaffected and remains fully persistent.
+**Persistence:** the `ghcr.io/helixdb/helixdb:v0.0.3` image's standalone server is
+in-memory only by HelixDB's own design (its `DB_PATH` var is an internal key prefix, not
+a filesystem path — no mount fixes that). `HelixServer` now runs `v0.0.9` with
+`HELIX_DATA_DIR` pointed at a named Docker volume, which genuinely persists: confirmed by
+writing a value, stopping the container, starting a fresh one on the same volume, and
+reading the value back. Lessons and app-shape patterns now survive across runs, same as
+the plain-JSON path.
+
+## Learned technique selection (bandit, optional)
+
+`attack_tree.py` ranks techniques (SQLi, IDOR, XSS, ...) for the swarm to try next by a
+fixed, hand-set priority table — the same order against every target, with no memory of
+what's actually confirmed before. `bandit.py` adds a contextual multi-armed bandit
+(Thompson sampling) that learns a per-(technique, endpoint-shape) win rate across runs and
+nudges that static order, without ever overriding the priority tiers outright (chained
+follow-ups always still outrank fresh entry techniques).
+
+The "context" is a coarse, reusable endpoint-shape bucket (`numeric-id`, `auth-wall`,
+`workflow-shaped`, ...) — the same vocabulary `memory_backend/app_patterns.py` already
+derives for cross-run pattern recall. The reward is 1.0 when a technique confirms on that
+shape, 0.0 when the swarm marks it `FAILED` having found nothing — both already happen in
+`attack_tree.py`'s existing control flow; the bandit just tallies them instead of
+discarding them. Learned win rates persist to `memory/bandit.json`, so technique selection
+keeps specializing across engagements, not resetting every run.
+
+This is wired on by default (`cli.py` always attaches a `BanditStore` to `AttackTree`) and
+needs no flag — with no evidence yet, it samples around neutral and leaves the static
+order effectively unchanged; it only pays off once there's a track record to learn from.
 
 ## Tests
 

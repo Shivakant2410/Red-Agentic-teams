@@ -103,6 +103,7 @@ class AttackNode:
     target: str
     status: str = TODO
     findings: str = ""
+    bucket: str = ""   # endpoint-shape context for the bandit (see bandit.py); "" = unknown
 
     @property
     def id(self) -> str:
@@ -110,9 +111,14 @@ class AttackNode:
 
 
 class AttackTree:
-    def __init__(self, path: str | Path | None = None):
+    def __init__(self, path: str | Path | None = None, bandit=None):
         self._nodes: dict[str, AttackNode] = {}
         self._path = Path(path) if path else None
+        # Optional BanditStore (see bandit.py): when given, actionable()'s ranking blends
+        # the static priority table with a learned per-(technique, bucket) win rate, and
+        # mark()/claim() feed outcomes back into it. None (the default) preserves the old
+        # fixed-priority-only behavior exactly — this is additive, never required.
+        self._bandit = bandit
         # RLock: sync()/mark()/briefing() all call other locked methods on self from the
         # SAME thread (sync -> seed_endpoint -> _add, mark -> _unlock -> _add, briefing ->
         # confirmed_chain/actionable) — a plain Lock would deadlock. Needed once a parallel
@@ -126,26 +132,34 @@ class AttackTree:
 
     # -- construction ----------------------------------------------------------
 
-    def _add(self, technique: str, target: str, status: str = TODO) -> AttackNode:
+    def _add(self, technique: str, target: str, status: str = TODO, bucket: str = "") -> AttackNode:
         with self._lock:
-            node = AttackNode(technique=technique, target=target, status=status)
-            self._nodes.setdefault(node.id, node)
-            return self._nodes[node.id]
+            node = self._nodes.get(f"{technique}@{target}")
+            if node is None:
+                node = AttackNode(technique=technique, target=target, status=status, bucket=bucket)
+                self._nodes[node.id] = node
+            elif bucket and not node.bucket:
+                node.bucket = bucket   # sync() learning the bucket after the node already existed
+            return node
 
-    def seed_endpoint(self, target: str) -> None:
-        """Seed the entry techniques for a newly discovered endpoint."""
+    def seed_endpoint(self, target: str, bucket: str = "") -> None:
+        """Seed the entry techniques for a newly discovered endpoint. `bucket` (see
+        bandit.py's bucket_for_endpoint) is optional: passive_recon/static_source seed
+        endpoints before a KnowledgeGraph node exists for them, so they seed with "" and
+        pick up a real bucket later via sync()."""
         with self._lock:
             for tid in ENTRY_TECHNIQUES:
-                self._add(tid, target)
+                self._add(tid, target, bucket=bucket)
 
     def sync(self, graph=None, findings: list | None = None) -> None:
         """Grow the tree from current knowledge: seed new endpoints, and mark techniques
         confirmed by findings (which unlocks their chained follow-ups)."""
         with self._lock:
             if graph is not None:
+                from .bandit import bucket_for_endpoint
                 from .knowledge import ENDPOINT
                 for ep in graph.nodes(ENDPOINT):
-                    self.seed_endpoint(ep.key)
+                    self.seed_endpoint(ep.key, bucket=bucket_for_endpoint(ep.key, ep))
             for f in (findings or []):
                 confidence = getattr(f, "confidence", None) or (f.get("confidence") if isinstance(f, dict) else None)
                 if confidence != "confirmed":
@@ -166,6 +180,8 @@ class AttackTree:
                 node.findings = findings
             if status == COMPLETED:
                 self._unlock(technique, target)
+            if self._bandit is not None and status in (COMPLETED, FAILED):
+                self._bandit.record(technique, node.bucket, won=(status == COMPLETED))
             self._flush()
 
     def confirm(self, technique: str, target: str, findings: str = "") -> None:
@@ -199,7 +215,14 @@ class AttackTree:
 
     def actionable(self, limit: int = 6) -> list[AttackNode]:
         """The prioritized frontier: what to attack next. Chained (unlocked) follow-ups
-        outrank fresh entry techniques — press the foothold, don't wander."""
+        outrank fresh entry techniques — press the foothold, don't wander.
+
+        When a BanditStore is attached (see bandit.py), the static priority is nudged by
+        a Thompson-sampled per-(technique, bucket) win-rate learned across past
+        engagements — e.g. IDOR sampling higher than SQLi specifically on endpoints
+        shaped like /resource/<numeric-id>, because that's what has actually confirmed
+        on that shape before. With no bandit attached (the default), ranking is exactly
+        the old fixed-priority behavior — this is a pure addition, never a requirement."""
         with self._lock:
             live = [n for n in self._nodes.values() if n.status in (TODO, IN_PROGRESS)]
 
@@ -207,6 +230,12 @@ class AttackTree:
                 t = TECHNIQUES.get(n.technique)
                 base = t.priority if t else 0
                 boost = 100 if (t and t.chained) else 0   # pursue the chain first
+                if self._bandit is not None:
+                    # Centered scaling: a sample of 0.5 (no evidence yet) adds nothing;
+                    # evidence shifts the technique up or down within its priority tier,
+                    # it never lets a low-priority technique leapfrog the chain boost.
+                    learned = (self._bandit.sample(n.technique, n.bucket) - 0.5) * 40
+                    return base + boost + learned
                 return base + boost
             return sorted(live, key=key, reverse=True)[:limit]
 

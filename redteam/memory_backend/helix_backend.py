@@ -8,13 +8,12 @@ facts that are actually missing today — "what does this app's shape look like,
 worked on apps shaped like it" — distilled from each run's KnowledgeGraph/audit log before
 that graph is discarded (see reflect_app_patterns in app_patterns.py).
 
-CAVEAT (tested, not assumed): the official ghcr.io/helixdb/helixdb:v0.0.3 Docker image
-did not persist data to a mounted volume across container restarts in local testing here
-(writes made before a restart were gone after it, regardless of mount path or settle
-time). Until that's root-caused (image bug vs. undocumented config), this backend gives
-real semantic recall WITHIN one HelixServer container's uptime, but is not yet durable
-across a stopped/restarted container the way the "persistent memory" goal implies. Treat
-it as a within-session upgrade for now; LocalJSONBackend remains the durable default.
+PERSISTENCE (root-caused and fixed — see helix_server.py): the v0.0.3 image's standalone
+server is in-memory only by design; its DB_PATH env var is an internal key prefix, not a
+filesystem path, so no mount/path fix could have made it persist. HelixServer now runs
+v0.0.9 with HELIX_DATA_DIR pointed at a mounted named volume, confirmed end-to-end (write,
+stop the container, start a fresh one on the same volume, read the value back). Data now
+survives a stopped/restarted container, which is what the "persistent memory" goal needs.
 """
 
 from __future__ import annotations

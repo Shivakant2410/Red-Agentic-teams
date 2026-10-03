@@ -39,10 +39,19 @@ report.py             Markdown/HTML report builder
 agent.py              OpenAI-style tool-use loop (hand-rolled, not a framework)
 orchestrator.py       Coordinates planner/agent/skills across an engagement run
 planner.py            Objective -> plan of actions
-attack_tree.py         Attack tree modeling
+attack_tree.py         Attack tree modeling; optional BanditStore (bandit.py) learns
+                       per-(technique, endpoint-shape) win rates across runs to nudge
+                       the static priority table instead of overriding it
+bandit.py              Contextual multi-armed bandit (Thompson sampling) over
+                       attack_tree.py's technique choices; persists to
+                       memory/bandit.json, same cross-engagement pattern as memory.py
 killchain.py           Kill-chain stage tracking
 knowledge.py / retrieval.py   Knowledge base + retrieval for the agent
 memory.py              Cross-run memory (see memory/experience.json)
+recon/                 Deterministic (zero-LLM-cost) recon: passive.py (robots.txt/
+                       sitemap.xml/API-schema fetches) and static_source.py (route
+                       extraction from a local source tree) — run once before any
+                       LLM call (see cli.py's run_deterministic_recon)
 objective.py           Objective modeling/scoring integration
 secrets.py             Secret handling/redaction
 session.py             Session state
