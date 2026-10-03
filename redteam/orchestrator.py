@@ -30,13 +30,26 @@ look workflow-shaped (cart/checkout/coupon/payment/...) — no point spending a 
 business logic on an app that's just a static content site. Specialists share state, so
 what recon finds, exploit attacks; what exploit confirms, access presses; what any
 specialist proves, memory learns.
+
+EXPLOIT itself is a SWARM, not one thread of reasoning: AttackTree.actionable() is a
+prioritized (technique, target) worklist, and when it's non-empty each round fans out
+up to max_swarm_workers separate EXPLOIT contexts running CONCURRENTLY (ThreadPoolExecutor),
+each pulling and atomically claiming the next untried pair via AttackTree.claim() so no
+two workers burn turns on the same hypothesis. Findings land in the shared, now
+thread-safe FindingStore exactly as a single EXPLOIT would write them; VERIFY still runs
+once per round over everything the whole swarm left pending. Falls back to a single
+EXPLOIT context (the pre-swarm behavior) whenever there's nothing actionable yet (e.g.
+right after recon, before the attack tree has anything seeded) — this is a strict
+addition, not a replacement of the serial path.
 """
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 from .agent import RedTeamAgent
+from .attack_tree import FAILED, TECHNIQUES, TODO
 from .config import Engagement
 from .killchain import (CREDENTIAL_ACCESS, DISCOVERY, LATERAL_MOVEMENT,
                         PRIVILEGE_ESCALATION)
@@ -193,7 +206,8 @@ def run_verify_pass(engagement: Engagement, tools: dict[str, Tool], ctx: ToolCon
 class Orchestrator:
     def __init__(self, engagement: Engagement, tools: dict[str, Tool], ctx: ToolContext,
                  client: OpenRouterClient, graph=None, attack_tree=None, memory=None,
-                 max_exploit_rounds: int = 12, max_access_rounds: int = 4):
+                 max_exploit_rounds: int = 12, max_access_rounds: int = 4,
+                 max_swarm_workers: int = 3):
         self._eng = engagement
         self._tools = tools
         self._ctx = ctx
@@ -210,6 +224,12 @@ class Orchestrator:
         # not to cap a normal engagement.
         self._max_exploit_rounds = max_exploit_rounds
         self._max_access_rounds = max_access_rounds   # ceiling on the press-the-foothold loop
+        # Small on purpose: every worker is a full free-model context (its own system
+        # prompt + briefing overhead), so more workers is more TOKENS per round, not just
+        # more wall-clock parallelism — under a tight daily free-model request quota (see
+        # Phase 5/6 notes), 3 concurrent is the realistic ceiling, not a target to raise
+        # without also raising the token budget.
+        self._max_swarm_workers = max_swarm_workers
         self._budget = None
         self._manifest = None
 
@@ -219,18 +239,101 @@ class Orchestrator:
             self._manifest = (manifest, manifest_path)
         return self
 
-    def _make_specialist(self, profile: SpecialistProfile) -> RedTeamAgent:
+    def _make_specialist(self, profile: SpecialistProfile, addon_suffix: str = "") -> RedTeamAgent:
         # Give the specialist only its allowed tools that actually exist in the registry.
         subset = {n: self._tools[n] for n in profile.tool_names if n in self._tools}
+        addon = profile.addon + addon_suffix
         agent = RedTeamAgent(self._eng, subset, self._ctx, self._client,
                              max_steps=profile.max_steps, graph=self._graph,
                              attack_tree=self._attack_tree, memory=self._memory,
-                             system_addon=profile.addon, role=profile.role)
+                             system_addon=addon, role=profile.role)
         if self._budget is not None:
             mpath = self._manifest[1] if self._manifest else None
             manifest = self._manifest[0] if self._manifest else None
             agent.with_runtime(budget=self._budget, manifest=manifest, manifest_path=mpath)
         return agent
+
+    def _run_exploit_swarm(self, objective: str, round_no: int, on_text=None) -> str:
+        """Fan out EXPLOIT across up to max_swarm_workers CONCURRENT contexts, each
+        claiming and working a distinct (technique, target) pair from AttackTree's
+        prioritized worklist, instead of one context working the list serially. Falls
+        back to a single EXPLOIT context (the old behavior) when there's nothing
+        actionable yet — this never regresses a run with no attack tree seeded."""
+        if self._attack_tree is None:
+            exploit = self._make_specialist(EXPLOIT)
+            return exploit.run(
+                f"{objective}\n\nThis run: EXPLOIT round {round_no + 1} — confirm and "
+                f"chain vulnerabilities from the mapped surface.", on_text=on_text) or ""
+
+        actionable = self._attack_tree.actionable(limit=self._max_swarm_workers * 4)
+        if not actionable:
+            exploit = self._make_specialist(EXPLOIT)
+            return exploit.run(
+                f"{objective}\n\nThis run: EXPLOIT round {round_no + 1} — confirm and "
+                f"chain vulnerabilities from the mapped surface.", on_text=on_text) or ""
+
+        n_workers = min(self._max_swarm_workers, len(actionable))
+        self._ctx.audit.record("orchestrator.swarm_start", round=round_no,
+                               workers=n_workers, actionable=len(actionable))
+
+        def worker(worker_id: int) -> str:
+            summary = ""
+            # Each worker claims its OWN next item each time through the loop (not a
+            # fixed slice assigned upfront) so a fast worker that finishes its hypothesis
+            # quickly picks up the next untried one instead of sitting idle while a
+            # slower sibling is still on its first.
+            while True:
+                claimed = None
+                for node in self._attack_tree.actionable(limit=self._max_swarm_workers * 4):
+                    if self._attack_tree.claim(node.technique, node.target):
+                        claimed = node
+                        break
+                if claimed is None:
+                    break   # nothing left unclaimed — this worker is done
+                if self._budget is not None:
+                    try:
+                        self._budget.check()
+                    except Exception:
+                        break
+                technique = TECHNIQUES.get(claimed.technique)
+                desc = technique.description if technique else claimed.technique
+                findings_before = len(self._ctx.findings.all())
+                exploit = self._make_specialist(
+                    EXPLOIT, addon_suffix=f"\n\nYOUR ASSIGNED TARGET THIS TURN: "
+                    f"{claimed.technique} on {claimed.target} — {desc}. Work ONLY this "
+                    f"hypothesis; other workers are covering the rest of the attack tree "
+                    f"in parallel.")
+                summary = exploit.run(
+                    f"{objective}\n\nThis run: EXPLOIT swarm worker {worker_id} round "
+                    f"{round_no + 1} — prove {claimed.technique} on {claimed.target}.",
+                    on_text=on_text) or summary
+                # A landed finding (pending or already confirmed) means this hypothesis is
+                # under its normal lifecycle now — sync() (called every turn inside
+                # RedTeamAgent.run()) will promote the node to COMPLETED once VERIFY
+                # confirms it, same self-grading-free path every other finding takes.
+                #
+                # If NOTHING landed, mark it FAILED rather than freeing it back to TODO:
+                # claim() only claims a TODO node, so FAILED makes it unclaimable for the
+                # REST OF THIS ROUND — freeing back to TODO instead causes an infinite
+                # loop (this same worker, or another, immediately re-claims and re-tries
+                # the identical empty hypothesis forever, since nothing else changed).
+                # FAILED is not terminal across rounds: the next exploit round can still
+                # reset stale FAILED nodes back to TODO via attack_tree.sync() picking up
+                # new graph/finding state, so a hypothesis that failed with a thin surface
+                # can still be retried once more context exists.
+                if len(self._ctx.findings.all()) == findings_before:
+                    self._attack_tree.mark(claimed.technique, claimed.target, FAILED)
+            return summary
+
+        summary = ""
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            futures = [pool.submit(worker, i) for i in range(n_workers)]
+            for fut in as_completed(futures):
+                try:
+                    summary = fut.result() or summary
+                except Exception as exc:
+                    self._ctx.audit.record("orchestrator.swarm_worker_error", error=str(exc))
+        return summary
 
     def _run_access_loop(self, objective: str, on_text=None) -> str:
         """Press a confirmed foothold as far as the kill chain says it goes.
@@ -309,11 +412,13 @@ class Orchestrator:
             if objective_obj is not None and objective_obj.achieved:
                 self._ctx.audit.record("orchestrator.objective_achieved", round=rnd)
                 break
+            if self._attack_tree is not None and rnd > 0:
+                # Give nodes that failed in an EARLIER round another chance now that this
+                # round may have more graph/finding context — never reset within the same
+                # round that set FAILED (see retry_failed()'s own docstring).
+                self._attack_tree.retry_failed()
             self._ctx.audit.record("orchestrator.phase", phase="exploit", round=rnd)
-            exploit = self._make_specialist(EXPLOIT)
-            summary = exploit.run(
-                f"{objective}\n\nThis run: EXPLOIT round {rnd + 1} — confirm and chain "
-                f"vulnerabilities from the mapped surface.", on_text=on_text) or summary
+            summary = self._run_exploit_swarm(objective, rnd, on_text) or summary
 
             self._ctx.audit.record("orchestrator.phase", phase="verify")
             still_pending = run_verify_pass(self._eng, self._tools, self._ctx, self._client,
