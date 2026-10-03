@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -80,6 +81,12 @@ class BudgetTracker:
         self._kill_file = Path(kill_file) if kill_file else None
         self._start = time.monotonic()
         self._tokens = 0
+        # A parallel exploit swarm (orchestrator.py) runs N specialist contexts in
+        # concurrent threads, each calling add_usage()/check() after every LLM turn —
+        # self._tokens += ... is a read-modify-write race without this lock, which would
+        # silently under-count tokens (and so blow past the intended budget) under
+        # concurrent use.
+        self._lock = threading.Lock()
 
     def add_usage(self, usage: dict | None) -> None:
         if not usage:
@@ -87,7 +94,8 @@ class BudgetTracker:
         total = usage.get("total_tokens")
         if total is None:
             total = (usage.get("prompt_tokens", 0) or 0) + (usage.get("completion_tokens", 0) or 0)
-        self._tokens += int(total or 0)
+        with self._lock:
+            self._tokens += int(total or 0)
 
     @property
     def elapsed(self) -> float:
@@ -95,18 +103,23 @@ class BudgetTracker:
 
     @property
     def tokens(self) -> int:
-        return self._tokens
+        with self._lock:
+            return self._tokens
 
     def check(self) -> None:
         if self._kill_file and self._kill_file.exists():
             raise Halt(f"kill switch present ({self._kill_file.name})")
         if self._max_seconds and self.elapsed >= self._max_seconds:
             raise Halt(f"wall-clock budget reached ({self._max_seconds}s)")
-        if self._max_tokens and self._tokens >= self._max_tokens:
+        with self._lock:
+            tokens = self._tokens
+        if self._max_tokens and tokens >= self._max_tokens:
             raise Halt(f"LLM token budget reached ({self._max_tokens})")
 
     def status(self) -> dict:
-        return {"elapsed_s": round(self.elapsed, 1), "tokens": self._tokens,
+        with self._lock:
+            tokens = self._tokens
+        return {"elapsed_s": round(self.elapsed, 1), "tokens": tokens,
                 "max_seconds": self._max_seconds, "max_tokens": self._max_tokens}
 
 

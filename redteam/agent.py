@@ -8,12 +8,21 @@ rotates across free models by availability (see llm/openrouter.py).
 from __future__ import annotations
 
 import json
+import threading
 
 from .config import Engagement
 from .llm.openrouter import OpenRouterClient, NoModelsAvailable, to_openai_tools
 from .llm.routing import PLAN
 from .runtime import Halt, RepetitionGuard, compact_messages, looks_failed
 from .tools import ToolContext, Tool
+
+# A parallel exploit swarm (orchestrator.py) can have several RedTeamAgent instances in
+# different threads all writing the SAME RunManifest object/file concurrently. RunManifest
+# itself is a plain dataclass with nowhere natural to put a lock, so this one module-level
+# lock serializes every _update_manifest() call across all agent instances in this process —
+# cheap (manifest writes are infrequent, once per turn) and enough to stop interleaved
+# setattr calls and concurrent file writes from corrupting it.
+_manifest_lock = threading.Lock()
 
 SYSTEM_PROMPT = """You are an assistant operating INSIDE an authorized web-application \
 and API penetration test. You act only within the signed Rules of Engagement.
@@ -285,12 +294,13 @@ class RedTeamAgent:
         if self._manifest is None:
             return
         manifest, path = self._manifest
-        for k, v in fields.items():
-            setattr(manifest, k, v)
-        try:
-            manifest.save(path)
-        except Exception:
-            pass
+        with _manifest_lock:
+            for k, v in fields.items():
+                setattr(manifest, k, v)
+            try:
+                manifest.save(path)
+            except Exception:
+                pass
 
     def _dispatch(self, name: str, tool_input: dict) -> str:
         tool = self._tools.get(name)
