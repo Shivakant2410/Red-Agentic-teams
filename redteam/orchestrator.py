@@ -79,8 +79,13 @@ RECON = SpecialistProfile(
     addon=("You are the RECON specialist. Map the attack surface only: browse the app, "
            "discover endpoints, parameters, and technologies, and let them register in the "
            "knowledge graph. Do NOT try to exploit or confirm vulnerabilities — that is the "
-           "exploit specialist's job. Be broad and fast."),
-    tool_names=["browser_navigate", "browser_content", "browser_click", "kali_exec"],
+           "exploit specialist's job. You MAY authenticate (log in as a basic/seeded user) "
+           "purely to get past a login wall and see what's behind it — logging in is "
+           "mapping, not exploiting. If the app has a multi-step login (e.g. submit a "
+           "username, then a password at a second URL), use authenticate's "
+           "second_url_template rather than guessing follow-up URLs by hand. Be broad and "
+           "fast."),
+    tool_names=["browser_navigate", "browser_content", "browser_click", "kali_exec", "authenticate"],
     role=PARSE,          # breadth work -> cheaper model
     max_steps=15,
 )

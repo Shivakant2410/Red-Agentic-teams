@@ -101,6 +101,25 @@ def test_specialist_gets_only_its_tools(tmp_path):
     assert "verify_vulnerability" not in access_agent._tools   # access can't hunt new bugs
 
 
+def test_recon_can_authenticate_but_not_prove_findings(tmp_path):
+    """Recon needs to get PAST a login wall to map what's behind it (a real blocker:
+    XBEN-001's two-step login burned recon's whole budget guessing URLs by hand instead
+    of using authenticate) - but logging in is mapping, not exploiting, so recon must
+    still lack every proof tool."""
+    audit = RecordingAudit()
+    ctx = _ctx(tmp_path, audit)
+    fake_tools = {"browser_navigate": object(), "authenticate": object(),
+                  "confirm_finding": object(), "verify_vulnerability": object(),
+                  "verify_workflow_abuse": object()}
+    orch = Orchestrator(_engagement(), tools=fake_tools, ctx=ctx, client=FakeClient(),
+                        graph=ctx.graph)
+    recon_agent = orch._make_specialist(RECON)
+    assert "authenticate" in recon_agent._tools
+    assert "confirm_finding" not in recon_agent._tools
+    assert "verify_vulnerability" not in recon_agent._tools
+    assert "verify_workflow_abuse" not in recon_agent._tools
+
+
 def test_profiles_access_tier_is_cheap():
     assert ACCESS.role == PARSE   # procedural/mechanical -> cheaper model, like recon
 
