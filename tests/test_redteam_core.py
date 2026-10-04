@@ -138,6 +138,8 @@ def test_killchain_persistence(tmp_path):
 # --- derived state (never trust the model to self-report) ------------------
 
 def test_autoevaluate_credits_only_demonstrated_access():
+    # PHASE 1: DATA_ACCESS requires a proving source (verified_finding/prove_privilege),
+    # not just held+evidence — see objective.REQUIRED_SOURCE and test_objective_integrity.py.
     from redteam.access import RESOURCE
     obj = Objective(name="o", criteria=[
         SuccessCriterion("c1", DATA_ACCESS, "read db", target="prod-db")])
@@ -145,8 +147,8 @@ def test_autoevaluate_credits_only_demonstrated_access():
     g.observe(RESOURCE, "prod-db")              # merely known
     assert obj.autoevaluate(g) == []            # knowing != holding
     assert obj.progress() == (0, 1)
-    g.hold(RESOURCE, "prod-db", evidence="dumped a row")
-    assert obj.autoevaluate(g) == ["c1"]        # demonstrated -> credited
+    g.hold(RESOURCE, "prod-db", evidence="dumped a row", source="verified_finding")
+    assert obj.autoevaluate(g) == ["c1"]        # demonstrated AND proven -> credited
     assert obj.achieved and "dumped a row" in obj.get("c1").evidence
 
 
@@ -154,7 +156,7 @@ def test_autoevaluate_is_idempotent():
     from redteam.access import RESOURCE
     obj = Objective(name="o", criteria=[
         SuccessCriterion("c1", DATA_ACCESS, "read db", target="prod-db")])
-    g = AccessGraph(); g.hold(RESOURCE, "prod-db", evidence="x")
+    g = AccessGraph(); g.hold(RESOURCE, "prod-db", evidence="x", source="verified_finding")
     assert obj.autoevaluate(g) == ["c1"]
     assert obj.autoevaluate(g) == []            # not re-credited
 

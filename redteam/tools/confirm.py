@@ -180,11 +180,23 @@ class ConfirmFindingTool:
             }, ensure_ascii=False)
 
         poc = _poc_text(check_type, request, baseline_request, payload_request)
+        # Recorded PENDING, not confirmed: this check was proposed and run by the same
+        # agent context claiming the bug. It only becomes "confirmed" after an independent
+        # re-check (different context) reproduces it AND a negative control fails to —
+        # see tools/independent_verify.py. check_spec lets that re-check rebuild the exact
+        # same requests without trusting this call's narration of what it did.
+        check_spec = {
+            "request": request, "baseline_request": baseline_request,
+            "payload_request": payload_request, "expect_status": expect_status,
+            "body_regex": body_regex, "max_latency": max_latency,
+            "min_latency_delta": min_latency_delta, "body_differs_regex": body_differs_regex,
+        }
         finding = ctx.findings.add(Finding(
             title=title, severity=severity, target=target, summary=summary,
             evidence="\n".join(result.details), recommendation=recommendation, cwe=cwe,
-            confidence="confirmed", verification_verdict=result.verdict,
+            confidence="pending_verification", verification_verdict=result.verdict,
             reproductions=result.reproductions, trials=result.trials, poc=poc,
+            check_type=check_type, check_spec=check_spec,
         ))
         if ctx.graph is not None:
             ctx.graph.observe(ENDPOINT, target, attrs={"finding": title}, source="confirm_finding")
@@ -193,8 +205,10 @@ class ConfirmFindingTool:
             except Exception:
                 pass
         return json.dumps({
-            "verdict": "confirmed", "recorded": True, "finding_id": finding.id,
+            "verdict": "pending_verification", "recorded": True, "finding_id": finding.id,
             "reproductions": result.reproductions, "trials": result.trials,
+            "note": "Your own check passed, but this does not count yet — an independent "
+                    "re-check must reproduce it before it is CONFIRMED or credited to the objective.",
         }, ensure_ascii=False)
 
 

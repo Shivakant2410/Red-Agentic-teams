@@ -12,6 +12,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# --semantic-memory (redteam/memory_backend/): HelixDB graph+vector recall instead of
+# plain tag matching. Requires Docker (ghcr.io/helixdb/helixdb) for the server, not
+# vendored here. See memory_backend/__init__.py for the persistence caveat.
+semantic-memory = ["helix-db==0.3.4", "sentence-transformers>=3.0"]
 
 [project.scripts]
 redteam = "redteam.cli:main"
@@ -22,5 +26,5 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["redteam", "redteam.tools", "redteam.llm", "redteam.sandbox",
-            "redteam.bench", "redteam.importers", "agentic_setup"]
+            "redteam.bench", "redteam.importers", "redteam.memory_backend", "agentic_setup"]
 package-dir = {"agentic_setup" = "src/agentic_setup"}

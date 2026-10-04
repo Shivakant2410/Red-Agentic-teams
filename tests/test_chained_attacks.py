@@ -59,6 +59,45 @@ def test_authenticate_captures_token(tmp_path, monkeypatch):
     assert ctx.sessions.get("userA").headers["Authorization"] == "Bearer TOK123"
 
 
+def test_authenticate_two_step_login_flow(tmp_path, monkeypatch):
+    """A real, observed app shape (XBEN-001's trading_platform): step 1 POSTs only a
+    username and gets no cookie; step 2 POSTs the password to a URL parameterized by
+    that username and gets the real session cookie. A single-request login cannot
+    complete this at all — this is the fix for exactly that gap."""
+    ctx = _ctx(tmp_path)
+    calls = []
+
+    def fake_fetch(c, req):
+        calls.append(req["url"])
+        if req["url"] == "https://api.acme.example/":
+            return (302, "", 0.1, {})   # step 1: no cookie yet, just a redirect
+        if req["url"] == "https://api.acme.example/password/alice":
+            return (302, "", 0.1, {"Set-Cookie": "session=REALSESSION; HttpOnly; Path=/"})
+        raise AssertionError(f"unexpected url {req['url']}")
+
+    monkeypatch.setattr(auth_mod, "fetch_once", fake_fetch)
+    out = AuthenticateTool().run(
+        ctx, label="alice_session", url="https://api.acme.example/",
+        body="username=alice", username="alice",
+        second_url_template="https://api.acme.example/password/{username}",
+        second_body="password=alice")
+
+    assert '"ok": true' in out.lower()
+    assert calls == ["https://api.acme.example/", "https://api.acme.example/password/alice"]
+    assert ctx.sessions.get("alice_session").headers["Cookie"] == "session=REALSESSION"
+
+
+def test_authenticate_single_step_unaffected_when_no_second_url(tmp_path, monkeypatch):
+    """Regression guard: omitting second_url_template must behave exactly as before."""
+    ctx = _ctx(tmp_path)
+    monkeypatch.setattr(auth_mod, "fetch_once",
+                        lambda c, req: (200, "", 0.1, {"Set-Cookie": "session=X"}))
+    out = AuthenticateTool().run(ctx, label="userB", url="https://api.acme.example/login",
+                                 body="user=b&pass=b")
+    assert '"ok": true' in out.lower()
+    assert ctx.sessions.get("userB").headers["Cookie"] == "session=X"
+
+
 def test_access_control_broken_is_confirmed(tmp_path, monkeypatch):
     ctx = _ctx(tmp_path)
     # unauthenticated request returns protected content every time -> broken access control

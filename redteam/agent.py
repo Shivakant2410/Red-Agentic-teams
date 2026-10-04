@@ -8,12 +8,21 @@ rotates across free models by availability (see llm/openrouter.py).
 from __future__ import annotations
 
 import json
+import threading
 
 from .config import Engagement
 from .llm.openrouter import OpenRouterClient, NoModelsAvailable, to_openai_tools
 from .llm.routing import PLAN
 from .runtime import Halt, RepetitionGuard, compact_messages, looks_failed
 from .tools import ToolContext, Tool
+
+# A parallel exploit swarm (orchestrator.py) can have several RedTeamAgent instances in
+# different threads all writing the SAME RunManifest object/file concurrently. RunManifest
+# itself is a plain dataclass with nowhere natural to put a lock, so this one module-level
+# lock serializes every _update_manifest() call across all agent instances in this process —
+# cheap (manifest writes are infrequent, once per turn) and enough to stop interleaved
+# setattr calls and concurrent file writes from corrupting it.
+_manifest_lock = threading.Lock()
 
 SYSTEM_PROMPT = """You are an assistant operating INSIDE an authorized web-application \
 and API penetration test. You act only within the signed Rules of Engagement.
@@ -126,6 +135,7 @@ class RedTeamAgent:
         guard = RepetitionGuard()
         last_progress = 0          # (graph_nodes + findings) snapshot for stall detection
         stall_turns = 0
+        stall_nudges_given = 0     # how many times the stall nudge below has fired
         nudges = 0                 # times we've refused an early "I'm done"
 
         final_text = ""
@@ -257,6 +267,18 @@ class RedTeamAgent:
                 stall_turns += 1
             if stall_turns >= 4:
                 stall_turns = 0
+                stall_nudges_given += 1
+                # One or two in-context nudges are worth trying (a model can genuinely
+                # change tack). Beyond that, more nudges in the SAME exhausted context
+                # just grind the remaining budget — better to end this specialist's turn
+                # now and let the orchestrator hand off to a different specialist (e.g.
+                # ACCESS or LOGIC) with a fresh context, than keep talking to a dead end.
+                if stall_nudges_given > 2:
+                    self._ctx.audit.record("agent.stalled_out", step=step,
+                                           stall_nudges=stall_nudges_given)
+                    self._update_manifest(status="completed", steps=step,
+                                          findings=len(self._ctx.findings.all()))
+                    return final_text or "[stalled — no progress after repeated nudges; ending this specialist's turn]"
                 messages.append({"role": "user", "content":
                     "[NO PROGRESS] Several turns produced no new endpoints or findings. "
                     "Change strategy: pick a different endpoint or vulnerability class from "
@@ -272,12 +294,13 @@ class RedTeamAgent:
         if self._manifest is None:
             return
         manifest, path = self._manifest
-        for k, v in fields.items():
-            setattr(manifest, k, v)
-        try:
-            manifest.save(path)
-        except Exception:
-            pass
+        with _manifest_lock:
+            for k, v in fields.items():
+                setattr(manifest, k, v)
+            try:
+                manifest.save(path)
+            except Exception:
+                pass
 
     def _dispatch(self, name: str, tool_input: dict) -> str:
         tool = self._tools.get(name)

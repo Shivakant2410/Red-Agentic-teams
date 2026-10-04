@@ -18,6 +18,7 @@ branch — it spawns the follow-on attacks a real operator would pursue next
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -102,6 +103,7 @@ class AttackNode:
     target: str
     status: str = TODO
     findings: str = ""
+    bucket: str = ""   # endpoint-shape context for the bandit (see bandit.py); "" = unknown
 
     @property
     def id(self) -> str:
@@ -109,9 +111,20 @@ class AttackNode:
 
 
 class AttackTree:
-    def __init__(self, path: str | Path | None = None):
+    def __init__(self, path: str | Path | None = None, bandit=None):
         self._nodes: dict[str, AttackNode] = {}
         self._path = Path(path) if path else None
+        # Optional BanditStore (see bandit.py): when given, actionable()'s ranking blends
+        # the static priority table with a learned per-(technique, bucket) win rate, and
+        # mark()/claim() feed outcomes back into it. None (the default) preserves the old
+        # fixed-priority-only behavior exactly — this is additive, never required.
+        self._bandit = bandit
+        # RLock: sync()/mark()/briefing() all call other locked methods on self from the
+        # SAME thread (sync -> seed_endpoint -> _add, mark -> _unlock -> _add, briefing ->
+        # confirmed_chain/actionable) — a plain Lock would deadlock. Needed once a parallel
+        # exploit swarm (orchestrator.py) has multiple specialist threads syncing/reading
+        # this ONE shared tree concurrently; there was no synchronization here before.
+        self._lock = threading.RLock()
         if self._path and self._path.exists():
             for row in json.loads(self._path.read_text(encoding="utf-8")):
                 n = AttackNode(**row)
@@ -119,96 +132,161 @@ class AttackTree:
 
     # -- construction ----------------------------------------------------------
 
-    def _add(self, technique: str, target: str, status: str = TODO) -> AttackNode:
-        node = AttackNode(technique=technique, target=target, status=status)
-        self._nodes.setdefault(node.id, node)
-        return self._nodes[node.id]
+    def _add(self, technique: str, target: str, status: str = TODO, bucket: str = "") -> AttackNode:
+        with self._lock:
+            node = self._nodes.get(f"{technique}@{target}")
+            if node is None:
+                node = AttackNode(technique=technique, target=target, status=status, bucket=bucket)
+                self._nodes[node.id] = node
+            elif bucket and not node.bucket:
+                node.bucket = bucket   # sync() learning the bucket after the node already existed
+            return node
 
-    def seed_endpoint(self, target: str) -> None:
-        """Seed the entry techniques for a newly discovered endpoint."""
-        for tid in ENTRY_TECHNIQUES:
-            self._add(tid, target)
+    def seed_endpoint(self, target: str, bucket: str = "") -> None:
+        """Seed the entry techniques for a newly discovered endpoint. `bucket` (see
+        bandit.py's bucket_for_endpoint) is optional: passive_recon/static_source seed
+        endpoints before a KnowledgeGraph node exists for them, so they seed with "" and
+        pick up a real bucket later via sync()."""
+        with self._lock:
+            for tid in ENTRY_TECHNIQUES:
+                self._add(tid, target, bucket=bucket)
 
     def sync(self, graph=None, findings: list | None = None) -> None:
         """Grow the tree from current knowledge: seed new endpoints, and mark techniques
         confirmed by findings (which unlocks their chained follow-ups)."""
-        if graph is not None:
-            from .knowledge import ENDPOINT
-            for ep in graph.nodes(ENDPOINT):
-                self.seed_endpoint(ep.key)
-        for f in (findings or []):
-            confidence = getattr(f, "confidence", None) or (f.get("confidence") if isinstance(f, dict) else None)
-            if confidence != "confirmed":
-                continue
-            cwe = getattr(f, "cwe", None) or (f.get("cwe") if isinstance(f, dict) else "")
-            target = getattr(f, "target", None) or (f.get("target") if isinstance(f, dict) else "")
-            tid = _CWE_TO_TECHNIQUE.get((cwe or "").upper())
-            if tid and target:
-                self.confirm(tid, target)
+        with self._lock:
+            if graph is not None:
+                from .bandit import bucket_for_endpoint
+                from .knowledge import ENDPOINT
+                for ep in graph.nodes(ENDPOINT):
+                    self.seed_endpoint(ep.key, bucket=bucket_for_endpoint(ep.key, ep))
+            for f in (findings or []):
+                confidence = getattr(f, "confidence", None) or (f.get("confidence") if isinstance(f, dict) else None)
+                if confidence != "confirmed":
+                    continue
+                cwe = getattr(f, "cwe", None) or (f.get("cwe") if isinstance(f, dict) else "")
+                target = getattr(f, "target", None) or (f.get("target") if isinstance(f, dict) else "")
+                tid = _CWE_TO_TECHNIQUE.get((cwe or "").upper())
+                if tid and target:
+                    self.confirm(tid, target)
 
     # -- state transitions -----------------------------------------------------
 
     def mark(self, technique: str, target: str, status: str, findings: str = "") -> None:
-        node = self._add(technique, target)
-        node.status = status
-        if findings:
-            node.findings = findings
-        if status == COMPLETED:
-            self._unlock(technique, target)
-        self._flush()
+        with self._lock:
+            node = self._add(technique, target)
+            node.status = status
+            if findings:
+                node.findings = findings
+            if status == COMPLETED:
+                self._unlock(technique, target)
+            if self._bandit is not None and status in (COMPLETED, FAILED):
+                self._bandit.record(technique, node.bucket, won=(status == COMPLETED))
+            self._flush()
 
     def confirm(self, technique: str, target: str, findings: str = "") -> None:
         self.mark(technique, target, COMPLETED, findings)
 
+    def retry_failed(self) -> int:
+        """Give every FAILED node (a swarm worker tried it this round and nothing
+        landed — see orchestrator._run_exploit_swarm) another chance, by resetting it to
+        TODO so it's claimable again. Call this ONCE per orchestrator round, never
+        inside sync() (which runs every agent turn) — resetting more often than once a
+        round would undo the FAILED status within the same round it was set, which is
+        exactly the infinite empty-retry loop FAILED exists to prevent. Returns how many
+        nodes were reset."""
+        with self._lock:
+            reset = 0
+            for node in self._nodes.values():
+                if node.status == FAILED:
+                    node.status = TODO
+                    reset += 1
+            if reset:
+                self._flush()
+            return reset
+
     def _unlock(self, technique: str, target: str) -> None:
         """A confirmed technique spawns its chained follow-ups — the adversarial chain."""
-        for child in TECHNIQUES.get(technique, Technique("", "", "", "")).unlocks:
-            self._add(child, target, status=TODO)
+        with self._lock:
+            for child in TECHNIQUES.get(technique, Technique("", "", "", "")).unlocks:
+                self._add(child, target, status=TODO)
 
     # -- reasoning output ------------------------------------------------------
 
     def actionable(self, limit: int = 6) -> list[AttackNode]:
         """The prioritized frontier: what to attack next. Chained (unlocked) follow-ups
-        outrank fresh entry techniques — press the foothold, don't wander."""
-        live = [n for n in self._nodes.values() if n.status in (TODO, IN_PROGRESS)]
+        outrank fresh entry techniques — press the foothold, don't wander.
 
-        def key(n: AttackNode):
-            t = TECHNIQUES.get(n.technique)
-            base = t.priority if t else 0
-            boost = 100 if (t and t.chained) else 0   # pursue the chain first
-            return base + boost
-        return sorted(live, key=key, reverse=True)[:limit]
+        When a BanditStore is attached (see bandit.py), the static priority is nudged by
+        a Thompson-sampled per-(technique, bucket) win-rate learned across past
+        engagements — e.g. IDOR sampling higher than SQLi specifically on endpoints
+        shaped like /resource/<numeric-id>, because that's what has actually confirmed
+        on that shape before. With no bandit attached (the default), ranking is exactly
+        the old fixed-priority behavior — this is a pure addition, never a requirement."""
+        with self._lock:
+            live = [n for n in self._nodes.values() if n.status in (TODO, IN_PROGRESS)]
+
+            def key(n: AttackNode):
+                t = TECHNIQUES.get(n.technique)
+                base = t.priority if t else 0
+                boost = 100 if (t and t.chained) else 0   # pursue the chain first
+                if self._bandit is not None:
+                    # Centered scaling: a sample of 0.5 (no evidence yet) adds nothing;
+                    # evidence shifts the technique up or down within its priority tier,
+                    # it never lets a low-priority technique leapfrog the chain boost.
+                    learned = (self._bandit.sample(n.technique, n.bucket) - 0.5) * 40
+                    return base + boost + learned
+                return base + boost
+            return sorted(live, key=key, reverse=True)[:limit]
 
     def confirmed_chain(self) -> list[AttackNode]:
-        return [n for n in self._nodes.values() if n.status == COMPLETED]
+        with self._lock:
+            return [n for n in self._nodes.values() if n.status == COMPLETED]
+
+    def claim(self, technique: str, target: str) -> bool:
+        """Atomically claim an actionable node for one swarm worker: set it to
+        IN_PROGRESS only if it is currently TODO. Returns True if this call won the
+        claim. Without this, two swarm workers could both read the same TODO node from
+        actionable() and both work it — not incorrect (duplicate proof attempts just
+        dedupe in FindingStore), but wasted turns/tokens, which matters under a tight
+        free-model budget."""
+        with self._lock:
+            node = self._nodes.get(f"{technique}@{target}")
+            if node is None or node.status != TODO:
+                return False
+            node.status = IN_PROGRESS
+            self._flush()
+            return True
 
     def briefing(self, limit: int = 6) -> str:
-        lines = ["[ADVERSARIAL PLAN]"]
-        chain = self.confirmed_chain()
-        if chain:
-            lines.append("Footholds confirmed (press these into their follow-ups):")
-            for n in chain:
-                t = TECHNIQUES.get(n.technique)
-                nxt = ", ".join(t.unlocks) if t and t.unlocks else "(terminal)"
-                lines.append(f"  [done] {t.name if t else n.technique} on {n.target} -> unlocks: {nxt}")
-        nxt = self.actionable(limit)
-        if nxt:
-            lines.append("Next attacks (highest-value first):")
-            for n in nxt:
-                t = TECHNIQUES.get(n.technique)
-                tag = "[CHAIN]" if (t and t.chained) else ""
-                lines.append(f"  -> {tag} {t.name if t else n.technique} on {n.target}: "
-                             f"{t.description if t else ''}")
-        else:
-            lines.append("No open attack paths — map more surface or deepen tested endpoints.")
-        return "\n".join(lines)
+        with self._lock:
+            lines = ["[ADVERSARIAL PLAN]"]
+            chain = self.confirmed_chain()
+            if chain:
+                lines.append("Footholds confirmed (press these into their follow-ups):")
+                for n in chain:
+                    t = TECHNIQUES.get(n.technique)
+                    nxt = ", ".join(t.unlocks) if t and t.unlocks else "(terminal)"
+                    lines.append(f"  [done] {t.name if t else n.technique} on {n.target} -> unlocks: {nxt}")
+            nxt = self.actionable(limit)
+            if nxt:
+                lines.append("Next attacks (highest-value first):")
+                for n in nxt:
+                    t = TECHNIQUES.get(n.technique)
+                    tag = "[CHAIN]" if (t and t.chained) else ""
+                    lines.append(f"  -> {tag} {t.name if t else n.technique} on {n.target}: "
+                                 f"{t.description if t else ''}")
+            else:
+                lines.append("No open attack paths — map more surface or deepen tested endpoints.")
+            return "\n".join(lines)
 
     def summary(self) -> dict:
-        by_status: dict[str, int] = {}
-        for n in self._nodes.values():
-            by_status[n.status] = by_status.get(n.status, 0) + 1
-        return {"nodes": len(self._nodes), "by_status": by_status,
-                "confirmed": len(self.confirmed_chain())}
+        with self._lock:
+            by_status: dict[str, int] = {}
+            for n in self._nodes.values():
+                by_status[n.status] = by_status.get(n.status, 0) + 1
+            return {"nodes": len(self._nodes), "by_status": by_status,
+                    "confirmed": len(self.confirmed_chain())}
 
     def _flush(self) -> None:
         if not self._path:

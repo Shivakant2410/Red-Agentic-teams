@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 
-from ..access import (AUTHENTICATES_AS, CREDENTIAL, ESCALATES_TO, PRINCIPAL, REVEALS)
+from ..access import AUTHENTICATES_AS, CREDENTIAL, PRINCIPAL, REVEALS
 from ..falsify import run_negative_control
 from ..findings import Finding
 from ..killchain import ACHIEVED, CREDENTIAL_ACCESS, PRIVILEGE_ESCALATION
@@ -164,6 +164,13 @@ class TryCredentialTool:
         if ctx.sessions is not None:
             ctx.sessions.set(session_label, headers)
         if ctx.access is not None:
+            # NOTE: single-shot proof (one status/regex check, no k-of-n, no negative
+            # control) — weaker than confirm_finding/verify_vulnerability/prove_privilege.
+            # Held here directly (not gated through independent_verify) because a working
+            # session is immediately useful as a tool for the NEXT step regardless, and
+            # objective credit still requires either a REQUIRED_SOURCE mechanism (see
+            # objective.py) or an independently-verified finding referencing this access —
+            # a credential alone cannot satisfy a PRIVILEGE/HOST_ACCESS/DATA_ACCESS criterion.
             cred = ctx.access.hold(CREDENTIAL, value, evidence=f"authenticated at {probe_url}",
                                    attrs={"secret": True, "value": raw}, source="try_credential")
             if principal:
@@ -250,29 +257,27 @@ class ProvePrivilegeTool:
                 "note": "The lower-privilege identity can do this too — no privilege boundary "
                         "was crossed. This is not escalation (it may be broken access control)."})
 
-        if ctx.access is not None:
-            target = ctx.access.hold(PRINCIPAL, to_principal,
-                                     evidence=f"{method} {privileged_url} succeeds only as this identity",
-                                     source="prove_privilege")
-            if from_principal:
-                src = ctx.access.observe(PRINCIPAL, from_principal, source="prove_privilege")
-                ctx.access.link(src.id, ESCALATES_TO, target.id)
-        if ctx.killchain is not None:
-            ctx.killchain.mark(PRIVILEGE_ESCALATION, ACHIEVED,
-                               f"{from_principal or 'lower-priv'} -> {to_principal}")
-
+        # Self-administered proof + self-administered control is still self-grading — this
+        # is exactly the "run 13 credited admin without proof" failure mode if trusted
+        # directly. Record PENDING; only an independent re-check (tools/independent_verify.py)
+        # may mark the principal HELD and satisfy a PRIVILEGE objective criterion.
+        check_spec = {"privileged_url": privileged_url, "method": method,
+                      "high_session_label": high_session_label, "low_session_label": low_session_label,
+                      "privileged_marker": privileged_marker, "expect_status": expect_status,
+                      "from_principal": from_principal, "to_principal": to_principal}
         f = ctx.findings.add(Finding(
             title=f"Privilege escalation to {to_principal}", severity="critical",
             target=privileged_url,
             summary=f"An identity obtained as {from_principal or 'a lower-privilege user'} can "
                     f"perform actions restricted to {to_principal}.",
             evidence="\n".join(result.details) + "\nControl: " + fal.detail,
-            cwe="CWE-269", confidence="confirmed", verification_verdict=result.verdict,
+            cwe="CWE-269", confidence="pending_verification", verification_verdict=result.verdict,
             reproductions=result.reproductions, trials=result.trials,
             poc=f"{method} {privileged_url} as {high_session_label} succeeds; as "
                 f"{low_session_label or 'unauthenticated'} it does not.",
+            check_type="privilege", check_spec=check_spec,
             recommendation="Enforce server-side authorization on this action for every identity."))
-        return json.dumps({"verdict": "confirmed", "escalated": True, "finding_id": f.id,
-                           "principal_held": to_principal,
-                           "note": "Privilege boundary crossed and recorded. If this satisfies "
-                                   "an objective criterion, claim it with claim_objective."})
+        return json.dumps({"verdict": "pending_verification", "escalated_pending": True, "finding_id": f.id,
+                           "note": "Proof and control passed, but this does not count yet — an "
+                                   "independent re-check must reproduce it before the principal is "
+                                   "HELD and any objective criterion can be satisfied."})

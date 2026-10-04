@@ -48,24 +48,50 @@ def test_privilege_credited_only_when_differentially_proven():
 
 
 def test_held_without_evidence_is_never_credited():
+    """PHASE 1: DATA_ACCESS now also requires a proving source, not just evidence text —
+    source='agent' (record_access's bare self-label) is never enough, evidenced or not.
+    This is the same run-13-shaped hole as PRIVILEGE, just for a different criterion kind."""
     obj = Objective(name="o", criteria=[
         SuccessCriterion("loot", DATA_ACCESS, "read data", target="prod-db")])
     g = AccessGraph()
     g.hold(RESOURCE, "prod-db", source="agent")          # no evidence
     assert obj.autoevaluate(g) == []
     g.hold(RESOURCE, "prod-db", evidence="row: alice@example.com", source="agent")
+    assert obj.autoevaluate(g) == []     # still not credited: "agent" is not a proving source
+
+
+def test_data_access_credited_once_independently_verified():
+    """The proving path: a finding survives verify_finding_independently, which is the
+    only thing allowed to write source='verified_finding'."""
+    obj = Objective(name="o", criteria=[
+        SuccessCriterion("loot", DATA_ACCESS, "read data", target="prod-db")])
+    g = AccessGraph()
+    g.hold(RESOURCE, "prod-db", evidence="dumped row via finding f1", source="verified_finding")
     assert obj.autoevaluate(g) == ["loot"]
 
 
-def test_foothold_still_credited_from_a_working_session():
-    """A real authenticated session IS legitimate evidence of host access."""
+def test_host_access_not_credited_from_a_bare_authenticated_session():
+    """PHASE 1: a working session alone no longer satisfies HOST_ACCESS — try_credential's
+    probe is single-shot (no k-of-n, no negative control), weaker than the other proof
+    tools, so it may no longer silently satisfy objective criteria by itself."""
     obj = Objective(name="o", criteria=[
         SuccessCriterion("foothold", HOST_ACCESS, "any session", target="app-session")])
     g = AccessGraph()
     g.hold(PRINCIPAL, "app-session", evidence="session 'u1' authenticated at /login",
            source="authenticate")
+    assert obj.autoevaluate(g) == []
+
+
+def test_host_access_credited_once_independently_verified():
+    obj = Objective(name="o", criteria=[
+        SuccessCriterion("foothold", HOST_ACCESS, "any session", target="app-session")])
+    g = AccessGraph()
+    g.hold(PRINCIPAL, "app-session", evidence="verified via finding f1", source="verified_finding")
     assert obj.autoevaluate(g) == ["foothold"]
 
 
 def test_policy_declares_privilege_requires_proof():
     assert REQUIRED_SOURCE[PRIVILEGE] == ("prove_privilege",)
+    # Every objective kind now has a required source (no "any evidenced node" fallback).
+    assert REQUIRED_SOURCE[DATA_ACCESS] == ("verified_finding", "prove_privilege")
+    assert REQUIRED_SOURCE[HOST_ACCESS] == ("verified_finding", "prove_privilege")

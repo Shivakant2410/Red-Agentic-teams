@@ -99,3 +99,64 @@ def test_briefing_formats_lessons():
     m.learn("prioritize IDOR on REST basket endpoints.", SUCCESS, tags=["cwe-639"])
     b = m.briefing(tags=["cwe-639"])
     assert "LESSONS FROM PAST ENGAGEMENTS" in b and "IDOR" in b
+
+
+# --- semantic-backend duck-typing: additive only, never required (Phase: memory upgrade) ---
+
+class _FakeSemanticBackend:
+    """A fake Backend that ALSO supports semantic_recall_lessons/learn_pattern/
+    recall_patterns, so ExperienceStore.briefing() can be tested against the additive
+    path without a real HelixDB container."""
+
+    def __init__(self):
+        self.rows = []
+        self.patterns = []
+        self.semantic_hits = []
+
+    def load(self):
+        return self.rows
+
+    def save(self, rows):
+        self.rows = rows
+
+    def semantic_recall_lessons(self, query, k=5):
+        return self.semantic_hits
+
+    def learn_pattern(self, description, tags=None):
+        self.patterns.append((description, tags or []))
+
+    def recall_patterns(self, query, k=3):
+        return [{"description": d, "tags": t} for d, t in self.patterns]
+
+
+def test_briefing_includes_semantic_hits_when_backend_supports_it():
+    backend = _FakeSemanticBackend()
+    backend.semantic_hits = [{"text": "a semantically similar lesson", "kind": "success"}]
+    m = ExperienceStore(backend=backend)
+    b = m.briefing(query="find a broken object reference")
+    assert "SIMILAR TECHNIQUES" in b and "semantically similar lesson" in b
+
+
+def test_briefing_includes_patterns_when_backend_supports_it():
+    backend = _FakeSemanticBackend()
+    backend.patterns = [("this app uses a two-step login", ["auth-flow"])]
+    m = ExperienceStore(backend=backend)
+    b = m.briefing(query="how does the login work here")
+    assert "APP-SHAPE PATTERNS" in b and "two-step login" in b
+
+
+def test_learn_pattern_is_a_silent_noop_on_a_plain_backend():
+    """LocalJSONBackend has no learn_pattern — must not raise, must not change behavior."""
+    m = ExperienceStore()  # no backend at all (path=None too)
+    m.learn_pattern("some app-shape fact", tags=["auth-flow"])  # must not raise
+    b = m.briefing(query="anything")
+    assert "APP-SHAPE PATTERNS" not in b
+
+
+def test_briefing_unaffected_by_semantic_backend_absence():
+    """A query with no backend support at all behaves exactly as before (regression
+    guard for the additive design — LocalJSONBackend users see no change)."""
+    m = ExperienceStore()
+    m.learn("prioritize IDOR on REST basket endpoints.", SUCCESS, tags=["cwe-639"])
+    b = m.briefing(query="broken object reference", tags=["cwe-639"])
+    assert "SIMILAR TECHNIQUES" not in b and "APP-SHAPE PATTERNS" not in b

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import threading
 from collections import deque
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -61,6 +62,13 @@ class AccessGraph:
         self._nodes: dict[str, AccessNode] = {}
         self._edges: set[tuple[str, str, str]] = set()
         self._path = Path(path) if path else None
+        # RLock (not Lock): hold()/briefing()/summary()/paths_to() call other locked
+        # methods on self (e.g. hold() -> observe(), briefing() -> held()/frontier()) from
+        # the SAME thread, which would deadlock a plain Lock. Needed once a parallel
+        # exploit swarm (see orchestrator.py) has multiple specialist threads hitting one
+        # shared AccessGraph concurrently — this was pure in-memory dict/set mutation with
+        # no synchronization at all before.
+        self._lock = threading.RLock()
         if self._path and self._path.exists():
             try:
                 data = json.loads(self._path.read_text(encoding="utf-8"))
@@ -76,79 +84,97 @@ class AccessGraph:
 
     def observe(self, kind: str, key: str, attrs: dict | None = None,
                 source: str = "") -> AccessNode:
-        """Record that something EXISTS (not that we hold it)."""
-        node = AccessNode(kind=kind, key=key, attrs=dict(attrs or {}), source=source)
-        existing = self._nodes.get(node.id)
-        if existing:
-            existing.attrs.update(attrs or {})
-            return existing
-        self._nodes[node.id] = node
-        self._flush()
-        return node
+        """Record that something EXISTS (not that we hold it).
+
+        A node is commonly observed first (discovery) and held later (proof) — e.g. a
+        resource is noticed, then a verified finding proves it's reachable. `source`
+        therefore upgrades on re-observation when a new one is given: without this, a bare
+        `source=""`/"agent" first-touch would permanently stick, and no later proving
+        mechanism could ever satisfy a REQUIRED_SOURCE gate in objective.py (this silently
+        defeated the DATA_ACCESS/HOST_ACCESS gating the first time it was exercised)."""
+        with self._lock:
+            node = AccessNode(kind=kind, key=key, attrs=dict(attrs or {}), source=source)
+            existing = self._nodes.get(node.id)
+            if existing:
+                existing.attrs.update(attrs or {})
+                if source:
+                    existing.source = source
+                return existing
+            self._nodes[node.id] = node
+            self._flush()
+            return node
 
     def hold(self, kind: str, key: str, evidence: str = "", attrs: dict | None = None,
              source: str = "") -> AccessNode:
         """Record that we DEMONSTRABLY hold this (a session, a credential, a foothold)."""
-        node = self.observe(kind, key, attrs, source)
-        node.held = True
-        if evidence:
-            node.evidence = evidence
-        self._flush()
-        return node
+        with self._lock:
+            node = self.observe(kind, key, attrs, source)
+            node.held = True
+            if evidence:
+                node.evidence = evidence
+            self._flush()
+            return node
 
     def link(self, src_id: str, relation: str, dst_id: str) -> None:
-        self._edges.add((src_id, relation, dst_id))
-        self._flush()
+        with self._lock:
+            self._edges.add((src_id, relation, dst_id))
+            self._flush()
 
     # -- questions an adversary asks -------------------------------------------
 
     def held(self) -> list[AccessNode]:
-        return [n for n in self._nodes.values() if n.held]
+        with self._lock:
+            return [n for n in self._nodes.values() if n.held]
 
     def reached(self, target_key: str) -> bool:
         """Do we hold the objective's target (by key, any kind)?"""
-        return any(n.held and n.key == target_key for n in self._nodes.values())
+        with self._lock:
+            return any(n.held and n.key == target_key for n in self._nodes.values())
 
     def _neighbors(self, node_id: str) -> list[tuple[str, str]]:
-        return [(rel, dst) for (src, rel, dst) in self._edges if src == node_id]
+        with self._lock:
+            return [(rel, dst) for (src, rel, dst) in self._edges if src == node_id]
 
     def paths_to(self, target_key: str, max_depth: int = 6) -> list[list[str]]:
         """Shortest known routes from something we hold to the target."""
-        targets = {n.id for n in self._nodes.values() if n.key == target_key}
-        if not targets:
-            return []
-        results: list[list[str]] = []
-        for start in self.held():
-            queue = deque([(start.id, [start.id])])
-            seen = {start.id}
-            while queue:
-                current, path = queue.popleft()
-                if current in targets and len(path) > 1:
-                    results.append(path)
-                    break
-                if len(path) > max_depth:
-                    continue
-                for _, dst in self._neighbors(current):
-                    if dst not in seen:
-                        seen.add(dst)
-                        queue.append((dst, path + [dst]))
-        return sorted(results, key=len)
+        with self._lock:
+            targets = {n.id for n in self._nodes.values() if n.key == target_key}
+            if not targets:
+                return []
+            results: list[list[str]] = []
+            for start in self.held():
+                queue = deque([(start.id, [start.id])])
+                seen = {start.id}
+                while queue:
+                    current, path = queue.popleft()
+                    if current in targets and len(path) > 1:
+                        results.append(path)
+                        break
+                    if len(path) > max_depth:
+                        continue
+                    for _, dst in self._neighbors(current):
+                        if dst not in seen:
+                            seen.add(dst)
+                            queue.append((dst, path + [dst]))
+            return sorted(results, key=len)
 
     def distance_to(self, target_key: str) -> int | None:
-        if self.reached(target_key):
-            return 0
-        paths = self.paths_to(target_key)
-        return (len(paths[0]) - 1) if paths else None
+        with self._lock:
+            if self.reached(target_key):
+                return 0
+            paths = self.paths_to(target_key)
+            return (len(paths[0]) - 1) if paths else None
 
     def frontier(self) -> list[AccessNode]:
         """Things we hold that have known unexploited edges — where to push next."""
-        out = []
-        for node in self.held():
-            for _, dst in self._neighbors(node.id):
-                target = self._nodes.get(dst)
-                if target is not None and not target.held:
-                    out.append(target)
-        return out
+        with self._lock:
+            out = []
+            for node in self.held():
+                for _, dst in self._neighbors(node.id):
+                    target = self._nodes.get(dst)
+                    if target is not None and not target.held:
+                        out.append(target)
+            return out
 
     # -- reporting -------------------------------------------------------------
 
@@ -182,11 +208,12 @@ class AccessGraph:
         return "\n".join(lines)
 
     def summary(self) -> dict:
-        by_kind: dict[str, int] = {}
-        for n in self._nodes.values():
-            by_kind[n.kind] = by_kind.get(n.kind, 0) + 1
-        return {"nodes": len(self._nodes), "held": len(self.held()),
-                "edges": len(self._edges), "by_kind": by_kind}
+        with self._lock:
+            by_kind: dict[str, int] = {}
+            for n in self._nodes.values():
+                by_kind[n.kind] = by_kind.get(n.kind, 0) + 1
+            return {"nodes": len(self._nodes), "held": len(self.held()),
+                    "edges": len(self._edges), "by_kind": by_kind}
 
     def _flush(self) -> None:
         if not self._path:

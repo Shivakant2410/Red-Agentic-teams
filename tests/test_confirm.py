@@ -57,6 +57,8 @@ def _ctx(tmp_path, sandbox):
 
 
 def test_confirmed_finding_is_recorded(tmp_path):
+    # A reproducing check now lands as pending_verification, not confirmed — the agent
+    # that proposed it does not get to grade it. See tools/independent_verify.py.
     ctx = _ctx(tmp_path, FakeSandbox(200, "You have an SQL syntax error near", 0.1))
     tool = ConfirmFindingTool()
     out = tool.run(ctx, title="SQLi", severity="high", target="https://api.acme.example/p?id=1",
@@ -66,8 +68,10 @@ def test_confirmed_finding_is_recorded(tmp_path):
     assert '"recorded": true' in out.lower()
     findings = ctx.findings.all()
     assert len(findings) == 1
-    assert findings[0].confidence == "confirmed"
+    assert findings[0].confidence == "pending_verification"
     assert findings[0].reproductions == 5
+    assert findings[0].check_type == "http"
+    assert findings[0].check_spec["request"]["url"] == "https://api.acme.example/p?id=1'"
 
 
 def test_unreproducible_finding_is_not_recorded(tmp_path):
@@ -99,7 +103,94 @@ def test_host_fetch_fallback_confirms_without_sandbox(tmp_path, monkeypatch):
         request={"method": "GET", "url": "https://api.acme.example/login?id=1'"},
         body_regex="SQL syntax error", trials=3, need=3)
     assert '"recorded": true' in out.lower()
-    assert ctx.findings.all()[0].confidence == "confirmed"
+    assert ctx.findings.all()[0].confidence == "pending_verification"
+
+
+def test_independent_verify_promotes_a_real_pending_finding(tmp_path, monkeypatch):
+    """The full Phase 1 loop: confirm_finding -> pending_verification -> independent
+    re-check -> confirmed, via a SEPARATE tool call (no sandbox needed for this leg)."""
+    from redteam.tools.independent_verify import VerifyFindingIndependentlyTool
+
+    ctx = _ctx(tmp_path, FakeSandbox(200, "You have an SQL syntax error near", 0.1))
+    pending = ConfirmFindingTool().run(
+        ctx, title="SQLi", severity="high", target="https://api.acme.example/p?id=1",
+        summary="error-based sqli", check_type="http",
+        request={"method": "GET", "url": "https://api.acme.example/p?id=1'"},
+        body_regex="SQL syntax error", trials=5, need=4)
+    import json
+    finding_id = json.loads(pending)["finding_id"]
+    assert ctx.findings.get(finding_id).confidence == "pending_verification"
+
+    # Re-check replays via make_fetch (host path, no sandbox needed) — same fake backend
+    # would 404/err on a real network call, so patch requests.request for the replay too,
+    # returning the SQLi signal only for the payload URL (with the quote) and NOT for the
+    # auto-derived benign control (quote stripped) — a real bug behaves exactly this way.
+    class FakeRaw:
+        def __init__(self, payload: bytes):
+            self._payload = payload
+
+        def read(self, n, decode_content=True):
+            return self._payload[:n]
+
+    class FakeResp:
+        def __init__(self, text: str, status=200):
+            self.raw = FakeRaw(text.encode())
+            self.status_code, self.encoding, self.headers = status, "utf-8", {}
+
+    def fake_request(method, url, **kw):
+        if "'" in url:
+            return FakeResp("You have an SQL syntax error near")
+        return FakeResp("welcome, nothing to see")
+
+    import redteam.tools.http as http_mod
+    monkeypatch.setattr(http_mod.requests, "request", fake_request)
+    ctx2 = ToolContext(scope=ctx.scope, limiter=ctx.limiter, audit=ctx.audit,
+                       findings=ctx.findings, approve=ctx.approve, sandbox=None, graph=ctx.graph)
+
+    out = VerifyFindingIndependentlyTool().run(ctx2, finding_id=finding_id)
+    assert '"verdict": "confirmed"' in out
+    assert ctx.findings.get(finding_id).confidence == "confirmed"
+    assert ctx.findings.get(finding_id).independent_verdict == "confirmed"
+
+
+def test_independent_verify_falsifies_a_planted_false_positive(tmp_path, monkeypatch):
+    """If the benign control produces the SAME signal as the payload, the finding must be
+    falsified, not confirmed — this is the exact failure mode the gate exists to catch."""
+    from redteam.tools.independent_verify import VerifyFindingIndependentlyTool
+
+    ctx = _ctx(tmp_path, FakeSandbox(200, "You have an SQL syntax error near", 0.1))
+    pending = ConfirmFindingTool().run(
+        ctx, title="SQLi", severity="high", target="https://api.acme.example/p?id=1",
+        summary="error-based sqli", check_type="http",
+        request={"method": "GET", "url": "https://api.acme.example/p?id=1'"},
+        body_regex="SQL syntax error", trials=5, need=4)
+    import json
+    finding_id = json.loads(pending)["finding_id"]
+
+    class FakeRaw:
+        def __init__(self, payload: bytes):
+            self._payload = payload
+
+        def read(self, n, decode_content=True):
+            return self._payload[:n]
+
+    class FakeResp:
+        def __init__(self, text: str, status=200):
+            self.raw = FakeRaw(text.encode())
+            self.status_code, self.encoding, self.headers = status, "utf-8", {}
+
+    def fake_request(method, url, **kw):
+        # The endpoint returns the "error" text regardless of input — a false positive.
+        return FakeResp("You have an SQL syntax error near")
+
+    import redteam.tools.http as http_mod
+    monkeypatch.setattr(http_mod.requests, "request", fake_request)
+    ctx2 = ToolContext(scope=ctx.scope, limiter=ctx.limiter, audit=ctx.audit,
+                       findings=ctx.findings, approve=ctx.approve, sandbox=None, graph=ctx.graph)
+
+    out = VerifyFindingIndependentlyTool().run(ctx2, finding_id=finding_id)
+    assert '"verdict": "falsified"' in out
+    assert ctx.findings.get(finding_id).confidence == "falsified"
 
 
 def test_out_of_scope_target_blocked(tmp_path):

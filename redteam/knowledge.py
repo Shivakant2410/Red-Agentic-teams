@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -58,6 +59,13 @@ class KnowledgeGraph:
         self._nodes: dict[str, Node] = {}
         self._edges: set[tuple[str, str, str]] = set()  # (src_id, relation, dst_id)
         self._path = Path(path) if path else None
+        # A parallel exploit swarm (multiple specialist contexts fanned out over
+        # AttackTree.actionable() targets, run concurrently) calls observe()/
+        # mark_coverage() from different threads against this ONE shared graph. Without
+        # a lock, concurrent dict/set mutation here is a real data race (lost updates at
+        # best, a corrupted _nodes dict at worst) — not a theoretical concern once
+        # anything calls this from more than one thread.
+        self._lock = threading.Lock()
         if self._path and self._path.exists():
             self._load()
 
@@ -68,73 +76,86 @@ class KnowledgeGraph:
                 relation: str = "has") -> Node:
         """Add or merge a node. Re-observing an existing node corroborates it and merges
         attributes rather than duplicating — this is the dedup/correlation core."""
-        node_id = f"{kind}:{key}"
-        node = self._nodes.get(node_id)
-        if node is None:
-            node = Node(kind=kind, key=key, attrs=dict(attrs or {}))
-            if kind == ENDPOINT:
-                node.coverage = {c: "untested" for c in WSTG_CHECKS}
-            self._nodes[node_id] = node
-        else:
-            for k, v in (attrs or {}).items():
-                node.attrs[k] = v
-            node.last_seen = _now()
+        with self._lock:
+            node_id = f"{kind}:{key}"
+            node = self._nodes.get(node_id)
+            if node is None:
+                node = Node(kind=kind, key=key, attrs=dict(attrs or {}))
+                if kind == ENDPOINT:
+                    node.coverage = {c: "untested" for c in WSTG_CHECKS}
+                self._nodes[node_id] = node
+            else:
+                for k, v in (attrs or {}).items():
+                    node.attrs[k] = v
+                node.last_seen = _now()
+                if source and source not in node.sources:
+                    # a second independent source corroborates the observation
+                    node.confidence = "corroborated"
             if source and source not in node.sources:
-                # a second independent source corroborates the observation
-                node.confidence = "corroborated"
-        if source and source not in node.sources:
-            node.sources.append(source)
-        if relate_to and relate_to in self._nodes:
-            self._edges.add((relate_to, relation, node_id))
-        self._flush()
-        return node
+                node.sources.append(source)
+            if relate_to and relate_to in self._nodes:
+                self._edges.add((relate_to, relation, node_id))
+            self._flush()
+            return node
 
     def mark_coverage(self, endpoint_key: str, check: str, status: str) -> None:
         """Record that a methodology check was performed on an endpoint."""
-        node = self._nodes.get(f"{ENDPOINT}:{endpoint_key}")
-        if node is not None and check in node.coverage:
-            node.coverage[check] = status
-            self._flush()
+        with self._lock:
+            node = self._nodes.get(f"{ENDPOINT}:{endpoint_key}")
+            if node is not None and check in node.coverage:
+                node.coverage[check] = status
+                self._flush()
 
     # -- queries ---------------------------------------------------------------
+    # Reads take the lock too: a concurrent writer resizing self._nodes mid-iteration
+    # (from another swarm thread) can raise "dictionary changed size during iteration"
+    # even on a pure read, not just corrupt data — the lock makes every read a consistent
+    # snapshot, same guarantee the mutation methods above give writers.
 
     def nodes(self, kind: str | None = None) -> list[Node]:
-        return [n for n in self._nodes.values() if kind is None or n.kind == kind]
+        with self._lock:
+            return [n for n in self._nodes.values() if kind is None or n.kind == kind]
 
     def neighbors(self, node_id: str, relation: str | None = None) -> list[Node]:
-        out = []
-        for src, rel, dst in self._edges:
-            if src == node_id and (relation is None or rel == relation):
-                if dst in self._nodes:
-                    out.append(self._nodes[dst])
-        return out
+        with self._lock:
+            out = []
+            for src, rel, dst in self._edges:
+                if src == node_id and (relation is None or rel == relation):
+                    if dst in self._nodes:
+                        out.append(self._nodes[dst])
+            return out
 
     def untested(self) -> list[tuple[str, str]]:
         """(endpoint_key, check) pairs not yet tested — the planner's to-do list.
 
         This is how the agent stays systematic: it can always ask 'what haven't I tested?'
         instead of wandering."""
-        pending = []
-        for n in self.nodes(ENDPOINT):
-            for check, status in n.coverage.items():
-                if status == "untested":
-                    pending.append((n.key, check))
-        return pending
+        with self._lock:
+            pending = []
+            for n in self._nodes.values():
+                if n.kind != ENDPOINT:
+                    continue
+                for check, status in n.coverage.items():
+                    if status == "untested":
+                        pending.append((n.key, check))
+            return pending
 
     def summary(self) -> dict:
-        counts: dict[str, int] = {}
-        for n in self._nodes.values():
-            counts[n.kind] = counts.get(n.kind, 0) + 1
-        tested = sum(1 for n in self.nodes(ENDPOINT)
-                     for s in n.coverage.values() if s != "untested")
-        total = sum(len(n.coverage) for n in self.nodes(ENDPOINT))
-        return {
-            "counts": counts,
-            "edges": len(self._edges),
-            "coverage_tested": tested,
-            "coverage_total": total,
-            "coverage_pct": round(100 * tested / total, 1) if total else 0.0,
-        }
+        with self._lock:
+            counts: dict[str, int] = {}
+            tested = total = 0
+            for n in self._nodes.values():
+                counts[n.kind] = counts.get(n.kind, 0) + 1
+                if n.kind == ENDPOINT:
+                    tested += sum(1 for s in n.coverage.values() if s != "untested")
+                    total += len(n.coverage)
+            return {
+                "counts": counts,
+                "edges": len(self._edges),
+                "coverage_tested": tested,
+                "coverage_total": total,
+                "coverage_pct": round(100 * tested / total, 1) if total else 0.0,
+            }
 
     # -- persistence -----------------------------------------------------------
 

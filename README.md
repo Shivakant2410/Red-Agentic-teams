@@ -23,7 +23,11 @@ So scope is enforced at the **network layer**:
 - **Sandbox egress firewall** — the Kali container runs `default-DROP` on OUTPUT. Only
   IPs/CIDRs derived from the RoE (`redteam/sandbox/egress.py`) are reachable; the
   entrypoint installs the rules before any tool runs and the container **refuses to
-  start** if it can't (fail closed). Off-scope hosts are simply unreachable.
+  start** if it can't (fail closed). Off-scope hosts are simply unreachable. On top of
+  that, `KaliSandbox.start()` runs an **egress self-test**: it probes a destination that
+  should never be in scope (TEST-NET-1) and tears the sandbox down if that probe
+  succeeds, rather than trusting the entrypoint's "ready" log line alone — a log line
+  only proves the script ran, not that the firewall rules actually took effect.
 - **No self-unlocking** — tools run as a non-root user, the container drops all
   capabilities except `NET_ADMIN`/`NET_RAW`, sets `no-new-privileges`, and `kali_exec`
   refuses commands that touch iptables/ipset/routing/`sudo`/namespaces.
@@ -46,6 +50,11 @@ redteam/
   agent.py           OpenAI-style tool-use loop (owned explicitly)
   cli.py             Entrypoint: preflight, sandbox/browser lifecycle, approvals
   llm/openrouter.py  Free-model discovery + rotation/fallback
+  memory.py          ExperienceStore — persistent cross-run tradecraft lessons
+  memory_backend/    Optional HelixDB (graph+vector) backend for memory.py — semantic
+                      recall instead of tag matching, plus AppPattern (app-shape facts,
+                      not just vuln-class technique). See its __init__.py docstring for
+                      the current persistence caveat (--semantic-memory in cli.py).
   sandbox/
     Dockerfile       Kali rolling + tools + firewall deps
     entrypoint.sh    Installs the egress allowlist, then idles (fail closed)
@@ -82,7 +91,58 @@ First run builds the Kali image (large, one-time). You confirm scope at the pref
 prompt and approve sensitive actions as they come up. Outputs land in `--out`:
 `report.md`, `findings.json`, `audit.log.jsonl`, `screenshots/`.
 
-Flags: `--no-sandbox`, `--no-browser`, `--yes-to-all` (isolated labs only).
+Flags: `--no-sandbox`, `--no-browser`, `--yes-to-all` (isolated labs only), `--multi-agent`
+(orchestrator + specialist swarm), `--semantic-memory` (optional, needs
+`pip install -e .[semantic-memory]` + Docker — see below).
+
+## Semantic memory (optional)
+
+`memory.py`'s `ExperienceStore` persists cross-run tradecraft (which CWE classes proved
+out, which proof oracles work) as flat JSON by default, recalled by tag/keyword overlap.
+`--semantic-memory` swaps in a HelixDB (graph+vector) backend instead: lessons are
+recalled by *meaning*, not shared vocabulary ("broken object reference" now matches a
+lesson phrased around "IDOR"), and a second kind of fact — **app-shape patterns**
+("this app uses a two-step login," "sequential numeric IDs, worth enumerating") — gets
+distilled from each run's knowledge graph so a brand-new target isn't started blind, the
+same way vuln-proving lessons already aren't.
+
+```bash
+pip install -e .[semantic-memory]
+python -m redteam.cli ... --semantic-memory
+```
+
+This starts a local HelixDB container for the run (same lifecycle pattern as the Kali
+sandbox) and runs a small local embedding model (`all-MiniLM-L6-v2`, no API/network
+dependency, consistent with the free-tier-only design elsewhere in this project).
+
+**Persistence:** the `ghcr.io/helixdb/helixdb:v0.0.3` image's standalone server is
+in-memory only by HelixDB's own design (its `DB_PATH` var is an internal key prefix, not
+a filesystem path — no mount fixes that). `HelixServer` now runs `v0.0.9` with
+`HELIX_DATA_DIR` pointed at a named Docker volume, which genuinely persists: confirmed by
+writing a value, stopping the container, starting a fresh one on the same volume, and
+reading the value back. Lessons and app-shape patterns now survive across runs, same as
+the plain-JSON path.
+
+## Learned technique selection (bandit, optional)
+
+`attack_tree.py` ranks techniques (SQLi, IDOR, XSS, ...) for the swarm to try next by a
+fixed, hand-set priority table — the same order against every target, with no memory of
+what's actually confirmed before. `bandit.py` adds a contextual multi-armed bandit
+(Thompson sampling) that learns a per-(technique, endpoint-shape) win rate across runs and
+nudges that static order, without ever overriding the priority tiers outright (chained
+follow-ups always still outrank fresh entry techniques).
+
+The "context" is a coarse, reusable endpoint-shape bucket (`numeric-id`, `auth-wall`,
+`workflow-shaped`, ...) — the same vocabulary `memory_backend/app_patterns.py` already
+derives for cross-run pattern recall. The reward is 1.0 when a technique confirms on that
+shape, 0.0 when the swarm marks it `FAILED` having found nothing — both already happen in
+`attack_tree.py`'s existing control flow; the bandit just tallies them instead of
+discarding them. Learned win rates persist to `memory/bandit.json`, so technique selection
+keeps specializing across engagements, not resetting every run.
+
+This is wired on by default (`cli.py` always attaches a `BanditStore` to `AttackTree`) and
+needs no flag — with no evidence yet, it samples around neutral and leaves the static
+order effectively unchanged; it only pays off once there's a track record to learn from.
 
 ## Tests
 
