@@ -9,6 +9,9 @@ against the target's ground truth.
     python -m redteam.bench.runner --target juice-shop --out runs/bench-js \
         --objective "Find and confirm injection, IDOR, XSS, and access-control issues"
 
+    # Positive run + negative control on the same app (lab/), scored together:
+    python -m redteam.bench.runner --target lab-authz --out runs/bench-lab
+
 Requires Docker and OPENROUTER_API_KEY. The scorer itself is unit-tested; this runner is
 integration glue that needs live infrastructure.
 
@@ -36,8 +39,8 @@ from pathlib import Path
 import yaml
 
 from ..config import SandboxConfig
-from .scoring import score_run
-from .targets import get_target
+from .scoring import score_pair, score_run
+from .targets import LAB_OBJECTIVE_PROMPT, PAIRS, REGISTRY, get_target
 
 REDTEAM_NETWORK = SandboxConfig().network_name   # "redteam-net" — must match KaliSandbox's
 
@@ -172,6 +175,10 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -
     if target.is_compose:
         running_container = _start_compose(target, container)
     else:
+        if target.build_dir:
+            build = subprocess.run(target.docker_build(), capture_output=True, text=True)
+            if build.returncode != 0:
+                raise RuntimeError(f"failed to build target image: {build.stderr[-2000:]}")
         subprocess.run(["docker", "rm", "-f", container], capture_output=True)
         proc = subprocess.run(target.docker_run(container), capture_output=True, text=True)
         if proc.returncode != 0:
@@ -261,8 +268,9 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -
                                          confirmed_findings=confirmed)
 
     # --- SECONDARY: the old vulnerability-coverage view, explicitly demoted ---
-    vuln_card = score_run(target.name, findings, target.ground_truth,
-                          cost_tokens=tokens, elapsed_s=elapsed)
+    vuln_card = score_run(f"{target.name} [{target_name}]", findings, target.ground_truth,
+                          cost_tokens=tokens, elapsed_s=elapsed,
+                          negative_control=target.negative_control)
 
     report = (objective_card.to_markdown()
               + "\n\n---\n\n#### Secondary: vulnerability coverage (not the goal)\n\n"
@@ -271,23 +279,55 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -
     print(report)
     return {"objective_achieved": objective_card.achieved,
             "completion": objective_card.completion,
-            "precision": vuln_card.precision, "recall": vuln_card.recall}
+            "precision": vuln_card.precision, "recall": vuln_card.recall,
+            "vuln_card": vuln_card}
+
+
+def run_pair(pair_name: str, out: str, objective: str, multi_agent: bool = False) -> dict:
+    """Run a positive target and its negative control with the identical objective, then
+    report them together. The control's false positives decide whether the positive
+    run's precision means anything (see scoring.score_pair)."""
+    positive_name, control_name = PAIRS[pair_name]
+    out_dir = Path(out)
+    positive = run(positive_name, str(out_dir / "positive"), objective, multi_agent)
+    control = run(control_name, str(out_dir / "control"), objective, multi_agent)
+    paired = score_pair(positive["vuln_card"], control["vuln_card"])
+    report = paired.to_markdown()
+    (out_dir / "paired-scorecard.md").write_text(report, encoding="utf-8")
+    print(report)
+    return {"precision_trustworthy": paired.precision_trustworthy,
+            "positive": positive, "control": control}
+
+
+DEFAULT_OBJECTIVE = (
+    "Find and CONFIRM real vulnerabilities. Do a quick map, then "
+    "immediately start proving bugs: use confirm_finding for injection/XSS, "
+    "authenticate then test_idor for IDOR, and test_access_control for "
+    "broken access control. Prioritize confirming findings over browsing. "
+    "When one lands, chain it. Only confirmed findings count.")
+
+
+def default_objective(target_or_pair: str) -> str:
+    name = PAIRS.get(target_or_pair, (target_or_pair,))[0]
+    return LAB_OBJECTIVE_PROMPT if name.startswith("lab-") else DEFAULT_OBJECTIVE
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Run the agent against a benchmark target and score it.")
-    ap.add_argument("--target", required=True, help="e.g. juice-shop, dvwa")
+    ap.add_argument("--target", required=True,
+                    help=f"a target ({', '.join(REGISTRY)}) or a paired run with a "
+                         f"negative control ({', '.join(PAIRS)})")
     ap.add_argument("--out", default="runs/bench")
-    ap.add_argument("--objective",
-                    default="Find and CONFIRM real vulnerabilities. Do a quick map, then "
-                            "immediately start proving bugs: use confirm_finding for injection/XSS, "
-                            "authenticate then test_idor for IDOR, and test_access_control for "
-                            "broken access control. Prioritize confirming findings over browsing. "
-                            "When one lands, chain it. Only confirmed findings count.")
+    ap.add_argument("--objective", default=None,
+                    help="defaults to a target-appropriate prompt")
     ap.add_argument("--multi-agent", action="store_true",
                     help="Drive the run with the orchestrator + specialist swarm.")
     args = ap.parse_args(argv)
-    run(args.target, args.out, args.objective, multi_agent=args.multi_agent)
+    objective = args.objective or default_objective(args.target)
+    if args.target in PAIRS:
+        run_pair(args.target, args.out, objective, multi_agent=args.multi_agent)
+    else:
+        run(args.target, args.out, objective, multi_agent=args.multi_agent)
     return 0
 
 

@@ -80,7 +80,12 @@ tools/
   template_search.py     Template/finding search
   verify_tool.py         Verification tool wrapper
 bench/
-  runner.py / scoring.py / objective_scoring.py / targets.py   Benchmark harness
+  runner.py / scoring.py / objective_scoring.py / targets.py   Benchmark harness.
+                       `--target lab-authz` runs lab/ as a blind pair: the
+                       broken-owner-check profile (positive) and the safe profile
+                       (negative control, empty ground truth — any confirmed claim is
+                       a false positive). scoring.score_pair only calls the positive
+                       run's precision trustworthy when the control is clean.
 importers/
   nuclei.py              Import Nuclei scan results as findings
 ```
@@ -96,7 +101,9 @@ in-repo HTML/markdown records, not code.
 `.state/` — runtime state (`catalog.json`, `usage.sqlite3`); not source.
 
 `lab/` — standalone Docker lab target (`Dockerfile`, `probe.py`, `server.py`) used for
-testing against an isolated target, separate from the sandbox/.
+testing against an isolated target, separate from the sandbox/. Serves both
+`agentic_setup`'s lab runner and the `redteam/bench` lab-authz pair (which uses its
+`POST /api/login` synthetic accounts).
 
 ## Src layout (`src/agentic_setup/`)
 
