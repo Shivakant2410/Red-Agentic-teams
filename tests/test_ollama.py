@@ -9,7 +9,7 @@ import time
 import pytest
 
 from redteam.config import ConfigError, LlmConfig, _load_llm
-from redteam.llm import make_client
+from redteam.llm import FallbackClient, make_client
 from redteam.llm.ollama import (OllamaClient, from_ollama_message, to_ollama_messages)
 from redteam.llm.openrouter import NoModelsAvailable, OpenRouterClient
 
@@ -63,8 +63,7 @@ class FakeSession:
 
 
 def _client(session, **cfg):
-    return OllamaClient(LlmConfig(provider="ollama", base_url="http://localhost:11434", **cfg),
-                        session=session)
+    return OllamaClient(LlmConfig(providers=("ollama",), **cfg), session=session)
 
 
 def test_cloud_and_non_tool_models_are_excluded_by_default():
@@ -72,9 +71,33 @@ def test_cloud_and_non_tool_models_are_excluded_by_default():
     assert c.router.discover() == ["qwen-27b-iq2m:latest", "qwen3:4b", "qwen2.5-coder:1.5b"]
 
 
-def test_allow_cloud_opts_back_in():
-    c = _client(FakeSession(), allow_cloud=True)
-    assert "minimax-m3.1-flash:cloud" in c.router.discover()
+def test_cloud_mode_routes_only_to_cloud_models():
+    c = _client(FakeSession(), ollama_models="cloud")
+    assert c.router.discover() == ["minimax-m3.1-flash:cloud"]
+    assert c.router.candidates_for("plan") == ["minimax-m3.1-flash:cloud"]
+
+
+def test_all_mode_puts_the_big_cloud_model_on_hard_roles():
+    c = _client(FakeSession(), ollama_models="all")
+    assert c.router.candidates_for("plan")[0] == "minimax-m3.1-flash:cloud"
+    assert c.router.candidates_for("parse")[0] == "qwen2.5-coder:1.5b"
+
+
+def test_cloud_calls_bypass_the_local_concurrency_cap():
+    s = FakeSession(delay=0.05)
+    c = _client(s, ollama_models="cloud", max_concurrency=1)
+    workers = [threading.Thread(target=c.chat, args=([{"role": "user", "content": "x"}],))
+               for _ in range(4)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
+    assert len(s.posts) == 4 and s.peak > 1
+
+
+def test_pins_for_models_this_daemon_lacks_are_ignored():
+    c = _client(FakeSession(), role_models={"plan": "nvidia/nemotron-3-ultra-550b-a55b:free"})
+    assert c.router.candidates_for("plan")[0] == "qwen-27b-iq2m:latest"
 
 
 def test_strong_roles_get_the_biggest_model_and_cheap_roles_the_smallest():
@@ -90,7 +113,7 @@ def test_role_pin_goes_first():
 
 def test_no_usable_models_is_a_clear_error():
     c = _client(FakeSession(tags={"models": [TAGS["models"][0]]}))
-    with pytest.raises(NoModelsAvailable, match="allow_cloud"):
+    with pytest.raises(NoModelsAvailable, match="ollama_models='local'"):
         c.router.discover()
 
 
@@ -177,14 +200,60 @@ def test_swarm_workers_share_a_bounded_number_of_inference_slots():
     assert len(s.posts) == 4 and s.peak == 1
 
 
-def test_config_selects_provider_and_local_default_url():
+def test_config_single_provider_shorthand():
     cfg = _load_llm({"llm": {"provider": "ollama"}})
-    assert cfg.base_url == "http://localhost:11434" and not cfg.allow_cloud
+    assert cfg.providers == ("ollama",) and cfg.ollama_models == "local"
+    assert cfg.ollama_url == "http://localhost:11434"
     assert isinstance(make_client(cfg), OllamaClient)
+
+
+@pytest.mark.parametrize("llm", [
+    {"provider": "nope"}, {"providers": []}, {"providers": ["ollama", "ollama"]},
+    {"ollama_models": "some"},
+])
+def test_config_rejects_bad_llm_blocks(llm):
     with pytest.raises(ConfigError):
-        _load_llm({"llm": {"provider": "nope"}})
+        _load_llm({"llm": llm})
 
 
 def test_openrouter_remains_the_default(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "k")
     assert isinstance(make_client(_load_llm({})), OpenRouterClient)
+
+
+def test_both_providers_build_a_fallback_chain_in_order(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    cfg = _load_llm({"llm": {"providers": ["ollama", "openrouter"], "ollama_models": "cloud"}})
+    client = make_client(cfg)
+    assert isinstance(client, FallbackClient)
+    assert [type(b).__name__ for _, b in client._backends] == ["OllamaClient", "OpenRouterClient"]
+
+
+class _Backend:
+    def __init__(self, result=None):
+        self.result, self.calls = result, 0
+
+    def chat(self, messages, tools=None, role="plan"):
+        self.calls += 1
+        if self.result is None:
+            raise NoModelsAvailable("quota spent")
+        return self.result
+
+
+def test_fallback_moves_to_the_next_provider_only_when_one_is_exhausted():
+    audit = []
+    first, second = _Backend(), _Backend(result="served")
+    client = FallbackClient([("ollama", first), ("openrouter", second)],
+                            audit=type("A", (), {"record": lambda s, e, **k: audit.append(e)})())
+    assert client.chat([]) == "served" and first.calls == second.calls == 1
+    assert audit == ["llm.provider_exhausted"]
+
+    healthy = _Backend(result="first")
+    unused = _Backend(result="second")
+    assert FallbackClient([("a", healthy), ("b", unused)]).chat([]) == "first"
+    assert unused.calls == 0
+
+
+def test_fallback_raises_when_every_provider_fails():
+    with pytest.raises(NoModelsAvailable, match="ollama: quota spent .* openrouter: quota spent"):
+        FallbackClient([("ollama", _Backend()), ("openrouter", _Backend())]).chat([])

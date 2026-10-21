@@ -97,17 +97,26 @@ def test_lab_target_builds_locally_and_passes_profile_env():
     assert cmd[-1] == LAB_AUTHZ_SAFE.image and "8090:8080" in cmd
 
 
-@pytest.mark.parametrize("provider, expected_secs", [("openrouter", 1800), ("ollama", 14400)])
-def test_engagement_carries_llm_provider_and_its_run_budget(tmp_path, provider, expected_secs):
+@pytest.mark.parametrize("providers, models, expected_secs", [
+    (("openrouter",), "local", 1800),
+    (("ollama",), "local", 14400),            # CPU-bound: minutes per turn
+    (("ollama",), "cloud", 1800),
+    (("ollama", "openrouter"), "cloud", 1800),
+])
+def test_engagement_carries_llm_providers_and_run_budget(tmp_path, providers, models,
+                                                         expected_secs):
     import yaml
     from redteam.bench.runner import _write_engagement
     from redteam.config import load_engagement
 
     path = tmp_path / "engagement.yaml"
-    _write_engagement(LAB_AUTHZ_SAFE, path, "172.18.0.5", llm_provider=provider)
+    _write_engagement(LAB_AUTHZ_SAFE, path, "172.18.0.5", llm_providers=providers,
+                      ollama_models=models)
     doc = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert doc["limits"]["max_run_seconds"] == expected_secs
-    assert load_engagement(path).llm.provider == provider
+    llm = load_engagement(path).llm
+    assert llm.providers == providers and llm.ollama_models == models
+    assert ("plan" in llm.role_models) == ("openrouter" in providers)
 
 
 def test_default_objective_is_per_target():

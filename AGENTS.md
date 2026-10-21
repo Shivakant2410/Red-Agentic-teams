@@ -60,13 +60,15 @@ runtime.py             Shared runtime wiring
 cli.py                 Entrypoint: preflight, sandbox/browser lifecycle, approvals
 parsers.py             Output parsing helpers
 llm/
-  __init__.py          make_client(cfg): picks the backend from llm.provider
+  __init__.py          make_client(cfg): one backend, or FallbackClient chaining
+                       llm.providers in order (next provider only once one is exhausted)
   openrouter.py        Free-model discovery + rotation/fallback
-  ollama.py            Local-model backend, same chat() contract: native /api/chat
-                       (sets num_ctx), :cloud models excluded unless llm.allow_cloud,
-                       pools by parameter size, a semaphore bounding in-flight calls
-                       across swarm workers, and salvage of tool calls small models
-                       write as JSON text (offered tool names only)
+  ollama.py            Ollama backend, same chat() contract: native /api/chat (sets
+                       num_ctx), llm.ollama_models = local|cloud|all, pools by
+                       parameter size, a semaphore bounding in-flight LOCAL calls
+                       across swarm workers, salvage of tool calls small models write
+                       as JSON text (offered tool names only). Uses llm.ollama_url —
+                       llm.base_url is OpenRouter's.
   routing.py            Model routing logic
 sandbox/
   Dockerfile            Kali rolling + tools + firewall deps

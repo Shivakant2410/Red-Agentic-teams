@@ -1,4 +1,4 @@
-"""Ollama backend — the same chat() contract as OpenRouterClient, served by local models.
+"""Ollama backend — the same chat() contract as OpenRouterClient, served via a local daemon.
 
 Why a separate client rather than pointing OpenRouterClient at Ollama's OpenAI-compatible
 endpoint: that endpoint cannot set num_ctx, and Ollama's default context window is far
@@ -6,13 +6,14 @@ smaller than this agent's system prompt + tool schemas. Overflow is truncated si
 so a small model just looks dumb. The native /api/chat takes options.num_ctx, so this
 client speaks it and converts to/from the OpenAI message shape the agent loop uses.
 
-Local-only by default: ":cloud" models (served by ollama.com) are excluded unless the
-engagement sets llm.allow_cloud, because prompts carry target data.
+Model set is llm.ollama_models: "local" by default, "cloud" for ":cloud" models served by
+ollama.com through the local daemon (prompts and the target data in them leave the
+host), or "all".
 
 Concurrency: a CPU/iGPU host serves roughly one generation at a time. Swarm workers
-share one client, and a semaphore bounds in-flight calls to llm.max_concurrency, so
-extra workers overlap their tool execution with inference instead of queueing inside
-Ollama and timing out.
+share one client, and a semaphore bounds in-flight LOCAL-model calls to
+llm.max_concurrency, so extra workers overlap their tool execution with inference
+instead of queueing inside Ollama and timing out. Cloud calls are not gated by it.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ import json
 import re
 import threading
 import uuid
+from contextlib import nullcontext
 
 import requests
 
@@ -131,22 +133,25 @@ class OllamaRouter:
         self._session = session
         self._pools: dict[str, list[str]] = {"cheap": [], "strong": []}
         self._candidates: list[str] = []
+        self.cloud: set[str] = set()   # discovered models served by ollama.com
 
     def discover(self) -> list[str]:
         try:
-            resp = self._session.get(f"{self._cfg.base_url}/api/tags", timeout=10)
+            resp = self._session.get(f"{self._cfg.ollama_url}/api/tags", timeout=10)
             resp.raise_for_status()
             models = resp.json().get("models", [])
         except (requests.RequestException, ValueError) as exc:
             raise NoModelsAvailable(
-                f"cannot reach Ollama at {self._cfg.base_url} ({exc}); is `ollama serve` running?"
+                f"cannot reach Ollama at {self._cfg.ollama_url} ({exc}); is `ollama serve` running?"
             ) from exc
 
         allow, deny = set(self._cfg.model_allow), set(self._cfg.model_deny)
+        wanted = self._cfg.ollama_models
         sized: list[tuple[str, float | None]] = []
         for m in models:
             name = m.get("name", "")
-            if _is_cloud(m) and not self._cfg.allow_cloud:
+            cloud = _is_cloud(m)
+            if (wanted == "local" and cloud) or (wanted == "cloud" and not cloud):
                 continue
             caps = m.get("capabilities")
             # Older Ollama builds omit capabilities; let those through rather than guess.
@@ -155,10 +160,12 @@ class OllamaRouter:
             if (allow and name not in allow) or name in deny:
                 continue
             sized.append((name, _billions((m.get("details") or {}).get("parameter_size", ""))))
+            if cloud:
+                self.cloud.add(name)
         if not sized:
             raise NoModelsAvailable(
-                "no usable Ollama models (need local, tool-capable models; pull one with "
-                "`ollama pull <model>`, or set llm.allow_cloud for :cloud models)")
+                f"no usable tool-capable Ollama models for ollama_models={wanted!r}; pull one "
+                "with `ollama pull <model>` (cloud models need `ollama signin` first)")
 
         # Biggest first within each pool: the strongest local model leads the hard roles.
         sized.sort(key=lambda item: -(item[1] or 0.0))
@@ -179,8 +186,11 @@ class OllamaRouter:
             # A hard role falling back into the cheap pool wants its biggest model first.
             pools = {"strong": pools["strong"], "cheap": list(reversed(pools["cheap"]))}
         pool = candidates_for_role(pools, role)
+        # role_models is shared with OpenRouter: honor only pins this daemon actually has.
         pinned = (self._cfg.role_models or {}).get(role)
-        return [pinned] + [m for m in pool if m != pinned] if pinned else pool
+        if pinned not in self._candidates:
+            return pool
+        return [pinned] + [m for m in pool if m != pinned]
 
     @property
     def exhausted_after(self) -> int:
@@ -215,9 +225,10 @@ class OllamaClient:
             }
             if tools:
                 payload["tools"] = tools
+            slot = nullcontext() if model in self.router.cloud else self._slots
             try:
-                with self._slots:
-                    resp = self._session.post(f"{self._cfg.base_url}/api/chat",
+                with slot:
+                    resp = self._session.post(f"{self._cfg.ollama_url}/api/chat",
                                               data=json.dumps(payload),
                                               timeout=self._cfg.request_timeout)
             except requests.RequestException as exc:

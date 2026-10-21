@@ -77,23 +77,29 @@ def _wait_for(url: str, timeout: int = 120) -> bool:
     return False
 
 
-_LLM_BLOCKS = {
-    # Genuinely-agentic on a FREE model: route the reasoning step to a large free
-    # model (NVIDIA Nemotron 550B) instead of the tiny default. Parsing/triage stay
-    # on the free small pool; the free pool is the fallback if this errors.
-    "openrouter": {"role_models": {"plan": "nvidia/nemotron-3-ultra-550b-a55b:free",
-                                   "poc": "nvidia/nemotron-3-ultra-550b-a55b:free"}},
-    # Whatever is installed locally; OllamaRouter puts the largest model on plan/poc.
-    "ollama": {"provider": "ollama"},
-}
-# CPU inference is minutes per turn, so a local run needs far more wall clock.
-_DEFAULT_MAX_RUN_SECONDS = {"openrouter": 1800, "ollama": 4 * 3600}
+def _llm_block(providers: tuple[str, ...], ollama_models: str) -> dict:
+    block = {"providers": list(providers), "ollama_models": ollama_models}
+    if "openrouter" in providers:
+        # Genuinely-agentic on a FREE model: route the reasoning step to a large free
+        # model (NVIDIA Nemotron 550B) instead of the tiny default. Parsing/triage stay
+        # on the free small pool; the free pool is the fallback if this errors. The
+        # Ollama router ignores this pin (it isn't an installed model) and uses its
+        # largest model for plan/poc instead.
+        block["role_models"] = {"plan": "nvidia/nemotron-3-ultra-550b-a55b:free",
+                                "poc": "nvidia/nemotron-3-ultra-550b-a55b:free"}
+    return block
+
+
+def _default_max_run_seconds(providers: tuple[str, ...], ollama_models: str) -> int:
+    # Only an all-local run is CPU-bound at minutes per turn and needs far more clock.
+    return 4 * 3600 if providers == ("ollama",) and ollama_models == "local" else 1800
 
 
 def _write_engagement(target, path: Path, container_ip: str | None = None,
-                      llm_provider: str = "openrouter",
+                      llm_providers: tuple[str, ...] = ("openrouter",),
+                      ollama_models: str = "local",
                       max_run_seconds: int | None = None) -> None:
-    max_run_seconds = max_run_seconds or _DEFAULT_MAX_RUN_SECONDS[llm_provider]
+    max_run_seconds = max_run_seconds or _default_max_run_seconds(llm_providers, ollama_models)
     # Two different "reach the target" paths need two different addresses in scope:
     #   - The browser (Playwright) and the host-requests fallback run ON THE HOST, so
     #     they reach the target via its published port: localhost:<host_port>.
@@ -119,7 +125,7 @@ def _write_engagement(target, path: Path, container_ip: str | None = None,
         "objective": target.objective,      # the red-team scoreboard for this target
         "limits": {"max_requests_per_second": 20, "max_total_requests": 5000,
                    "max_run_seconds": max_run_seconds},
-        "llm": _LLM_BLOCKS[llm_provider],
+        "llm": _llm_block(llm_providers, ollama_models),
         # Sandbox ON whenever we resolved a reachable container IP for Kali to use — this
         # is the actual fix: every prior benchmark run disabled it because nothing had
         # put the target and Kali on the same Docker network yet (see module docstring).
@@ -178,7 +184,8 @@ def _stop_compose(target) -> None:
 
 
 def run(target_name: str, out: str, objective: str, multi_agent: bool = False,
-        llm_provider: str = "openrouter", max_run_seconds: int | None = None) -> dict:
+        llm_providers: tuple[str, ...] = ("openrouter",), ollama_models: str = "local",
+        max_run_seconds: int | None = None) -> dict:
     target = get_target(target_name)
     out_dir = Path(out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -222,7 +229,8 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False,
             raise RuntimeError(f"target did not become ready at {target.base_url}")
 
         eng_path = out_dir / "engagement.yaml"
-        _write_engagement(target, eng_path, container_ip, llm_provider, max_run_seconds)
+        _write_engagement(target, eng_path, container_ip, llm_providers, ollama_models,
+                          max_run_seconds)
 
         started = time.time()
         cmd = ["python", "-m", "redteam.cli", "--engagement", str(eng_path),
@@ -297,16 +305,17 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False,
 
 
 def run_pair(pair_name: str, out: str, objective: str, multi_agent: bool = False,
-             llm_provider: str = "openrouter", max_run_seconds: int | None = None) -> dict:
+             llm_providers: tuple[str, ...] = ("openrouter",), ollama_models: str = "local",
+             max_run_seconds: int | None = None) -> dict:
     """Run a positive target and its negative control with the identical objective, then
     report them together. The control's false positives decide whether the positive
     run's precision means anything (see scoring.score_pair)."""
     positive_name, control_name = PAIRS[pair_name]
     out_dir = Path(out)
     positive = run(positive_name, str(out_dir / "positive"), objective, multi_agent,
-                   llm_provider, max_run_seconds)
+                   llm_providers, ollama_models, max_run_seconds)
     control = run(control_name, str(out_dir / "control"), objective, multi_agent,
-                  llm_provider, max_run_seconds)
+                  llm_providers, ollama_models, max_run_seconds)
     paired = score_pair(positive["vuln_card"], control["vuln_card"])
     report = paired.to_markdown()
     (out_dir / "paired-scorecard.md").write_text(report, encoding="utf-8")
@@ -338,15 +347,23 @@ def main(argv=None) -> int:
                     help="defaults to a target-appropriate prompt")
     ap.add_argument("--multi-agent", action="store_true",
                     help="Drive the run with the orchestrator + specialist swarm.")
-    ap.add_argument("--llm-provider", choices=sorted(_LLM_BLOCKS), default="openrouter",
-                    help="ollama runs every role on locally installed models")
+    ap.add_argument("--llm-providers", default="openrouter",
+                    help="comma-separated, in fallback order: openrouter, ollama "
+                         "(e.g. ollama,openrouter)")
+    ap.add_argument("--ollama-models", choices=["local", "cloud", "all"], default="local",
+                    help="cloud = ollama.com models via the local daemon (target data "
+                         "leaves this host)")
     ap.add_argument("--max-run-seconds", type=int, default=None,
-                    help="wall-clock cap per run (default: 1800 openrouter, 14400 ollama)")
+                    help="wall-clock cap per run (default 1800; 14400 for local-only Ollama)")
     args = ap.parse_args(argv)
     objective = args.objective or default_objective(args.target)
     run_fn = run_pair if args.target in PAIRS else run
+    providers = tuple(p.strip().lower() for p in args.llm_providers.split(",") if p.strip())
+    if not providers or set(providers) - {"openrouter", "ollama"}:
+        ap.error("--llm-providers takes openrouter and/or ollama")
     run_fn(args.target, args.out, objective, multi_agent=args.multi_agent,
-           llm_provider=args.llm_provider, max_run_seconds=args.max_run_seconds)
+           llm_providers=providers, ollama_models=args.ollama_models,
+           max_run_seconds=args.max_run_seconds)
     return 0
 
 

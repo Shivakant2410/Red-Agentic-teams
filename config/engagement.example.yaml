@@ -55,15 +55,18 @@ llm:
   # model_allow: ["meta-llama/llama-3.3-70b-instruct:free"]
   # model_deny: []
   #
-  # Local models instead (prompts and target data never leave this machine):
-  # provider: "ollama"             # base_url then defaults to http://localhost:11434
+  # Backends in fallback order. A turn moves to the next provider only when every model
+  # of the current one failed it (quota, outage, empty replies).
+  # providers: ["ollama", "openrouter"]
+  # ollama_url: "http://localhost:11434"
+  # ollama_models: "cloud"         # local | cloud | all. "cloud" = ollama.com models via
+  #                                # the local daemon (`ollama signin`); prompts and the
+  #                                # target data in them leave this host, as with OpenRouter.
   # num_ctx: 16384                 # Ollama's default window silently truncates this agent
-  # max_concurrency: 1             # in-flight LLM calls across all swarm workers; match
-  #                                # OLLAMA_NUM_PARALLEL (1 on a CPU/iGPU host)
+  # max_concurrency: 1             # in-flight LOCAL-model calls across swarm workers; match
+  #                                # OLLAMA_NUM_PARALLEL. Cloud calls are not capped by it.
   # request_timeout: 600
-  # allow_cloud: false             # ":cloud" models run on ollama.com — keep off unless
-  #                                # the client permits third-party processing
-  # role_models: {plan: "qwen-27b-iq2m:latest", poc: "qwen-27b-iq2m:latest"}
+  # role_models pins are honored by whichever provider actually has the named model.
 
 # Kali-in-Docker sandbox.
 sandbox:

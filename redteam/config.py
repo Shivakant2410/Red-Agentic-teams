@@ -41,17 +41,19 @@ class LlmConfig:
     max_tokens: int = 4096
     referer: str = "https://localhost/redteam-agent"  # OpenRouter attribution headers
     title: str = "redteam-agent"
-    # "openrouter" or "ollama". Ollama keeps every prompt (and the target data in it) on
-    # this machine; base_url defaults to http://localhost:11434 for it.
-    provider: str = "openrouter"
-    # Ollama only. Its default context window is far smaller than this agent's system
-    # prompt + tool schemas, and overflow is silently truncated — so it is set explicitly.
+    # Backends in preference order, from "openrouter" and "ollama". When every model of
+    # one is exhausted for a turn (quota, outage, degenerate replies) the next serves it.
+    providers: tuple[str, ...] = ("openrouter",)
+    # --- Ollama only (base_url above is OpenRouter's) ---
+    ollama_url: str = "http://localhost:11434"
+    # Which installed Ollama models to route to: "local", "cloud" (":cloud" models served
+    # by ollama.com — prompts and the target data in them leave this host), or "all".
+    ollama_models: str = "local"
+    # Ollama's default context window is far smaller than this agent's system prompt +
+    # tool schemas, and overflow is silently truncated — so it is set explicitly.
     num_ctx: int = 16384
-    # Ollama ":cloud" models run on ollama.com, not locally: target data leaves the host.
-    # Off by default; only enable when the engagement permits third-party processing.
-    allow_cloud: bool = False
-    # Ollama only: LLM calls in flight at once across all swarm workers. Workers beyond
-    # this still overlap tool execution with inference; match OLLAMA_NUM_PARALLEL.
+    # LOCAL-model calls in flight at once across all swarm workers; match
+    # OLLAMA_NUM_PARALLEL. Cloud models are not bounded by this host's hardware.
     max_concurrency: int = 1
     request_timeout: int = 600   # seconds; CPU inference on a large model is slow
 
@@ -135,17 +137,24 @@ def _as_date(value: object, field_name: str) -> _dt.date:
 def _load_llm(data: dict) -> LlmConfig:
     d = data.get("llm") or {}
     defaults = LlmConfig()
-    provider = str(d.get("provider", defaults.provider)).lower()
-    if provider not in ("openrouter", "ollama"):
-        raise ConfigError(f"llm.provider must be 'openrouter' or 'ollama', got {provider!r}")
-    default_url = "http://localhost:11434" if provider == "ollama" else defaults.base_url
+    # `provider: ollama` is shorthand for `providers: [ollama]`.
+    raw = d.get("providers", d.get("provider", defaults.providers))
+    providers = tuple(str(p).lower() for p in ([raw] if isinstance(raw, str) else raw))
+    unknown = [p for p in providers if p not in ("openrouter", "ollama")]
+    if not providers or unknown or len(set(providers)) != len(providers):
+        raise ConfigError(f"llm.providers must list 'openrouter' and/or 'ollama' once each, "
+                          f"got {list(providers)!r}")
+    ollama_models = str(d.get("ollama_models", defaults.ollama_models)).lower()
+    if ollama_models not in ("local", "cloud", "all"):
+        raise ConfigError(f"llm.ollama_models must be local, cloud or all, got {ollama_models!r}")
     return LlmConfig(
-        provider=provider,
+        providers=providers,
+        ollama_url=str(d.get("ollama_url", defaults.ollama_url)),
+        ollama_models=ollama_models,
         num_ctx=int(d.get("num_ctx", defaults.num_ctx)),
-        allow_cloud=bool(d.get("allow_cloud", defaults.allow_cloud)),
         max_concurrency=max(1, int(d.get("max_concurrency", defaults.max_concurrency))),
         request_timeout=int(d.get("request_timeout", defaults.request_timeout)),
-        base_url=str(d.get("base_url", default_url)),
+        base_url=str(d.get("base_url", defaults.base_url)),
         api_key_env=str(d.get("api_key_env", defaults.api_key_env)),
         prefer_free=bool(d.get("prefer_free", defaults.prefer_free)),
         require_tool_support=bool(d.get("require_tool_support", defaults.require_tool_support)),

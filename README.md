@@ -95,19 +95,30 @@ Flags: `--no-sandbox`, `--no-browser`, `--yes-to-all` (isolated labs only), `--m
 (orchestrator + specialist swarm), `--semantic-memory` (optional, needs
 `pip install -e .[semantic-memory]` + Docker — see below).
 
-## Local models (Ollama)
+## Model providers: OpenRouter and Ollama (local or cloud)
 
-Set `llm.provider: "ollama"` in the engagement file to run every role, and the whole
-`--multi-agent` swarm, on models served by a local `ollama serve`. Prompts and the
-target data in them stay on the machine; `:cloud` models are skipped unless
-`llm.allow_cloud` is set. Installed tool-capable models are split by parameter count:
-the largest serves `plan`/`poc`, the smallest serves `parse`/`triage`/`summary`.
+`llm.providers` lists backends in fallback order, e.g. `["ollama", "openrouter"]`. Each
+rotates through its own models; a turn moves to the next provider only when every model
+of the current one failed it (quota spent, outage, empty replies). `provider: ollama`
+is shorthand for a single provider.
+
+`llm.ollama_models` picks what the Ollama daemon serves: `local` (default — prompts and
+target data stay on the machine), `cloud` (`:cloud` models run on ollama.com via the
+local daemon after `ollama signin`; target data leaves the host, as it does with
+OpenRouter), or `all`. Tool-capable models are split by parameter count: the largest
+serves `plan`/`poc`, the smallest `parse`/`triage`/`summary`. `role_models` pins are
+honored by whichever provider has the named model.
 
 `llm.num_ctx` is sent on every call because Ollama's default context window silently
-truncates this agent's prompt. `llm.max_concurrency` bounds in-flight calls across all
-swarm workers (match `OLLAMA_NUM_PARALLEL`); extra workers overlap tool execution with
-inference instead of timing out in Ollama's queue. Tool calls that small models write as
-JSON text are recovered, for offered tool names only.
+truncates this agent's prompt. `llm.max_concurrency` bounds in-flight LOCAL-model calls
+across all swarm workers (match `OLLAMA_NUM_PARALLEL`); cloud calls are not capped by
+it. Tool calls that small models write as JSON text are recovered, for offered tool
+names only.
+
+```bash
+python -m redteam.bench.runner --target lab-authz --multi-agent \
+  --llm-providers ollama,openrouter --ollama-models cloud --out runs/lab-hybrid
+```
 
 ## Semantic memory (optional)
 
