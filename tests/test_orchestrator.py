@@ -12,7 +12,7 @@ from redteam.findings import FindingStore
 from redteam.killchain import ACHIEVED, CREDENTIAL_ACCESS, INITIAL_ACCESS, KillChain, RECON as KC_RECON
 from redteam.knowledge import ENDPOINT, KnowledgeGraph
 from redteam.llm.openrouter import ChatResult
-from redteam.llm.routing import PARSE, PLAN
+from redteam.llm.routing import CHEAP_ROLES
 from redteam.objective import DATA_ACCESS, Objective, SuccessCriterion
 from redteam.orchestrator import ACCESS, EXPLOIT, LOGIC, RECON, Orchestrator
 from redteam.ratelimit import RateLimiter
@@ -70,8 +70,10 @@ def _ctx(tmp_path, audit, access=None, killchain=None, objective=None):
 
 
 def test_profiles_use_correct_model_tiers():
-    assert RECON.role == PARSE          # recon = breadth = cheaper model
-    assert EXPLOIT.role == PLAN         # exploit = depth = strongest model
+    assert RECON.role in CHEAP_ROLES        # recon = breadth = cheaper model
+    assert EXPLOIT.role not in CHEAP_ROLES  # exploit = depth = strongest model
+    # One role per specialist, so each can be pinned to its own model.
+    assert len({p.role for p in (RECON, EXPLOIT, ACCESS, LOGIC)}) == 4
 
 
 def test_orchestrator_runs_recon_then_exploit(tmp_path):
@@ -87,7 +89,7 @@ def test_orchestrator_runs_recon_then_exploit(tmp_path):
     assert audit.events[0]["event"] == "orchestrator.start"
     assert any(e["event"] == "orchestrator.finish" for e in audit.events)
     # recon ran on the cheap tier, exploit on the strong tier
-    assert PARSE in client.roles_used and PLAN in client.roles_used
+    assert RECON.role in client.roles_used and EXPLOIT.role in client.roles_used
 
 
 def test_specialist_gets_only_its_tools(tmp_path):
@@ -129,7 +131,7 @@ def test_recon_can_authenticate_but_not_prove_findings(tmp_path):
 
 
 def test_profiles_access_tier_is_cheap():
-    assert ACCESS.role == PARSE   # procedural/mechanical -> cheaper model, like recon
+    assert ACCESS.role in CHEAP_ROLES   # procedural/mechanical -> cheaper model, like recon
 
 
 def test_access_round_runs_when_killchain_recommends_pressing(tmp_path):
@@ -186,7 +188,7 @@ def test_access_loop_stops_on_stall_not_after_one_round(tmp_path):
 
 
 def test_profiles_logic_tier_is_strong():
-    assert LOGIC.role == PLAN   # business logic needs domain reasoning, not pattern-matching
+    assert LOGIC.role not in CHEAP_ROLES   # business logic needs domain reasoning
 
 
 def test_logic_round_skipped_on_a_non_workflow_surface(tmp_path):

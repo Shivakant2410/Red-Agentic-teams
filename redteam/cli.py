@@ -13,8 +13,11 @@ each sensitive action interactively (unless --yes-to-all, for isolated labs only
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
+
+from dotenv import find_dotenv, load_dotenv
 
 from .agent import RedTeamAgent
 from .audit import AuditLog
@@ -62,6 +65,7 @@ def _preflight(engagement, auto_yes: bool) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv(find_dotenv(usecwd=True), override=False)   # .env keys; shell env wins
     parser = argparse.ArgumentParser(description="Authorized red-team agent (Kali sandbox + OpenRouter)")
     parser.add_argument("--engagement", required=True, help="Path to the engagement YAML (RoE).")
     parser.add_argument("--objective", required=True, help="What the agent should accomplish.")
@@ -69,6 +73,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-steps", type=int, default=40)
     parser.add_argument("--no-sandbox", action="store_true", help="Disable the Kali sandbox.")
     parser.add_argument("--no-browser", action="store_true", help="Disable browser automation.")
+    parser.add_argument("--headed", action="store_true",
+                        help="Show the browser window (slowed down) to watch the run live.")
     parser.add_argument("--multi-agent", action="store_true",
                         help="Use the orchestrator + specialist swarm (recon + exploit) instead of one agent.")
     parser.add_argument("--yes-to-all", action="store_true",
@@ -150,6 +156,8 @@ def main(argv: list[str] | None = None) -> int:
                 sandbox = None
 
         if use_browser:
+            if args.headed:
+                os.environ["REDTEAM_HEADED"] = "1"
             from .tools.browser import BrowserController
             browser = BrowserController(scope, limiter, audit, out / "screenshots")
 

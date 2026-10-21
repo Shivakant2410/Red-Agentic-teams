@@ -113,3 +113,20 @@ def test_no_match_yields_empty_summary_no_crash():
               side_effect=_route({})):   # everything 404s
         summary = run_passive_recon(eng, graph)
     assert summary == {"endpoints_discovered": 0, "schemas_found": 0}
+
+
+def test_unreachable_base_is_probed_once_then_skipped():
+    """A base nothing listens on (e.g. a Docker container IP from a Windows host) must
+    not wait out the connect timeout once per path."""
+    import requests
+
+    calls = []
+
+    def _get(url, timeout=None, allow_redirects=None, headers=None):
+        calls.append(url)
+        raise requests.ConnectTimeout("no route")
+
+    with patch("redteam.recon.passive.requests.get", side_effect=_get):
+        summary = run_passive_recon(_engagement(), KnowledgeGraph())
+    assert calls == ["https://example.com/robots.txt"]
+    assert summary["endpoints_discovered"] == 0

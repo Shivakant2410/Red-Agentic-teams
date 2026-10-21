@@ -29,6 +29,25 @@ iptables -A INPUT  -i lo -j ACCEPT
 iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 iptables -A INPUT  -m state --state ESTABLISHED,RELATED -j ACCEPT
 
+# IPv6 gets the same default-DROP lockdown; an unfirewalled v6 stack would bypass the
+# whole allowlist. If ip6tables is unusable, only proceed when the container has no
+# global IPv6 address (then there is no v6 path out to lock).
+v6=0
+if ip6tables -L >/dev/null 2>&1; then
+    v6=1
+    ip6tables -F OUTPUT
+    ip6tables -P OUTPUT DROP
+    ip6tables -P INPUT DROP
+    ip6tables -P FORWARD DROP
+    ip6tables -A OUTPUT -o lo -j ACCEPT
+    ip6tables -A INPUT  -i lo -j ACCEPT
+    ip6tables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+    ip6tables -A INPUT  -m state --state ESTABLISHED,RELATED -j ACCEPT
+elif ip -6 addr show scope global 2>/dev/null | grep -q inet6; then
+    echo "[sandbox] FATAL: IPv6 is routable but ip6tables is unusable. Refusing to start." >&2
+    exit 91
+fi
+
 # DNS to the configured resolvers only (so tools can resolve in-scope names).
 for dns in ${DNS_SERVERS:-1.1.1.1}; do
     iptables -A OUTPUT -p udp --dport 53 -d "$dns" -j ACCEPT
@@ -38,7 +57,15 @@ done
 # The scope allowlist.
 count=0
 for cidr in ${ALLOWED_CIDRS:-}; do
-    iptables -A OUTPUT -d "$cidr" -j ACCEPT
+    case "$cidr" in
+        *:*)
+            # IPv6 entry (e.g. ::1/128 for "localhost"). Without a v6 firewall there is
+            # no v6 path out (checked above), so there is nothing to allow.
+            [ "$v6" -eq 1 ] || continue
+            ip6tables -A OUTPUT -d "$cidr" -j ACCEPT ;;
+        *)
+            iptables -A OUTPUT -d "$cidr" -j ACCEPT ;;
+    esac
     count=$((count + 1))
 done
 echo "[sandbox] egress locked: ${count} allowed destination(s), default DROP."

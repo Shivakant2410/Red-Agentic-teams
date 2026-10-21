@@ -54,7 +54,9 @@ from .config import Engagement
 from .killchain import (CREDENTIAL_ACCESS, DISCOVERY, LATERAL_MOVEMENT,
                         PRIVILEGE_ESCALATION)
 from .llm.openrouter import OpenRouterClient
-from .llm.routing import PARSE, PLAN
+from .llm.routing import ACCESS as ACCESS_ROLE, EXPLOIT as EXPLOIT_ROLE
+from .llm.routing import LOGIC as LOGIC_ROLE, RECON as RECON_ROLE, VERIFY as VERIFY_ROLE
+from .llm.routing import PLAN
 from .tools import ToolContext, Tool
 
 # Kill-chain stages that mean "there is a foothold worth pressing further" — if
@@ -99,7 +101,7 @@ RECON = SpecialistProfile(
            "second_url_template rather than guessing follow-up URLs by hand. Be broad and "
            "fast."),
     tool_names=["browser_navigate", "browser_content", "browser_click", "kali_exec", "authenticate"],
-    role=PARSE,          # breadth work -> cheaper model
+    role=RECON_ROLE,     # breadth work -> cheaper model
     max_steps=15,
 )
 
@@ -114,7 +116,7 @@ EXPLOIT = SpecialistProfile(
            "anything counts. That is by design; keep proving, don't try to self-promote."),
     tool_names=["confirm_finding", "verify_vulnerability", "authenticate", "kali_exec",
                 "browser_navigate", "browser_content", "browser_fill"],
-    role=PLAN,           # depth/reasoning work -> strongest model
+    role=EXPLOIT_ROLE,   # depth/reasoning work -> strongest model
     max_steps=40,
 )
 
@@ -133,7 +135,7 @@ ACCESS = SpecialistProfile(
            "say so and stop."),
     tool_names=["extract_secrets", "try_credential", "prove_privilege", "record_access",
                 "authenticate", "kali_exec", "browser_navigate", "browser_content"],
-    role=PARSE,          # procedural/mechanical work once a path is already known -> cheaper model
+    role=ACCESS_ROLE,    # procedural/mechanical work once a path is already known -> cheaper model
     max_steps=20,
 )
 
@@ -157,47 +159,70 @@ LOGIC = SpecialistProfile(
            "IS the business rule being violated, not a technical injection flaw."),
     tool_names=["verify_workflow_abuse", "authenticate", "browser_navigate", "browser_content",
                 "browser_fill", "browser_click"],
-    role=PLAN,           # requires reasoning about the specific app's domain, not pattern-matching
+    role=LOGIC_ROLE,     # requires reasoning about the specific app's domain, not pattern-matching
     max_steps=25,
 )
 
 VERIFY = SpecialistProfile(
     name="verify",
     addon=("You are the VERIFY specialist — the adversary inside the team. You did not "
-           "propose any of these findings and you owe them no loyalty. For each pending "
-           "finding, call verify_finding_independently(finding_id) and accept whatever "
-           "verdict comes back: it reproduces the check fresh and forces a negative "
-           "control, so your job is just to run it for every pending finding, not to "
-           "argue with the result. Work through ALL pending findings before stopping."),
+           "propose any of these findings and you owe them no loyalty. Every pending "
+           "finding here is a business-logic (workflow) finding, which cannot be blindly "
+           "replayed because the original attack consumed its state. For each one, call "
+           "verify_finding_independently(finding_id, fresh_attack_steps, "
+           "fresh_control_steps) with sequences shaped like the original but against a "
+           "FRESH identifier (a new coupon/order/account), then accept the verdict. Work "
+           "through ALL of them before stopping."),
     tool_names=["verify_finding_independently"],
-    role=PLAN,           # independence matters more than cost here; use the strong pool
+    role=VERIFY_ROLE,    # strong pool, and never a model family that proposed findings
     max_steps=15,
 )
 
 
 def run_verify_pass(engagement: Engagement, tools: dict[str, Tool], ctx: ToolContext,
                     client: OpenRouterClient, objective: str, budget=None, on_text=None) -> int:
-    """Run an independent VERIFY specialist over every pending finding, in a FRESH context.
+    """Independently re-check every pending finding.
 
     Shared by both run modes: the orchestrator calls this between exploit rounds, and
     single-agent mode (cli.py) calls it after the main run — a single continuous context
     must never be allowed to grade its own pending findings, even outside multi-agent mode.
-    Returns the number of findings still pending afterward (0 = fully cleared).
+
+    Most findings carry a replayable check_spec, and verify_finding_independently rebuilds
+    and re-runs it with a negative control in code — a model adds nothing there but the
+    chance of skipping an id, so those are replayed directly with zero LLM calls. Only
+    workflow findings need a model (to write a fresh attack/control sequence); they go to
+    a VERIFY specialist in a FRESH context that may not use any model family that
+    proposed findings this run. Returns the number still pending (0 = fully cleared).
     """
     pending = ctx.findings.pending()
     if not pending:
         return 0
     ctx.audit.record("verify_pass.start", pending=len(pending))
-    subset = {n: tools[n] for n in VERIFY.tool_names if n in tools}
-    verifier = RedTeamAgent(engagement, subset, ctx, client, max_steps=VERIFY.max_steps,
-                            system_addon=VERIFY.addon, role=VERIFY.role)
-    if budget is not None:
-        verifier.with_runtime(budget=budget)
-    ids = ", ".join(f.id for f in pending)
-    verifier.run(
-        f"{objective}\n\nThis run: VERIFY — independently re-check these pending findings "
-        f"(finding_id values): {ids}. Call verify_finding_independently once per id. Do not "
-        f"skip any.", on_text=on_text)
+    tool = tools.get("verify_finding_independently")
+    if tool is None:
+        ctx.audit.record("verify_pass.finish", remaining=len(pending), error="no verify tool")
+        return len(pending)
+
+    workflow = [f for f in pending if f.check_type == "workflow"]
+    for f in pending:
+        if f.check_type != "workflow":
+            tool.run(ctx, finding_id=f.id)
+
+    if workflow:
+        exclude = set(getattr(ctx, "proposer_families", ()) or ())
+        ctx.audit.record("verify_pass.llm", findings=len(workflow),
+                         exclude_families=sorted(exclude))
+        verifier = RedTeamAgent(engagement, {tool.name: tool}, ctx, client,
+                                max_steps=VERIFY.max_steps, system_addon=VERIFY.addon,
+                                role=VERIFY.role, exclude_families=exclude)
+        if budget is not None:
+            verifier.with_runtime(budget=budget)
+        ids = ", ".join(f.id for f in workflow)
+        verifier.run(
+            f"{objective}\n\nThis run: VERIFY — independently re-check these pending "
+            f"workflow findings (finding_id values): {ids}. Call verify_finding_independently "
+            f"once per id with fresh_attack_steps and fresh_control_steps. Do not skip any.",
+            on_text=on_text)
     remaining = len(ctx.findings.pending())
     ctx.audit.record("verify_pass.finish", remaining=remaining)
     return remaining

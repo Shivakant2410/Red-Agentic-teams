@@ -28,7 +28,8 @@ import requests
 
 from ..config import LlmConfig
 from .openrouter import ChatResult, NoModelsAvailable
-from .routing import CHEAP_ROLES, DEFAULT, candidates_for_role, is_small_model
+from .routing import (CHEAP_ROLES, DEFAULT, candidates_for_role, is_small_model,
+                      model_family, pins_for)
 
 # A model at or under this many billion parameters serves the cheap roles.
 _SMALL_MAX_BILLIONS = 12.0
@@ -187,10 +188,9 @@ class OllamaRouter:
             pools = {"strong": pools["strong"], "cheap": list(reversed(pools["cheap"]))}
         pool = candidates_for_role(pools, role)
         # role_models is shared with OpenRouter: honor only pins this daemon actually has.
-        pinned = (self._cfg.role_models or {}).get(role)
-        if pinned not in self._candidates:
-            return pool
-        return [pinned] + [m for m in pool if m != pinned]
+        pinned = [m for m in pins_for(self._cfg.role_models, role, "ollama")
+                  if m in self._candidates]
+        return pinned + [m for m in pool if m not in pinned]
 
     @property
     def exhausted_after(self) -> int:
@@ -210,8 +210,11 @@ class OllamaClient:
             self._audit.record(event, **fields)
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None,
-             role: str = DEFAULT) -> ChatResult:
-        candidates = self.router.candidates_for(role)
+             role: str = DEFAULT, exclude_families=()) -> ChatResult:
+        candidates = [m for m in self.router.candidates_for(role)
+                      if model_family(m) not in exclude_families]
+        if not candidates:
+            raise NoModelsAvailable(f"no Ollama model outside families {sorted(exclude_families)}")
         native_messages = to_ollama_messages(messages)
         tool_names = {(t.get("function") or {}).get("name") for t in tools or []}
         last_error: Exception | None = None

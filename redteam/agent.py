@@ -12,9 +12,10 @@ import threading
 
 from .config import Engagement
 from .llm.openrouter import OpenRouterClient, NoModelsAvailable, to_openai_tools
-from .llm.routing import PLAN
+from .llm.routing import PLAN, PROPOSER_ROLES, model_family
 from .runtime import Halt, RepetitionGuard, compact_messages, looks_failed
 from .tools import ToolContext, Tool
+from .tools.independent_verify import settle_new_findings
 
 # A parallel exploit swarm (orchestrator.py) can have several RedTeamAgent instances in
 # different threads all writing the SAME RunManifest object/file concurrently. RunManifest
@@ -77,7 +78,8 @@ compromise path you achieved (or where you were blocked) and what you proved."""
 class RedTeamAgent:
     def __init__(self, engagement: Engagement, tools: dict[str, Tool], ctx: ToolContext,
                  client: OpenRouterClient, max_steps: int = 40, graph=None, attack_tree=None,
-                 memory=None, system_addon: str = "", role: str = PLAN):
+                 memory=None, system_addon: str = "", role: str = PLAN,
+                 exclude_families=()):
         self._eng = engagement
         self._tools = tools
         self._ctx = ctx
@@ -88,6 +90,7 @@ class RedTeamAgent:
         self._memory = memory
         self._system_addon = system_addon   # specialist-specific instructions (multi-agent)
         self._role = role                   # model role for this agent (recon=cheap, exploit=strong)
+        self._exclude_families = set(exclude_families)   # model families this agent may not use
         self._budget = None      # optional BudgetTracker
         self._manifest = None    # optional (RunManifest, path) tuple
 
@@ -151,11 +154,16 @@ class RedTeamAgent:
             messages = compact_messages(messages)
 
             try:
-                result = self._client.chat(messages, tools=openai_tools, role=self._role)
+                extra = ({"exclude_families": self._exclude_families}
+                         if self._exclude_families else {})
+                result = self._client.chat(messages, tools=openai_tools, role=self._role, **extra)
             except NoModelsAvailable as exc:
                 self._ctx.audit.record("agent.no_models", error=str(exc))
                 self._update_manifest(status="error", steps=step, halt_reason=str(exc))
                 return f"Could not get a model response: {exc}"
+            proposers = getattr(self._ctx, "proposer_families", None)
+            if proposers is not None and self._role in PROPOSER_ROLES:
+                proposers.add(model_family(result.model))
 
             if self._budget is not None:
                 self._budget.add_usage(result.usage)
@@ -227,6 +235,11 @@ class RedTeamAgent:
                                      "name": name, "content": blocked})
                     continue
                 tool_out = self._dispatch(name, args)
+                # Re-check what this call recorded right away and tell the model the
+                # outcome, so a proven bug isn't re-proven for the rest of the round.
+                settled = settle_new_findings(self._ctx)
+                if settled:
+                    tool_out = f"{tool_out}\n\n{settled}"
                 guard.record_result(signature, looks_failed(tool_out))
                 messages.append({"role": "tool", "tool_call_id": tc.get("id"),
                                  "name": name, "content": tool_out})

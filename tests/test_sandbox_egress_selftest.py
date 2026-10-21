@@ -85,3 +85,55 @@ def test_egress_selftest_fails_closed_when_canary_is_reachable(monkeypatch):
     except SandboxError as exc:
         assert "EGRESS SELF-TEST FAILED" in str(exc)
     assert stopped["called"]       # must tear down rather than leave a falsely-trusted sandbox up
+
+
+def _logs_then(monkeypatch, sb, log_lines: list[str], running: bool = True):
+    """Each `docker logs` call returns the next entry: the entrypoint printing over time."""
+    feed = iter(log_lines)
+    last = {"text": ""}
+
+    def fake_run(cmd, timeout=None):
+        if cmd[:2] == ["docker", "logs"]:
+            last["text"] = next(feed, last["text"])
+            return FakeProc(stdout=last["text"])
+        if cmd[:2] == ["docker", "inspect"]:
+            return FakeProc(stdout="true\n" if running else "false\n")
+        return FakeProc()
+
+    monkeypatch.setattr(dk, "_run", fake_run)
+    monkeypatch.setattr(dk.time, "sleep", lambda s: None)
+
+
+def test_start_waits_for_the_entrypoint_to_print_ready(monkeypatch):
+    """`docker run -d` returns before the firewall script finishes; reading the log once
+    right away raced it and refused every sandbox."""
+    sb = _make_sandbox(monkeypatch, canary_reached=False)
+    _logs_then(monkeypatch, sb, ["[sandbox] applying egress allowlist...\n",
+                                 "[sandbox] applying egress allowlist...\n[sandbox] ready.\n"])
+    assert sb.start() is not None and sb._started
+
+
+def test_start_fails_closed_at_once_when_the_container_exits(monkeypatch):
+    sb = _make_sandbox(monkeypatch, canary_reached=False)
+    _logs_then(monkeypatch, sb, ["[sandbox] FATAL: cannot manage iptables\n"], running=False)
+    try:
+        sb.start()
+        assert False, "expected SandboxError"
+    except SandboxError as exc:
+        assert "did not confirm egress lockdown" in str(exc)
+    assert not sb._started
+
+
+def test_egress_selftest_fails_closed_when_the_probe_cannot_run(monkeypatch):
+    """An exec error (e.g. the non-root user missing from the image) used to read as
+    'canary blocked' and pass the self-test with scope enforcement unproven."""
+    sb = _make_sandbox(monkeypatch, canary_reached=False)
+    failed = ExecResult(exit_code=1, stdout="",
+                        stderr="unable to find user operator", timed_out=False)
+    monkeypatch.setattr(KaliSandbox, "exec", lambda self, command, timeout=None: failed)
+    monkeypatch.setattr(sb, "stop", lambda: None)
+    try:
+        sb.start()
+        assert False, "expected SandboxError"
+    except SandboxError as exc:
+        assert "could not run" in str(exc)

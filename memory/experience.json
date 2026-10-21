@@ -6,7 +6,7 @@
       "confirmed",
       "cwe-89"
     ],
-    "utility": 1.6003553475919632,
+    "utility": 1.506241650310775,
     "uses": 1,
     "helped": 0,
     "support": 3,
@@ -21,13 +21,13 @@
       "confirmed",
       "cwe-639"
     ],
-    "utility": 0.6812326242398921,
+    "utility": 1.1213706960735925,
     "uses": 0,
     "helped": 0,
-    "support": 1,
+    "support": 2,
     "id": "b1eef4768358",
     "created": "2026-09-27T20:30:28.461850+00:00",
-    "last_used": "2026-09-27T20:30:28.461850+00:00"
+    "last_used": "2026-10-21T20:13:37.967990+00:00"
   },
   {
     "text": "Proof attempts for CWE-639 failed to reproduce 6x in a run — refine the oracle/approach before recording; do not brute-repeat the same proof.",
@@ -35,13 +35,13 @@
     "tags": [
       "cwe-639"
     ],
-    "utility": 0.6951353308570327,
+    "utility": 1.1442558123199924,
     "uses": 0,
     "helped": 0,
-    "support": 1,
+    "support": 2,
     "id": "e8627fb6e317",
     "created": "2026-09-27T20:30:28.465838+00:00",
-    "last_used": "2026-09-27T20:30:28.465838+00:00"
+    "last_used": "2026-10-21T20:13:37.972410+00:00"
   },
   {
     "text": "Proof attempts for CWE-89 failed to reproduce 4x in a run — refine the oracle/approach before recording; do not brute-repeat the same proof.",
@@ -49,7 +49,7 @@
     "tags": [
       "cwe-89"
     ],
-    "utility": 1.1799177661806455,
+    "utility": 1.110529162187094,
     "uses": 0,
     "helped": 0,
     "support": 2,
@@ -64,13 +64,13 @@
       "cwe-639",
       "idor"
     ],
-    "utility": 4.013910397996102,
-    "uses": 26,
-    "helped": 2,
-    "support": 10,
+    "utility": 6.254363555310747,
+    "uses": 45,
+    "helped": 3,
+    "support": 14,
     "id": "29bf49c3c200",
     "created": "2026-09-27T20:39:05.602861+00:00",
-    "last_used": "2026-10-03T13:32:51.042078+00:00"
+    "last_used": "2026-10-21T20:35:42.586176+00:00"
   },
   {
     "text": "To PROVE reflected XSS: send a unique token like <rtx931> in a reflected parameter, then verify_vulnerability with a [reflected_unescaped] condition on that token. If it returns HTML-escaped (&lt;rtx931&gt;), it is NOT vulnerable — do not record it.",
@@ -79,13 +79,13 @@
       "cwe-79",
       "xss"
     ],
-    "utility": 4.02868178004901,
-    "uses": 26,
-    "helped": 2,
-    "support": 10,
+    "utility": 6.268266261927888,
+    "uses": 45,
+    "helped": 3,
+    "support": 14,
     "id": "d9b4b423b43b",
     "created": "2026-09-27T20:39:05.603380+00:00",
-    "last_used": "2026-10-03T13:32:51.042092+00:00"
+    "last_used": "2026-10-21T20:35:42.586180+00:00"
   },
   {
     "text": "To PROVE broken access control: request the protected URL with NO auth (empty headers) and assert [status==200] AND [body_regex for protected content] via verify_vulnerability. If unauth is denied (401/403), it is enforced — not a finding.",
@@ -94,13 +94,13 @@
       "access-control",
       "cwe-284"
     ],
-    "utility": 4.043754618878507,
-    "uses": 26,
-    "helped": 2,
-    "support": 10,
+    "utility": 6.2824526972515,
+    "uses": 45,
+    "helped": 3,
+    "support": 14,
     "id": "a7509f25450b",
     "created": "2026-09-27T20:39:05.606629+00:00",
-    "last_used": "2026-10-03T13:32:51.042089+00:00"
+    "last_used": "2026-10-21T20:35:42.586166+00:00"
   },
   {
     "text": "If a login endpoint is SQL-injectable, authenticate with the injection payload itself (email \"' OR 1=1--\") to bypass auth, rather than guessing credentials.",
@@ -109,13 +109,13 @@
       "auth",
       "cwe-89"
     ],
-    "utility": 3.3870322788240994,
+    "utility": 5.099635684571012,
     "uses": 15,
     "helped": 0,
-    "support": 10,
+    "support": 14,
     "id": "91082b7df119",
     "created": "2026-09-27T20:39:05.608368+00:00",
-    "last_used": "2026-10-03T13:32:51.042098+00:00"
+    "last_used": "2026-10-21T20:32:00.626965+00:00"
   },
   {
     "text": "For blind/second-order SQLi, prove it with a differential latency check (baseline vs a SLEEP payload, min_delta ~4s), not error text — error text can be planted.",
@@ -124,13 +124,13 @@
       "blind",
       "cwe-89"
     ],
-    "utility": 4.252850941937841,
+    "utility": 5.914537283744361,
     "uses": 3,
     "helped": 0,
-    "support": 10,
+    "support": 14,
     "id": "5610f04a288d",
     "created": "2026-09-27T20:39:05.608368+00:00",
-    "last_used": "2026-10-03T13:32:51.042095+00:00"
+    "last_used": "2026-10-21T20:32:00.628273+00:00"
   },
   {
     "text": "Only record CONFIRMED vulnerabilities. Never record info-level recon (endpoints, tech) as findings — that inflates false positives.",
@@ -139,13 +139,13 @@
       "hygiene",
       "no-recon-findings"
     ],
-    "utility": 5.240968356792445,
-    "uses": 12,
-    "helped": 2,
-    "support": 10,
+    "utility": 7.409260689666194,
+    "uses": 31,
+    "helped": 3,
+    "support": 14,
     "id": "906985481b1c",
     "created": "2026-09-27T20:39:05.608368+00:00",
-    "last_used": "2026-10-03T13:30:09.870248+00:00"
+    "last_used": "2026-10-21T20:35:42.586183+00:00"
   },
   {
     "text": "If a proof rejects, change the oracle or inputs — never brute-repeat the same failing call; it wastes turns and the guard will block it.",
@@ -154,13 +154,13 @@
       "hygiene",
       "no-repeat"
     ],
-    "utility": 4.740684589143212,
-    "uses": 21,
-    "helped": 2,
-    "support": 10,
+    "utility": 6.938397609824878,
+    "uses": 40,
+    "helped": 3,
+    "support": 14,
     "id": "6546864ee247",
     "created": "2026-09-27T20:39:05.613958+00:00",
-    "last_used": "2026-10-03T13:30:09.786799+00:00"
+    "last_used": "2026-10-21T20:35:42.586185+00:00"
   },
   {
     "text": "CWE-284 is confirmable on this kind of target — prioritize probing it and prove it with a reproducing check.",
@@ -169,7 +169,7 @@
       "confirmed",
       "cwe-284"
     ],
-    "utility": 0.8337477621301497,
+    "utility": 0.7847167237347998,
     "uses": 0,
     "helped": 0,
     "support": 1,
@@ -184,7 +184,7 @@
       "confirmed",
       "cwe-798"
     ],
-    "utility": 0.8507630225817854,
+    "utility": 0.8007313507497957,
     "uses": 0,
     "helped": 0,
     "support": 1,
@@ -199,7 +199,7 @@
       "confirmed",
       "cwe-287"
     ],
-    "utility": 0.8681255332467198,
+    "utility": 0.8170728068875467,
     "uses": 0,
     "helped": 0,
     "support": 1,
@@ -214,7 +214,7 @@
       "confirmed",
       "cwe-552"
     ],
-    "utility": 0.8858423808639998,
+    "utility": 0.8337477621301497,
     "uses": 0,
     "helped": 0,
     "support": 1,
@@ -229,7 +229,7 @@
       "confirmed",
       "cwe-548"
     ],
-    "utility": 1.8262889568,
+    "utility": 1.7188885558285054,
     "uses": 0,
     "helped": 0,
     "support": 3,
@@ -244,7 +244,7 @@
       "confirmed",
       "cwe-306"
     ],
-    "utility": 0.9223681599999999,
+    "utility": 0.8681255332467198,
     "uses": 0,
     "helped": 0,
     "support": 1,
@@ -258,7 +258,7 @@
     "tags": [
       "cwe-287"
     ],
-    "utility": 0.9411919999999999,
+    "utility": 0.8858423808639998,
     "uses": 0,
     "helped": 0,
     "support": 1,
@@ -272,7 +272,7 @@
     "tags": [
       "cwe-862"
     ],
-    "utility": 0.9603999999999999,
+    "utility": 0.9039207967999998,
     "uses": 0,
     "helped": 0,
     "support": 1,
@@ -286,12 +286,56 @@
     "tags": [
       "cwe-269"
     ],
-    "utility": 0.98,
+    "utility": 0.9223681599999999,
     "uses": 0,
     "helped": 0,
     "support": 1,
     "id": "ad82868e3295",
     "created": "2026-10-01T17:44:51.171819+00:00",
     "last_used": "2026-10-01T17:44:51.171843+00:00"
+  },
+  {
+    "text": "CWE-639 AUTHORIZATION BYPASS THROUGH USER-CONTROLLED KEY (IDOR) is confirmable on this kind of target — prioritize probing it and prove it with a reproducing check.",
+    "kind": "success",
+    "tags": [
+      "confirmed",
+      "cwe-639 authorization bypass through user-controlled key (idor)"
+    ],
+    "utility": 0.9411919999999999,
+    "uses": 0,
+    "helped": 0,
+    "support": 1,
+    "id": "aae591440a94",
+    "created": "2026-10-21T20:13:37.965096+00:00",
+    "last_used": "2026-10-21T20:13:37.965121+00:00"
+  },
+  {
+    "text": "CWE-639 (AUTHORIZATION BYPASS THROUGH USER-CONTROLLED KEY) is confirmable on this kind of target — prioritize probing it and prove it with a reproducing check.",
+    "kind": "success",
+    "tags": [
+      "confirmed",
+      "cwe-639 (authorization bypass through user-controlled key)"
+    ],
+    "utility": 0.9603999999999999,
+    "uses": 0,
+    "helped": 0,
+    "support": 1,
+    "id": "64e594b07df6",
+    "created": "2026-10-21T20:13:37.970687+00:00",
+    "last_used": "2026-10-21T20:13:37.970703+00:00"
+  },
+  {
+    "text": "Proof attempts for CWE-639 AUTHORIZATION BYPASS THROUGH USER-CONTROLLED KEY (IDOR) failed to reproduce 4x in a run — refine the oracle/approach before recording; do not brute-repeat the same proof.",
+    "kind": "failure",
+    "tags": [
+      "cwe-639 authorization bypass through user-controlled key (idor)"
+    ],
+    "utility": 0.98,
+    "uses": 0,
+    "helped": 0,
+    "support": 1,
+    "id": "cd4f4618e403",
+    "created": "2026-10-21T20:13:37.973785+00:00",
+    "last_used": "2026-10-21T20:13:37.973798+00:00"
   }
 ]

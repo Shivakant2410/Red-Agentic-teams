@@ -20,6 +20,7 @@ import re
 
 from ..access import CREDENTIAL, ESCALATES_TO, PRINCIPAL
 from ..falsify import run_negative_control
+from ..findings import CREDENTIAL_HEADERS
 from ..killchain import ACHIEVED, PRIVILEGE_ESCALATION
 from ..proof import ProofCheck, eval_condition
 from ..scope import ScopeViolation
@@ -34,6 +35,28 @@ from .logic import run_ordered_steps
 # control exercises the same endpoint with harmless input instead of the attack string.
 _PAYLOAD_MARKERS = re.compile(
     r"('|--|;|<script|<img|\bOR\b|\bSLEEP\(|\bUNION\b|\.\./|\{\{|\$\{)", re.IGNORECASE)
+
+
+def _without_credentials(req: dict) -> dict | None:
+    """The same request with its identity removed, or None if it carried none.
+
+    The control for an authorization claim ("principal A can read B's object") when
+    there is no injected payload to neutralize: if the signal still shows up with no
+    credentials at all, the matcher is not evidence that A's identity crossed a boundary
+    (it may match an error page, or the data is public), so the claim is not proven."""
+    headers = req.get("headers") or {}
+    kept = {k: v for k, v in headers.items() if str(k).lower() not in CREDENTIAL_HEADERS}
+    if len(kept) == len(headers) and not req.get("session_label"):
+        return None
+    stripped = {k: v for k, v in req.items() if k != "session_label"}
+    stripped["headers"] = kept
+    return stripped
+
+
+_NO_CREDS_NOTE = ("the signal also appears with NO credentials, so it does not show this "
+                  "principal crossing an authorization boundary (the matcher may hit an "
+                  "error page, or the data is public — re-test that as unauthenticated "
+                  "access with a matcher only real record data satisfies)")
 
 
 def _benign_mutation(url: str) -> str:
@@ -149,9 +172,19 @@ class VerifyFindingIndependentlyTool:
 
         control_url = _benign_mutation(request.get("url", ""))
         if control_url == request.get("url", ""):
-            # Nothing payload-shaped to strip (e.g. a pure status/latency assertion with no
-            # injected string) — there is no meaningful benign variant to contrast against.
-            return "confirmed", "reproduced independently (no payload string to neutralize for a control)"
+            anonymous = _without_credentials(request)
+            if anonymous is None:
+                # Nothing payload-shaped to strip and no identity to remove (e.g. an
+                # exposed file) — there is no meaningful benign variant to contrast.
+                return "confirmed", "reproduced independently (no payload or credentials to vary for a control)"
+            outcome = HttpCheck(fetch=make_fetch(ctx, anonymous),
+                                expect_status=spec.get("expect_status"),
+                                body_regex=spec.get("body_regex"),
+                                max_latency=spec.get("max_latency")).run()
+            if outcome.passed:
+                return "falsified", f"{_NO_CREDS_NOTE}: {outcome.detail}"
+            return "confirmed", ("reproduced independently; the same request with credentials "
+                                 f"removed did not ({outcome.detail})")
         control_req = dict(request, url=control_url)
         control_check = HttpCheck(fetch=make_fetch(ctx, control_req),
                                   expect_status=spec.get("expect_status"),
@@ -176,7 +209,15 @@ class VerifyFindingIndependentlyTool:
 
         control_url = _benign_mutation(payload.get("url", ""))
         if control_url == payload.get("url", ""):
-            return "confirmed", "reproduced independently (no payload string to neutralize for a control)"
+            anonymous = _without_credentials(payload)
+            if anonymous is None:
+                return "confirmed", "reproduced independently (no payload or credentials to vary for a control)"
+            fal = run_negative_control({"baseline": make_fetch(ctx, baseline), "payload": make_fetch(ctx, payload)},
+                                       self._differential_conditions(spec), make_fetch(ctx, anonymous), "payload")
+            if fal.falsified:
+                return "falsified", f"{_NO_CREDS_NOTE}: {fal.detail}"
+            return "confirmed", ("reproduced independently; the same request with credentials "
+                                 f"removed did not ({fal.detail})")
         control_fetch = make_fetch(ctx, dict(payload, url=control_url))
         fal = run_negative_control({"baseline": make_fetch(ctx, baseline), "payload": make_fetch(ctx, payload)},
                                    self._differential_conditions(spec), control_fetch, "payload")
@@ -335,3 +376,36 @@ class VerifyFindingIndependentlyTool:
                                  successes=skill.successes, finding_id=f.id)
             except Exception as exc:
                 ctx.audit.record("skill.capture_error", error=str(exc), finding_id=f.id)
+
+
+def settle_new_findings(ctx: ToolContext) -> str:
+    """Re-check this thread's freshly recorded findings now, and report duplicates.
+
+    Called by the agent loop after every tool call. Replayable findings get the same
+    independent, code-only re-check the end-of-round VERIFY pass runs (workflow findings
+    still wait for that pass: their replay needs fresh steps a model must write). Without
+    this, a proven bug stays pending until the round ends, so the swarm keeps re-proving it.
+    Returns a note to append to the tool result, or "".
+    """
+    pop = getattr(ctx.findings, "pop_events", None)
+    if pop is None:
+        return ""
+    notes, tool = [], VerifyFindingIndependentlyTool()
+    for kind, finding_id in pop():
+        f = ctx.findings.get(finding_id)
+        if f is None:
+            continue
+        if kind == "duplicate":
+            notes.append(f"DUPLICATE: this is finding {f.id} ({f.confidence}), already on "
+                         f"record — not recorded again. Do not re-prove it; move to a "
+                         f"different hypothesis, or finish if none remain.")
+        elif f.confidence == "pending_verification" and f.check_type != "workflow":
+            verdict = json.loads(tool.run(ctx, finding_id=f.id)).get("verdict", "")
+            if verdict == "confirmed":
+                notes.append(f"INDEPENDENTLY CONFIRMED: finding {f.id} is proven and on "
+                             f"record. Do not re-prove it; move to a different hypothesis, "
+                             f"or finish if none remain.")
+            else:
+                notes.append(f"INDEPENDENT RE-CHECK: finding {f.id} came back {verdict} — "
+                             f"{f.evidence.rsplit('[independent re-check] ', 1)[-1][:300]}")
+    return "\n\n".join(f"[verification] {n}" for n in notes)

@@ -8,6 +8,7 @@ agent loop and the swarm never branch on provider.
 from __future__ import annotations
 
 from .openrouter import NoModelsAvailable
+from .routing import parse_pins
 
 
 class FallbackClient:
@@ -18,15 +19,28 @@ class FallbackClient:
     daily quota is spent and the Ollama cloud models are rate-limited too).
     """
 
-    def __init__(self, backends: list[tuple[str, object]], audit=None):
+    def __init__(self, backends: list[tuple[str, object]], audit=None, role_models=None):
         self._backends = backends
         self._audit = audit
+        self._role_models = role_models or {}
 
-    def chat(self, messages, tools=None, role="plan"):
+    def _ordered(self, role: str) -> list[tuple[str, object]]:
+        """Providers this role is pinned to go first, in pin order; then llm.providers
+        order. Lets a high-volume role sit on one provider and a scarce-quota role on
+        another without changing the global fallback order."""
+        first = []
+        for provider, _ in parse_pins(self._role_models.get(role)):
+            if provider and provider not in first:
+                first.append(provider)
+        rank = {p: i for i, p in enumerate(first)}
+        return sorted(self._backends, key=lambda nb: rank.get(nb[0], len(first)))
+
+    def chat(self, messages, tools=None, role="plan", exclude_families=()):
         errors = []
-        for name, backend in self._backends:
+        extra = {"exclude_families": exclude_families} if exclude_families else {}
+        for name, backend in self._ordered(role):
             try:
-                return backend.chat(messages, tools=tools, role=role)
+                return backend.chat(messages, tools=tools, role=role, **extra)
             except NoModelsAvailable as exc:
                 errors.append(f"{name}: {exc}")
                 if self._audit:
@@ -47,4 +61,4 @@ def make_client(cfg, audit=None):
     backends = [(name, _build(name, cfg, audit)) for name in cfg.providers]
     if len(backends) == 1:
         return backends[0][1]
-    return FallbackClient(backends, audit=audit)
+    return FallbackClient(backends, audit=audit, role_models=cfg.role_models)

@@ -11,7 +11,7 @@ Each tool exposes:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Optional, Protocol
 
 from ..audit import AuditLog
@@ -36,6 +36,9 @@ class ToolContext:
     access: Optional[object] = None    # AccessGraph | None (what WE hold)
     objective: Optional[object] = None # Objective | None (what winning means)
     killchain: Optional[object] = None # KillChain | None
+    # Model families that served a finding-proposing role this run (see agent.py); the
+    # verify pass excludes them so a model never re-checks its own claim.
+    proposer_families: set = field(default_factory=set)
 
 
 class Tool(Protocol):

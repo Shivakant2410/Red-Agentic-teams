@@ -116,7 +116,9 @@ def test_engagement_carries_llm_providers_and_run_budget(tmp_path, providers, mo
     assert doc["limits"]["max_run_seconds"] == expected_secs
     llm = load_engagement(path).llm
     assert llm.providers == providers and llm.ollama_models == models
-    assert ("plan" in llm.role_models) == ("openrouter" in providers)
+    # Every pin names an enabled provider; scarce-quota roles exist only with OpenRouter.
+    assert all(e.split(":", 1)[0] in providers for pins in llm.role_models.values() for e in pins)
+    assert ("verify" in llm.role_models) == ("openrouter" in providers)
 
 
 def test_default_objective_is_per_target():
@@ -215,3 +217,21 @@ def test_end_to_end_negative_control_records_nothing(tmp_path, lab):
     findings = _attack(tmp_path, lab("safe"))
     assert findings == []
     assert score_run("lab", findings, [], negative_control=True).control_passed
+
+
+def test_a_crashed_agent_run_is_never_scored(tmp_path, monkeypatch):
+    """An agent that dies on startup leaves no findings, which would otherwise score as a
+    perfectly clean negative control."""
+    from types import SimpleNamespace
+
+    import redteam.bench.runner as runner
+
+    def fake_run(cmd, *args, **kwargs):
+        crashed = "redteam.cli" in cmd
+        return SimpleNamespace(returncode=2 if crashed else 0, stdout="172.18.0.5", stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    monkeypatch.setattr(runner, "_wait_for", lambda *a, **k: True)
+    with pytest.raises(RuntimeError, match="not scored"):
+        runner.run("lab-authz-safe", str(tmp_path), LAB_OBJECTIVE_PROMPT)
+    assert not (tmp_path / "scorecard.md").exists()

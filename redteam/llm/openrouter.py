@@ -22,7 +22,7 @@ from dataclasses import dataclass
 import requests
 
 from ..config import LlmConfig
-from .routing import DEFAULT, candidates_for_role, classify_pools
+from .routing import DEFAULT, candidates_for_role, classify_pools, model_family, pins_for
 
 # Curated fallback if the live catalog can't be fetched. These are commonly-available
 # free, tool-capable models on OpenRouter; the live discovery below supersedes them.
@@ -135,8 +135,8 @@ class ModelRouter:
         pool = candidates_for_role(self._pools, role)
         # A model pinned to this role (e.g. a frontier model on 'plan') is tried first;
         # the free pool remains as fallback if it errors or rate-limits.
-        pinned = (self._cfg.role_models or {}).get(role)
-        ordered = [pinned] + [m for m in pool if m != pinned] if pinned else list(pool)
+        pinned = pins_for(self._cfg.role_models, role, "openrouter")
+        ordered = pinned + [m for m in pool if m not in pinned]
         # Models that have 429'd repeatedly THIS RUN (almost always a daily quota hit,
         # which won't clear until tomorrow) move to the back instead of staying pinned
         # first every turn — without this a dead model gets retried at the front of
@@ -174,9 +174,12 @@ class OpenRouterClient:
             self._audit.record(event, **fields)
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None,
-             role: str = DEFAULT) -> ChatResult:
+             role: str = DEFAULT, exclude_families=()) -> ChatResult:
         """One chat turn, routed by role, with automatic model rotation on failure."""
-        candidates = self.router.candidates_for(role)
+        candidates = [m for m in self.router.candidates_for(role)
+                      if model_family(m) not in exclude_families]
+        if not candidates:
+            raise NoModelsAvailable(f"no OpenRouter model outside families {sorted(exclude_families)}")
         last_error: Exception | None = None
 
         for attempt, model in enumerate(candidates[: self.router.exhausted_after]):

@@ -12,11 +12,27 @@ Playwright runs on the host (not in the Kali container). Install browsers once w
 from __future__ import annotations
 
 import base64
+import functools
+import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from ..ratelimit import RequestBudgetExceeded
 from ..scope import ScopeGuard, ScopeViolation
 from . import ToolContext
+
+
+def _on_browser_thread(method):
+    """Run a controller method on the controller's one dedicated thread.
+
+    Playwright's sync objects are bound to the thread that created them ("Cannot switch
+    to a different thread"), and the exploit swarm calls browser tools from several
+    worker threads. Funnelling every call through one thread makes that safe and
+    serializes access to the single shared page."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        return self._thread.submit(method, self, *args, **kwargs).result()
+    return wrapper
 
 
 class BrowserController:
@@ -30,6 +46,7 @@ class BrowserController:
         self._pw = None
         self._browser = None
         self._page = None
+        self._thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="browser")
 
     def _ensure(self):
         if self._page is not None:
@@ -42,7 +59,10 @@ class BrowserController:
                 "`python -m playwright install chromium`."
             ) from exc
         self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch(headless=True)
+        # REDTEAM_HEADED=1 (cli --headed) shows the window, slowed so a human can follow.
+        headed = os.environ.get("REDTEAM_HEADED") == "1"
+        self._browser = self._pw.chromium.launch(headless=not headed,
+                                                 slow_mo=300 if headed else 0)
         self._page = self._browser.new_page()
         self._page.route("**/*", self._route)
 
@@ -56,6 +76,7 @@ class BrowserController:
             return
         route.continue_()
 
+    @_on_browser_thread
     def navigate(self, url: str) -> dict:
         # Scope-check the top-level URL before we even open it (clear error to the model).
         self._scope.check(url)
@@ -69,24 +90,28 @@ class BrowserController:
             "title": self._page.title(),
         }
 
+    @_on_browser_thread
     def content(self, max_chars: int = 8000) -> dict:
         self._ensure()
         text = self._page.inner_text("body")
         return {"url": self._page.url, "text": text[:max_chars],
                 "truncated": len(text) > max_chars}
 
+    @_on_browser_thread
     def click(self, selector: str) -> dict:
         self._ensure()
         self._page.click(selector, timeout=10000)
         self._audit.record("browser.click", selector=selector, url=self._page.url)
         return {"url": self._page.url, "clicked": selector}
 
+    @_on_browser_thread
     def fill(self, selector: str, value: str) -> dict:
         self._ensure()
         self._page.fill(selector, value, timeout=10000)
         self._audit.record("browser.fill", selector=selector, url=self._page.url)
         return {"url": self._page.url, "filled": selector}
 
+    @_on_browser_thread
     def screenshot(self, name: str) -> dict:
         self._ensure()
         safe = "".join(c for c in name if c.isalnum() or c in "-_") or "shot"
@@ -96,6 +121,7 @@ class BrowserController:
         self._audit.record("browser.screenshot", path=str(path), url=self._page.url)
         return {"saved": str(path)}
 
+    @_on_browser_thread
     def harvest(self) -> dict:
         """Extract same-origin links and forms (with input names) from the current page.
 
@@ -115,6 +141,12 @@ class BrowserController:
         return {"links": links, "forms": forms}
 
     def close(self):
+        try:
+            self._thread.submit(self._close).result()
+        finally:
+            self._thread.shutdown(wait=False)
+
+    def _close(self):
         try:
             if self._browser:
                 self._browser.close()

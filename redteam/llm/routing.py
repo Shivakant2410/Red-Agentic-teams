@@ -23,7 +23,50 @@ PLAN = "plan"          # decide the next move over graph state
 POC = "poc"            # author/refine an exploit proof-of-concept
 DEFAULT = "plan"
 
-CHEAP_ROLES = {PARSE, TRIAGE, SUMMARY}
+# One role per specialist, so each can be pinned to its own model (llm.role_models).
+RECON = "recon"        # breadth mapping, high call volume
+EXPLOIT = "exploit"    # prove/chain vulnerabilities, highest call volume
+ACCESS = "access"      # press a known foothold, procedural
+LOGIC = "logic"        # business-logic reasoning, one round
+VERIFY = "verify"      # independent re-check of workflow findings only
+
+CHEAP_ROLES = {PARSE, TRIAGE, SUMMARY, RECON, ACCESS}
+
+# Roles whose output can become a finding. VERIFY must not be served by a model family
+# that served any of these in the same run, or it would be re-checking its own claim.
+PROPOSER_ROLES = {PLAN, POC, RECON, EXPLOIT, ACCESS, LOGIC}
+
+_PROVIDERS = ("openrouter", "ollama")
+
+
+def parse_pins(value) -> list[tuple[str | None, str]]:
+    """role_models value -> ordered [(provider or None, model_id)].
+
+    Accepts one id or a list. "openrouter:<id>" / "ollama:<id>" pins to that provider;
+    a bare id applies to whichever provider has it. Model ids may themselves contain ':'
+    (":free", ":cloud"), so only a known provider name counts as a prefix.
+    """
+    if not value:
+        return []
+    out = []
+    for entry in [value] if isinstance(value, str) else value:
+        entry = str(entry)
+        head, sep, rest = entry.partition(":")
+        out.append((head, rest) if sep and head in _PROVIDERS else (None, entry))
+    return out
+
+
+def pins_for(pins_by_role: dict, role: str, provider: str) -> list[str]:
+    """The model ids pinned to `role` that `provider` should try first, in order."""
+    return [m for p, m in parse_pins((pins_by_role or {}).get(role)) if p in (None, provider)]
+
+
+def model_family(model_id: str) -> str:
+    """Coarse family for independence checks: 'minimax/minimax-m3.1-flash:free' and
+    'minimax-m3.1-flash:cloud' are both 'minimax'; 'sorc/qwen3.5-instruct' is 'qwen'."""
+    name = model_id.rsplit("/", 1)[-1].split(":", 1)[0].lower()
+    m = re.match(r"[a-z]+", name)
+    return m.group(0) if m else name
 
 # Name signals for a small/fast model.
 _SMALL_SIGNALS = re.compile(

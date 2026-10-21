@@ -33,7 +33,9 @@ ratelimit.py          Token-bucket limiter + request budget
 audit.py              Append-only JSONL audit log
 findings.py           Finding model + JSON store
 proof.py              Proof-of-exploitation requirements (not just a claimed finding)
-verify.py             Verification pass over findings
+verify.py             Verification pass over findings (orchestrator.run_verify_pass
+                      replays http/differential/proof/privilege findings in code, no
+                      LLM; only workflow findings go to the VERIFY specialist)
 falsify.py            Falsification checks
 report.py             Markdown/HTML report builder
 agent.py              OpenAI-style tool-use loop (hand-rolled, not a framework)
@@ -69,7 +71,15 @@ llm/
                        across swarm workers, salvage of tool calls small models write
                        as JSON text (offered tool names only). Uses llm.ollama_url —
                        llm.base_url is OpenRouter's.
-  routing.py            Model routing logic
+  routing.py            Model routing: one role per specialist (recon/exploit/access/
+                       logic/verify, plus plan/poc for single-agent). llm.role_models
+                       maps a role to an ordered pin list; "openrouter:<id>" /
+                       "ollama:<id>" pins also reorder providers for that role
+                       (FallbackClient._ordered). model_family() backs the verify
+                       independence rule: ctx.proposer_families records who proposed,
+                       the verify LLM excludes them. bench/runner.py's _ROLE_PLAN is
+                       the default per-role plan (cloud flash for volume, OpenRouter's
+                       50/day free quota for logic/verify).
 sandbox/
   Dockerfile            Kali rolling + tools + firewall deps
   entrypoint.sh         Installs the egress allowlist, then idles (fail closed)

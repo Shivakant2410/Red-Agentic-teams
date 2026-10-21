@@ -19,6 +19,8 @@ import requests
 from ..scope import ScopeGuard, ScopeViolation
 
 _TIMEOUT = 8
+_CONNECT_TIMEOUT = 3
+_UNREACHABLE = -1   # _get status: could not connect at all
 _MAX_BODY = 512 * 1024
 
 # Common machine-readable surface-description paths worth a free, zero-token GET.
@@ -36,9 +38,11 @@ def _get(guard: ScopeGuard, url: str) -> tuple[int, str]:
     except ScopeViolation:
         return 0, ""
     try:
-        r = requests.get(url, timeout=_TIMEOUT, allow_redirects=True,
+        r = requests.get(url, timeout=(_CONNECT_TIMEOUT, _TIMEOUT), allow_redirects=True,
                          headers={"User-Agent": "redteam-agent-recon/1.0"})
         return r.status_code, r.text[:_MAX_BODY]
+    except (requests.ConnectionError, requests.ConnectTimeout):
+        return _UNREACHABLE, ""
     except requests.RequestException:
         return 0, ""
 
@@ -122,6 +126,13 @@ def run_passive_recon(engagement, graph, attack_tree=None, audit=None) -> dict:
 
     for base in _candidate_base_urls(engagement):
         status, body = _get(guard, f"{base}/robots.txt")
+        if status == _UNREACHABLE:
+            # Nothing listens here from this host (e.g. a Docker container IP, which
+            # Docker Desktop doesn't route to) — every other path would wait out the
+            # same connect timeout, so skip the rest of this base.
+            if audit:
+                audit.record("recon.passive.unreachable", base=base)
+            continue
         if status and 200 <= status < 300:
             for p in _parse_robots(body):
                 discovered.add(urljoin(base + "/", p.lstrip("/")))

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,6 +33,8 @@ class SandboxError(Exception):
 # self-test's canary: if the sandbox can reach it, the firewall did not actually apply,
 # regardless of what the entrypoint log claims.
 _EGRESS_CANARY = "192.0.2.1"
+# How long the entrypoint gets to install the firewall and print "ready".
+_READY_TIMEOUT_S = 30
 
 
 @dataclass
@@ -85,6 +88,10 @@ class KaliSandbox:
             raise SandboxError(f"docker build failed:\n{proc.stderr[-2000:]}")
         self._log("sandbox.build.done", image=self._cfg.image)
 
+    def _running(self) -> bool:
+        proc = _run(["docker", "inspect", "-f", "{{.State.Running}}", self._cfg.container_name])
+        return proc.stdout.strip() == "true"
+
     def _ensure_network(self) -> None:
         proc = _run(["docker", "network", "inspect", self._cfg.network_name])
         if proc.returncode != 0:
@@ -130,12 +137,22 @@ class KaliSandbox:
             raise SandboxError(f"docker run failed:\n{proc.stderr[-2000:]}")
 
         # Confirm the entrypoint reached "ready" (egress installed) before we proceed.
-        logs = _run(["docker", "logs", self._cfg.container_name], timeout=30)
-        if "ready" not in (logs.stdout + logs.stderr):
+        # `docker run -d` returns as soon as the container starts, before the firewall
+        # script finishes, so wait for the line — but stop waiting the moment the
+        # container exits (the script failed closed).
+        text = ""
+        deadline = time.monotonic() + _READY_TIMEOUT_S
+        while True:
+            logs = _run(["docker", "logs", self._cfg.container_name], timeout=30)
+            text = logs.stdout + logs.stderr
+            if "ready" in text or time.monotonic() >= deadline or not self._running():
+                break
+            time.sleep(0.5)
+        if "ready" not in text:
             self.stop()
             raise SandboxError(
                 "sandbox did not confirm egress lockdown; refusing to run tools.\n"
-                + (logs.stdout + logs.stderr)[-1500:]
+                + text[-1500:]
             )
         self._started = True
 
@@ -151,17 +168,24 @@ class KaliSandbox:
         probe = (f"curl -s -m 3 -o /dev/null -w '%{{http_code}}' "
                 f"--connect-timeout 2 http://{_EGRESS_CANARY}/ || echo BLOCKED")
         result = self.exec(probe, timeout=10)
-        reached = not result.timed_out and "BLOCKED" not in result.stdout and result.exit_code == 0
+        # Only a probe that RAN and reported BLOCKED proves the block. A probe that failed
+        # to run at all (exec error, missing user, timeout) proves nothing, so it counts
+        # as reached: fail closed.
+        reached = result.timed_out or result.exit_code != 0 or "BLOCKED" not in result.stdout
         self._log("sandbox.egress_selftest", canary=_EGRESS_CANARY,
                   reached=reached, stdout=result.stdout[:200])
         if reached:
             self.stop()
+            ran = not result.timed_out and result.exit_code == 0
+            what = (f"the sandbox reached {_EGRESS_CANARY} (a destination that should "
+                    "never be in scope), meaning the egress firewall did not actually apply "
+                    "despite the entrypoint reporting ready" if ran else
+                    f"the canary probe could not run (exit {result.exit_code}: "
+                    f"{result.stderr.strip()[:300]}), so the block is unproven")
             raise SandboxError(
-                f"EGRESS SELF-TEST FAILED: the sandbox reached {_EGRESS_CANARY} "
-                "(a destination that should never be in scope), meaning the egress "
-                "firewall did not actually apply despite the entrypoint reporting ready. "
-                "Refusing to run any tool against a sandbox with unconfirmed scope "
-                "enforcement — this is fail-closed, not a false alarm to work around."
+                f"EGRESS SELF-TEST FAILED: {what}. Refusing to run any tool against a "
+                "sandbox with unconfirmed scope enforcement — this is fail-closed, not a "
+                "false alarm to work around."
             )
 
     def exec(self, command: str, timeout: int | None = None) -> ExecResult:

@@ -31,12 +31,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
+import sys
 import time
 import urllib.request
 from pathlib import Path
 
 import yaml
+from dotenv import find_dotenv, load_dotenv
 
 from ..config import SandboxConfig
 from .scoring import score_pair, score_run
@@ -77,16 +80,35 @@ def _wait_for(url: str, timeout: int = 120) -> bool:
     return False
 
 
+# Per-role model plan. The binding constraint is OpenRouter's free tier (50 requests/day
+# without credit), and a swarm run needs hundreds of calls: high-volume roles go to the
+# Ollama cloud flash model, the scarce OpenRouter quota goes to low-volume reasoning
+# (logic, workflow verification, single-agent plan/poc). Pins naming a provider that
+# isn't enabled are dropped; each role still falls back to its provider pools.
+_CLOUD_FLASH = "ollama:minimax-m3.1-flash:cloud"
+_OR_ULTRA = "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free"
+_OR_INKLING = "openrouter:thinkingmachines/inkling:free"
+_OR_LIGHTNING = "openrouter:nvidia/nemotron-3.5-lightning:free"
+_ROLE_PLAN = {
+    "recon":   [_CLOUD_FLASH, _OR_LIGHTNING],
+    "exploit": [_CLOUD_FLASH, _OR_ULTRA],
+    "access":  [_CLOUD_FLASH, _OR_LIGHTNING],
+    "logic":   [_OR_INKLING, _OR_ULTRA, _CLOUD_FLASH],
+    "verify":  [_OR_ULTRA, _OR_INKLING],
+    "plan":    [_OR_ULTRA, _CLOUD_FLASH],
+    "poc":     [_OR_ULTRA, _CLOUD_FLASH],
+}
+
+
 def _llm_block(providers: tuple[str, ...], ollama_models: str) -> dict:
     block = {"providers": list(providers), "ollama_models": ollama_models}
-    if "openrouter" in providers:
-        # Genuinely-agentic on a FREE model: route the reasoning step to a large free
-        # model (NVIDIA Nemotron 550B) instead of the tiny default. Parsing/triage stay
-        # on the free small pool; the free pool is the fallback if this errors. The
-        # Ollama router ignores this pin (it isn't an installed model) and uses its
-        # largest model for plan/poc instead.
-        block["role_models"] = {"plan": "nvidia/nemotron-3-ultra-550b-a55b:free",
-                                "poc": "nvidia/nemotron-3-ultra-550b-a55b:free"}
+    role_models = {}
+    for role, pins in _ROLE_PLAN.items():
+        kept = [p for p in pins if p.split(":", 1)[0] in providers]
+        if kept:
+            role_models[role] = kept
+    if role_models:
+        block["role_models"] = role_models
     return block
 
 
@@ -233,7 +255,9 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False,
                           max_run_seconds)
 
         started = time.time()
-        cmd = ["python", "-m", "redteam.cli", "--engagement", str(eng_path),
+        # sys.executable, not "python": PATH can resolve to an interpreter without this
+        # project's dependencies, and the agent then dies on import.
+        cmd = [sys.executable, "-m", "redteam.cli", "--engagement", str(eng_path),
                "--objective", objective, "--out", str(out_dir),
                "--yes-to-all", "--max-steps", "70"]
         # engagement.yaml's sandbox.enable already reflects whether we got a container_ip
@@ -246,13 +270,18 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False,
             cmd += ["--source-dir", target.compose_dir]
         if multi_agent:
             cmd.append("--multi-agent")
-        subprocess.run(cmd, check=False)
+        exit_code = subprocess.run(cmd, check=False).returncode
         elapsed = time.time() - started
     finally:
         if target.is_compose:
             _stop_compose(target)
         else:
             subprocess.run(["docker", "rm", "-f", container], capture_output=True)
+
+    if exit_code != 0:
+        # Never score a run the agent didn't make: an empty findings file reads as a
+        # perfectly clean negative control and would certify a false-positive rate of 0.
+        raise RuntimeError(f"agent exited with code {exit_code}; {target_name} not scored")
 
     findings_path = out_dir / "findings.json"
     findings = json.loads(findings_path.read_text(encoding="utf-8")) if findings_path.exists() else []
@@ -338,6 +367,7 @@ def default_objective(target_or_pair: str) -> str:
 
 
 def main(argv=None) -> int:
+    load_dotenv(find_dotenv(usecwd=True), override=False)   # .env keys; shell env wins
     ap = argparse.ArgumentParser(description="Run the agent against a benchmark target and score it.")
     ap.add_argument("--target", required=True,
                     help=f"a target ({', '.join(REGISTRY)}) or a paired run with a "
@@ -345,6 +375,8 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="runs/bench")
     ap.add_argument("--objective", default=None,
                     help="defaults to a target-appropriate prompt")
+    ap.add_argument("--headed", action="store_true",
+                    help="Show the agent's browser window to watch the run live.")
     ap.add_argument("--multi-agent", action="store_true",
                     help="Drive the run with the orchestrator + specialist swarm.")
     ap.add_argument("--llm-providers", default="openrouter",
@@ -356,6 +388,8 @@ def main(argv=None) -> int:
     ap.add_argument("--max-run-seconds", type=int, default=None,
                     help="wall-clock cap per run (default 1800; 14400 for local-only Ollama)")
     args = ap.parse_args(argv)
+    if args.headed:
+        os.environ["REDTEAM_HEADED"] = "1"   # inherited by the agent subprocess
     objective = args.objective or default_objective(args.target)
     run_fn = run_pair if args.target in PAIRS else run
     providers = tuple(p.strip().lower() for p in args.llm_providers.split(",") if p.strip())
