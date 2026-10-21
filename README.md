@@ -95,6 +95,20 @@ Flags: `--no-sandbox`, `--no-browser`, `--yes-to-all` (isolated labs only), `--m
 (orchestrator + specialist swarm), `--semantic-memory` (optional, needs
 `pip install -e .[semantic-memory]` + Docker — see below).
 
+## Local models (Ollama)
+
+Set `llm.provider: "ollama"` in the engagement file to run every role, and the whole
+`--multi-agent` swarm, on models served by a local `ollama serve`. Prompts and the
+target data in them stay on the machine; `:cloud` models are skipped unless
+`llm.allow_cloud` is set. Installed tool-capable models are split by parameter count:
+the largest serves `plan`/`poc`, the smallest serves `parse`/`triage`/`summary`.
+
+`llm.num_ctx` is sent on every call because Ollama's default context window silently
+truncates this agent's prompt. `llm.max_concurrency` bounds in-flight calls across all
+swarm workers (match `OLLAMA_NUM_PARALLEL`); extra workers overlap tool execution with
+inference instead of timing out in Ollama's queue. Tool calls that small models write as
+JSON text are recovered, for offered tool names only.
+
 ## Semantic memory (optional)
 
 `memory.py`'s `ExperienceStore` persists cross-run tradecraft (which CWE classes proved

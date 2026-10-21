@@ -23,7 +23,7 @@ PLAN = "plan"          # decide the next move over graph state
 POC = "poc"            # author/refine an exploit proof-of-concept
 DEFAULT = "plan"
 
-_CHEAP_ROLES = {PARSE, TRIAGE, SUMMARY}
+CHEAP_ROLES = {PARSE, TRIAGE, SUMMARY}
 
 # Name signals for a small/fast model.
 _SMALL_SIGNALS = re.compile(
@@ -53,7 +53,7 @@ def classify_pools(model_ids: list[str], context_lens: dict[str, int] | None = N
 
 def candidates_for_role(pools: dict[str, list[str]], role: str) -> list[str]:
     """Ordered candidate list for a role: preferred pool first, then the other as fallback."""
-    if role in _CHEAP_ROLES:
+    if role in CHEAP_ROLES:
         primary, secondary = pools.get("cheap", []), pools.get("strong", [])
     else:
         primary, secondary = pools.get("strong", []), pools.get("cheap", [])

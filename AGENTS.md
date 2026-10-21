@@ -60,7 +60,13 @@ runtime.py             Shared runtime wiring
 cli.py                 Entrypoint: preflight, sandbox/browser lifecycle, approvals
 parsers.py             Output parsing helpers
 llm/
+  __init__.py          make_client(cfg): picks the backend from llm.provider
   openrouter.py        Free-model discovery + rotation/fallback
+  ollama.py            Local-model backend, same chat() contract: native /api/chat
+                       (sets num_ctx), :cloud models excluded unless llm.allow_cloud,
+                       pools by parameter size, a semaphore bounding in-flight calls
+                       across swarm workers, and salvage of tool calls small models
+                       write as JSON text (offered tool names only)
   routing.py            Model routing logic
 sandbox/
   Dockerfile            Kali rolling + tools + firewall deps
@@ -148,6 +154,9 @@ assuming behavior isn't covered.
   also be listed in `scope.allowed_hosts`.
 - To add a new agent tool: implement `schema()` + `run(ctx, ...)` in `redteam/tools/`
   and register it in `build_registry` (see `redteam/tools/__init__.py`).
+- Agent/orchestrator are typed against `OpenRouterClient` but only use `chat()` and
+  `NoModelsAvailable`; `OllamaClient` satisfies the same contract. Build clients via
+  `llm.make_client`, never by constructing a provider class in cli.py.
 - Free OpenRouter model availability changes constantly — `llm/openrouter.py` does
   live discovery filtered on `supported_parameters: tools`, never hardcode a model list.
 - Findings require **proof**, not just a label (`proof.py`) — recent commit history

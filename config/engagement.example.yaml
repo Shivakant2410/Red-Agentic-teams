@@ -54,6 +54,16 @@ llm:
   # Optional: pin or exclude specific models.
   # model_allow: ["meta-llama/llama-3.3-70b-instruct:free"]
   # model_deny: []
+  #
+  # Local models instead (prompts and target data never leave this machine):
+  # provider: "ollama"             # base_url then defaults to http://localhost:11434
+  # num_ctx: 16384                 # Ollama's default window silently truncates this agent
+  # max_concurrency: 1             # in-flight LLM calls across all swarm workers; match
+  #                                # OLLAMA_NUM_PARALLEL (1 on a CPU/iGPU host)
+  # request_timeout: 600
+  # allow_cloud: false             # ":cloud" models run on ollama.com — keep off unless
+  #                                # the client permits third-party processing
+  # role_models: {plan: "qwen-27b-iq2m:latest", poc: "qwen-27b-iq2m:latest"}
 
 # Kali-in-Docker sandbox.
 sandbox:

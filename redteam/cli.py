@@ -20,7 +20,7 @@ from .agent import RedTeamAgent
 from .audit import AuditLog
 from .config import ConfigError, load_engagement
 from .findings import FindingStore
-from .llm.openrouter import OpenRouterClient
+from .llm import make_client
 from .ratelimit import RateLimiter
 from .report import build_html_report, build_report
 from .scope import ScopeGuard
@@ -117,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
     killchain = KillChain(out / "killchain.json")
 
     try:
-        client = OpenRouterClient(engagement.llm, audit=audit)
+        client = make_client(engagement.llm, audit=audit)
     except RuntimeError as exc:
         print(f"LLM setup error: {exc}", file=sys.stderr)
         return 2

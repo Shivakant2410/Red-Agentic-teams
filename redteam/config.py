@@ -41,6 +41,19 @@ class LlmConfig:
     max_tokens: int = 4096
     referer: str = "https://localhost/redteam-agent"  # OpenRouter attribution headers
     title: str = "redteam-agent"
+    # "openrouter" or "ollama". Ollama keeps every prompt (and the target data in it) on
+    # this machine; base_url defaults to http://localhost:11434 for it.
+    provider: str = "openrouter"
+    # Ollama only. Its default context window is far smaller than this agent's system
+    # prompt + tool schemas, and overflow is silently truncated — so it is set explicitly.
+    num_ctx: int = 16384
+    # Ollama ":cloud" models run on ollama.com, not locally: target data leaves the host.
+    # Off by default; only enable when the engagement permits third-party processing.
+    allow_cloud: bool = False
+    # Ollama only: LLM calls in flight at once across all swarm workers. Workers beyond
+    # this still overlap tool execution with inference; match OLLAMA_NUM_PARALLEL.
+    max_concurrency: int = 1
+    request_timeout: int = 600   # seconds; CPU inference on a large model is slow
 
 
 @dataclass(frozen=True)
@@ -122,8 +135,17 @@ def _as_date(value: object, field_name: str) -> _dt.date:
 def _load_llm(data: dict) -> LlmConfig:
     d = data.get("llm") or {}
     defaults = LlmConfig()
+    provider = str(d.get("provider", defaults.provider)).lower()
+    if provider not in ("openrouter", "ollama"):
+        raise ConfigError(f"llm.provider must be 'openrouter' or 'ollama', got {provider!r}")
+    default_url = "http://localhost:11434" if provider == "ollama" else defaults.base_url
     return LlmConfig(
-        base_url=str(d.get("base_url", defaults.base_url)),
+        provider=provider,
+        num_ctx=int(d.get("num_ctx", defaults.num_ctx)),
+        allow_cloud=bool(d.get("allow_cloud", defaults.allow_cloud)),
+        max_concurrency=max(1, int(d.get("max_concurrency", defaults.max_concurrency))),
+        request_timeout=int(d.get("request_timeout", defaults.request_timeout)),
+        base_url=str(d.get("base_url", default_url)),
         api_key_env=str(d.get("api_key_env", defaults.api_key_env)),
         prefer_free=bool(d.get("prefer_free", defaults.prefer_free)),
         require_tool_support=bool(d.get("require_tool_support", defaults.require_tool_support)),
