@@ -77,7 +77,23 @@ def _wait_for(url: str, timeout: int = 120) -> bool:
     return False
 
 
-def _write_engagement(target, path: Path, container_ip: str | None = None) -> None:
+_LLM_BLOCKS = {
+    # Genuinely-agentic on a FREE model: route the reasoning step to a large free
+    # model (NVIDIA Nemotron 550B) instead of the tiny default. Parsing/triage stay
+    # on the free small pool; the free pool is the fallback if this errors.
+    "openrouter": {"role_models": {"plan": "nvidia/nemotron-3-ultra-550b-a55b:free",
+                                   "poc": "nvidia/nemotron-3-ultra-550b-a55b:free"}},
+    # Whatever is installed locally; OllamaRouter puts the largest model on plan/poc.
+    "ollama": {"provider": "ollama"},
+}
+# CPU inference is minutes per turn, so a local run needs far more wall clock.
+_DEFAULT_MAX_RUN_SECONDS = {"openrouter": 1800, "ollama": 4 * 3600}
+
+
+def _write_engagement(target, path: Path, container_ip: str | None = None,
+                      llm_provider: str = "openrouter",
+                      max_run_seconds: int | None = None) -> None:
+    max_run_seconds = max_run_seconds or _DEFAULT_MAX_RUN_SECONDS[llm_provider]
     # Two different "reach the target" paths need two different addresses in scope:
     #   - The browser (Playwright) and the host-requests fallback run ON THE HOST, so
     #     they reach the target via its published port: localhost:<host_port>.
@@ -102,12 +118,8 @@ def _write_engagement(target, path: Path, container_ip: str | None = None) -> No
         },
         "objective": target.objective,      # the red-team scoreboard for this target
         "limits": {"max_requests_per_second": 20, "max_total_requests": 5000,
-                   "max_run_seconds": 1800},
-        # Genuinely-agentic on a FREE model: route the reasoning step to a large free
-        # model (NVIDIA Nemotron 550B) instead of the tiny default. Parsing/triage stay
-        # on the free small pool; the free pool is the fallback if this errors.
-        "llm": {"role_models": {"plan": "nvidia/nemotron-3-ultra-550b-a55b:free",
-                                "poc": "nvidia/nemotron-3-ultra-550b-a55b:free"}},
+                   "max_run_seconds": max_run_seconds},
+        "llm": _LLM_BLOCKS[llm_provider],
         # Sandbox ON whenever we resolved a reachable container IP for Kali to use — this
         # is the actual fix: every prior benchmark run disabled it because nothing had
         # put the target and Kali on the same Docker network yet (see module docstring).
@@ -165,7 +177,8 @@ def _stop_compose(target) -> None:
                        capture_output=True)
 
 
-def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -> dict:
+def run(target_name: str, out: str, objective: str, multi_agent: bool = False,
+        llm_provider: str = "openrouter", max_run_seconds: int | None = None) -> dict:
     target = get_target(target_name)
     out_dir = Path(out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -209,7 +222,7 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -
             raise RuntimeError(f"target did not become ready at {target.base_url}")
 
         eng_path = out_dir / "engagement.yaml"
-        _write_engagement(target, eng_path, container_ip)
+        _write_engagement(target, eng_path, container_ip, llm_provider, max_run_seconds)
 
         started = time.time()
         cmd = ["python", "-m", "redteam.cli", "--engagement", str(eng_path),
@@ -283,14 +296,17 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -
             "vuln_card": vuln_card}
 
 
-def run_pair(pair_name: str, out: str, objective: str, multi_agent: bool = False) -> dict:
+def run_pair(pair_name: str, out: str, objective: str, multi_agent: bool = False,
+             llm_provider: str = "openrouter", max_run_seconds: int | None = None) -> dict:
     """Run a positive target and its negative control with the identical objective, then
     report them together. The control's false positives decide whether the positive
     run's precision means anything (see scoring.score_pair)."""
     positive_name, control_name = PAIRS[pair_name]
     out_dir = Path(out)
-    positive = run(positive_name, str(out_dir / "positive"), objective, multi_agent)
-    control = run(control_name, str(out_dir / "control"), objective, multi_agent)
+    positive = run(positive_name, str(out_dir / "positive"), objective, multi_agent,
+                   llm_provider, max_run_seconds)
+    control = run(control_name, str(out_dir / "control"), objective, multi_agent,
+                  llm_provider, max_run_seconds)
     paired = score_pair(positive["vuln_card"], control["vuln_card"])
     report = paired.to_markdown()
     (out_dir / "paired-scorecard.md").write_text(report, encoding="utf-8")
@@ -322,12 +338,15 @@ def main(argv=None) -> int:
                     help="defaults to a target-appropriate prompt")
     ap.add_argument("--multi-agent", action="store_true",
                     help="Drive the run with the orchestrator + specialist swarm.")
+    ap.add_argument("--llm-provider", choices=sorted(_LLM_BLOCKS), default="openrouter",
+                    help="ollama runs every role on locally installed models")
+    ap.add_argument("--max-run-seconds", type=int, default=None,
+                    help="wall-clock cap per run (default: 1800 openrouter, 14400 ollama)")
     args = ap.parse_args(argv)
     objective = args.objective or default_objective(args.target)
-    if args.target in PAIRS:
-        run_pair(args.target, args.out, objective, multi_agent=args.multi_agent)
-    else:
-        run(args.target, args.out, objective, multi_agent=args.multi_agent)
+    run_fn = run_pair if args.target in PAIRS else run
+    run_fn(args.target, args.out, objective, multi_agent=args.multi_agent,
+           llm_provider=args.llm_provider, max_run_seconds=args.max_run_seconds)
     return 0
 
 

@@ -97,6 +97,19 @@ def test_lab_target_builds_locally_and_passes_profile_env():
     assert cmd[-1] == LAB_AUTHZ_SAFE.image and "8090:8080" in cmd
 
 
+@pytest.mark.parametrize("provider, expected_secs", [("openrouter", 1800), ("ollama", 14400)])
+def test_engagement_carries_llm_provider_and_its_run_budget(tmp_path, provider, expected_secs):
+    import yaml
+    from redteam.bench.runner import _write_engagement
+    from redteam.config import load_engagement
+
+    path = tmp_path / "engagement.yaml"
+    _write_engagement(LAB_AUTHZ_SAFE, path, "172.18.0.5", llm_provider=provider)
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert doc["limits"]["max_run_seconds"] == expected_secs
+    assert load_engagement(path).llm.provider == provider
+
+
 def test_default_objective_is_per_target():
     assert default_objective("lab-authz") == LAB_OBJECTIVE_PROMPT
     assert default_objective("lab-authz-safe") == LAB_OBJECTIVE_PROMPT
