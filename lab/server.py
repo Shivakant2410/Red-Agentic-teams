@@ -5,6 +5,13 @@ import json
 import os
 from urllib.parse import urlsplit
 
+# Synthetic lab-only accounts. The login flow exists so the redteam bench can drive this
+# fixture end to end (authenticate -> test_idor) instead of being handed raw tokens.
+ACCOUNTS = {
+    "alice": ("alice-lab-pass", "lab-token-a", "record-a"),
+    "bob": ("bob-lab-pass", "lab-token-b", "record-b"),
+}
+
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -83,7 +90,7 @@ class Handler(BaseHTTPRequestHandler):
             {"record_id": record_id, "tenant_id": owner_tenant, "value": "synthetic"},
         )
 
-    def _json_response(self, status: int, payload: dict[str, str]) -> None:
+    def _json_response(self, status: int, payload: dict) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -92,7 +99,23 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
-        self.send_error(405)
+        if urlsplit(self.path).path != "/api/login":
+            self.send_error(405)
+            return
+        try:
+            length = min(int(self.headers.get("Content-Length") or 0), 4096)
+            creds = json.loads(self.rfile.read(length) or b"{}")
+        except (ValueError, json.JSONDecodeError):
+            creds = None
+        if not isinstance(creds, dict):
+            self._json_response(400, {"error": "bad request"})
+            return
+        account = ACCOUNTS.get(str(creds.get("username", "")))
+        if account is None or creds.get("password") != account[0]:
+            self._json_response(401, {"error": "invalid credentials"})
+            return
+        _, token, record_id = account
+        self._json_response(200, {"token": token, "records": [f"/api/records/{record_id}"]})
 
     def log_message(self, format, *args):
         return

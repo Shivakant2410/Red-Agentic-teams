@@ -27,5 +27,5 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 packages = ["redteam", "redteam.tools", "redteam.llm", "redteam.llmred", "redteam.sandbox",
             "redteam.bench", "redteam.importers", "redteam.memory_backend", "redteam.swarm",
-            "agentic_setup"]
+            "redteam.recon", "agentic_setup"]
 package-dir = {"agentic_setup" = "src/agentic_setup"}
