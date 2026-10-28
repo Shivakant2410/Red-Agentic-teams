@@ -109,3 +109,43 @@ def test_agent_ends_its_turn_after_repeated_stalls_instead_of_grinding_to_max_st
     agent.run("find something")
     # 3 stall cycles of 4 turns each (nudged twice, stopped on the 3rd) is well under 100.
     assert client.calls < 25
+
+
+def _manifest_attached(tmp_path):
+    from redteam.runtime import RunManifest
+    m = RunManifest(objective="o", engagement="t")
+    p = tmp_path / "manifest.json"
+    m.save(p)
+    return m, p
+
+
+def test_single_agent_budget_exhaustion_is_halted_not_completed(tmp_path):
+    """Gen-2 E2E regression: in single-agent mode the agent IS the run — when it
+    grinds out max_steps without the objective, the manifest must read 'halted'
+    with an honest halt_reason, not a green 'completed' an operator reads as
+    success. (Multi-agent specialists keep the old behavior: their budget end is
+    a turn end, not a run end.)"""
+    eng, ctx = _ctx(tmp_path)
+    client = NoOpToolCallClient()
+    m, p = _manifest_attached(tmp_path)
+    # no graph -> stall detection off; tool calls every turn -> the loop can only
+    # end by exhausting max_steps, which is exactly the path under test
+    agent = RedTeamAgent(eng, {"noop_tool": NoopTool()}, ctx, client, max_steps=6,
+                         terminal_on_budget_end=True)
+    agent.with_runtime(manifest=m, manifest_path=p)
+    agent.run("reach the objective")
+    assert m.status == "halted", f"expected halted, got {m.status!r}"
+    assert m.halt_reason == "max_steps_reached"
+
+
+def test_specialist_budget_exhaustion_still_ends_as_completed(tmp_path):
+    """Orchestrator specialists share RedTeamAgent; their budget end must keep
+    status='completed' so the swarm's manifest isn't flipped mid-run."""
+    eng, ctx = _ctx(tmp_path)
+    client = NullContentClient()
+    m, p = _manifest_attached(tmp_path)
+    agent = RedTeamAgent(eng, {}, ctx, client, max_steps=4)
+    agent.with_runtime(manifest=m, manifest_path=p)
+    agent.run("reach the objective")
+    assert m.status == "completed"
+    assert m.halt_reason == ""
