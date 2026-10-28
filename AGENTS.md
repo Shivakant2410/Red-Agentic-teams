@@ -8,11 +8,16 @@ tree each session.
 `redteam-agent` (pyproject name) — an **authorized**-use red-team agent for web-app/API
 security testing. Two execution surfaces given to the LLM: a Kali Linux Docker sandbox
 (`kali_exec`: nmap, ffuf, sqlmap, nikto, gobuster, curl, ...) and Playwright browser
-automation. Model backend is OpenRouter, rotating across free tool-calling models.
-Scope is enforced at the network layer (egress firewall + SSRF-aware scope guard), not
-by trusting the model to behave — see README.md "How 'give it all of Kali' stays safe".
+automation. Model backends: OpenRouter free-pool rotation (zero-config default) or the
+Gen-2 multi-provider gateway (`llm/gateway.py` + `llm/providers.py` — OpenAI/Anthropic/
+Z.ai/Groq/Ollama/vLLM, role-routed with cross-provider failover; an empty `llm.providers`
+config falls back to byte-identical Gen-1 behavior). Scope is enforced at the network
+layer (egress firewall + SSRF-aware scope guard), not by trusting the model to behave —
+see README.md "How 'give it all of Kali' stays safe".
 
-Python >= 3.10. Entry point: `redteam = "redteam.cli:main"` (`python -m redteam.cli`).
+Python >= 3.10. Entry points: `redteam = "redteam.cli:main"` (`python -m redteam.cli`)
+and the headless control plane `python -m redteam.server` (FastAPI + the Next.js
+dashboard in `dashboard/`; see GEN2-ARCHITECTURE.md for the API contract).
 
 ## Two top-level packages
 
@@ -57,10 +62,33 @@ secrets.py             Secret handling/redaction
 session.py             Session state
 skills.py              Skill library loading
 runtime.py             Shared runtime wiring
+run.py                 execute_run(RunOptions) — the ONE run assembly line shared by
+                       cli.py and server.py; do NOT re-assemble runs elsewhere
+events.py              EventBus + JSONL sink (events.jsonl per run) + read_events
+                       replay; emission never raises (safe_emit for optional buses)
+traffic.py             TrafficRecorder: per-run wire evidence (traffic.jsonl) recorded
+                       at the tools/http.py chokepoint; credential headers masked BOTH
+                       ways, bodies truncated/droppable; record() never raises and
+                       only successful writes increment .count
+inventory.py           AssetInventory: host->service surface map (inventory.json),
+                       passive fingerprints from every response + surface_scan /
+                       asset feeds; atomic saves, RLock (swarm-safe)
+importers/assets.py    Asset-feed sync (CSV/JSON/JSONL): an INTERSECTION with the RoE
+                       via scope.check — dropped records are counted, scope is NEVER
+                       widened; raise ValueError on unreadable feed files
+tools/surface.py       surface_scan: knocks once on every allowed host x port (capped
+                       at 64 pairs), fills the inventory, NEVER records findings,
+                       stops honestly on budget exhaustion
+reflection.py          Per-round strategist self-critique; re-ranks attack_tree only
+server.py              FastAPI control plane: POST/GET /api/runs, SSE stream, REST
+                       approvals (run.py: HeadlessApprover/resolve_approval), static
+dashboard hosting
 cli.py                 Entrypoint: preflight, sandbox/browser lifecycle, approvals
 parsers.py             Output parsing helpers
 llm/
-  openrouter.py        Free-model discovery + rotation/fallback
+  openrouter.py        Free-model discovery + rotation/fallback (default backend)
+  providers.py         OpenAI-compatible + native Anthropic providers
+  gateway.py           LLMGateway: role routing, round-robin failover, 429 cooldowns
   routing.py            Model routing logic
 sandbox/
   Dockerfile            Kali rolling + tools + firewall deps
@@ -71,6 +99,10 @@ tools/
   kali.py                kali_exec (firewall-tamper + destructive guards)
   browser.py             browser_navigate/content/click/fill/screenshot
   workflow.py            record_finding, request_approval
+  jwt.py                 jwt_inspect — deterministic JWT checklist (offline, leads only)
+  nuclei.py              nuclei_scan — sandbox-first scanner; matches are LEADS only
+  independent_verify.py  verify_finding_independently — the ONLY tool that may promote
+                         a finding to confirmed
   access.py / access_tools.py   Access-control testing helpers
   authsession.py         Auth session handling for tools
   confirm.py             Interactive approval gating
@@ -79,6 +111,11 @@ tools/
   skill_tools.py         Tools for invoking the skill library
   template_search.py     Template/finding search
   verify_tool.py         Verification tool wrapper
+memory_backend/
+  local_semantic.py      LocalSemanticBackend + HashingEmbedder — zero-dependency
+                         semantic memory (JSON file; on-device transformer when
+                         installed, hashing n-gram fallback otherwise)
+  helix_backend.py       HelixDB backend (Docker, opt-in via --helix-memory)
 bench/
   runner.py / scoring.py / objective_scoring.py / targets.py   Benchmark harness
 importers/
@@ -141,6 +178,19 @@ assuming behavior isn't covered.
   also be listed in `scope.allowed_hosts`.
 - To add a new agent tool: implement `schema()` + `run(ctx, ...)` in `redteam/tools/`
   and register it in `build_registry` (see `redteam/tools/__init__.py`).
+- **Gen-2 additions to respect:**
+  - New runs must go through `run.execute_run(RunOptions)` — the CLI and API share it;
+    don't fork the assembly logic. Headless runs get telemetry via an `EventBus` in
+    `RunOptions.events` and approvals via `HeadlessApprover`; CLI passes `None` and
+    `interactive_approver`.
+  - Emit telemetry with `safe_emit(ctx.events, "type", ...)` from tools; the catalog
+    and role enum are in worklog/GEN2-ARCHITECTURE.md. Emission must never raise.
+  - Reflection (`reflection.py`) may only re-rank existing attack-tree nodes via
+    `attack_tree.apply_strategy` — never create targets or authorize actions.
+  - Scanner output (`nuclei_scan`) and deterministic checklists (`jwt_inspect`) produce
+    LEADS with verify hints; they must never record findings directly.
+  - FastAPI request models must live at module level in `server.py` (closure-local
+    pydantic models break schema generation with `from __future__ import annotations`).
 - Free OpenRouter model availability changes constantly — `llm/openrouter.py` does
   live discovery filtered on `supported_parameters: tools`, never hardcode a model list.
 - Findings require **proof**, not just a label (`proof.py`) — recent commit history
@@ -160,6 +210,14 @@ cp config/engagement.example.yaml config/engagement.yaml   # edit to signed scop
 python -m redteam.cli --engagement config/engagement.yaml \
   --objective "..." --out runs/<name>
 pytest -q
+```
+
+Headless/dashboard mode (Gen-2):
+
+```bash
+pip install "fastapi>=0.110" "uvicorn[standard]"
+npm --prefix dashboard install && npm --prefix dashboard run build
+python -m redteam.server --runs-root runs --port 8000   # dashboard at http://127.0.0.1:8000
 ```
 
 Docker must be running for the Kali sandbox. First run builds the (large) Kali image.

@@ -1,14 +1,17 @@
-# Red-Team Agent — Kali sandbox + Playwright, driven by OpenRouter
+# Red-Team Agent — Kali sandbox + Playwright, multi-provider LLMs, live mission control
 
 An agentic red-team assistant for **authorized** web-application / API security testing.
 Instead of a handful of narrow tools, the agent gets two full execution surfaces:
 
 - **A Kali Linux sandbox in Docker** — the whole offensive toolset (nmap, ffuf, sqlmap,
-  nikto, gobuster, curl, …) available via `kali_exec`.
+  nikto, gobuster, curl, nuclei, …) available via `kali_exec`.
 - **Playwright browser automation** — a real headless browser for anything that needs a
   DOM and JavaScript.
 
-The model backend is **OpenRouter**, rotating across **free** models by availability.
+Model backends: **OpenRouter** (free-pool rotation, the zero-config default) or the
+**Gen-2 multi-provider gateway** (OpenAI, Anthropic, Z.ai, Groq, Ollama, vLLM — role-routed
+with cross-provider failover). Runs are observable in real time from the bundled
+**mission-control dashboard** (see Gen-2 below).
 
 > **Authorized use only.** Run this only against systems you own or have **written
 > permission** to test (a signed SOW/engagement, or a bug-bounty program within its
@@ -41,31 +44,41 @@ So scope is enforced at the **network layer**:
 
 ```text
 redteam/
-  config.py          RoE + LLM (OpenRouter) + sandbox settings, validated
+  config.py          RoE + LLM config (OpenRouter default / multi-provider gateway) + sandbox
   scope.py           ScopeGuard — SSRF-aware target boundary
   ratelimit.py       Token-bucket limiter + request budget
   audit.py           Append-only JSONL audit log
   findings.py        Finding model + JSON store
-  report.py          Markdown report
+  report.py          Markdown + HTML report
   agent.py           OpenAI-style tool-use loop (owned explicitly)
-  cli.py             Entrypoint: preflight, sandbox/browser lifecycle, approvals
-  llm/openrouter.py  Free-model discovery + rotation/fallback
+  orchestrator.py    Multi-agent swarm: recon -> exploit -> verify -> access -> logic
+  run.py             execute_run() — the ONE run assembly line shared by CLI and API
+  cli.py             Terminal entrypoint: preflight, console output, interactive approvals
+  server.py          Headless control plane (FastAPI): runs lifecycle, SSE, approvals,
+                     static dashboard hosting
+  events.py          EventBus + JSONL sink: the live telemetry the dashboard consumes
+  traffic.py         TrafficRecorder — per-run wire evidence (traffic.jsonl), credential
+                     headers masked both ways, bodies truncatable/droppable
+  inventory.py       AssetInventory — attack-surface map (host -> port -> service/
+                     banner/title), built passively from every response + surface_scan
+  importers/assets.py  ScopeSentry-style asset-feed sync (CSV/JSON/JSONL) — FAIL-CLOSED:
+                     feed entries outside the RoE are dropped; the feed can never widen scope
+  reflection.py      LLM strategist self-critique between orchestrator rounds (re-rank only)
+  llm/openrouter.py  Free-model discovery + rotation/fallback (default backend)
+  llm/providers.py   OpenAI-compatible + Anthropic providers (Gen-2)
+  llm/gateway.py     Multi-provider role-routed gateway with cross-provider failover
   memory.py          ExperienceStore — persistent cross-run tradecraft lessons
-  memory_backend/    Optional HelixDB (graph+vector) backend for memory.py — semantic
-                      recall instead of tag matching, plus AppPattern (app-shape facts,
-                      not just vuln-class technique). See its __init__.py docstring for
-                      the current persistence caveat (--semantic-memory in cli.py).
-  sandbox/
-    Dockerfile       Kali rolling + tools + firewall deps
-    entrypoint.sh    Installs the egress allowlist, then idles (fail closed)
-    egress.py        RoE scope -> allowed CIDRs
-    docker_kali.py   Build/start/exec/stop the container
-  tools/
-    kali.py          kali_exec (firewall-tamper + destructive guards)
-    browser.py       browser_navigate/content/click/fill/screenshot
-    workflow.py      record_finding, request_approval
+  memory_backend/    Semantic recall backends: local_semantic.py (zero dependencies,
+                      JSON + on-device/hashing embeddings) and HelixDB (Docker, opt-in)
+  sandbox/           Kali container: egress firewall, self-test, lifecycle
+  tools/             kali_exec, browser_*, record_finding, request_approval,
+                     verify_vulnerability, verify_finding_independently, jwt_inspect,
+                     nuclei_scan (leads only), template/skill tools, postex, ...
+dashboard/           Next.js mission-control UI (static export, served by server.py)
 config/engagement.example.yaml
-tests/                test_scope.py, test_egress.py
+GEN2-ARCHITECTURE.md Gen-2 design doc — how the pieces fit and which invariants hold
+ROADMAP.md           Gap analysis vs CAI / PentestGPT / Nebula + the path forward
+tests/
 ```
 
 ## Setup
@@ -92,36 +105,128 @@ prompt and approve sensitive actions as they come up. Outputs land in `--out`:
 `report.md`, `findings.json`, `audit.log.jsonl`, `screenshots/`.
 
 Flags: `--no-sandbox`, `--no-browser`, `--yes-to-all` (isolated labs only), `--multi-agent`
-(orchestrator + specialist swarm), `--semantic-memory` (optional, needs
-`pip install -e .[semantic-memory]` + Docker — see below).
+(orchestrator + specialist swarm), `--semantic-memory` (local, zero-dependency semantic
+recall), `--helix-memory` (HelixDB backend, needs Docker), `--events` (write the live
+event stream to the run directory).
+
+## Gen-2: dashboard + headless control plane
+
+The CLI and the API drive the **same** `execute_run()`. To run with the live dashboard:
+
+```bash
+pip install "fastapi>=0.110" "uvicorn[standard]"   # server deps
+npm --prefix dashboard install && npm --prefix dashboard run build   # one-time UI build
+python -m redteam.server --runs-root runs --port 8000
+```
+
+Then open `http://127.0.0.1:8000`:
+
+- **Launch runs** from the browser (engagement path, objective, swarm mode, budgets) —
+  the RoE is validated before anything starts.
+- **Watch the attack live**: every agent turn, tool call/result, finding, phase change,
+  model rotation, and reflection streams over SSE into the mission-control page.
+- **Approve sensitive actions** in one click (`request_approval` blocks the agent until
+  you decide; a STOP kill file auto-denies and halts — fail closed).
+- **Stop runs, read reports**, and inspect the objective score, kill chain, attack tree,
+  and per-round strategist reflections.
+
+The API (same origin as the dashboard): `POST /api/runs`, `GET /api/runs`,
+`GET /api/runs/{id}`, `GET /api/runs/{id}/events`, `GET /api/runs/{id}/stream` (SSE),
+`POST /api/runs/{id}/stop`, `GET /api/runs/{id}/report`, `GET /api/runs/{id}/approvals`,
+`POST /api/approvals/{id}`, `GET /api/health`. Telemetry lives in each run directory as
+`events.jsonl` — replay, live-tail, and post-mortems all read the same bytes the engine
+wrote. See **GEN2-ARCHITECTURE.md** for the full contract and design rules.
+
+### Multi-provider LLM gateway (optional)
+
+By default the agent uses OpenRouter's free pool exactly as before. To route roles
+across providers with automatic failover, add a `providers:` block to the engagement's
+`llm:` section:
+
+```yaml
+llm:
+  providers:
+    - kind: openai          # shortcut: fills base_url + OPENAI_API_KEY
+      models_allow: [gpt-4.1-mini]
+      priority: 1
+    - kind: anthropic       # native /v1/messages translation
+      priority: 2
+    - kind: ollama          # local models, zero cost
+      base_url: http://127.0.0.1:11434/v1
+      priority: 3
+  role_models: {plan: "openai:gpt-4.1", poc: "anthropic:claude-sonnet-4-5"}
+```
+
+Candidates interleave round-robin by priority (A best, B best, A second, …); two
+consecutive 429s demote a pair to the back of the queue. With no `providers:` block,
+behavior is byte-identical to Gen-1.
+
+### Strategist reflection (multi-agent mode)
+
+After every orchestrator round, a strong-role LLM receives a deterministic digest of
+the run (objective progress, findings, tree state, failure signals) and returns a
+JSON critique. It may only **re-rank existing attack-tree techniques** (+25/-25) — it
+cannot create targets, authorize gated actions, or override the proof pipeline. Any
+failure skips reflection silently; the deterministic plan always stands.
+
+## Attack-surface evidence (ARTEX-inspired)
+
+Three capabilities ported from ARTEX (mhtsec/ARTEX — an autonomous pentesting platform;
+note it was recently abused in the wild, which is exactly why our ports keep the
+authorization-first discipline):
+
+- **Traffic recording** (`traffic.py`) — every in-scope exchange on the shared fetch
+  path (probes, proofs, verify passes, surface sweeps) lands in `traffic.jsonl` as
+  wire evidence: method, URL, status, timing, headers both ways. Credential-adjacent
+  headers (Authorization, Cookie, Set-Cookie, API keys) are masked in BOTH directions;
+  bodies are truncated (16 KB) and can be dropped entirely with `--no-traffic-bodies`.
+  Scope-denied attempts are recorded too — the log shows the boundary holding.
+  Served at `GET /api/runs/{id}/traffic?after=<seq>` with the same cursor contract
+  as the event stream.
+- **Asset inventory** (`inventory.py` + `surface_scan`) — a per-run map of which
+  in-scope hosts answered, on which ports, with which server banner, page title, and
+  auth challenge. It builds itself passively from every response, and the RECON
+  specialist's `surface_scan` tool fills it actively by knocking once on every
+  host:port the RoE already allows (never widens scope, never records findings,
+  stops honestly at budget exhaustion). Served at `GET /api/runs/{id}/inventory`.
+- **Asset-feed sync** (`importers/assets.py`) — `--asset-feed feeds.csv` (or JSON /
+  JSONL, ScopeSentry-style columns `host|domain|ip, port, scheme, service`) seeds the
+  inventory before the run starts. It is an INTERSECTION, not a merge: each record is
+  re-checked against the RoE by the ScopeGuard itself, out-of-scope entries are
+  dropped and counted with samples, and `scope.check()` still refuses them afterwards.
+  The server validates the feed at launch (400 on unreadable files).
+
+```bash
+# operator view of what the team actually put on the wire
+curl -s localhost:8000/api/runs/<id>/traffic | jq '.traffic[-1]'
+curl -s localhost:8000/api/runs/<id>/inventory | jq '.summary'
+```
 
 ## Semantic memory (optional)
 
 `memory.py`'s `ExperienceStore` persists cross-run tradecraft (which CWE classes proved
 out, which proof oracles work) as flat JSON by default, recalled by tag/keyword overlap.
-`--semantic-memory` swaps in a HelixDB (graph+vector) backend instead: lessons are
-recalled by *meaning*, not shared vocabulary ("broken object reference" now matches a
-lesson phrased around "IDOR"), and a second kind of fact — **app-shape patterns**
-("this app uses a two-step login," "sequential numeric IDs, worth enumerating") — gets
-distilled from each run's knowledge graph so a brand-new target isn't started blind, the
-same way vuln-proving lessons already aren't.
+Two semantic backends upgrade recall from shared vocabulary to *meaning* — "broken
+object reference" matching a lesson phrased around "IDOR" — and add a second kind of
+fact, **app-shape patterns** ("this app uses a two-step login," "sequential numeric IDs,
+worth enumerating"), distilled from each run's knowledge graph so a brand-new target
+isn't started blind:
+
+- **`--semantic-memory` (local, default):** one JSON file, embeddings from the on-device
+  `all-MiniLM-L6-v2` when installed, otherwise a built-in hashing embedder (stopword-
+  filtered words + character trigrams). Zero dependencies, zero Docker, deterministic.
+- **`--helix-memory` (opt-in):** HelixDB graph+vector backend in Docker with a persistent
+  named volume (see the notes in `memory_backend/helix_server.py`). Deepest semantic
+  quality; needs Docker.
 
 ```bash
-pip install -e .[semantic-memory]
-python -m redteam.cli ... --semantic-memory
+python -m redteam.cli ... --semantic-memory      # no extra install
+pip install -e .[semantic-memory]                # optional: real transformer embeddings
+python -m redteam.cli ... --helix-memory         # Docker path
 ```
 
-This starts a local HelixDB container for the run (same lifecycle pattern as the Kali
-sandbox) and runs a small local embedding model (`all-MiniLM-L6-v2`, no API/network
-dependency, consistent with the free-tier-only design elsewhere in this project).
-
-**Persistence:** the `ghcr.io/helixdb/helixdb:v0.0.3` image's standalone server is
-in-memory only by HelixDB's own design (its `DB_PATH` var is an internal key prefix, not
-a filesystem path — no mount fixes that). `HelixServer` now runs `v0.0.9` with
-`HELIX_DATA_DIR` pointed at a named Docker volume, which genuinely persists: confirmed by
-writing a value, stopping the container, starting a fresh one on the same volume, and
-reading the value back. Lessons and app-shape patterns now survive across runs, same as
-the plain-JSON path.
+Both paths degrade gracefully: if the embedder or the container fails, the store falls
+back to plain tag-matched memory and the run continues.
 
 ## Learned technique selection (bandit, optional)
 
