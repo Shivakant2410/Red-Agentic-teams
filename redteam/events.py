@@ -45,6 +45,10 @@ class FileSink:
         self._fh.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
         self._fh.flush()
 
+    @property
+    def path(self) -> Path:
+        return self._path
+
     def close(self) -> None:
         try:
             self._fh.close()
@@ -89,6 +93,12 @@ class EventBus:
     def cursor(self) -> int:
         with self._lock:
             return self._seq
+
+    @property
+    def sink_path(self) -> Path | None:
+        """Where this bus persists events (None = memory-only). read_events() takes it."""
+        fs = self._file_sink
+        return fs.path if fs is not None else None
 
     def subscribe(self, fn: Callable[[dict], None]) -> None:
         with self._lock:

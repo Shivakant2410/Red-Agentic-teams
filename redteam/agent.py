@@ -346,6 +346,17 @@ class RedTeamAgent:
                 pass
 
     def _dispatch(self, name: str, tool_input: dict) -> str:
+        # Publish WHO is calling, for tools that need per-specialist identity
+        # (search_peer_traces excludes the caller's own traces). Reset in finally:
+        # this thread may run a different specialist next round.
+        from .tools import current_agent
+        token = current_agent.set(self._agent_name or self._role)
+        try:
+            return self._dispatch_inner(name, tool_input)
+        finally:
+            current_agent.reset(token)
+
+    def _dispatch_inner(self, name: str, tool_input: dict) -> str:
         tool = self._tools.get(name)
         if tool is None:
             # Live-fire finding: under weaker models this context's tool list sometimes

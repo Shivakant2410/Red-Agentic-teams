@@ -11,6 +11,7 @@ Each tool exposes:
 
 from __future__ import annotations
 
+import contextvars
 from dataclasses import dataclass
 from typing import Callable, Optional, Protocol
 
@@ -18,6 +19,13 @@ from ..audit import AuditLog
 from ..findings import FindingStore
 from ..ratelimit import RateLimiter
 from ..scope import ScopeGuard
+
+
+# Identity of the specialist currently executing a tool call — set by
+# agent._dispatch around every dispatch, read by search_peer_traces for
+# self-exclusion ("search the OTHER workers, not me"). ContextVar because a
+# swarm is N specialists in N threads: each thread resolves its own value.
+current_agent: contextvars.ContextVar[str] = contextvars.ContextVar("current_agent", default="")
 
 
 @dataclass
@@ -64,6 +72,7 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     from .kali import KaliExecTool
     from .logic import VerifyWorkflowAbuseTool
     from .nuclei import NucleiScanTool
+    from .peer_traces import SearchPeerTracesTool
     from .probe import HttpProbeTool
     from .skill_tools import ApplySkillTool
     from .spa_recon import SpaReconTool
@@ -94,6 +103,10 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # login-gated SPA with bootstrap mocks (ARTEX api-recon port) to reveal the runtime
     # API surface. None record findings.
     tools += [JwtInspectTool(), NucleiScanTool(), SurfaceScanTool(), SpaReconTool()]
+    # search_peer_traces = the swarm's read side (ARTEX worker-trace exchange port):
+    # keyword-search sibling specialists' raw process traces for observations that
+    # never became findings. Read-only over this run's event log, costs no budget.
+    tools.append(SearchPeerTracesTool())
     # Operator tools: track what we hold and what it unlocks; claim the objective.
     tools += [RecordAccessTool(), ClaimObjectiveTool()]
     # Post-exploitation: harvest -> use -> prove the privilege boundary moved.

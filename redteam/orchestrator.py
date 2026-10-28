@@ -110,7 +110,8 @@ RECON = SpecialistProfile(
            "APIs) and for anything behind a session — it is a cheap fetch, not a proof. "
            "Be broad and fast."),
     tool_names=["browser_navigate", "browser_content", "browser_click", "kali_exec",
-                "authenticate", "set_session", "http_probe", "surface_scan"],
+                "authenticate", "set_session", "http_probe", "surface_scan",
+                "search_peer_traces"],
     role=PARSE,          # breadth work -> cheaper model
     max_steps=15,
 )
@@ -130,7 +131,7 @@ EXPLOIT = SpecialistProfile(
            "pending_verification — a separate pass independently re-checks them before "
            "anything counts. That is by design; keep proving, don't try to self-promote."),
     tool_names=["confirm_finding", "verify_vulnerability", "authenticate", "set_session",
-                "http_probe", "kali_exec",
+                "http_probe", "kali_exec", "search_peer_traces",
                 "browser_navigate", "browser_content", "browser_fill"],
     role=PLAN,           # depth/reasoning work -> strongest model
     max_steps=40,
@@ -285,15 +286,20 @@ class Orchestrator:
             self._manifest = (manifest, manifest_path)
         return self
 
-    def _make_specialist(self, profile: SpecialistProfile, addon_suffix: str = "") -> RedTeamAgent:
+    def _make_specialist(self, profile: SpecialistProfile, addon_suffix: str = "",
+                         agent_name: str | None = None) -> RedTeamAgent:
         # Give the specialist only its allowed tools that actually exist in the registry.
         subset = {n: self._tools[n] for n in profile.tool_names if n in self._tools}
         addon = profile.addon + addon_suffix
+        # agent_name override: the swarm gives each concurrent worker a UNIQUE telemetry
+        # identity (exploit-w0, exploit-w1, ...) so peer-trace search can attribute
+        # observations to a specific sibling hypothesis. Without it every worker shows
+        # up as the same "exploit" role and "peer" means nobody in particular.
         agent = RedTeamAgent(self._eng, subset, self._ctx, self._client,
                              max_steps=profile.max_steps, graph=self._graph,
                              attack_tree=self._attack_tree, memory=self._memory,
                              system_addon=addon, role=profile.role,
-                             agent_name=profile.name)
+                             agent_name=agent_name or profile.name)
         if self._budget is not None:
             mpath = self._manifest[1] if self._manifest else None
             manifest = self._manifest[0] if self._manifest else None
@@ -362,10 +368,14 @@ class Orchestrator:
                 desc = technique.description if technique else claimed.technique
                 findings_before = len(self._ctx.findings.all())
                 exploit = self._make_specialist(
-                    EXPLOIT, addon_suffix=f"\n\nYOUR ASSIGNED TARGET THIS TURN: "
+                    EXPLOIT, agent_name=f"exploit-w{worker_id}",
+                    addon_suffix=f"\n\nYOUR ASSIGNED TARGET THIS TURN: "
                     f"{claimed.technique} on {claimed.target} — {desc}. Work ONLY this "
                     f"hypothesis; other workers are covering the rest of the attack tree "
-                    f"in parallel.")
+                    f"in parallel. You are exploit-w{worker_id}: if you need context you "
+                    f"don't have (an error body, a token shape, whether a sibling already "
+                    f"looked here), search_peer_traces shows what the OTHER workers' raw "
+                    f"tool activity actually saw — hits are leads, prove them yourself.")
                 summary = exploit.run(
                     f"{objective}\n\nThis run: EXPLOIT swarm worker {worker_id} round "
                     f"{round_no + 1} — prove {claimed.technique} on {claimed.target}.",
