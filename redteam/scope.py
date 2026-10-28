@@ -74,6 +74,17 @@ class ScopeGuard:
         self._eng = engagement
         self._resolver = resolver  # injectable for testing
 
+    # Read-only RoE exposure: the surface_scan tool sweeps exactly the authorized
+    # surface (hosts x ports), so it needs the allowlist itself — never a mutated
+    # copy. Returning tuples keeps the frozen-Engagement discipline intact.
+    @property
+    def allowed_hosts(self) -> tuple[str, ...]:
+        return tuple(self._eng.allowed_hosts)
+
+    @property
+    def allowed_ports(self) -> tuple[int, ...]:
+        return tuple(self._eng.allowed_ports)
+
     def _resolved_ips(self, host: str) -> list[ipaddress._BaseAddress]:
         try:
             ipaddress.ip_address(host)
@@ -142,3 +153,62 @@ class ScopeGuard:
                     f"(private/reserved ranges are blocked unless the RoE opts in)"
                 )
         return target
+
+
+# Loopback is ONE host wearing several names: an engagement that allows "localhost"
+# authorizes 127.0.0.1 (and ::1), and a control plane bound to 127.0.0.1 IS reachable
+# as localhost. String-matching the bind host against the allowlist misses that —
+# found by an adversarial test before it could be found by an agent.
+_LOOPBACK_ALIASES = {"localhost", "127.0.0.1", "::1"}
+
+
+def _bind_host_is_covered(bind_host: str, allowed_hosts: tuple[str, ...]) -> bool:
+    """Could the control plane's bind host be reached through an allowed host entry?
+
+    A wildcard bind (0.0.0.0/::/empty) listens on EVERY interface, so any allowed
+    entry could reach it — we cannot prove otherwise, and scope fails closed. A
+    loopback bind is covered when any loopback name is allowed. A specific non-
+    loopback bind host is covered when an allowlist entry matches it directly, or
+    when an entry is itself a wildcard/CIDR that cannot be excluded by name.
+    """
+    bh = (bind_host or "").strip().lower().strip("[]")
+    if bh in ("", "0.0.0.0", "::", "*", "any"):
+        return True
+    candidates = {bh}
+    if bh in _LOOPBACK_ALIASES:
+        candidates |= _LOOPBACK_ALIASES
+    for entry in allowed_hosts:
+        e = entry.lower().strip()
+        # A wildcard/CIDR allowlist entry is assumed to cover everything it can
+        # match; matching it exactly against one bind address is the honest check.
+        if e in ("*", "0.0.0.0/0", "::/0"):
+            return True
+        if any(_host_matches(c, e) for c in candidates):
+            return True
+    return False
+
+
+def check_control_plane_overlap(engagement: Engagement, bind_host: str, bind_port: int) -> None:
+    """Refuse to arm a run whose scope includes the platform's own control plane.
+
+    Live-fire lesson: an engagement YAML scoped to `localhost` + a port list that
+    happened to include the API server's port let the agent legally send requests to
+    its OWN control plane — reading run state, resolving its own approvals. The agent
+    behaved correctly (it probed what the scope allowed); the SCOPE was wrong, and a
+    wrong scope that includes the operator's console is a run-killing misconfiguration
+    that must be caught before any agent step, not blamed on the agent after.
+
+    Raises ConfigError when the control plane is inside the engagement blast radius.
+    """
+    from .config import ConfigError
+    if not engagement.allowed_ports:
+        return
+    if bind_port in engagement.allowed_ports and \
+            _bind_host_is_covered(bind_host, engagement.allowed_hosts):
+        raise ConfigError(
+            f"scope self-targeting: the control plane binds {bind_host}:{bind_port}, "
+            f"which is inside the engagement scope (allowed_hosts={list(engagement.allowed_hosts)}, "
+            f"allowed_ports={list(engagement.allowed_ports)}). The agent would be authorized to "
+            f"attack its own API server. Remove {bind_port} from scope.allowed_ports (or bind "
+            f"the control plane elsewhere) before launching."
+        )
