@@ -24,3 +24,6 @@ venv/
 *.egg-info/
 .pytest_cache/
 data/
+
+# Runtime state (catalog, usage sqlite) — local to this machine
+.state/
