@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+/* ── War-room palette (binding per worklog contract) ───────────────────────── */
+@theme {
+  --color-bg: #0b0e14;
+  --color-panel: #11151c;
+  --color-panel2: #171c26;
+  --color-edge: #1e2430;
+  --color-edge2: #2a3242;
+  --color-ink: #e6e9ef;
+  --color-muted: #8a94a6;
+  --color-accent: #ff3b5c;
+  --color-ok: #2dd4a7;
+  --color-warn: #f5a623;
+  --color-info: #5b9dff;
+  --color-purple: #a78bfa;
+  --color-cyan: #22d3ee;
+  --color-orange: #fb923c;
+}
+
+/* next/font variables resolved at use-site */
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-jbmono), ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: rgba(255, 59, 92, 0.35);
+}
+
+/* ── Slim scrollbars for console panes ─────────────────────────────────────── */
+.scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-edge2) transparent;
+}
+.scroll-slim::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-slim::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-slim::-webkit-scrollbar-thumb {
+  background: var(--color-edge);
+  border-radius: 8px;
+}
+.scroll-slim::-webkit-scrollbar-thumb:hover {
+  background: var(--color-edge2);
+}
+
+/* ── Status dot ping (color = currentColor) ────────────────────────────────── */
+@keyframes blip {
+  0% {
+    box-shadow: 0 0 0 0 currentColor;
+    opacity: 1;
+  }
+  70% {
+    box-shadow: 0 0 0 5px transparent;
+    opacity: 1;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    opacity: 1;
+  }
+}
+.blip {
+  animation: blip 1.6s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.blink {
+  animation: blink 1.4s ease-in-out infinite;
+}
