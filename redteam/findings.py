@@ -46,6 +46,12 @@ class Finding:
     check_type: str = ""             # "http" | "differential" | "proof" | "privilege"
     check_spec: dict = field(default_factory=dict)   # requests/conditions/etc. to rebuild the check
     independent_verdict: str = ""    # confirmed | falsified | not_reproducible (set by the re-check)
+    # Post-remediation retest timeline (see retest.py): entries {when, verdict,
+    # reproductions, trials, detail}. Orthogonal to `confidence` — verification
+    # state says whether the finding was real, retest history says whether it
+    # STILL reproduces across remediation cycles. Old findings.json rows without
+    # this key load fine via the default.
+    retest_history: list = field(default_factory=list)
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     created: str = field(default_factory=lambda: _dt.datetime.now(_dt.timezone.utc).isoformat())
 
@@ -131,6 +137,18 @@ class FindingStore:
                 f.confidence = "not_reproducible"
             if detail:
                 f.evidence = (f.evidence + "\n[independent re-check] " + detail).strip()
+            self._flush()
+            return f
+
+    def append_retest(self, finding_id: str, entry: dict) -> Finding | None:
+        """Append one retest result (see retest.py) to the finding's remediation
+        timeline. Deliberately does NOT touch `confidence`: a retest answers "does
+        it still reproduce", which is a different axis from "was it real"."""
+        with self._lock:
+            f = next((x for x in self._findings if x.id == finding_id), None)
+            if f is None:
+                return None
+            f.retest_history.append(entry)
             self._flush()
             return f
 

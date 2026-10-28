@@ -271,6 +271,25 @@ def execute_run(opts: RunOptions) -> dict:
     findings = FindingStore(out / "findings.json")
     limiter = RateLimiter(engagement.max_requests_per_second, engagement.max_total_requests)
     scope = ScopeGuard(engagement)
+    # Freeze the RoE grid to disk the moment the run exists (coverage.py reads it
+    # later to report tested-vs-untouched honestly; the operator also gets the
+    # exact allowlist this run was authorized for, independent of the engagement
+    # file possibly having changed mid-engagement).
+    try:
+        (out / "scope.json").write_text(json.dumps({
+            "allowed_hosts": list(engagement.allowed_hosts),
+            "excluded_hosts": list(engagement.excluded_hosts),
+            "allowed_ports": list(engagement.allowed_ports),
+            "allowed_schemes": list(engagement.allowed_schemes),
+            # rate + range policy too: retest.py rebuilds the RoE from this file
+            # alone (the engagement file may have drifted since the run), and a
+            # retest must obey the same traffic discipline as the original run.
+            "max_requests_per_second": engagement.max_requests_per_second,
+            "max_total_requests": engagement.max_total_requests,
+            "allow_private_ranges": engagement.allow_private_ranges,
+        }, indent=2), encoding="utf-8")
+    except OSError:
+        pass  # coverage degrades honestly without it; the run must not die here
     from .knowledge import KnowledgeGraph
     graph = KnowledgeGraph(out / "graph.json")
     # The bandit's learned win-rates are cross-ENGAGEMENT state (like the memory dir

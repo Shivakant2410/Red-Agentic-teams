@@ -68,6 +68,17 @@ class ApprovalBody(BaseModel):
     approve: bool
 
 
+class RetestBody(BaseModel):
+    # Empty finding_id = retest EVERY finding that carries a replay recipe.
+    finding_id: str = ""
+    trials: int = Field(default=5, ge=1, le=20)
+    need: int = Field(default=4, ge=1, le=20)
+    # Workflow findings (one-shot sequences) need a fresh identifier's steps;
+    # everything else replays deterministically without them.
+    fresh_attack_steps: list = []
+    fresh_control_steps: list = []
+
+
 def _read_json(path: Path, default):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -343,6 +354,16 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         run_dir = require_run(run_id)
         return {"run_id": run_id, "graph": build_exploration_graph(run_dir)}
 
+    @app.get("/api/runs/{run_id}/coverage")
+    def run_coverage(run_id: str) -> dict:
+        # The asset coverage map (ARTEX 资产覆盖图): of everything the RoE allows,
+        # what was actually tested? Built from scope.json + the run artifacts —
+        # the universe is the allowlist, never the activity. Missing scope.json
+        # (older runs) degrades to an activity-only report with the limitation named.
+        from .coverage import build_coverage
+        run_dir = require_run(run_id)
+        return {"run_id": run_id, "coverage": build_coverage(run_dir)}
+
     @app.get("/api/runs/{run_id}/stream")
     async def run_stream(run_id: str, after: int = 0):
         run_dir = require_run(run_id)
@@ -393,6 +414,45 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
     def run_approvals(run_id: str) -> dict:
         run_dir = require_run(run_id)
         return {"pending": read_pending_approvals(run_dir)}
+
+    @app.post("/api/runs/{run_id}/retest")
+    def run_retest(run_id: str, body: RetestBody) -> dict:
+        # Post-remediation retest (ARTEX retester, deterministic port): rebuild each
+        # finding's stored proof and replay it against the live target — no LLM, no
+        # agent session. Runs synchronously (a retest is trials x requests, seconds
+        # not minutes). Scope comes from the run's FROZEN scope.json, not the live
+        # engagement file: a retest obeys the RoE as it was when the run was armed,
+        # and a check that no longer fits today's RoE comes back `blocked`, honestly.
+        # The operator pressing this endpoint IS the approval — same as ARTEX's
+        # operator-initiated retest, minus the agent.
+        from .retest import build_ctx_for_run, engagement_from_scope_json, retest_run
+        run_dir = require_run(run_id)
+        scope_file = run_dir / "scope.json"
+        if not scope_file.exists():
+            raise HTTPException(409, "run has no frozen scope.json — cannot rebuild the RoE for a safe retest")
+        try:
+            engagement = engagement_from_scope_json(run_dir)
+        except ValueError as exc:
+            raise HTTPException(409, f"frozen scope.json no longer parseable: {exc}")
+        ctx = build_ctx_for_run(engagement, run_dir=run_dir)
+        try:
+            results = retest_run(
+                ctx.findings, ctx, finding_id=body.finding_id,
+                trials=body.trials, need=body.need,
+                fresh_attack_steps=body.fresh_attack_steps or None,
+                fresh_control_steps=body.fresh_control_steps or None)
+        except Exception as exc:
+            raise HTTPException(500, f"retest failed: {exc}")
+        if body.finding_id and not results:
+            raise HTTPException(404, f"no retestable finding {body.finding_id!r} in this run")
+        return {"run_id": run_id, "retests": results,
+                "summary": {
+                    "total": len(results),
+                    "reproducible": sum(1 for r in results if r["verdict"] == "reproducible"),
+                    "fixed": sum(1 for r in results if r["verdict"] == "fixed"),
+                    "cannot_confirm": sum(1 for r in results if r["verdict"] == "cannot_confirm"),
+                    "blocked": sum(1 for r in results if r["verdict"] == "blocked"),
+                }}
 
     @app.post("/api/approvals/{approval_id}")
     def resolve(approval_id: str, body: ApprovalBody) -> dict:
