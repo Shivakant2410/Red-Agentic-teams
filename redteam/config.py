@@ -12,10 +12,14 @@ from __future__ import annotations
 import datetime as _dt
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 
 from .objective import load_objective
+
+if TYPE_CHECKING:  # imported lazily at runtime in _load_providers (avoids a cycle)
+    from .llm.providers import ProviderConfig
 
 
 class ConfigError(Exception):
@@ -24,7 +28,14 @@ class ConfigError(Exception):
 
 @dataclass(frozen=True)
 class LlmConfig:
-    """OpenRouter model-router settings. Keys come from the environment, never the file."""
+    """Model-router settings. Keys come from the environment, never the file.
+
+    Two modes:
+      - providers empty (default): Gen-1 single-provider OpenRouter routing, unchanged.
+      - providers set: multi-provider gateway (see llm/gateway.py) — OpenAI, Anthropic,
+        Z.ai, Ollama, Groq, vLLM, ... any OpenAI-compatible endpoint, role-routed and
+        failover-ordered across the whole fleet.
+    """
 
     base_url: str = "https://openrouter.ai/api/v1"
     api_key_env: str = "OPENROUTER_API_KEY"
@@ -36,11 +47,13 @@ class LlmConfig:
     # Pin a strong model to specific roles (e.g. {"plan": "openai/gpt-5.5", "poc": ...}).
     # Parsing/triage stay on the free pool; only reasoning pays. Free models remain the
     # fallback if the pinned model errors or rate-limits.
+    # With providers set, a pin may also be "provider:model" (e.g. "anthropic:claude-sonnet-4-5").
     role_models: dict = field(default_factory=dict)
     temperature: float = 0.2
     max_tokens: int = 4096
     referer: str = "https://localhost/redteam-agent"  # OpenRouter attribution headers
     title: str = "redteam-agent"
+    providers: tuple[ProviderConfig, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -87,6 +100,10 @@ class Engagement:
     max_run_seconds: int = 0
     max_llm_tokens: int = 0
 
+    # LLM strategist reflection between orchestrator rounds (see reflection.py). On by
+    # default in multi-agent runs; costs one strong-role call per round.
+    enable_reflection: bool = True
+
     # The crown jewel. When set, the run is judged by whether it was reached — not by how
     # many vulnerabilities were listed.
     objective: object = None      # Objective | None
@@ -119,6 +136,32 @@ def _as_date(value: object, field_name: str) -> _dt.date:
     raise ConfigError(f"{field_name} must be a date")
 
 
+def _load_providers(data: dict) -> tuple["ProviderConfig", ...]:
+    """Parse llm.providers: a list of {kind, name?, base_url?, api_key_env?,
+    models_allow?, models_deny?, prefer_free?, require_tool_support?, priority?}.
+    `kind` accepts shortcuts (openrouter/openai/zai/ollama/groq/anthropic) that fill
+    base_url + api_key_env, so a minimal entry is `{kind: anthropic}`."""
+    from .llm.providers import ProviderConfig  # lazy: breaks config <-> llm cycle
+
+    out: list[ProviderConfig] = []
+    for entry in (data.get("providers") or []):
+        if not isinstance(entry, dict):
+            raise ConfigError("llm.providers entries must be mappings")
+        out.append(ProviderConfig(
+            name=str(entry.get("name", "") or ""),
+            kind=str(entry.get("kind", "openai_compat") or "openai_compat"),
+            base_url=str(entry.get("base_url", "") or ""),
+            api_key_env=str(entry.get("api_key_env", "") or ""),
+            models_allow=tuple(str(m) for m in (entry.get("models_allow") or ())),
+            models_deny=tuple(str(m) for m in (entry.get("models_deny") or ())),
+            prefer_free=(None if entry.get("prefer_free") is None else bool(entry.get("prefer_free"))),
+            require_tool_support=(None if entry.get("require_tool_support") is None
+                                  else bool(entry.get("require_tool_support"))),
+            priority=int(entry.get("priority", 100)),
+        ))
+    return tuple(out)
+
+
 def _load_llm(data: dict) -> LlmConfig:
     d = data.get("llm") or {}
     defaults = LlmConfig()
@@ -135,6 +178,7 @@ def _load_llm(data: dict) -> LlmConfig:
         max_tokens=int(d.get("max_tokens", defaults.max_tokens)),
         referer=str(d.get("referer", defaults.referer)),
         title=str(d.get("title", defaults.title)),
+        providers=_load_providers(d),
     )
 
 
@@ -199,6 +243,7 @@ def load_engagement(path: str | Path) -> Engagement:
         ),
         max_run_seconds=int(limits.get("max_run_seconds", 0)),
         max_llm_tokens=int(limits.get("max_llm_tokens", 0)),
+        enable_reflection=bool(limits.get("enable_reflection", True)),
         objective=load_objective(data.get("objective")),
         llm=_load_llm(data),
         sandbox=_load_sandbox(data),
