@@ -66,6 +66,7 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     from .nuclei import NucleiScanTool
     from .probe import HttpProbeTool
     from .skill_tools import ApplySkillTool
+    from .spa_recon import SpaReconTool
     from .surface import SurfaceScanTool
     from .template_search import ApplyTemplateTool, FindAttackTemplatesTool
     from .verify_tool import VerifyVulnerabilityTool
@@ -89,8 +90,10 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
               ApplyTemplateTool()]
     # Signature reconnaissance: jwt_inspect is deterministic offline analysis; nuclei_scan
     # produces leads that must survive the proof pipeline; surface_scan fills the asset
-    # inventory from the RoE allowlist itself (never widens scope). None record findings.
-    tools += [JwtInspectTool(), NucleiScanTool(), SurfaceScanTool()]
+    # inventory from the RoE allowlist itself (never widens scope); spa_recon walks a
+    # login-gated SPA with bootstrap mocks (ARTEX api-recon port) to reveal the runtime
+    # API surface. None record findings.
+    tools += [JwtInspectTool(), NucleiScanTool(), SurfaceScanTool(), SpaReconTool()]
     # Operator tools: track what we hold and what it unlocks; claim the objective.
     tools += [RecordAccessTool(), ClaimObjectiveTool()]
     # Post-exploitation: harvest -> use -> prove the privilege boundary moved.

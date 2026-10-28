@@ -84,12 +84,19 @@ class TrafficRecorder:
                     tool: str = "", session: str = "",
                     req_headers: dict | None = None, req_body: str | None = None,
                     resp_headers: dict | None = None, resp_body: str | None = None,
-                    error: str = "") -> None:
-        """Record one request/response exchange (or a failed/denied attempt)."""
+                    error: str = "", source: str = "") -> None:
+        """Record one request/response exchange (or a failed/denied attempt).
+
+        `source` marks where the exchange came from for the operator scanning the
+        log: '' (unmarked, a real wire exchange), 'mock' (fulfilled locally by a
+        stub — the SPA walkthrough's credential-free bootstrap — never touched
+        the target), or any tool-chosen label. Mocked rows are evidence of what
+        the CLIENT asked for, not of what the server said — keep them distinct."""
         rec = {
             "seq": None,  # assigned under lock
             "ts": _now(),
             "kind": "http",
+            "source": str(source or ""),
             "tool": tool,
             "method": str(method or "GET").upper(),
             "url": url,
