@@ -181,6 +181,31 @@ with one JSON file and no services:
 `--semantic-memory` now means the local backend; `--helix-memory` keeps the Docker path
 for those who want true deep-semantic recall.
 
+## ARTEX port, round two (`tools/spa_recon.py`, `graph_view.py`)
+
+Two more capabilities ported from ARTEX's final open-source release, same
+authorization-first discipline as the traffic/inventory/feed round:
+
+- `spa_recon` — credential-free SPA walkthrough (ARTEX's api-recon technique):
+  bootstrap endpoints (auth state, RBAC menus, profile, config, notices) are
+  fulfilled with a business-success/EMPTY superset mock, so the authenticated
+  shell renders with no credentials and fires the API surface that only exists
+  at runtime. Static recon (`static_source.py`) finds the strings; `spa_recon`
+  finds the traffic — the two compose. Every navigation and every stub is
+  scope-checked (violations abort and are COUNTED), page visits burn the
+  request budget while stub fulfillments cost nothing, every observed call is
+  logged to the traffic record with `source="mock"|"live"` (the operator can
+  always tell wire evidence from client-side evidence), endpoints fold into the
+  inventory and knowledge graph, and NO finding is ever recorded — the walk is
+  exploration; hypotheses still go through the verify pipeline.
+- Exploration graph — `graph_view.py` builds the chain asset → endpoint →
+  access → finding purely from the run's artifact files (no engine coupling,
+  same as /traffic and /inventory), and the server serves it at
+  `GET /api/runs/{id}/graph`. It is honest by construction: only HELD access
+  nodes appear (assumed access is invisible), finding nodes carry their real
+  `confidence`, and the proved-by edge exists only when the target endpoint is
+  actually in the discovered surface.
+
 ## Invariants kept from Gen-1
 
 - Network-layer scope enforcement (sandbox egress firewall + browser interception +

@@ -57,6 +57,18 @@ This project's differentiators, built in Gen-1 and preserved in Gen-2, remain ra
   `importers/assets.py` (ScopeSentry-style CSV/JSON/JSONL feed sync that is an
   INTERSECTION with the RoE, never a merge — out-of-scope entries are dropped and
   counted, scope.check still refuses them afterwards; validated 400 at launch).
+- **ARTEX port, round two** — two more capabilities taken from the same source
+  after reading its last open-source release end to end: `spa_recon` (the api-recon
+  technique that made ARTEX champion — a login-gated SPA's bootstrap endpoints are
+  answered with business-success/EMPTY mocks so the authenticated shell renders
+  WITHOUT credentials and reveals the API surface it only calls at runtime; static
+  recon finds the strings, spa_recon finds the traffic; stubbed calls never touch
+  the wire and are logged source="mock" vs "live"; scope-checked on every page and
+  stub, rate-limited per page, never records findings) and the exploration graph
+  (`graph_view.py` + `GET /api/runs/{id}/graph` — the layered chain asset →
+  endpoint → access → finding built purely from run artifacts; only HELD access and
+  real finding confidence appear, assumed access and pending findings never paint
+  impact).
 - **Live-fire hardening round** — five capability gaps found by running the platform
   against a real LLM backend under adversarial fault injection were closed and
   live-validated: `http_probe` (cheap session-aware exploration that never touches the

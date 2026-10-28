@@ -333,6 +333,16 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         return {"hosts": hosts,
                 "summary": {"hosts": len(hosts), "services": n_services}}
 
+    @app.get("/api/runs/{run_id}/graph")
+    def run_graph(run_id: str) -> dict:
+        # The exploration chain (ARTEX 探索链路): layered assets → endpoints →
+        # access → findings, built purely from the run's artifact files. The
+        # server stays decoupled from the engine; missing artifacts render as
+        # empty layers (a round-one run is honestly partial, never an error).
+        from .graph_view import build_exploration_graph
+        run_dir = require_run(run_id)
+        return {"run_id": run_id, "graph": build_exploration_graph(run_dir)}
+
     @app.get("/api/runs/{run_id}/stream")
     async def run_stream(run_id: str, after: int = 0):
         run_dir = require_run(run_id)
