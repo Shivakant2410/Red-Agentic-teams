@@ -32,6 +32,37 @@ def _dig(obj, path: str):
     return cur
 
 
+def _hold_foothold(ctx: ToolContext, label: str, evidence: str, captured: list,
+                   source: str) -> None:
+    """Record a working session as held access (shared by authenticate/set_session).
+
+    A working session IS a foothold regardless of where its material came from, so
+    both tools record it the same way — with the SOURCE naming the mechanism, so the
+    objective gate (objective.REQUIRED_SOURCE) still decides what it may credit.
+    Neither 'authenticate' nor 'operator_token' is a proving mechanism: a session
+    alone never satisfies a criterion, it just arms the kill chain to press further.
+    """
+    if getattr(ctx, "access", None) is not None:
+        from ..access import CREDENTIAL, PRINCIPAL
+        principal = ctx.access.hold(PRINCIPAL, f"session:{label}", evidence=evidence,
+                                    source=source)
+        cred = ctx.access.hold(CREDENTIAL, f"{label}-session",
+                               evidence=f"captured {', '.join(captured)}",
+                               attrs={"secret": True}, source=source)
+        ctx.access.link(cred.id, "authenticates_as", principal.id)
+        # Any working session also counts as generic app access.
+        ctx.access.hold(PRINCIPAL, "app-session", evidence=evidence, source=source)
+    if getattr(ctx, "killchain", None) is not None:
+        from ..killchain import ACHIEVED, INITIAL_ACCESS
+        ctx.killchain.mark(INITIAL_ACCESS, ACHIEVED, evidence)
+
+
+def _looks_auth_header(name: str) -> bool:
+    n = str(name).lower()
+    return (n in ("authorization", "cookie")
+            or any(frag in n for frag in ("token", "auth", "session", "api-key", "key")))
+
+
 class AuthenticateTool:
     name = "authenticate"
 
@@ -148,24 +179,85 @@ class AuthenticateTool:
 
         # Derive state from what actually happened — never rely on the model to self-report.
         # A working session IS a foothold; record it so the objective/kill chain can see it.
-        if getattr(ctx, "access", None) is not None:
-            from ..access import CREDENTIAL, PRINCIPAL
-            # Namespace the principal by session label. The agent chooses these labels, so
-            # an un-namespaced "admin" would let a self-chosen string satisfy a privilege
-            # criterion. Real identity claims must come from prove_privilege.
-            principal = ctx.access.hold(PRINCIPAL, f"session:{label}",
-                                        evidence=f"authenticated at {url} (status {status})",
-                                        source="authenticate")
-            cred = ctx.access.hold(CREDENTIAL, f"{label}-session",
-                                   evidence=f"captured {', '.join(captured)}",
-                                   attrs={"secret": True}, source="authenticate")
-            ctx.access.link(cred.id, "authenticates_as", principal.id)
-            # An authenticated session also counts as generic app access.
-            ctx.access.hold(PRINCIPAL, "app-session",
-                            evidence=f"session '{label}' authenticated at {url}",
-                            source="authenticate")
-        if getattr(ctx, "killchain", None) is not None:
-            from ..killchain import ACHIEVED, INITIAL_ACCESS
-            ctx.killchain.mark(INITIAL_ACCESS, ACHIEVED, f"session '{label}' at {url}")
+        _hold_foothold(ctx, label, f"authenticated at {url} (status {status})",
+                       captured, source="authenticate")
 
         return json.dumps({"ok": True, "label": label, "status": status, "captured": captured})
+
+
+class SetSessionTool:
+    """Register an operator-handed token/cookie as a named session.
+
+    Live-fire gap this closes: authenticate can only capture material from a login
+    RESPONSE. But operators routinely already hold a valid session — a static API
+    token from the RoE pack, a cookie copied from their own browser, an assumed-breach
+    foothold — and there was NO way to put that into the session store. The agent was
+    left inventing fake logins (which fail) or carrying the raw token in prompt text
+    and hand-writing headers on every request.
+
+    set_session takes ready-made auth headers and registers them under a label, with
+    the same foothold bookkeeping authenticate does (access holds + INITIAL_ACCESS,
+    honestly sourced as 'operator_token'). Values are never echoed back to the model.
+    """
+
+    name = "set_session"
+
+    def schema(self) -> dict:
+        return {
+            "name": self.name,
+            "description": (
+                "Register an ALREADY-ISSUED token or cookie (e.g. handed to you by the "
+                "operator, an engagement credential pack, or captured out-of-band) as a "
+                "named session, so IDOR/access-control tools and http_probe(as_session=...) "
+                "can act as that principal. Pass the ready-made auth headers — typically "
+                "{'Authorization': 'Bearer <token>'} or {'Cookie': 'session=<value>'}. "
+                "Use this instead of authenticate when you already hold valid material and "
+                "there is nothing to log in to; use authenticate when you must perform the "
+                "login exchange yourself. Session values are stored but never echoed back."
+            ),
+            "input_schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "label": {"type": "string", "description": "Name for this session, e.g. 'userA', 'operator-token'."},
+                    "headers": {"type": "object",
+                                "description": "Auth headers to store, e.g. {\"Authorization\": \"Bearer eyJ...\"} or {\"Cookie\": \"session=abc\"}."},
+                    "note": {"type": "string", "description": "Provenance note, e.g. 'operator-provided RoE token'."},
+                },
+                "required": ["label", "headers"],
+            },
+            "strict": True,
+        }
+
+    def run(self, ctx: ToolContext, label: str, headers: dict, note: str = "") -> str:
+        if ctx.sessions is None:
+            return "ERROR: session store unavailable in this run."
+        if not label or not str(label).strip():
+            return "ERROR: label must be a non-empty name for this session."
+        clean: dict = {}
+        if isinstance(headers, dict):
+            for k, v in headers.items():
+                if isinstance(k, str) and isinstance(v, str) and k.strip() and v.strip():
+                    clean[k.strip()] = v.strip()
+        if not clean:
+            return "ERROR: headers must contain at least one non-empty string header."
+        auth_headers = [k for k in clean if _looks_auth_header(k)]
+        if not auth_headers:
+            return ("ERROR: no auth-bearing header found. Provide at least one of: "
+                    "Authorization, Cookie, or a named token/session header "
+                    "(e.g. X-Auth-Token, X-Api-Key). Got: " + ", ".join(clean) + ".")
+
+        ctx.sessions.set(label, clean)
+        ctx.audit.record("set_session.ok", label=label, headers=sorted(clean), note=note)
+
+        evidence = f"operator-provided session '{label}' ({', '.join(sorted(auth_headers))})"
+        if note:
+            evidence += f" — {note}"
+        _hold_foothold(ctx, label, evidence, ["operator-supplied " + h for h in auth_headers],
+                       source="operator_token")
+
+        # Masked acknowledgement only: the model never needs the raw value, and the
+        # transcript is not the place for live credentials.
+        masked = {k: f"<{len(v)} chars>" for k, v in clean.items()}
+        return json.dumps({"ok": True, "label": label, "registered": masked,
+                           "usable_via": "http_probe(as_session=...) and access-control tools"})

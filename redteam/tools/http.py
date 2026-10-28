@@ -4,12 +4,21 @@ One place that turns a request spec into (status, body, elapsed[, headers]) and 
 scope-checks first. Uses the sandbox's firewalled curl when a sandbox is running, else a
 host-side request (for localhost/benchmark targets the container can't reach). Keeping
 this single path means every tool inherits the same scope guard and the same behavior.
+
+ARTEX-port hook: this is ALSO the single telemetry chokepoint. Every in-scope
+exchange is (a) recorded into the run's TrafficRecorder (secret-masked wire evidence,
+see traffic.py) and (b) passively fingerprinted into the AssetInventory (server
+banner, page title) — zero extra requests, the surface map builds itself while the
+team works. Scope-DENIED attempts are recorded too: a blocked request is evidence
+that the boundary held. Telemetry failures are swallowed — recording must never
+break a request mid-proof.
 """
 
 from __future__ import annotations
 
 import re
 import time
+from urllib.parse import urlparse
 
 import requests
 
@@ -89,30 +98,89 @@ def _check_scope_recording_denial(ctx: ToolContext, req: dict) -> None:
 
     A blocked request is evidence in its own right: it shows the boundary held, and a
     client reviewing the audit log can see exactly what was attempted and stopped. Letting
-    the denial exist only as a string returned to the model loses that record."""
+    the denial exist only as a string returned to the model loses that record. The
+    attempt is also mirrored onto the traffic log (operator-facing wire evidence)."""
     from ..scope import ScopeViolation
     try:
         ctx.scope.check(req["url"])
     except ScopeViolation as exc:
-        ctx.audit.record("tool.denied", tool="http", method=(req.get("method") or "GET"),
+        method = (req.get("method") or "GET")
+        ctx.audit.record("tool.denied", tool="http", method=method,
                          url=req.get("url"), outcome="scope-denied", reason=str(exc))
+        traffic = getattr(ctx, "traffic", None)
+        if traffic is not None:
+            traffic.record_http(method=method, url=req.get("url", ""), status=0,
+                                elapsed_ms=0, tool="http", error=f"scope-denied: {exc}",
+                                req_headers=req.get("headers"), req_body=req.get("body"))
         raise
 
 
-def fetch_once(ctx: ToolContext, req: dict):
-    """Single scope-checked request -> (status, body, elapsed, headers)."""
+def _passive_observe(ctx: ToolContext, req: dict, status: int,
+                     resp_headers: dict, body: str) -> None:
+    """Fingerprint the responding host into the AssetInventory (passive — this runs
+    AFTER a real exchange, makes no requests of its own). Best-effort by design."""
+    inventory = getattr(ctx, "inventory", None)
+    if inventory is None or not status:
+        return
+    try:
+        parsed = urlparse(req.get("url", ""))
+        host = parsed.hostname
+        if not host:
+            return
+        scheme = (parsed.scheme or "http").lower()
+        port = parsed.port or (443 if scheme == "https" else 80)
+        inventory.observe_http(host, port, scheme, status, headers=resp_headers,
+                               body=body, source="http")
+    except Exception:
+        pass  # a fingerprinting surprise must never break a proof in flight
+
+
+def fetch_once(ctx: ToolContext, req: dict, tool: str = "", session: str = ""):
+    """Single scope-checked request -> (status, body, elapsed, headers).
+
+    tool/session label the exchange in the traffic log (best-effort identity for
+    the operator; they change nothing about how the request is made)."""
     _check_scope_recording_denial(ctx, req)
+    start = time.monotonic()
     if ctx.sandbox is not None:
-        return _sandbox_request(ctx, req)
-    return _host_request(req)
+        result = _sandbox_request(ctx, req)
+    else:
+        result = _host_request(req)
+    status, body, _elapsed, headers = result
+    _record_traffic(ctx, req, status, time.monotonic() - start, headers, body,
+                    tool=tool, session=session)
+    _passive_observe(ctx, req, status, headers, body)
+    return result
 
 
-def make_fetch(ctx: ToolContext, req: dict):
-    """A re-runnable fetch() -> (status, body, elapsed) for the verification engine."""
+def _record_traffic(ctx: ToolContext, req: dict, status: int, elapsed: float,
+                    resp_headers: dict, resp_body: str, tool: str, session: str) -> None:
+    traffic = getattr(ctx, "traffic", None)
+    if traffic is None:
+        return
+    try:
+        traffic.record_http(method=(req.get("method") or "GET"), url=req.get("url", ""),
+                            status=status, elapsed_ms=round(elapsed * 1000),
+                            tool=tool, session=session,
+                            req_headers=req.get("headers"), req_body=req.get("body"),
+                            resp_headers=resp_headers, resp_body=resp_body)
+    except Exception:
+        pass  # telemetry must never break a run (same rule as the EventBus)
+
+
+def make_fetch(ctx: ToolContext, req: dict, tool: str = ""):
+    """A re-runnable fetch() -> (status, body, elapsed) for the verification engine.
+    Each re-run is traffic-recorded too — k-of-n proof attempts are evidence."""
     _check_scope_recording_denial(ctx, req)
 
     def fetch():
-        status, body, elapsed, _ = (_sandbox_request(ctx, req) if ctx.sandbox is not None
-                                    else _host_request(req))
+        start = time.monotonic()
+        if ctx.sandbox is not None:
+            status, body, elapsed, headers = _sandbox_request(ctx, req)
+        else:
+            status, body, elapsed, headers = _host_request(req)
+        _record_traffic(ctx, req, status, time.monotonic() - start, headers, body,
+                        tool=tool or "verify", session="")
+        _passive_observe(ctx, req, status, headers, body)
         return status, body, elapsed
     return fetch

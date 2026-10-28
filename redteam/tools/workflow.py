@@ -6,6 +6,7 @@ human decision on sensitive actions.
 
 from __future__ import annotations
 
+from ..events import safe_emit
 from ..findings import Finding
 from . import ToolContext
 
@@ -47,6 +48,8 @@ class RecordFindingTool:
         ))
         ctx.audit.record("finding.recorded", id=finding.id, title=title, severity=severity,
                          target=target, confidence=confidence)
+        safe_emit(getattr(ctx, "events", None), "finding.recorded", id=finding.id,
+                  title=title, severity=severity, confidence=confidence)
         return f"Recorded finding {finding.id} ({severity}): {title}"
 
 

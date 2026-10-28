@@ -19,6 +19,7 @@ import json
 import re
 
 from ..access import CREDENTIAL, ESCALATES_TO, PRINCIPAL
+from ..events import safe_emit
 from ..falsify import run_negative_control
 from ..killchain import ACHIEVED, PRIVILEGE_ESCALATION
 from ..proof import ProofCheck, eval_condition
@@ -118,6 +119,9 @@ class VerifyFindingIndependentlyTool:
         promoted = ctx.findings.promote(finding_id, status, detail=detail)
         ctx.audit.record("independent_verify.result", finding_id=finding_id,
                          title=f.title, verdict=status, detail=detail)
+        safe_emit(getattr(ctx, "events", None), "finding.confirmed" if status == "confirmed"
+                  else "finding.verdict", id=finding_id, title=f.title, severity=f.severity,
+                  verdict=status)
 
         if status == "confirmed":
             self._credit_access_and_skills(ctx, promoted)
