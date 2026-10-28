@@ -15,6 +15,7 @@ from .llm.openrouter import OpenRouterClient, NoModelsAvailable, to_openai_tools
 from .llm.routing import PLAN
 from .runtime import Halt, RepetitionGuard, compact_messages, looks_failed
 from .tools import ToolContext, Tool
+from .events import coerce_payload
 
 # A parallel exploit swarm (orchestrator.py) can have several RedTeamAgent instances in
 # different threads all writing the SAME RunManifest object/file concurrently. RunManifest
@@ -77,7 +78,8 @@ compromise path you achieved (or where you were blocked) and what you proved."""
 class RedTeamAgent:
     def __init__(self, engagement: Engagement, tools: dict[str, Tool], ctx: ToolContext,
                  client: OpenRouterClient, max_steps: int = 40, graph=None, attack_tree=None,
-                 memory=None, system_addon: str = "", role: str = PLAN):
+                 memory=None, system_addon: str = "", role: str = PLAN, agent_name: str = "single",
+                 terminal_on_budget_end: bool = False):
         self._eng = engagement
         self._tools = tools
         self._ctx = ctx
@@ -88,6 +90,13 @@ class RedTeamAgent:
         self._memory = memory
         self._system_addon = system_addon   # specialist-specific instructions (multi-agent)
         self._role = role                   # model role for this agent (recon=cheap, exploit=strong)
+        self._agent_name = agent_name       # specialist name for telemetry (recon/exploit/...)
+        # In multi-agent mode a specialist's budget end just ends its TURN (the
+        # orchestrator keeps going, so the manifest must not flip to a terminal status).
+        # In single-agent mode this agent IS the run: budget exhaustion or a stall is
+        # run-terminal and must be reported honestly as "halted", not a green
+        # "completed" an operator would read as success.
+        self._terminal_on_budget_end = terminal_on_budget_end
         self._budget = None      # optional BudgetTracker
         self._manifest = None    # optional (RunManifest, path) tuple
 
@@ -109,6 +118,16 @@ class RedTeamAgent:
         if self._system_addon:
             base += "\n\nYOUR ROLE IN THE TEAM:\n" + self._system_addon
         return base
+
+    def _emit(self, etype: str, **fields) -> None:
+        """Live telemetry for the dashboard/API (events.py). Best-effort: telemetry is
+        never allowed to break the loop, and legacy runs simply have no bus attached."""
+        bus = getattr(self._ctx, "events", None)
+        if bus is not None:
+            try:
+                bus.emit(etype, role=self._agent_name or self._role, **fields)
+            except Exception:
+                pass
 
     def run(self, objective: str, on_text=None) -> str:
         messages: list[dict] = [
@@ -170,6 +189,10 @@ class RedTeamAgent:
             content = msg.get("content") or ""
             if content:
                 final_text = content
+                # The agent's reasoning, streamed live: this is the centerpiece the
+                # operator/client watches on the dashboard.
+                self._emit("agent.turn", step=step, model=result.model,
+                           content=content)
                 if on_text:
                     on_text(f"[{result.model}] {content}")
 
@@ -230,6 +253,11 @@ class RedTeamAgent:
                 guard.record_result(signature, looks_failed(tool_out))
                 messages.append({"role": "tool", "tool_call_id": tc.get("id"),
                                  "name": name, "content": tool_out})
+                self._emit("tool.call", step=step, tool=name,
+                           args=coerce_payload(args, 500))
+                self._emit("tool.result", step=step, tool=name,
+                           ok=not looks_failed(tool_out),
+                           preview=coerce_payload(tool_out, 300))
 
             # Feed current state + the adversarial plan back to the model so it works from
             # a constrained attack tree (fewer hallucinated/circular actions) and presses
@@ -243,6 +271,8 @@ class RedTeamAgent:
                 # Credit progress from demonstrated access before briefing on it.
                 for cid in objective.autoevaluate(access):
                     self._ctx.audit.record("objective.auto_met", criterion_id=cid)
+                done, total = objective.progress()
+                self._emit("objective.progress", done=done, total=total)
                 briefing_parts.append(objective.briefing())
             if access is not None:
                 briefing_parts.append(access.briefing(objective))
@@ -276,8 +306,13 @@ class RedTeamAgent:
                 if stall_nudges_given > 2:
                     self._ctx.audit.record("agent.stalled_out", step=step,
                                            stall_nudges=stall_nudges_given)
-                    self._update_manifest(status="completed", steps=step,
-                                          findings=len(self._ctx.findings.all()))
+                    if self._terminal_on_budget_end:
+                        self._update_manifest(status="halted", steps=step,
+                                              halt_reason="stalled: no progress after repeated nudges",
+                                              findings=len(self._ctx.findings.all()))
+                    else:
+                        self._update_manifest(status="completed", steps=step,
+                                              findings=len(self._ctx.findings.all()))
                     return final_text or "[stalled — no progress after repeated nudges; ending this specialist's turn]"
                 messages.append({"role": "user", "content":
                     "[NO PROGRESS] Several turns produced no new endpoints or findings. "
@@ -285,8 +320,16 @@ class RedTeamAgent:
                     "the plan, or move on. Do not repeat what has already failed."})
         else:
             self._ctx.audit.record("agent.max_steps", steps=self._max_steps)
-            self._update_manifest(status="completed", steps=self._max_steps,
-                                  findings=len(self._ctx.findings.all()))
+            if self._terminal_on_budget_end:
+                # Budget exhausted without the objective — a halted run, not a
+                # completed one. Operators must never see green for a grind-out.
+                self._ctx.audit.record("agent.budget_exhausted", steps=self._max_steps)
+                self._update_manifest(status="halted", steps=self._max_steps,
+                                      halt_reason="max_steps_reached",
+                                      findings=len(self._ctx.findings.all()))
+            else:
+                self._update_manifest(status="completed", steps=self._max_steps,
+                                      findings=len(self._ctx.findings.all()))
 
         return final_text
 
@@ -305,7 +348,15 @@ class RedTeamAgent:
     def _dispatch(self, name: str, tool_input: dict) -> str:
         tool = self._tools.get(name)
         if tool is None:
-            return f"ERROR: unknown tool {name!r}"
+            # Live-fire finding: under weaker models this context's tool list sometimes
+            # gets hallucinated (e.g. the verify pass inventing 'recheck_finding'). A bare
+            # "unknown tool" made the model guess again in the dark and burn steps; a
+            # corrective message with the REAL tool names turns the same turn into a
+            # one-step recovery. Failures are audited so prompt fixes can be targeted.
+            self._ctx.audit.record("agent.unknown_tool", tool=name)
+            available = ", ".join(sorted(self._tools)) or "(no tools in this context)"
+            return (f"ERROR: unknown tool {name!r} — it does not exist in this context. "
+                    f"Available tools: {available}. Call one of these, by its exact name.")
         try:
             return tool.run(self._ctx, **tool_input)
         except TypeError as exc:

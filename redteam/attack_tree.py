@@ -119,6 +119,13 @@ class AttackTree:
         # mark()/claim() feed outcomes back into it. None (the default) preserves the old
         # fixed-priority-only behavior exactly — this is additive, never required.
         self._bandit = bandit
+        # Per-run strategy nudges from the LLM strategist (see reflection.py), applied in
+        # actionable()'s ranking. Node-level boosts come from prioritize[] (technique@target
+        # pairs the strategist wants attacked next); technique-level penalties from
+        # deprioritize[]. These can only REORDER already-in-scope work — never create,
+        # authorize, or unlock anything — which keeps the strategist's influence safe.
+        self._strategy_boost: dict[str, float] = {}
+        self._technique_penalty: dict[str, float] = {}
         # RLock: sync()/mark()/briefing() all call other locked methods on self from the
         # SAME thread (sync -> seed_endpoint -> _add, mark -> _unlock -> _add, briefing ->
         # confirmed_chain/actionable) — a plain Lock would deadlock. Needed once a parallel
@@ -235,13 +242,43 @@ class AttackTree:
                     # evidence shifts the technique up or down within its priority tier,
                     # it never lets a low-priority technique leapfrog the chain boost.
                     learned = (self._bandit.sample(n.technique, n.bucket) - 0.5) * 40
-                    return base + boost + learned
-                return base + boost
+                    base_shift = base + learned
+                else:
+                    base_shift = base
+                strategy = (self._strategy_boost.get(n.id, 0.0)
+                            + self._technique_penalty.get(n.technique, 0.0))
+                return base_shift + boost + strategy
             return sorted(live, key=key, reverse=True)[:limit]
 
     def confirmed_chain(self) -> list[AttackNode]:
         with self._lock:
             return [n for n in self._nodes.values() if n.status == COMPLETED]
+
+    def apply_strategy(self, prioritize: list[dict] | None = None,
+                       deprioritize: list[str] | None = None) -> int:
+        """Apply the LLM strategist's per-round nudges (see reflection.py).
+
+        prioritize: [{"technique", "target"}] — those tree nodes jump the frontier queue
+        (a +25 shift is enough to outrank everything in their priority tier without
+        letting a non-chained node leapfrog the +100 chain boost).
+        deprioritize: [technique ids] — pushed down this run (-25), never removed.
+
+        Boosts only apply to nodes that actually exist; unknown technique@target pairs
+        from a hallucinating strategist are counted and ignored. Returns how many
+        boosts landed on real nodes (useful for the reflection audit event)."""
+        applied = 0
+        with self._lock:
+            for item in (prioritize or []):
+                nid = f"{item.get('technique', '')}@{item.get('target', '')}"
+                if nid in self._nodes:
+                    self._strategy_boost[nid] = 25.0
+                    applied += 1
+            for tid in (deprioritize or []):
+                if tid in TECHNIQUES:
+                    self._technique_penalty[tid] = -25.0
+                    applied += 1
+            self._flush()
+        return applied
 
     def claim(self, technique: str, target: str) -> bool:
         """Atomically claim an actionable node for one swarm worker: set it to

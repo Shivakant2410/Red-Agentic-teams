@@ -47,14 +47,18 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+import json
+from pathlib import Path
 
 from .agent import RedTeamAgent
 from .attack_tree import FAILED, TECHNIQUES, TODO
 from .config import Engagement
+from .events import coerce_payload
 from .killchain import (CREDENTIAL_ACCESS, DISCOVERY, LATERAL_MOVEMENT,
                         PRIVILEGE_ESCALATION)
 from .llm.openrouter import OpenRouterClient
 from .llm.routing import PARSE, PLAN
+from .reflection import coach_note, reflect
 from .tools import ToolContext, Tool
 
 # Kill-chain stages that mean "there is a foothold worth pressing further" — if
@@ -96,9 +100,17 @@ RECON = SpecialistProfile(
            "purely to get past a login wall and see what's behind it — logging in is "
            "mapping, not exploiting. If the app has a multi-step login (e.g. submit a "
            "username, then a password at a second URL), use authenticate's "
-           "second_url_template rather than guessing follow-up URLs by hand. Be broad and "
-           "fast."),
-    tool_names=["browser_navigate", "browser_content", "browser_click", "kali_exec", "authenticate"],
+           "second_url_template rather than guessing follow-up URLs by hand. If the "
+           "engagement brief hands you a ready-made token/cookie, register it with "
+           "set_session instead of inventing a login. START with surface_scan (one call, "
+           "no arguments): it knocks on every host/port the RoE allows and fills the asset "
+           "inventory, so you know which in-scope services are actually alive before you "
+           "spend a single step on a dead one. Use http_probe for raw API surfaces "
+           "the browser cannot reach (JSON endpoints, API roots, robots.txt, versioned "
+           "APIs) and for anything behind a session — it is a cheap fetch, not a proof. "
+           "Be broad and fast."),
+    tool_names=["browser_navigate", "browser_content", "browser_click", "kali_exec",
+                "authenticate", "set_session", "http_probe", "surface_scan"],
     role=PARSE,          # breadth work -> cheaper model
     max_steps=15,
 )
@@ -108,11 +120,17 @@ EXPLOIT = SpecialistProfile(
     addon=("You are the EXPLOIT specialist. The surface is already mapped in the knowledge "
            "graph and the attack tree lists prioritized untested checks. For each, PROVE the "
            "vulnerability with a reproducing check (confirm_finding / verify_vulnerability), "
-           "authenticate when needed, and chain confirmed footholds. Bias hard toward "
+           "authenticate when needed, and chain confirmed footholds. Separate LOOKING from "
+           "PROVING: use http_probe to inspect responses, validate a session, or walk an ID "
+           "space — it never records anything — and only fire confirm_finding once you have "
+           "a hypothesis worth proving; confirm_finding costs verification trials, probes "
+           "do not. If the engagement brief hands you a ready-made token/cookie, register it "
+           "with set_session instead of hand-writing headers everywhere. Bias hard toward "
            "confirming findings; do not re-map the surface. NOTE: your checks only reach "
            "pending_verification — a separate pass independently re-checks them before "
            "anything counts. That is by design; keep proving, don't try to self-promote."),
-    tool_names=["confirm_finding", "verify_vulnerability", "authenticate", "kali_exec",
+    tool_names=["confirm_finding", "verify_vulnerability", "authenticate", "set_session",
+                "http_probe", "kali_exec",
                 "browser_navigate", "browser_content", "browser_fill"],
     role=PLAN,           # depth/reasoning work -> strongest model
     max_steps=40,
@@ -127,12 +145,16 @@ ACCESS = SpecialistProfile(
            "try candidates against in-scope probes (try_credential), and prove privilege "
            "boundaries differentially (prove_privilege) — never label access yourself; "
            "prove_privilege's own check still only reaches pending_verification, same as "
-           "every other proof tool. Use record_access only to note leads/edges you "
-           "discover, not to self-grant held access. Do NOT hunt new vulnerability "
+           "every other proof tool. Use http_probe with as_session to exercise a held "
+           "session against endpoints the brief names (e.g. the objective's target) — its "
+           "response tells you whether the session reaches further before you spend a "
+           "proving step. Use record_access only to note leads/edges you discover, not to "
+           "self-grant held access. Do NOT hunt new vulnerability "
            "classes — that is the exploit specialist's job; if nothing presses further, "
            "say so and stop."),
     tool_names=["extract_secrets", "try_credential", "prove_privilege", "record_access",
-                "authenticate", "kali_exec", "browser_navigate", "browser_content"],
+                "authenticate", "set_session", "http_probe", "kali_exec",
+                "browser_navigate", "browser_content"],
     role=PARSE,          # procedural/mechanical work once a path is already known -> cheaper model
     max_steps=20,
 )
@@ -186,11 +208,23 @@ def run_verify_pass(engagement: Engagement, tools: dict[str, Tool], ctx: ToolCon
     """
     pending = ctx.findings.pending()
     if not pending:
+        # Live-fire regression (run 20261022-1239): in single-agent mode the model may
+        # legitimately call verify_finding_independently MID-RUN, so by the time the
+        # post-run pass arrives there is nothing pending — and the early return below
+        # used to skip collection entirely, leaving a confirmed finding on the
+        # objective's target uncollected. Crediting runs even when verification is
+        # already clear; the sweep is idempotent and only ever acts on confirmed work.
+        from .credit import credit_confirmed_findings
+        try:
+            credit_confirmed_findings(ctx)
+        except Exception as exc:
+            ctx.audit.record("credit.failed", error=str(exc))
         return 0
     ctx.audit.record("verify_pass.start", pending=len(pending))
     subset = {n: tools[n] for n in VERIFY.tool_names if n in tools}
     verifier = RedTeamAgent(engagement, subset, ctx, client, max_steps=VERIFY.max_steps,
-                            system_addon=VERIFY.addon, role=VERIFY.role)
+                            system_addon=VERIFY.addon, role=VERIFY.role,
+                            agent_name="verify")
     if budget is not None:
         verifier.with_runtime(budget=budget)
     ids = ", ".join(f.id for f in pending)
@@ -200,6 +234,18 @@ def run_verify_pass(engagement: Engagement, tools: dict[str, Tool], ctx: ToolCon
         f"skip any.", on_text=on_text)
     remaining = len(ctx.findings.pending())
     ctx.audit.record("verify_pass.finish", remaining=remaining)
+    # Creditor: collection is nobody's implicit job. A confirmed finding on the
+    # objective's target must convert into access hold + criterion credit WITHOUT
+    # depending on the model remembering to call record_access/claim_objective —
+    # live-fire showed a fully-proven, independently-confirmed IDOR sitting there
+    # uncollected because the final linkage never left the model's head. The sweep is
+    # deterministic, gated by the same REQUIRED_SOURCE rules as everything else, and
+    # idempotent (see credit.py).
+    from .credit import credit_confirmed_findings
+    try:
+        credit_confirmed_findings(ctx)
+    except Exception as exc:   # collection must never crash the pipeline
+        ctx.audit.record("credit.failed", error=str(exc))
     return remaining
 
 
@@ -246,12 +292,27 @@ class Orchestrator:
         agent = RedTeamAgent(self._eng, subset, self._ctx, self._client,
                              max_steps=profile.max_steps, graph=self._graph,
                              attack_tree=self._attack_tree, memory=self._memory,
-                             system_addon=addon, role=profile.role)
+                             system_addon=addon, role=profile.role,
+                             agent_name=profile.name)
         if self._budget is not None:
             mpath = self._manifest[1] if self._manifest else None
             manifest = self._manifest[0] if self._manifest else None
             agent.with_runtime(budget=self._budget, manifest=manifest, manifest_path=mpath)
         return agent
+
+    # -- telemetry --------------------------------------------------------------
+
+    def _emit(self, etype: str, **fields) -> None:
+        bus = getattr(self._ctx, "events", None)
+        if bus is not None:
+            try:
+                bus.emit(etype, role="orchestrator", **fields)
+            except Exception:
+                pass
+
+    def _phase(self, phase: str, **extra) -> None:
+        self._ctx.audit.record("orchestrator.phase", phase=phase, **extra)
+        self._emit("phase.change", phase=phase, **extra)
 
     def _run_exploit_swarm(self, objective: str, round_no: int, on_text=None) -> str:
         """Fan out EXPLOIT across up to max_swarm_workers CONCURRENT contexts, each
@@ -290,6 +351,8 @@ class Orchestrator:
                         break
                 if claimed is None:
                     break   # nothing left unclaimed — this worker is done
+                self._emit("swarm.claim", worker=worker_id, round=round_no,
+                           technique=claimed.technique, target=claimed.target)
                 if self._budget is not None:
                     try:
                         self._budget.check()
@@ -387,13 +450,17 @@ class Orchestrator:
 
     def run(self, objective: str, on_text=None) -> str:
         self._ctx.audit.record("orchestrator.start", objective=objective)
+        # Reflection state: accumulated strategist notes steer later rounds and land in
+        # the run directory (reflections.json) for the report/dashboard.
+        self._reflections: list[dict] = []
+        self._reflection_notes: list[str] = []
 
         # Phase 0 — deterministic recon runs once, before either driver starts (see
         # cli.py's call to run_deterministic_recon) so single-agent and multi-agent runs
         # get identical treatment instead of duplicating this per-driver.
 
         # Phase 1 — recon (breadth, cheap model).
-        self._ctx.audit.record("orchestrator.phase", phase="recon")
+        self._phase("recon")
         recon = self._make_specialist(RECON)
         recon.run(f"{objective}\n\nThis run: RECON only — map the attack surface.", on_text=on_text)
 
@@ -421,16 +488,25 @@ class Orchestrator:
                 # round may have more graph/finding context — never reset within the same
                 # round that set FAILED (see retry_failed()'s own docstring).
                 self._attack_tree.retry_failed()
-            self._ctx.audit.record("orchestrator.phase", phase="exploit", round=rnd)
-            summary = self._run_exploit_swarm(objective, rnd, on_text) or summary
+            self._phase("exploit", round=rnd)
+            # Coach's notes from the last reflection steer this round's specialists.
+            round_objective = objective
+            if self._reflection_notes:
+                round_objective = objective + "\n\n" + self._reflection_notes[-1]
+            summary = self._run_exploit_swarm(round_objective, rnd, on_text) or summary
 
-            self._ctx.audit.record("orchestrator.phase", phase="verify")
+            self._phase("verify", round=rnd)
             still_pending = run_verify_pass(self._eng, self._tools, self._ctx, self._client,
                                             objective, budget=self._budget, on_text=on_text)
             if still_pending:
                 self._ctx.audit.record("orchestrator.verify_incomplete", remaining=still_pending)
 
             summary = self._run_access_loop(objective, on_text) or summary
+
+            # Strategy reflection (Gen-2): a strong model reads this round's factual
+            # digest and redirects the swarm — attack-tree boosts + coach's notes. The
+            # run never depends on it succeeding (see reflection.py's failure policy).
+            self._reflect_on_round(objective, rnd)
 
         # Phase 3 — logic round: business-logic bugs don't chain off exploit findings the
         # way access-pressing does, so one round after the surface is mapped and exploited
@@ -444,20 +520,88 @@ class Orchestrator:
                 self._ctx.audit.record("orchestrator.halt", reason=str(exc))
                 budget_remains = False
         if budget_remains and _looks_workflow_shaped(self._graph):
-            self._ctx.audit.record("orchestrator.phase", phase="logic")
+            self._phase("logic")
             logic = self._make_specialist(LOGIC)
             summary = logic.run(
                 f"{objective}\n\nThis run: LOGIC — find and prove business-logic bugs "
                 f"on the workflow-shaped endpoints already mapped.", on_text=on_text) or summary
 
-            self._ctx.audit.record("orchestrator.phase", phase="verify")
+            self._phase("verify", phase_end="logic")
             still_pending = run_verify_pass(self._eng, self._tools, self._ctx, self._client,
                                             objective, budget=self._budget, on_text=on_text)
             if still_pending:
                 self._ctx.audit.record("orchestrator.verify_incomplete", remaining=still_pending)
 
+        # Final creditor sweep (idempotent — see run_verify_pass note): catches a
+        # confirmation that landed after the last verify pass funneled through.
+        from .credit import credit_confirmed_findings
+        try:
+            credit_confirmed_findings(self._ctx)
+        except Exception as exc:
+            self._ctx.audit.record("credit.failed", error=str(exc))
+
+        confirmed_count = len([f for f in self._ctx.findings.all()
+                               if f.confidence == "confirmed"])
         self._ctx.audit.record("orchestrator.finish",
                                findings=len(self._ctx.findings.all()),
-                               confirmed=len([f for f in self._ctx.findings.all()
-                                             if f.confidence == "confirmed"]))
+                               confirmed=confirmed_count)
+        self._emit("run.summary", findings=len(self._ctx.findings.all()),
+                   confirmed=confirmed_count, reflections=len(self._reflections))
         return summary
+
+    def _reflect_on_round(self, objective: str, round_no: int) -> None:
+        """One strategist call per completed round; applies its tree nudges, stores the
+        reflection, and emits it to the dashboard. Never raises."""
+        if not getattr(self._eng, "enable_reflection", True):
+            return
+        if self._budget is not None:
+            try:
+                self._budget.check()
+            except Exception:
+                return   # out of budget — skip the strategist, reflection is optional
+        tail = []
+        try:
+            tail = self._ctx.audit.read_all()[-120:]
+        except Exception:
+            pass
+        objective_obj = getattr(self._ctx, "objective", None)
+        reflection = reflect(
+            self._client,
+            objective_text=objective,
+            round_no=round_no + 1,
+            objective=objective_obj,
+            findings=self._ctx.findings.all(),
+            attack_tree=self._attack_tree,
+            killchain=getattr(self._ctx, "killchain", None),
+            audit_tail=tail,
+            notes_so_far=self._reflection_notes,
+        )
+        if reflection is None:
+            return
+        applied = 0
+        if self._attack_tree is not None:
+            try:
+                applied = self._attack_tree.apply_strategy(
+                    prioritize=reflection.get("prioritize"),
+                    deprioritize=reflection.get("deprioritize"))
+            except Exception:
+                applied = 0
+        reflection["round"] = round_no + 1
+        reflection["boosts_applied"] = applied
+        self._reflections.append(reflection)
+        self._reflection_notes.append(coach_note(reflection))
+        self._ctx.audit.record("orchestrator.reflection", round=round_no + 1,
+                               boosts=applied)
+        self._emit("reflection", round=round_no + 1, boosts_applied=applied,
+                   assessment=reflection["assessment"],
+                   focus_next=reflection.get("focus_next") or [])
+        # Persist for the report/dashboard even if the process dies mid-run.
+        if self._manifest is not None:
+            try:
+                out_dir = Path(self._manifest[1]).parent
+                out_dir.mkdir(parents=True, exist_ok=True)
+                (out_dir / "reflections.json").write_text(
+                    json.dumps(self._reflections, indent=2, ensure_ascii=False),
+                    encoding="utf-8")
+            except Exception:
+                pass
