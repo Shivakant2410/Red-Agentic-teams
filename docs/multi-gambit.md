@@ -173,7 +173,9 @@ Two design consequences worth recording:
    samples them again) without reopening the infinite-empty-retry loop FAILED
    exists to prevent.
 
-## 6. What shipped in this commit
+## 6. What shipped
+
+*Commit 1 — the store (0abb9f2):*
 
 - `redteam/bandit.py` — `BanditStore` extended, all additive, defaults
   preserve legacy behavior exactly (`discount=1.0`, cap off):
@@ -182,35 +184,54 @@ Two design consequences worth recording:
     never-failed young arms;
   - `export_state()` / `merge_state()` — federated posterior sync, evidence-
     pooled, malformed-row isolated;
-  - `select(candidates, k)` — cost-aware (yield-per-cost) Thompson ranking.
-- `tests/test_bandit.py` — 8 new failure-mode tests (regime-change tracking,
-  discount validation, peer-evidence propagation, hostile-row isolation,
-  round-trip fidelity, suspicion flip both ways, cheap-vs-proven selection).
-- Suite: **495 passed**.
+  - `select(candidates, k)` — cost-aware (yield-per-cost) Thompson ranking,
+    with optional `meta` passthrough so ranked items map back to tree nodes.
+- `tests/test_bandit.py` — 8 new failure-mode tests.
+
+*Commit 2 — the wiring:*
+
+- `redteam/attack_tree.py` — `TECHNIQUE_COST` (OPSEC price per technique,
+  quiet 1 → bulk-exfil 5) + `technique_cost()`; read-only `AttackTree.bandit`
+  accessor (rewards still flow through `mark()` only).
+- `redteam/orchestrator.py` — the exploit swarm's claim loop is now
+  **cost-aware and budget-gated**: candidates come only from the tree's
+  actionable frontier (reorder, never create), re-ranked by Thompson draw /
+  OPSEC cost via `select()`; `NoiseBudget` caps each round's total spend, skips
+  gambits that don't fit the remainder (greedy knapsack), refunds lost claim
+  races. Each round also broadcasts `bandit.state` (sufficient statistics,
+  `min_trials=1`) on the event bus — dashboards see what the swarm learned.
+- `redteam/run.py` — `RunOptions.round_noise_budget` (default 12 noise
+  credits/round, `<=0` = legacy unlimited); the run's bus subscribes
+  `make_sync_handler(bandit, own_source=bus.run_id)` so FOREIGN `bandit.state`
+  events merge into this run's store (own broadcasts are skipped — merging
+  them back would double-count evidence).
+- `tests/test_bandit_wiring.py` — 13 tests: budget never exceeded (per round),
+  a gambit that cannot fit is never claimed even with a dominant posterior,
+  per-round broadcast shape, meta passthrough, cost-table coverage/loudness
+  sanity, NoiseBudget spend/refund/exhaustion + concurrent no-oversell,
+  handler foreign/own/garbage/hostile isolation.
+- Suite: **508 passed**.
 
 ## 7. Staged next (in value order)
 
-1. **Wire `select()` into the orchestrator** — the exploit swarm currently
-   claims via `actionable()` priority only; giving each round a noise budget
-   and drawing with `select()` is the last wiring step to live budgeted
-   allocation.
-2. **Event-bus federation broadcast** — emit `bandit.state` each round, merge
-   peer payloads on receipt; the math is shipped, the wiring is ~20 lines.
-3. **Planner banditization** — `planner.py`'s `_CHECK_PRIORITY` gets the same
+1. **Planner banditization** — `planner.py`'s `_CHECK_PRIORITY` gets the same
    (check, bucket) store treatment attack_tree got; reward = check ran +
    finding confirmed downstream.
-4. **Context upgrade** — LinUCB over richer endpoint features (graph attrs,
+2. **Context upgrade** — LinUCB over richer endpoint features (graph attrs,
    auth/session signals) once per-bucket trial counts grow past what discrete
    buckets can learn from.
-5. **EXP3 mode** — full adversarial robustness for engagements where the
+3. **EXP3 mode** — full adversarial robustness for engagements where the
    defender actively shapes observed rewards; behind the same `sample()`
    interface.
-6. **Prior injection from feeds** — nuclei importer + EPSS as the initial
+4. **Prior injection from feeds** — nuclei importer + EPSS as the initial
    (α, β) of new arms instead of Beta(1,1): cold-start from public
    exploitability data rather than uniform ignorance.
-7. **Bench integration** — `redteam/bench/` scenarios + NASim-style synthetic
+5. **Bench integration** — `redteam/bench/` scenarios + NASim-style synthetic
    networks to measure regret and findings-per-noise-credit of the bandit
    planner vs the fixed priority table, offline.
+6. **Noise-budget tuning** — `round_noise_budget=12` is a first guess; calibrate
+   from real engagements (claims-per-round × technique mix) and expose per-
+   engagement overrides in the engagement YAML.
 
 ## 8. References
 

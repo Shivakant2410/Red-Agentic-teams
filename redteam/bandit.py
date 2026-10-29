@@ -147,6 +147,33 @@ class LocalJSONBanditBackend:
         self._path.write_text(json.dumps(rows, indent=2), encoding="utf-8")
 
 
+def make_sync_handler(bandit: "BanditStore", own_source: str = ""):
+    """Event-bus federation handler (docs/multi-gambit.md §4.1).
+
+    Subscribe this to an EventBus; every FOREIGN `bandit.state` event it sees is
+    merged into `bandit` — evidence-pooled posteriors, so one engine's confirmed
+    exploits raise every other engine's beliefs with no coordinator. Own-source
+    events are skipped (a store merging back its own broadcast would double-count
+    its evidence every round), and malformed payloads are skipped: a bad peer can
+    no more corrupt the shared belief than a bad sink can corrupt a proof. The
+    handler itself never raises — the same contract events.py runs under."""
+
+    def _handler(event: object) -> None:
+        try:
+            if not isinstance(event, dict) or event.get("type") != "bandit.state":
+                return
+            source = event.get("source")
+            if not source or source == own_source:
+                return
+            arms = event.get("arms")
+            if isinstance(arms, list):
+                bandit.merge_state(arms, source=str(source))
+        except Exception:
+            pass
+
+    return _handler
+
+
 class BanditStore:
     """Thompson-sampling store over (technique, bucket) arms, persisted across runs.
 
@@ -234,12 +261,16 @@ class BanditStore:
 
     # -- federation: multi-agent posterior sync -----------------------------------
 
-    def export_state(self) -> list[dict]:
+    def export_state(self, min_trials: int = 0) -> list[dict]:
         """This store's sufficient statistics, ready for the event bus. Two floats per
         arm — the whole learned state of an engagement compresses to a few hundred
-        bytes, so peers can sync every round without a coordinator."""
+        bytes, so peers can sync every round without a coordinator.
+
+        `min_trials` drops arms with fewer completed trials — sampling alone creates
+        zero-trial arms (every live node gets sampled by actionable()), and arms with
+        no evidence carry nothing worth broadcasting."""
         with self._lock:
-            return [asdict(a) for a in self._arms.values()]
+            return [asdict(a) for a in self._arms.values() if a.trials >= min_trials]
 
     def merge_state(self, rows: list[dict], source: str = "peer") -> int:
         """Pool a peer's evidence into ours and return how many arms merged.
@@ -288,16 +319,29 @@ class BanditStore:
         request: under a tight noise budget the selector buys cheap gambits first and
         pays an expensive arm's price only when its evidence is strong enough to
         clear it. Suspicion caps and discounting apply exactly as in sample().
-        Returns at most k dicts: {technique, bucket, cost, draw, score}."""
+        Returns at most k dicts: {technique, bucket, cost, draw, score}.
+
+        Candidates may be (technique, bucket, cost) 3-tuples or
+        (technique, bucket, cost, meta) 4-tuples when the caller needs ranked items
+        mapped back to its own objects (the orchestrator maps each candidate back to
+        its attack-tree node); a 4-tuple's meta is returned verbatim on the item."""
         scored: list[dict] = []
         with self._lock:
             for item in candidates:
-                technique, bucket, cost = item
+                if len(item) == 4:
+                    technique, bucket, cost, meta = item
+                    has_meta = True
+                else:
+                    technique, bucket, cost = item
+                    meta, has_meta = None, False
                 cost = max(float(cost), 1e-6)
                 arm = self._get(technique, bucket)
                 draw = self._suspicion_adjust(arm, random.betavariate(arm.alpha, arm.beta))
-                scored.append({"technique": technique, "bucket": bucket, "cost": cost,
-                               "draw": draw, "score": draw / cost})
+                entry = {"technique": technique, "bucket": bucket, "cost": cost,
+                         "draw": draw, "score": draw / cost}
+                if has_meta:
+                    entry["meta"] = meta
+                scored.append(entry)
         scored.sort(key=lambda s: s["score"], reverse=True)
         return scored[:k]
 

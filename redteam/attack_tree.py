@@ -88,6 +88,28 @@ TECHNIQUES: dict[str, Technique] = {t.id: t for t in [
 
 ENTRY_TECHNIQUES = tuple(t.id for t in TECHNIQUES.values() if not t.chained)
 
+# OPSEC price of ONE attempt per technique (docs/multi-gambit.md §3.4) — what the
+# bandit's cost-aware selection (BanditStore.select) divides the Thompson draw by,
+# which is the budgeted-MAB objective: maximize confirmed findings per unit of
+# DETECTABLE noise, not per request. Calibrated by loudness: quiet single-request
+# checks cost 1-2, multi-probe injections 3-4, and anything that moves data off the
+# target 5 — bulk reads are the loudest thing a web engagement does.
+TECHNIQUE_COST: dict[str, float] = {
+    "auth.test": 1.0, "xss.reflected": 1.0, "info.sensitive": 1.0,
+    "access.control": 2.0, "access.idor": 2.0, "ssrf": 2.0,
+    "session.steal": 2.0, "internal.access": 2.0,
+    "injection.sqli": 3.0, "auth.bypass": 3.0,
+    "injection.cmd": 4.0, "privesc.admin": 4.0,
+    "data.exfil": 5.0,
+}
+_DEFAULT_TECHNIQUE_COST = 1.0
+
+
+def technique_cost(technique_id: str) -> float:
+    """OPSEC price of one attempt of this technique. Unknown ids default to quiet
+    (1.0) — a missing cost must never make the selector over-spend the budget."""
+    return TECHNIQUE_COST.get(technique_id, _DEFAULT_TECHNIQUE_COST)
+
 # Map a finding's CWE to the technique it confirms, so results drive the tree.
 _CWE_TO_TECHNIQUE = {
     "CWE-89": "injection.sqli", "CWE-78": "injection.cmd", "CWE-79": "xss.reflected",
@@ -136,6 +158,13 @@ class AttackTree:
             for row in json.loads(self._path.read_text(encoding="utf-8")):
                 n = AttackNode(**row)
                 self._nodes[n.id] = n
+
+    @property
+    def bandit(self):
+        """The attached BanditStore (or None). Read-only on purpose: reward recording
+        stays inside mark(), the single write path; the orchestrator only ever reads
+        this for ranked selection (select) and learned-state export (export_state)."""
+        return self._bandit
 
     # -- construction ----------------------------------------------------------
 

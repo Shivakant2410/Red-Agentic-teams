@@ -228,6 +228,12 @@ class RunOptions:
     #   log entirely (headers are still recorded, credential values always masked).
     asset_feed: str = ""
     record_traffic_bodies: bool = True
+    # Per-round OPSEC budget (noise credits) for the exploit swarm's cost-aware
+    # selection (docs/multi-gambit.md §3.4): techniques carry an OPSEC price
+    # (attack_tree.TECHNIQUE_COST) and each round the swarm may only spend this
+    # much — cheap quiet gambits first, loud ones only when the bandit's evidence
+    # clears the price. <=0 disables budgeting (unlimited spend, legacy behavior).
+    round_noise_budget: float = 12.0
     # Evidence proxy (MITM recording plane for sandbox tool traffic). On by default
     # whenever the sandbox runs; opt out with no_evidence_proxy. When TLS
     # interception is impossible (no `cryptography`), the proxy degrades to
@@ -304,6 +310,14 @@ def execute_run(opts: RunOptions) -> dict:
     bandit = BanditStore(Path(opts.memory_dir) / "bandit.json")
     from .attack_tree import AttackTree
     attack_tree = AttackTree(out / "attack_tree.json", bandit=bandit)
+    # Federation sync (docs/multi-gambit.md §4.1): merge FOREIGN bandit.state events
+    # into this run's store — an embedder fanning one bus across several engines (or
+    # a future per-specialist subprocess topology) gets cross-engine learning with no
+    # coordinator. The handler skips this run's own broadcasts (merging them back
+    # would double-count evidence) and never raises on malformed payloads.
+    if bus is not None:
+        from .bandit import make_sync_handler
+        bus.subscribe(make_sync_handler(bandit, own_source=getattr(bus, "run_id", "")))
     # Red-team core: what we hold, where we're going, and where we are in the kill chain.
     from .access import AccessGraph
     from .killchain import KillChain
@@ -461,7 +475,8 @@ def execute_run(opts: RunOptions) -> dict:
         if opts.multi_agent:
             from .orchestrator import Orchestrator
             driver = Orchestrator(engagement, tools, ctx, client, graph=graph,
-                                  attack_tree=attack_tree, memory=memory)
+                                  attack_tree=attack_tree, memory=memory,
+                                  noise_budget=opts.round_noise_budget)
         else:
             driver = RedTeamAgent(engagement, tools, ctx, client, max_steps=opts.max_steps,
                                   graph=graph, attack_tree=attack_tree, memory=memory,

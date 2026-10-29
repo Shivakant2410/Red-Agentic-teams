@@ -49,9 +49,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
+import threading
 
 from .agent import RedTeamAgent
-from .attack_tree import FAILED, TECHNIQUES, TODO
+from .attack_tree import FAILED, TECHNIQUES, TODO, technique_cost
 from .config import Engagement
 from .events import coerce_payload
 from .killchain import (CREDENTIAL_ACCESS, DISCOVERY, LATERAL_MOVEMENT,
@@ -250,11 +251,50 @@ def run_verify_pass(engagement: Engagement, tools: dict[str, Tool], ctx: ToolCon
     return remaining
 
 
+class NoiseBudget:
+    """Per-round OPSEC spend cap for the exploit swarm (docs/multi-gambit.md §3.4).
+
+    Every claim reserves its technique's OPSEC price (attack_tree.technique_cost)
+    from a shared round budget; a gambit that doesn't fit the remainder is skipped
+    in favor of cheaper ones still to hand (greedy knapsack), and a lost claim race
+    refunds the reservation. Thread-safe — swarm workers spend concurrently. A
+    budget of 0 disables spend tracking entirely (pre-bandit behavior)."""
+
+    def __init__(self, total: float):
+        self._total = max(float(total), 0.0)
+        self._remaining = self._total
+        self._lock = threading.Lock()
+
+    @property
+    def remaining(self) -> float:
+        with self._lock:
+            return self._remaining
+
+    def can_afford(self, cost: float) -> bool:
+        with self._lock:
+            return self._remaining >= cost - 1e-9
+
+    def try_spend(self, cost: float) -> bool:
+        """Atomically reserve `cost` from the remaining budget; False if it doesn't
+        fit (the caller moves on to a cheaper candidate — nothing was spent)."""
+        with self._lock:
+            if self._remaining >= cost - 1e-9:
+                self._remaining -= cost
+                return True
+            return False
+
+    def refund(self, cost: float) -> None:
+        """Return a reservation to the budget (capped at the total — refunds can
+        never mint budget that was never there)."""
+        with self._lock:
+            self._remaining = min(self._total, self._remaining + cost)
+
+
 class Orchestrator:
     def __init__(self, engagement: Engagement, tools: dict[str, Tool], ctx: ToolContext,
                  client: OpenRouterClient, graph=None, attack_tree=None, memory=None,
                  max_exploit_rounds: int = 12, max_access_rounds: int = 4,
-                 max_swarm_workers: int = 3):
+                 max_swarm_workers: int = 3, noise_budget: float | None = None):
         self._eng = engagement
         self._tools = tools
         self._ctx = ctx
@@ -277,6 +317,11 @@ class Orchestrator:
         # Phase 5/6 notes), 3 concurrent is the realistic ceiling, not a target to raise
         # without also raising the token budget.
         self._max_swarm_workers = max_swarm_workers
+        # Per-round OPSEC budget (docs/multi-gambit.md §3.4): None/0 = unlimited
+        # spend (exact legacy behavior); a positive value caps what the swarm may
+        # spend per round in noise credits, spent according to the bandit's
+        # yield-per-cost ranking (when a bandit is attached) or plain priority.
+        self._noise = NoiseBudget(noise_budget) if noise_budget and noise_budget > 0 else None
         self._budget = None
         self._manifest = None
 
@@ -345,18 +390,46 @@ class Orchestrator:
 
         def worker(worker_id: int) -> str:
             summary = ""
+            bandit = getattr(self._attack_tree, "bandit", None)
             # Each worker claims its OWN next item each time through the loop (not a
             # fixed slice assigned upfront) so a fast worker that finishes its hypothesis
             # quickly picks up the next untried one instead of sitting idle while a
             # slower sibling is still on its first.
             while True:
                 claimed = None
-                for node in self._attack_tree.actionable(limit=self._max_swarm_workers * 4):
-                    if self._attack_tree.claim(node.technique, node.target):
-                        claimed = node
-                        break
+                if bandit is not None:
+                    # Cost-aware claim order (docs/multi-gambit.md §3.4): the tree's
+                    # ranked frontier is re-sorted by Thompson draw / OPSEC cost, so
+                    # under a round noise budget the swarm buys cheap gambits first
+                    # and pays a loud technique's price only when its evidence is
+                    # strong enough to clear it. Candidates still come ONLY from the
+                    # tree's actionable frontier — the bandit reorders in-scope work,
+                    # it never creates, authorizes, or widens anything.
+                    nodes = self._attack_tree.actionable(limit=self._max_swarm_workers * 4)
+                    ranked = bandit.select(
+                        [(n.technique, n.bucket, technique_cost(n.technique), n)
+                         for n in nodes], k=len(nodes))
+                    for item in ranked:
+                        node, cost = item["meta"], item["cost"]
+                        if self._noise is not None and not self._noise.try_spend(cost):
+                            continue   # doesn't fit the remaining round budget — a cheaper one may
+                        if self._attack_tree.claim(node.technique, node.target):
+                            claimed = node
+                            break
+                        if self._noise is not None:
+                            self._noise.refund(cost)   # lost the claim race — budget back
+                else:
+                    for node in self._attack_tree.actionable(limit=self._max_swarm_workers * 4):
+                        cost = technique_cost(node.technique)
+                        if self._noise is not None and not self._noise.try_spend(cost):
+                            continue
+                        if self._attack_tree.claim(node.technique, node.target):
+                            claimed = node
+                            break
+                        if self._noise is not None:
+                            self._noise.refund(cost)
                 if claimed is None:
-                    break   # nothing left unclaimed — this worker is done
+                    break   # nothing left unclaimed/affordable — this worker is done
                 self._emit("swarm.claim", worker=worker_id, round=round_no,
                            technique=claimed.technique, target=claimed.target)
                 if self._budget is not None:
@@ -504,6 +577,20 @@ class Orchestrator:
             if self._reflection_notes:
                 round_objective = objective + "\n\n" + self._reflection_notes[-1]
             summary = self._run_exploit_swarm(round_objective, rnd, on_text) or summary
+
+            # Learned-state broadcast (docs/multi-gambit.md §4.1): the store's
+            # sufficient statistics go on the bus every round. Dashboards get "what
+            # has the swarm learned"; peers subscribed via bandit.make_sync_handler
+            # merge foreign payloads (this run's own source is skipped by the
+            # handler — merging it back would double-count evidence). Evidence
+            # only: min_trials=1 drops sampling-created zero-trial arms.
+            tree_bandit = getattr(self._attack_tree, "bandit", None) \
+                if self._attack_tree is not None else None
+            if tree_bandit is not None:
+                bus = getattr(self._ctx, "events", None)
+                if bus is not None:
+                    self._emit("bandit.state", arms=tree_bandit.export_state(min_trials=1),
+                               source=getattr(bus, "run_id", "orchestrator"))
 
             self._phase("verify", round=rnd)
             still_pending = run_verify_pass(self._eng, self._tools, self._ctx, self._client,
