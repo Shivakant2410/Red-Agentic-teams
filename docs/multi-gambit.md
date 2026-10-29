@@ -212,6 +212,40 @@ Two design consequences worth recording:
   handler foreign/own/garbage/hostile isolation.
 - Suite: **508 passed**.
 
+*Commit 3 — prior injection (EPSS/KEV/nuclei warm start):*
+
+- `redteam/priors.py` — public exploit intelligence as informative Beta
+  pseudo-counts. Bundled snapshots in `redteam/intel/` (KEV: 1,762 confirmed-
+  exploited CVEs with CWE metadata from CISA's own GitHub mirror — cisa.gov
+  403s datacenter ranges; EPSS scores for every KEV CVE from FIRST). The math:
+  a virgin arm seeded from class exploitability p becomes
+  `Beta(1 + s·p, 1 + s·(1−p))` — "as if we had already probed s=12 times at the
+  population rate" — instead of Beta(1,1).
+- Three contracts keep it honest (enforced in `bandit.py`):
+  - **Priors are LOCAL**: `export_state()` broadcasts OBSERVED evidence only;
+    peers that seeded the same snapshot never double-count it through
+    federation (prior-free arms broadcast raw α/β exactly as before).
+  - **DATA WINS**: `seed()` refuses arms with any observed or merged outcome,
+    and local evidence washes a p=0.9 prior below mean 0.3 within ~30 trials.
+    Re-seeding a virgin arm is idempotent (snapshot refresh safe).
+  - **POLICY GATE** (`EPSS_YIELD_CLASSES`): only signature-scannable classes
+    may be steered by intel — EPSS measures mass-scan attractiveness, and
+    KEV's IDOR-class CVEs carry EPSS ≈ 0.009 because bots don't mass-scan
+    per-object logic bugs. Letting the feed suppress IDOR would starve the
+    technique that confirms most on numeric-id endpoints. Classes outside the
+    gate get NO prior: absence of intel must never masquerade as negative
+    intel.
+- `redteam/bandit.py` — `seed()`, `set_prior_provider()` / `prior_provider=`
+  (consulted once on virgin-arm creation, any bucket, raising provider
+  isolated), prior/obs bookkeeping on `ArmState`, evidence-only export,
+  `summary()` prior provenance.
+- `redteam/run.py` — builtin provider attached at startup, `RED_NO_PRIORS=1`
+  opt-out, never fatal (missing/corrupt snapshots = legacy cold start).
+- `tests/test_priors.py` — 24 tests: exact float contracts, federation
+  no-double-count between same-snapshot peers, feed-parse isolation, policy
+  gate, nuclei-corpus extraction, bundled-snapshot shape.
+- Suite: **540 passed**.
+
 ## 7. Staged next (in value order)
 
 1. **Planner banditization** — `planner.py`'s `_CHECK_PRIORITY` gets the same
@@ -223,15 +257,16 @@ Two design consequences worth recording:
 3. **EXP3 mode** — full adversarial robustness for engagements where the
    defender actively shapes observed rewards; behind the same `sample()`
    interface.
-4. **Prior injection from feeds** — nuclei importer + EPSS as the initial
-   (α, β) of new arms instead of Beta(1,1): cold-start from public
-   exploitability data rather than uniform ignorance.
-5. **Bench integration** — `redteam/bench/` scenarios + NASim-style synthetic
+4. **Bench integration** — `redteam/bench/` scenarios + NASim-style synthetic
    networks to measure regret and findings-per-noise-credit of the bandit
    planner vs the fixed priority table, offline.
-6. **Noise-budget tuning** — `round_noise_budget=12` is a first guess; calibrate
+5. **Noise-budget tuning** — `round_noise_budget=12` is a first guess; calibrate
    from real engagements (claims-per-round × technique mix) and expose per-
    engagement overrides in the engagement YAML.
+6. **Prior strength tuning** — `strength=12` / `top_k=5` are first guesses;
+   the bench (item 4) measures whether the EPSS warm start actually reduces
+   findings-per-noise-credit vs Beta(1,1) cold start on scenario ensembles,
+   and per-class strengths can follow from that data.
 
 ## 8. References
 

@@ -308,6 +308,21 @@ def execute_run(opts: RunOptions) -> dict:
     # keeps improving across many runs instead of resetting every time.
     from .bandit import BanditStore
     bandit = BanditStore(Path(opts.memory_dir) / "bandit.json")
+    # Warm start (docs/multi-gambit.md §7.4): bundled EPSS/KEV exploit intel becomes
+    # informative Beta priors on virgin technique arms — class-level public knowledge
+    # ("where does the wild actually exploit"), never target-linked, washed out by
+    # local evidence within ~2·strength trials. Pure prior work: it reorders the
+    # opening probes; it can never create, authorize, or unlock anything. A missing
+    # or corrupt snapshot (or RED_NO_PRIORS=1) cold-starts exactly like before.
+    import os as _os
+    if _os.environ.get("RED_NO_PRIORS") != "1":
+        try:
+            from .priors import builtin_prior_provider
+            _provider = builtin_prior_provider()
+            if _provider is not None:
+                bandit.set_prior_provider(_provider)
+        except Exception:
+            pass  # intel is an optimization; a run must never die warming up
     from .attack_tree import AttackTree
     attack_tree = AttackTree(out / "attack_tree.json", bandit=bandit)
     # Federation sync (docs/multi-gambit.md §4.1): merge FOREIGN bandit.state events

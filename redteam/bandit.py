@@ -49,6 +49,19 @@ MULTI-GAMBIT EXTENSIONS (see docs/multi-gambit.md for the full research mapping)
    costs noise-budget 1, a loud exploit 5+. select() ranks one Thompson draw per
    candidate by yield-per-cost, which is the budgeted-MAB objective: maximize confirmed
    findings per unit of detectable noise, not per request.
+ - PRIOR INJECTION (`seed` / `prior_provider`): a new arm starts at Beta(1,1) — maximum
+   ignorance — so every engagement re-derives public knowledge ("Log4Shell-class bugs
+   pop unpatched targets, exotic deserialization rarely does") at the price of failed,
+   detectable probes. See priors.py: EPSS/KEV exploit intelligence becomes informative
+   pseudo-counts, Beta(1 + s·p, 1 + s·(1−p)). Three contracts keep this honest:
+   (1) LOCAL-ONLY — the prior is this store's starting knowledge, never broadcast;
+     export_state() ships OBSERVED evidence only, so peers that seeded the same public
+     intel never double-count it through federation;
+   (2) DATA WINS — a prior never overrides evidence: seed() refuses arms with any
+     observed or merged outcome, and record() washes the prior out within ~2·strength
+     real trials;
+   (3) NO CERTAINTY — 0 < p < 1 is enforced; intel that claims certainty is a bug,
+     not knowledge.
 """
 
 from __future__ import annotations
@@ -111,6 +124,18 @@ class ArmState:
     bucket: str
     alpha: float = 1.0   # Beta prior: alpha=beta=1 is uniform (no information yet)
     beta: float = 1.0
+    # Prior bookkeeping (see seed()/priors.py): pseudo-counts injected from public
+    # exploit intel. belief = 1 + prior + observed. Priors are LOCAL starting
+    # knowledge — never broadcast (export_state strips them), never applied over
+    # evidence (seed refuses arms with observations).
+    prior_alpha: float = 0.0
+    prior_beta: float = 0.0
+    prior_source: str = ""
+    # Raw observed outcomes (real records + pooled peer evidence), tracked separately
+    # from alpha/beta because discounting and priors mix multiplicatively into the
+    # belief and cannot be unmixed afterwards. Authoritative for prior-bearing arms.
+    obs_wins: float = 0.0
+    obs_losses: float = 0.0
 
     @property
     def id(self) -> str:
@@ -123,6 +148,15 @@ class ArmState:
     @property
     def mean(self) -> float:
         return self.alpha / (self.alpha + self.beta)
+
+    @property
+    def observed(self) -> float:
+        """Real outcomes seen (own records + merged peer evidence), prior excluded."""
+        return self.obs_wins + self.obs_losses
+
+    @property
+    def has_prior(self) -> bool:
+        return bool(self.prior_alpha or self.prior_beta)
 
 
 class BanditBackend(Protocol):
@@ -185,7 +219,7 @@ class BanditStore:
 
     def __init__(self, path: str | Path | None = None, backend: BanditBackend | None = None,
                  discount: float = 1.0, suspicion_cap: float = 0.0,
-                 suspicion_window: int = 6):
+                 suspicion_window: int = 6, prior_provider=None):
         if not 0.0 < discount <= 1.0:
             raise ValueError(f"discount must be in (0, 1], got {discount!r}")
         if suspicion_cap and not 0.5 <= suspicion_cap < 1.0:
@@ -197,6 +231,7 @@ class BanditStore:
         self._backend = backend or (LocalJSONBanditBackend(path) if path else None)
         self._arms: dict[str, ArmState] = {}
         self._lock = threading.Lock()   # swarm workers record() concurrently
+        self._prior_provider = prior_provider
         if self._backend:
             for row in self._backend.load():
                 arm = ArmState(**row)
@@ -208,7 +243,36 @@ class BanditStore:
         if arm is None:
             arm = ArmState(technique=technique, bucket=bucket)
             self._arms[key] = arm
+            self._apply_prior_provider(arm)
         return arm
+
+    def set_prior_provider(self, provider) -> None:
+        """Install a warm-start source: provider(technique) -> (p, strength, source) or
+        None, consulted once when a VIRGIN arm is first created (any bucket — class
+        intel is bucket-agnostic; local evidence then per-bucketizes the belief).
+        Built from public exploit intel by priors.make_provider(). Never fatal: a
+        raising provider is treated as "no prior for this technique"."""
+        self._prior_provider = provider
+
+    def _apply_prior_provider(self, arm: ArmState) -> None:
+        if self._prior_provider is None:
+            return
+        try:
+            provided = self._prior_provider(arm.technique)
+            if not provided:
+                return
+            p, strength, source = provided
+            p, strength = float(p), float(strength)
+            if not 0.0 < p < 1.0 or strength < 1.0:
+                return
+        except Exception:
+            return
+        arm.prior_alpha = p * strength
+        arm.prior_beta = (1.0 - p) * strength
+        arm.prior_source = str(source)
+        arm.alpha = 1.0 + arm.prior_alpha
+        arm.beta = 1.0 + arm.prior_beta
+        self._flush()
 
     def sample(self, technique: str, bucket: str) -> float:
         """A Thompson-sampled draw from this arm's current belief — higher means
@@ -255,9 +319,42 @@ class BanditStore:
                 arm.beta = max(self._DISCOUNT_FLOOR, arm.beta * self._discount)
             if won:
                 arm.alpha += 1
+                arm.obs_wins += 1
             else:
                 arm.beta += 1
+                arm.obs_losses += 1
             self._flush()
+
+    # -- priors: public exploit intel as informative Beta pseudo-counts -------------
+
+    def seed(self, technique: str, bucket: str, p: float, strength: float = 12.0,
+             source: str = "epss") -> bool:
+        """Warm-start one arm with `strength` pseudo-observations at success rate p:
+        Beta(1 + s·p, 1 + s·(1−p)) instead of Beta(1,1). Thompson then probes where
+        public exploitability says yield is, before any local evidence exists — and
+        local evidence overrides within ~2·strength real trials (data wins).
+
+        Returns True if seeded. Refuses (False) arms that already carry observed or
+        merged outcomes — a prior may shape WHERE we probe first, never WHAT we
+        conclude. Re-seeding a still-virgin arm replaces its prior wholesale, so
+        re-importing a refreshed intel snapshot is idempotent. 0 < p < 1 enforced:
+        a prior claiming certainty is a bug, not knowledge."""
+        p, strength = float(p), float(strength)
+        if not 0.0 < p < 1.0:
+            raise ValueError(f"prior p must be in (0, 1), got {p!r}")
+        if strength < 1.0:
+            raise ValueError(f"prior strength must be >= 1, got {strength!r}")
+        with self._lock:
+            arm = self._get(technique, bucket)
+            if arm.observed > 0:
+                return False
+            arm.prior_alpha = p * strength
+            arm.prior_beta = (1.0 - p) * strength
+            arm.prior_source = str(source)
+            arm.alpha = 1.0 + arm.prior_alpha
+            arm.beta = 1.0 + arm.prior_beta
+            self._flush()
+            return True
 
     # -- federation: multi-agent posterior sync -----------------------------------
 
@@ -266,11 +363,29 @@ class BanditStore:
         arm — the whole learned state of an engagement compresses to a few hundred
         bytes, so peers can sync every round without a coordinator.
 
+        EVIDENCE-ONLY contract: arms carrying an injected prior broadcast their
+        OBSERVED evidence (1 + obs_wins, 1 + obs_losses), never the belief — public
+        intel is local starting knowledge, and peers that seeded the same snapshot
+        would double-count it if we broadcast pseudo-counts. Prior-free arms broadcast
+        the raw (alpha, beta) exactly as before (their belief IS their evidence).
+        Discounting likewise stays local: it is this store's belief policy, applied
+        again by each peer on its own future records.
+
         `min_trials` drops arms with fewer completed trials — sampling alone creates
         zero-trial arms (every live node gets sampled by actionable()), and arms with
         no evidence carry nothing worth broadcasting."""
         with self._lock:
-            return [asdict(a) for a in self._arms.values() if a.trials >= min_trials]
+            out = []
+            for a in self._arms.values():
+                evidence = a.observed if a.has_prior else a.trials
+                if evidence < min_trials:
+                    continue
+                row = asdict(a)
+                if a.has_prior:
+                    row["alpha"] = 1.0 + a.obs_wins
+                    row["beta"] = 1.0 + a.obs_losses
+                out.append(row)
+            return out
 
     def merge_state(self, rows: list[dict], source: str = "peer") -> int:
         """Pool a peer's evidence into ours and return how many arms merged.
@@ -301,6 +416,11 @@ class BanditStore:
                 arm = self._get(technique, bucket)
                 arm.alpha = max(1.0, arm.alpha + (peer_a - 1.0))
                 arm.beta = max(1.0, arm.beta + (peer_b - 1.0))
+                # Pooled peer evidence is OBSERVED evidence too — tracked so an arm that
+                # only ever merged still exports what it pooled (relay topology), and
+                # so a later seed() correctly refuses it.
+                arm.obs_wins += (peer_a - 1.0)
+                arm.obs_losses += (peer_b - 1.0)
                 merged += 1
             if merged:
                 self._flush()
@@ -347,10 +467,15 @@ class BanditStore:
 
     def summary(self) -> dict:
         with self._lock:
-            return {
-                arm.id: {"trials": arm.trials, "mean": round(arm.mean, 3)}
-                for arm in sorted(self._arms.values(), key=lambda a: a.trials, reverse=True)
-            }
+            out = {}
+            for arm in sorted(self._arms.values(), key=lambda a: a.trials, reverse=True):
+                entry = {"trials": arm.trials, "mean": round(arm.mean, 3),
+                         "observed": int(arm.observed)}
+                if arm.has_prior:
+                    entry["prior"] = {"source": arm.prior_source,
+                                      "strength": arm.prior_alpha + arm.prior_beta}
+                out[arm.id] = entry
+            return out
 
     def _flush(self) -> None:
         if self._backend:

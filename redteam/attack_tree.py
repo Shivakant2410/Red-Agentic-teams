@@ -119,6 +119,11 @@ _CWE_TO_TECHNIQUE = {
 }
 
 
+# Public alias: priors.py reuses this exact mapping so exploit intelligence and the
+# tree speak one technique vocabulary (CWE-89 -> injection.sqli, ...).
+CWE_TO_TECHNIQUE = _CWE_TO_TECHNIQUE
+
+
 @dataclass
 class AttackNode:
     technique: str
