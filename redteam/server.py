@@ -344,6 +344,14 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         return {"hosts": hosts,
                 "summary": {"hosts": len(hosts), "services": n_services}}
 
+    @app.get("/api/runs/{run_id}/proxy")
+    def run_proxy(run_id: str) -> dict:
+        # Evidence-proxy status snapshot, written by execute_run when the proxy
+        # shuts down (None while a live run has none / it failed to start). The
+        # LIVE counters are on the run's summary; this file is the durable record.
+        run_dir = require_run(run_id)
+        return {"proxy": _read_json(run_dir / "proxy.json", None)}
+
     @app.get("/api/runs/{run_id}/graph")
     def run_graph(run_id: str) -> dict:
         # The exploration chain (ARTEX 探索链路): layered assets → endpoints →

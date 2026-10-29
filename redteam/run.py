@@ -228,6 +228,11 @@ class RunOptions:
     #   log entirely (headers are still recorded, credential values always masked).
     asset_feed: str = ""
     record_traffic_bodies: bool = True
+    # Evidence proxy (MITM recording plane for sandbox tool traffic). On by default
+    # whenever the sandbox runs; opt out with no_evidence_proxy. When TLS
+    # interception is impossible (no `cryptography`), the proxy degrades to
+    # passthrough and records tunnel METADATA only — it never fakes decryption.
+    no_evidence_proxy: bool = False
     # (bind_host, bind_port) of the API/control plane launching this run, when there
     # is one. execute_run refuses to arm a run whose scope includes the control plane
     # itself (scope self-targeting — the agent must never be authorized to attack its
@@ -347,13 +352,40 @@ def execute_run(opts: RunOptions) -> dict:
     sandbox = None
     browser = None
     helix_server = None
+    proxy = None
     try:
+        # Evidence plane FIRST: the sandbox's tool environment will point its
+        # HTTP(S)_PROXY here, so proxied tool traffic (nuclei, bandit, raw curl)
+        # becomes wire evidence instead of a blind spot behind the firewall. The
+        # proxy shares the run's RateLimiter, so the RoE request budget is global
+        # across the fetch path AND every proxied tool exchange.
+        if use_sandbox and not opts.no_evidence_proxy:
+            try:
+                from .proxy import EvidenceProxy
+                proxy = EvidenceProxy(scope=scope, traffic=traffic, audit=audit,
+                                      out_dir=out, limiter=limiter)
+                proxy.start()
+                st = proxy.status()
+                say(f"Evidence proxy: {st['mode']} mode on :{st['port']}"
+                    + (f", CA {st['ca_fingerprint']}" if st["ca_fingerprint"]
+                       else " (TLS passed through — tunnel metadata only)"))
+            except Exception as exc:
+                say(f"Evidence proxy failed to start ({exc}); continuing without it.")
+                if proxy is not None:
+                    try:
+                        proxy.stop()
+                    except Exception:
+                        pass
+                proxy = None
+
         if use_sandbox:
             from .sandbox.docker_kali import KaliSandbox, SandboxError
             sandbox = KaliSandbox(engagement, audit=audit)
             try:
                 say("\nStarting Kali sandbox (this can take a while on first build)...")
-                plan = sandbox.start()
+                plan = sandbox.start(
+                    proxy_url=proxy.url_for("host.docker.internal") if proxy else "",
+                    ca_cert=proxy.ca_cert_path if proxy else None)
                 say(f"Sandbox egress allows: {', '.join(plan.allowed_cidrs) or '(none)'}")
                 say("Egress self-test: PASS (confirmed an out-of-scope destination is unreachable)")
                 for w in plan.warnings:
@@ -486,6 +518,15 @@ def execute_run(opts: RunOptions) -> dict:
             browser.close()
         if sandbox is not None:
             sandbox.stop()
+        if proxy is not None:
+            proxy.stop()
+            # Persist the proxy's final counters where the server/dashboards read
+            # static evidence: proxy.json sits beside traffic.jsonl.
+            try:
+                (out / "proxy.json").write_text(
+                    json.dumps(proxy.status(), indent=2), encoding="utf-8")
+            except Exception:
+                pass
         if helix_server is not None:
             helix_server.stop()
 
@@ -537,6 +578,7 @@ def execute_run(opts: RunOptions) -> dict:
         "audit_intact": audit.verify_chain(),
         "out_dir": str(out),
         "traffic_recorded": traffic.count,
+        "proxy": proxy.status() if proxy is not None else None,
         "surface_hosts": inventory.summary()["hosts"],
         "surface_services": inventory.summary()["services"],
     }
