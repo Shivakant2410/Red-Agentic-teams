@@ -30,6 +30,25 @@ win-rates compound ACROSS engagements (this only pays off with a track record �
 run gives a bandit almost nothing to learn from). LocalJSONBackend is the always-available
 default; a HelixDB-backed store is a natural later upgrade but not required here since this
 is plain tabular (technique, bucket) -> (alpha, beta), not something needing vector recall.
+
+MULTI-GAMBIT EXTENSIONS (see docs/multi-gambit.md for the full research mapping):
+ - DISCOUNTING (`discount`): targets get patched and defenders adapt mid-engagement;
+   a fixed Beta posterior weights a win from round 1 equally with one from round 100,
+   forever. Exponential decay on (alpha, beta) at each record() makes stale evidence
+   fade, so the sampler tracks regime changes. 1.0 (the default) = exact legacy
+   behavior; anything smaller trades memory for adaptivity.
+ - FEDERATION (`export_state` / `merge_state`): each swarm worker keeps its own store;
+   posteriors are sufficient statistics (two floats per arm), so peers sync through the
+   event bus by pooling EVIDENCE counts (alpha-1, beta-1), never raw draws — one
+   agent's confirmed exploit instantly raises every other agent's belief about that arm.
+ - SUSPICION CAP (`suspicion_cap`): an arm that confirms on every early trial is not
+   skill, it's a signature — that's what a honeypot (or a reward-hacking strategist)
+   looks like. While an arm has never failed within its first few trials, its draws
+   are capped, so the too-perfect arm can't starve genuinely strong-but-imperfect ones.
+ - COST-AWARE SELECTION (`select`): techniques differ in OPSEC price — a quiet probe
+   costs noise-budget 1, a loud exploit 5+. select() ranks one Thompson draw per
+   candidate by yield-per-cost, which is the budgeted-MAB objective: maximize confirmed
+   findings per unit of detectable noise, not per request.
 """
 
 from __future__ import annotations
@@ -137,7 +156,17 @@ class BanditStore:
     `record(technique, bucket, won)` whenever a swarm worker confirms or fails a node.
     """
 
-    def __init__(self, path: str | Path | None = None, backend: BanditBackend | None = None):
+    def __init__(self, path: str | Path | None = None, backend: BanditBackend | None = None,
+                 discount: float = 1.0, suspicion_cap: float = 0.0,
+                 suspicion_window: int = 6):
+        if not 0.0 < discount <= 1.0:
+            raise ValueError(f"discount must be in (0, 1], got {discount!r}")
+        if suspicion_cap and not 0.5 <= suspicion_cap < 1.0:
+            raise ValueError(f"suspicion_cap must be in [0.5, 1) or 0 to disable, "
+                             f"got {suspicion_cap!r}")
+        self._discount = discount
+        self._suspicion_cap = suspicion_cap
+        self._suspicion_window = max(int(suspicion_window), 1)
         self._backend = backend or (LocalJSONBanditBackend(path) if path else None)
         self._arms: dict[str, ArmState] = {}
         self._lock = threading.Lock()   # swarm workers record() concurrently
@@ -161,19 +190,116 @@ class BanditStore:
         overriding it outright until real evidence accumulates."""
         with self._lock:
             arm = self._get(technique, bucket)
-            return random.betavariate(arm.alpha, arm.beta)
+            return self._suspicion_adjust(arm, random.betavariate(arm.alpha, arm.beta))
+
+    def _suspicion_adjust(self, arm: ArmState, draw: float) -> float:
+        """Anti-honeypot gate: while an arm is young AND has never failed, cap its
+        draw. A 100% early win-rate is a signature, not skill — honeypots confirm
+        cheap exploits on purpose, and a reward-hacking loop can manufacture the
+        same shape. The cap keeps the too-perfect arm competitive but stops it
+        starving arms with realistic (intermediate) failure rates. Disabled entirely
+        when suspicion_cap is 0 (the default)."""
+        if not self._suspicion_cap:
+            return draw
+        young = 0 < arm.trials <= self._suspicion_window
+        never_failed = arm.beta <= 1.0
+        if young and never_failed:
+            return min(draw, self._suspicion_cap)
+        return draw
+
+    # Posterior floor: discounting alone would eventually decay both counts toward 0,
+    # where Beta(alpha, 0) is degenerate and betavariate would raise. The floor keeps
+    # every posterior a legal Beta no matter how long an arm goes unpulled.
+    _DISCOUNT_FLOOR = 0.05
 
     def record(self, technique: str, bucket: str, won: bool) -> None:
         """Update one arm's belief after a technique was actually tried on a bucket.
         won=True means it reached a CONFIRMED finding; won=False means the swarm marked
-        it FAILED having found nothing (see attack_tree.py's worker loop)."""
+        it FAILED having found nothing (see attack_tree.py's worker loop).
+
+        With discount < 1, existing evidence decays by `discount` before the new
+        outcome is added — a win from ten rounds ago counts for progressively less,
+        so the belief tracks a target whose behavior changes under us (patched,
+        redeployed, or turned into a trap)."""
         with self._lock:
             arm = self._get(technique, bucket)
+            if self._discount < 1.0:
+                arm.alpha = max(self._DISCOUNT_FLOOR, arm.alpha * self._discount)
+                arm.beta = max(self._DISCOUNT_FLOOR, arm.beta * self._discount)
             if won:
                 arm.alpha += 1
             else:
                 arm.beta += 1
             self._flush()
+
+    # -- federation: multi-agent posterior sync -----------------------------------
+
+    def export_state(self) -> list[dict]:
+        """This store's sufficient statistics, ready for the event bus. Two floats per
+        arm — the whole learned state of an engagement compresses to a few hundred
+        bytes, so peers can sync every round without a coordinator."""
+        with self._lock:
+            return [asdict(a) for a in self._arms.values()]
+
+    def merge_state(self, rows: list[dict], source: str = "peer") -> int:
+        """Pool a peer's evidence into ours and return how many arms merged.
+
+        Beta posteriors ADD under independent evidence, but only the evidence — not the
+        Beta(1,1) prior each peer started from. So we add (alpha-1, beta-1) and keep our
+        own prior: one merge is a proper pooled posterior. (Merging the SAME peer blob
+        twice double-counts its evidence — re-broadcast dedupe is the caller's problem,
+        and peer_traces already tracks what each peer has seen.)
+
+        Malformed or hostile rows are skipped, never raised: a bad peer can no more
+        corrupt the shared belief than a bad sink can corrupt a proof (same isolation
+        contract traffic.py runs under)."""
+        merged = 0
+        with self._lock:
+            for row in (rows or []):
+                if not isinstance(row, dict):
+                    continue
+                try:
+                    technique = str(row["technique"])
+                    bucket = str(row["bucket"])
+                    if not technique or not bucket:
+                        continue
+                    peer_a = max(1.0, float(row["alpha"]))
+                    peer_b = max(1.0, float(row["beta"]))
+                except (KeyError, TypeError, ValueError):
+                    continue
+                arm = self._get(technique, bucket)
+                arm.alpha = max(1.0, arm.alpha + (peer_a - 1.0))
+                arm.beta = max(1.0, arm.beta + (peer_b - 1.0))
+                merged += 1
+            if merged:
+                self._flush()
+        return merged
+
+    # -- cost-aware selection (budgeted multi-armed bandit) -----------------------
+
+    def select(self, candidates: list[tuple[str, str, float]],
+               k: int = 1) -> list[dict]:
+        """One Thompson draw per candidate, ranked by yield-per-cost.
+
+        `candidates` is a list of (technique, bucket, cost) tuples where cost is the
+        arm's OPSEC price — noise budget, rate-limit weight, SOC attention (quiet
+        probe = 1, loud exploit = 5+). Ranking by draw/cost optimizes confirmed
+        findings per unit of detectable noise (the budgeted-MAB objective), not per
+        request: under a tight noise budget the selector buys cheap gambits first and
+        pays an expensive arm's price only when its evidence is strong enough to
+        clear it. Suspicion caps and discounting apply exactly as in sample().
+        Returns at most k dicts: {technique, bucket, cost, draw, score}."""
+        scored: list[dict] = []
+        with self._lock:
+            for item in candidates:
+                technique, bucket, cost = item
+                cost = max(float(cost), 1e-6)
+                arm = self._get(technique, bucket)
+                draw = self._suspicion_adjust(arm, random.betavariate(arm.alpha, arm.beta))
+                scored.append({"technique": technique, "bucket": bucket, "cost": cost,
+                               "draw": draw, "score": draw / cost})
+        scored.sort(key=lambda s: s["score"], reverse=True)
+        return scored[:k]
 
     def summary(self) -> dict:
         with self._lock:
