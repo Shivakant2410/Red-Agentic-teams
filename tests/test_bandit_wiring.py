@@ -11,7 +11,7 @@ from __future__ import annotations
 import threading
 
 from redteam.attack_tree import (
-    TECHNIQUES, TECHNIQUE_COST, AttackTree, technique_cost,
+    FAILED, TECHNIQUES, TECHNIQUE_COST, AttackTree, technique_cost,
 )
 from redteam.bandit import BanditStore, make_sync_handler
 from redteam.config import Engagement, LlmConfig, SandboxConfig
@@ -245,6 +245,49 @@ def test_swarm_emits_bandit_state_each_round(tmp_path):
     arms = states[0]["arms"]
     assert isinstance(arms, list) and len(arms) >= 1
     assert all((a["alpha"] + a["beta"] - 2) >= 1 for a in arms)
+
+
+def test_noise_budget_resets_each_round(tmp_path):
+    """'Per-round' is the documented contract (RunOptions.round_noise_budget): a
+    budget round 0 exhausts must be whole again in round 1, or the swarm stops
+    exploring after its first round (caught by the 2026-10-30 product E2E:
+    12 rounds started, only round 0 ever claimed)."""
+    bandit = BanditStore()
+    audit, bus = _run_two_rounds(tmp_path, bandit, noise_budget=1.0)
+    by_round = {}
+    for c in (e for e in bus.events if e["type"] == "swarm.claim"):
+        by_round.setdefault(c["round"], []).append(c)
+    assert by_round, "swarm should claim at all"
+    later = max(by_round)
+    assert later >= 1 and by_round.get(later), \
+        f"later rounds starved — budget never reset: claims in rounds {sorted(by_round)}"
+    for rnd, cl in by_round.items():
+        spent = sum(technique_cost(c["technique"]) for c in cl)
+        assert spent <= 1.0 + 1e-9, f"round {rnd} spent {spent} > budget"
+
+
+def test_remarking_a_terminal_state_does_not_double_feed_the_bandit(tmp_path):
+    """sync() runs on EVERY agent turn with the full findings list, so a confirmed
+    finding whose node is already COMPLETED must not record the same win again —
+    one hypothesis, one trial. Without mark()'s idempotency guard, every worker
+    turn after a confirmation inflates the posterior (reward hacking by replay)."""
+    bandit = BanditStore()
+    tree = AttackTree(bandit=bandit)
+    finding = {"confidence": "confirmed", "cwe": "CWE-89",
+               "target": "https://api.acme.example/api/items"}
+
+    def total_wins():
+        return sum(float(a.get("obs_wins", 0) or 0) for a in bandit.export_state())
+
+    tree.sync(findings=[finding])       # promote + record once
+    tree.sync(findings=[finding])       # same confirmation replayed next turn
+    tree.sync(findings=[finding])
+    tree.confirm("injection.sqli", "https://api.acme.example/api/items")
+    assert total_wins() == 1.0, f"wins inflated to {total_wins()}"
+    # A genuinely new trial still records: FAILED after TODO is a fresh outcome.
+    tree.mark("injection.sqli", "https://api.acme.example/api/other", FAILED)
+    losses = sum(float(a.get("obs_losses", 0) or 0) for a in bandit.export_state())
+    assert losses == 1.0
 
 
 # -- federation sync handler ----------------------------------------------------------------

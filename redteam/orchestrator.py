@@ -289,6 +289,15 @@ class NoiseBudget:
         with self._lock:
             self._remaining = min(self._total, self._remaining + cost)
 
+    def reset(self) -> None:
+        """Restore the full allowance — called ONCE per exploit round. 'Per-round'
+        is the documented contract (RunOptions.round_noise_budget); without the
+        reset, round 0's spend starves every later round and the swarm stops
+        exploring after its first claims (caught by the product E2E run of
+        2026-10-30: 12 rounds started, only round 0 ever claimed)."""
+        with self._lock:
+            self._remaining = self._total
+
 
 class Orchestrator:
     def __init__(self, engagement: Engagement, tools: dict[str, Tool], ctx: ToolContext,
@@ -387,6 +396,8 @@ class Orchestrator:
         n_workers = min(self._max_swarm_workers, len(actionable))
         self._ctx.audit.record("orchestrator.swarm_start", round=round_no,
                                workers=n_workers, actionable=len(actionable))
+        if self._noise is not None:
+            self._noise.reset()   # per-ROUND budget: every round starts whole
 
         def worker(worker_id: int) -> str:
             summary = ""
@@ -597,6 +608,13 @@ class Orchestrator:
                                             objective, budget=self._budget, on_text=on_text)
             if still_pending:
                 self._ctx.audit.record("orchestrator.verify_incomplete", remaining=still_pending)
+            if self._attack_tree is not None:
+                # Promote nodes this pass just confirmed NOW: only worker agents sync
+                # (on their own turns), so a confirmation landing in the final verify
+                # pass would otherwise never promote — no COMPLETED, no unlock, and
+                # the bandit never sees its win. sync is idempotent (mark() refuses
+                # same-status re-marks), so mid-run confirmations are not re-fed.
+                self._attack_tree.sync(graph=self._graph, findings=self._ctx.findings.all())
 
             summary = self._run_access_loop(objective, on_text) or summary
 
@@ -628,6 +646,8 @@ class Orchestrator:
                                             objective, budget=self._budget, on_text=on_text)
             if still_pending:
                 self._ctx.audit.record("orchestrator.verify_incomplete", remaining=still_pending)
+            if self._attack_tree is not None:
+                self._attack_tree.sync(graph=self._graph, findings=self._ctx.findings.all())
 
         # Final creditor sweep (idempotent — see run_verify_pass note): catches a
         # confirmation that landed after the last verify pass funneled through.

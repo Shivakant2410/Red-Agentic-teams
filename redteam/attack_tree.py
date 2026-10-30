@@ -226,6 +226,14 @@ class AttackTree:
     def mark(self, technique: str, target: str, status: str, findings: str = "") -> None:
         with self._lock:
             node = self._add(technique, target)
+            if node.status == status:
+                # Idempotent terminal re-mark (product E2E 2026-10-30): sync() runs on
+                # EVERY agent turn with the full findings list, so re-marking a node
+                # that is already in `status` would re-feed the bandit the same win or
+                # loss once per turn — win inflation against the "posterior moves only
+                # on hard evidence" contract. A real re-trial always passes through a
+                # different state first (FAILED -> retry_failed() -> TODO -> ...).
+                return
             node.status = status
             if findings:
                 node.findings = findings
