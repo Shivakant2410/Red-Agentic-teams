@@ -239,6 +239,12 @@ Two design consequences worth recording:
   (consulted once on virgin-arm creation, any bucket, raising provider
   isolated), prior/obs bookkeeping on `ArmState`, evidence-only export,
   `summary()` prior provenance.
+- Bridge completeness (gate/bridge agreement): every `EPSS_YIELD_CLASSES`
+  member routes through `attack_tree._CWE_TO_TECHNIQUE` — the execution classes
+  (CWE-502 deser / 917 JNDI / 94 code-inj / 77 cmdi-args / 434 upload: 205 KEV
+  CVEs) all confirm through `injection.cmd` and steer it; traversal (CWE-23)
+  → `info.sensitive`, authn-alt (CWE-288) → `auth.test`. Unrouted allowlist
+  entries would be silent dead intel; a consistency test pins the invariant.
 - `redteam/run.py` — builtin provider attached at startup, `RED_NO_PRIORS=1`
   opt-out, never fatal (missing/corrupt snapshots = legacy cold start).
 - `tests/test_priors.py` — 24 tests: exact float contracts, federation

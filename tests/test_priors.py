@@ -308,13 +308,27 @@ def test_make_provider_prefers_most_exploited_allowed_class():
     assert p == pytest.approx(0.95) and "CWE-22" in source
 
 
-def test_yield_class_allowlist_maps_into_repo_technique_taxonomy():
-    """The scanner classes we warm-start TODAY must resolve through the repo's CWE
-    map — a typo'd CWE would silently warm-start nothing. (The allowlist may also
-    carry classes ahead of the taxonomy — deserialization, upload — which is fine.)"""
-    mapped = EPSS_YIELD_CLASSES & set(CWE_TO_TECHNIQUE)
-    for required in ("CWE-89", "CWE-78", "CWE-79", "CWE-918", "CWE-22", "CWE-98"):
-        assert required in mapped, f"{required} missing from mapped allowlist"
+def test_every_allowed_class_resolves_through_the_bridge():
+    """Policy gate and routing bridge must agree. An allowlisted class with no route
+    in attack_tree._CWE_TO_TECHNIQUE silently steers nothing (make_provider drops
+    it) — a dead feature that still LOOKS shipped. If you add a class to
+    EPSS_YIELD_CLASSES, route it: the execution classes (CWE-502/917/94/77/434) all
+    confirm through injection.cmd, traversal through info.sensitive, authn-alt
+    through auth.test."""
+    unrouted = EPSS_YIELD_CLASSES - set(CWE_TO_TECHNIQUE)
+    assert not unrouted, f"allowlisted but unrouted (dead intel): {sorted(unrouted)}"
+
+
+def test_log4shell_class_intel_steers_the_execution_arm():
+    """CWE-502/917 (deserialization / JNDI) must reach the tree's execution surface
+    via the bridge — 76 KEV CVEs, the most-exploited bug class on earth must not be
+    the one technique public intel cannot warm-start."""
+    provider = make_provider({"CWE-502": (0.95, 12.0), "CWE-917": (0.9, 12.0)},
+                             cwe_to_technique=CWE_TO_TECHNIQUE)
+    p, _s, source = provider("injection.cmd")
+    assert p == pytest.approx(0.95) and "CWE-502" in source
+    store = BanditStore(prior_provider=provider)
+    assert store._get("injection.cmd", "generic").has_prior
 
 
 # -- nuclei corpus ------------------------------------------------------------------------------

@@ -116,6 +116,16 @@ _CWE_TO_TECHNIQUE = {
     "CWE-918": "ssrf", "CWE-639": "access.idor", "CWE-284": "access.control",
     "CWE-287": "auth.test", "CWE-200": "info.sensitive",
     "CWE-22": "info.sensitive", "CWE-98": "info.sensitive",  # path traversal / file inclusion
+    # Execution surface: the tree's execution technique is injection.cmd ("parameters
+    # reaching a shell") — deserialization, JNDI/expression injection, code injection,
+    # cmdi-via-args and upload-to-webshell all CONFIRM through that arm, and their
+    # intel (CWE-502/917/94/77/434: 205 KEV CVEs) must steer it, not die in the
+    # policy gate with no route out (see priors.EPSS_YIELD_CLASSES).
+    "CWE-77": "injection.cmd", "CWE-94": "injection.cmd",
+    "CWE-434": "injection.cmd",
+    "CWE-502": "injection.cmd", "CWE-917": "injection.cmd",  # Log4Shell-class
+    "CWE-23": "info.sensitive",                              # relative-path traversal
+    "CWE-288": "auth.test",                                  # alternative authn bypass
 }
 
 
