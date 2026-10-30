@@ -331,3 +331,43 @@ def test_sync_handler_never_raises_on_hostile_payload():
     # and the store still works normally afterwards
     store.record("ssrf", "generic", won=True)
     assert store._get("ssrf", "generic").trials == 1
+
+
+def test_merging_the_same_blob_twice_pools_nothing():
+    """Re-broadcast dedupe is the STORE's job now (delta pooling): the same
+    snapshot merged twice must count its evidence once, not twice."""
+    store = BanditStore()
+    blob = [{"technique": "ssrf", "bucket": "generic", "alpha": 9.0, "beta": 1.0}]
+    assert store.merge_state(blob, source="run-b") == 1
+    a1 = (store._get("ssrf", "generic").alpha, store._get("ssrf", "generic").beta)
+    assert store.merge_state(blob, source="run-b") == 0
+    a2 = (store._get("ssrf", "generic").alpha, store._get("ssrf", "generic").beta)
+    assert a1 == a2 == (9.0, 1.0), f"double-pooled: {a1} -> {a2}"
+
+
+def test_cumulative_round_broadcasts_pool_exactly_once():
+    """The product E2E of 2026-10-30 caught this: export_state is a CUMULATIVE
+    snapshot and the orchestrator broadcasts it every round, so additive merging
+    inflated peer evidence quadratically in rounds (a run whose arm held 8 real
+    losses had pooled 44 into a live peer after 12 rounds). Delta pooling must
+    telescope: after N growing snapshots the peer holds exactly the last one."""
+    store = BanditStore()
+    # a peer's arm losing one more trial per round: beta 2,3,4,5,6 over 5 rounds
+    for rnd in range(1, 6):
+        blob = [{"technique": "injection.sqli", "bucket": "generic",
+                 "alpha": 1.0, "beta": 1.0 + rnd}]
+        store.merge_state(blob, source="run-b")
+    arm = store._get("injection.sqli", "generic")
+    assert (arm.alpha, arm.beta) == (1.0, 6.0), \
+        f"cumulative double-count: alpha={arm.alpha} beta={arm.beta}"
+    assert float(arm.obs_losses) == 5.0
+    # a second, independent source pooling the same trajectory still adds its own
+    store.merge_state([{"technique": "injection.sqli", "bucket": "generic",
+                        "alpha": 1.0, "beta": 3.0}], source="run-c")
+    arm = store._get("injection.sqli", "generic")
+    assert (arm.alpha, arm.beta) == (1.0, 8.0)
+    # and a REWOUND peer (reset state) contributes nothing rather than negative
+    store.merge_state([{"technique": "injection.sqli", "bucket": "generic",
+                        "alpha": 1.0, "beta": 1.5}], source="run-c")
+    arm = store._get("injection.sqli", "generic")
+    assert (arm.alpha, arm.beta) == (1.0, 8.0)

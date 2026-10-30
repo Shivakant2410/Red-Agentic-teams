@@ -41,6 +41,10 @@ MULTI-GAMBIT EXTENSIONS (see docs/multi-gambit.md for the full research mapping)
    posteriors are sufficient statistics (two floats per arm), so peers sync through the
    event bus by pooling EVIDENCE counts (alpha-1, beta-1), never raw draws — one
    agent's confirmed exploit instantly raises every other agent's belief about that arm.
+   Broadcasts are CUMULATIVE snapshots and engines re-broadcast every round, so merges
+   are DELTA-POOLED per source (see merge_state): a peer's round-N broadcast pools only
+   what changed since its round-N-1 broadcast, or repeated snapshots would double-count
+   every earlier round (evidence inflating quadratically in rounds).
  - SUSPICION CAP (`suspicion_cap`): an arm that confirms on every early trial is not
    skill, it's a signature — that's what a honeypot (or a reward-hacking strategist)
    looks like. While an arm has never failed within its first few trials, its draws
@@ -69,7 +73,7 @@ from __future__ import annotations
 import json
 import random
 import threading
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlsplit
@@ -136,6 +140,11 @@ class ArmState:
     # belief and cannot be unmixed afterwards. Authoritative for prior-bearing arms.
     obs_wins: float = 0.0
     obs_losses: float = 0.0
+    # Federation bookkeeping (see merge_state): the last (alpha, beta) snapshot each
+    # source contributed for this arm, so a peer's CUMULATIVE per-round broadcasts
+    # pool their increment only instead of double-counting every earlier round.
+    # Local bookkeeping — stripped from export_state, never broadcast, never sampled.
+    peer_snapshots: dict = field(default_factory=dict)
 
     @property
     def id(self) -> str:
@@ -188,9 +197,11 @@ def make_sync_handler(bandit: "BanditStore", own_source: str = ""):
     merged into `bandit` — evidence-pooled posteriors, so one engine's confirmed
     exploits raise every other engine's beliefs with no coordinator. Own-source
     events are skipped (a store merging back its own broadcast would double-count
-    its evidence every round), and malformed payloads are skipped: a bad peer can
-    no more corrupt the shared belief than a bad sink can corrupt a proof. The
-    handler itself never raises — the same contract events.py runs under."""
+    its evidence every round), malformed payloads are skipped, and RE-BROADCASTS
+    are handled inside the store by per-source delta pooling (merge_state): a peer
+    re-broadcasting its cumulative state every round pools only its increments, so
+    no caller-side dedupe is needed. The handler itself never raises — the same
+    contract events.py runs under."""
 
     def _handler(event: object) -> None:
         try:
@@ -381,6 +392,7 @@ class BanditStore:
                 if evidence < min_trials:
                     continue
                 row = asdict(a)
+                row.pop("peer_snapshots", None)   # merge bookkeeping is not evidence
                 if a.has_prior:
                     row["alpha"] = 1.0 + a.obs_wins
                     row["beta"] = 1.0 + a.obs_losses
@@ -388,13 +400,23 @@ class BanditStore:
             return out
 
     def merge_state(self, rows: list[dict], source: str = "peer") -> int:
-        """Pool a peer's evidence into ours and return how many arms merged.
+        """Pool a peer's evidence into ours and return how many arms advanced.
 
         Beta posteriors ADD under independent evidence, but only the evidence — not the
         Beta(1,1) prior each peer started from. So we add (alpha-1, beta-1) and keep our
-        own prior: one merge is a proper pooled posterior. (Merging the SAME peer blob
-        twice double-counts its evidence — re-broadcast dedupe is the caller's problem,
-        and peer_traces already tracks what each peer has seen.)
+        own prior: one merge is a proper pooled posterior.
+
+        DELTA POOLING (per source, per arm): a live peer re-broadcasts its CUMULATIVE
+        state every round (export_state is a snapshot), so pooling the full
+        (alpha-1, beta-1) on every broadcast would double-count every earlier round —
+        evidence inflating quadratically in rounds (caught by the product E2E of
+        2026-10-30: a run whose arm held 8 real losses had pooled 44 into a peer after
+        12 rounds, and the inflation re-propagates because pooled counts are tracked as
+        observed evidence). The store therefore remembers each source's last snapshot
+        per arm (ArmState.peer_snapshots) and pools only the positive increment:
+        telescoping makes repeated cumulative broadcasts pool exactly once, an identical
+        re-broadcast pools nothing, and a rewound/reset peer contributes 0 rather than
+        negative evidence.
 
         Malformed or hostile rows are skipped, never raised: a bad peer can no more
         corrupt the shared belief than a bad sink can corrupt a proof (same isolation
@@ -414,13 +436,22 @@ class BanditStore:
                 except (KeyError, TypeError, ValueError):
                     continue
                 arm = self._get(technique, bucket)
-                arm.alpha = max(1.0, arm.alpha + (peer_a - 1.0))
-                arm.beta = max(1.0, arm.beta + (peer_b - 1.0))
+                prev = arm.peer_snapshots.get(source)
+                if prev is None:
+                    da, db = peer_a - 1.0, peer_b - 1.0
+                else:
+                    da = max(0.0, peer_a - prev[0])
+                    db = max(0.0, peer_b - prev[1])
+                arm.peer_snapshots[source] = (peer_a, peer_b)
+                if da <= 0.0 and db <= 0.0:
+                    continue   # nothing new from this source for this arm
+                arm.alpha = max(1.0, arm.alpha + da)
+                arm.beta = max(1.0, arm.beta + db)
                 # Pooled peer evidence is OBSERVED evidence too — tracked so an arm that
                 # only ever merged still exports what it pooled (relay topology), and
                 # so a later seed() correctly refuses it.
-                arm.obs_wins += (peer_a - 1.0)
-                arm.obs_losses += (peer_b - 1.0)
+                arm.obs_wins += da
+                arm.obs_losses += db
                 merged += 1
             if merged:
                 self._flush()

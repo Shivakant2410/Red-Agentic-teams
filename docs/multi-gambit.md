@@ -144,6 +144,20 @@ shared belief any more than a bad sink can corrupt a proof), and merge is
 evidence-additive so re-broadcasts are visible rather than silent. Auto-broadcast
 over the event bus each round is staged wiring, not new math.
 
+**Delta pooling (shipped, E2E-caught 2026-10-30).** A live engine re-broadcasts
+its *cumulative* state every round, and the original additive merge pooled the
+full snapshot each time — peer evidence grew quadratically in rounds (the
+product E2E measured a run whose arm held 8 real losses pooling **44** into a
+live peer after 12 rounds, and the inflation re-propagates because pooled
+counts land in `obs_wins`/`obs_losses` and get re-broadcast). `merge_state()`
+now keeps each source's last per-arm snapshot (`ArmState.peer_snapshots`, local
+bookkeeping, stripped from exports) and pools only the positive increment:
+telescoping makes repeated cumulative broadcasts pool exactly once, identical
+re-broadcasts pool nothing, and a rewound/reset peer contributes 0 rather than
+negative evidence. Regression tests:
+`test_merging_the_same_blob_twice_pools_nothing`,
+`test_cumulative_round_broadcasts_pool_exactly_once`.
+
 ### 4.2 Hierarchical allocation (staged)
 
 The next layer is a meta-bandit *above* the workers: which specialist agent
