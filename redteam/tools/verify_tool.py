@@ -30,6 +30,32 @@ def _session_headers(ctx: ToolContext, label, base):
     return base
 
 
+# Condition types eval_condition() actually implements (redteam/proof.py).
+_CONDITION_TYPES = frozenset({
+    "status", "body_regex", "header_regex", "latency_delta",
+    "json_differs", "reflected_unescaped",
+})
+
+
+def _normalize_conditions(conditions: list) -> list:
+    """Accept the nested shorthand models naturally emit — {"body_regex": {...}} —
+    in addition to the documented flat form {"type": "body_regex", ...}.
+
+    Both real-model dry-runs (20261030, nemotron fleet) reached for the nested
+    shape first and burned turns + ~30k tokens on 'unknown condition type None'
+    rejections before adapting. Normalizing at the entry point also means the
+    STORED check_spec is flat, so independent replay stays well-formed."""
+    out = []
+    for cond in conditions or []:
+        if (isinstance(cond, dict) and "type" not in cond and len(cond) == 1
+                and isinstance(next(iter(cond.values())), dict)):
+            key, val = next(iter(cond.items()))
+            if key in _CONDITION_TYPES:
+                cond = {"type": key, **val}
+        out.append(cond)
+    return out
+
+
 class VerifyVulnerabilityTool:
     name = "verify_vulnerability"
 
@@ -93,6 +119,7 @@ class VerifyVulnerabilityTool:
         if not requests or not conditions:
             return "ERROR: provide at least one request and one condition."
         trials = max(1, min(int(trials), 10)); need = max(1, min(int(need), trials))
+        conditions = _normalize_conditions(conditions)
 
         # Build a scope-checked, session-applied fetcher per named request.
         fetchers = {}

@@ -212,6 +212,10 @@ class VerifyFindingIndependentlyTool:
         requests_, conditions = spec.get("requests"), spec.get("conditions")
         if not (requests_ and conditions):
             return "not_reproducible", "no stored requests/conditions to replay"
+        # Stored specs from before the propose-side normalizer may still carry the
+        # nested condition shorthand — replay must not choke on the same thing.
+        from .verify_tool import _normalize_conditions
+        conditions = _normalize_conditions(conditions)
         fetchers = {name: make_fetch(ctx, {"method": r.get("method", "GET"), "url": r["url"],
                                            "headers": r.get("headers") or {}, "body": r.get("body"),
                                            "session_label": r.get("session_label") or ""})
