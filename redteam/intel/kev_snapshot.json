@@ -4942,6 +4942,9 @@
 "CVE-2026-75650": [
 "CWE-1336"
 ],
+"CVE-2026-76418": [
+"CWE-690"
+],
 "CVE-2026-76460": [
 "CWE-648"
 ],
@@ -5060,9 +5063,12 @@
 "CVE-2026-96951": [
 "CWE-77"
 ],
+"CVE-2026-97229": [
+"CWE-190"
+],
 "_meta": {
-"count": 1762,
-"fetched": "2026-10-29T11:40:37.141935+00:00",
+"count": 1764,
+"fetched": "2026-10-30T12:11:37.575193+00:00",
 "source": "https://raw.githubusercontent.com/cisagov/kev-data/refs/heads/develop/known_exploited_vulnerabilities.json"
 }
 }
