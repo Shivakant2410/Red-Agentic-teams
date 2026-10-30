@@ -170,7 +170,21 @@ def _record_traffic(ctx: ToolContext, req: dict, status: int, elapsed: float,
 
 def make_fetch(ctx: ToolContext, req: dict, tool: str = ""):
     """A re-runnable fetch() -> (status, body, elapsed) for the verification engine.
-    Each re-run is traffic-recorded too — k-of-n proof attempts are evidence."""
+    Each re-run is traffic-recorded too — k-of-n proof attempts are evidence.
+
+    Session-aware: a stored check_spec request may reference credentials INDIRECTLY
+    via `session_label` (findings store labels, never token values). The proposing
+    tool resolves the label against the SessionStore at check-build time
+    (verify_tool._session_headers); every replay path must do the SAME, so the
+    resolution lives here where every re-check fetch is built. Live-fire 20261030:
+    the independent re-check dropped the label, replayed a 4/4-reproduced IDOR
+    unauthenticated, and graded it false not_reproducible. Session headers win over
+    stored headers (Session.apply semantics, same as propose time)."""
+    label = req.get("session_label") or ""
+    if label and ctx.sessions is not None:
+        sess = ctx.sessions.get(label)
+        if sess is not None:
+            req = dict(req, headers=sess.apply(req.get("headers") or {}))
     _check_scope_recording_denial(ctx, req)
 
     def fetch():

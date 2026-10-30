@@ -51,6 +51,8 @@ class VerifyFindingIndependentlyTool:
             "name": self.name,
             "description": (
                 "Independently re-check a PENDING finding before it can count as CONFIRMED. "
+                "A not_reproducible finding may also be re-checked (e.g. after the target or "
+                "session material recovers) — only confirmed/falsified are final. "
                 "Rebuilds the original proof from the finding's own stored check (not from "
                 "narration) and re-runs it fresh, then runs a negative control (supplied one "
                 "if the finding has it, else an auto-derived benign variant). Only a finding "
@@ -92,7 +94,13 @@ class VerifyFindingIndependentlyTool:
         f = ctx.findings.get(finding_id)
         if f is None:
             return f"ERROR: no finding {finding_id!r}."
-        if f.confidence != "pending_verification":
+        # not_reproducible is a WEAK verdict ("the environment could not reproduce"),
+        # not a terminal one like confirmed/falsified — it must be re-checkable or an
+        # environmental replay failure (target blip, missing session material) becomes
+        # an unappealable death sentence. Live-fire 20261030: a 4/4-reproduced IDOR
+        # was graded false not_reproducible by a replay that dropped its session
+        # material, and this guard made that verdict permanent.
+        if f.confidence not in ("pending_verification", "not_reproducible"):
             return json.dumps({
                 "finding_id": finding_id, "already": f.confidence,
                 "note": "Nothing to do — this finding is not awaiting independent verification.",
@@ -205,7 +213,8 @@ class VerifyFindingIndependentlyTool:
         if not (requests_ and conditions):
             return "not_reproducible", "no stored requests/conditions to replay"
         fetchers = {name: make_fetch(ctx, {"method": r.get("method", "GET"), "url": r["url"],
-                                           "headers": r.get("headers") or {}, "body": r.get("body")})
+                                           "headers": r.get("headers") or {}, "body": r.get("body"),
+                                           "session_label": r.get("session_label") or ""})
                    for name, r in requests_.items()}
         result = verify(ProofCheck(fetchers, conditions), trials=4, need=3)
         if result.verdict != "confirmed":
@@ -217,7 +226,8 @@ class VerifyFindingIndependentlyTool:
             control_fetch = make_fetch(ctx, {"method": negative_control.get("method", "GET"),
                                              "url": negative_control["url"],
                                              "headers": negative_control.get("headers") or {},
-                                             "body": negative_control.get("body")})
+                                             "body": negative_control.get("body"),
+                                             "session_label": negative_control.get("session_label") or ""})
         elif control_replaces in requests_:
             orig = requests_[control_replaces]
             control_url = _benign_mutation(orig.get("url", ""))

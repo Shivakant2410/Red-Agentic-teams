@@ -190,6 +190,11 @@ class OpenAICompatProvider:
             ctx = m.get("context_length") or (m.get("top_provider") or {}).get("context_length")
             if isinstance(ctx, int):
                 self._context_lens[mid] = ctx
+        # Live-fire 20261030: the catalog was collected but allow/deny never applied
+        # (this helper existed yet was not called), so an operator pinning a small
+        # model set watched the fleet rotate through excluded models — every rotation
+        # a burned request against tight provider quotas.
+        ids = self._apply_filters(ids, models)
         if not ids and self.cfg.models_allow:
             # Server has no /models (or filtered everything) — trust the operator's list.
             ids = [m for m in self.cfg.models_allow if m not in set(self.cfg.models_deny)]
