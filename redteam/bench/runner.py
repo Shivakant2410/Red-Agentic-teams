@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import time
 import urllib.request
@@ -169,7 +170,15 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -
     container = f"bench-{target_name}"
 
     print(f"Starting target {target.name} ...")
-    if target.is_compose:
+    target_proc: subprocess.Popen | None = None
+    if target.is_cmd:
+        # Dockerless target: spawn the lab fixture directly on this host. No Kali
+        # networking to wire — tools reach it via localhost with the sandbox off.
+        target_proc = subprocess.Popen(
+            target.cmd, env={**os.environ, **target.env},
+            stdout=open(out_dir / "target.log", "w"), stderr=subprocess.STDOUT)
+        running_container = container
+    elif target.is_compose:
         running_container = _start_compose(target, container)
     else:
         subprocess.run(["docker", "rm", "-f", container], capture_output=True)
@@ -178,24 +187,20 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -
             raise RuntimeError(f"failed to start target: {proc.stderr}")
         running_container = container
 
-    # Join the target to the SAME Docker network the Kali sandbox creates for itself, so
-    # kali_exec's nmap/ffuf/sqlmap/nikto/gobuster can actually reach it — the whole point
-    # of this fix. `docker network connect` is additive: it doesn't remove the target from
-    # whatever network(s) compose already put it on, so the host-published port keeps
-    # working for the browser/health-check path unaffected.
     container_ip: str | None = None
-    try:
-        _ensure_network()
-        connect = subprocess.run(["docker", "network", "connect", REDTEAM_NETWORK, running_container],
-                                 capture_output=True, text=True)
-        if connect.returncode != 0 and "already exists" not in connect.stderr:
-            raise RuntimeError(f"failed to join {running_container!r} to {REDTEAM_NETWORK!r}: "
-                               f"{connect.stderr}")
-        container_ip = _container_ip_on_network(running_container)
-        print(f"Kali sandbox can reach {target.name} at {container_ip} on {REDTEAM_NETWORK}")
-    except Exception as exc:
-        print(f"WARNING: could not network the Kali sandbox to the target ({exc}); "
-             "falling back to no-sandbox mode for this run.")
+    if not target.is_cmd:
+        try:
+            _ensure_network()
+            connect = subprocess.run(["docker", "network", "connect", REDTEAM_NETWORK, running_container],
+                                     capture_output=True, text=True)
+            if connect.returncode != 0 and "already exists" not in connect.stderr:
+                raise RuntimeError(f"failed to join {running_container!r} to {REDTEAM_NETWORK!r}: "
+                                   f"{connect.stderr}")
+            container_ip = _container_ip_on_network(running_container)
+            print(f"Kali sandbox can reach {target.name} at {container_ip} on {REDTEAM_NETWORK}")
+        except Exception as exc:
+            print(f"WARNING: could not network the Kali sandbox to the target ({exc}); "
+                 "falling back to no-sandbox mode for this run.")
 
     try:
         if not _wait_for(target.base_url):
@@ -221,7 +226,9 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -
         subprocess.run(cmd, check=False)
         elapsed = time.time() - started
     finally:
-        if target.is_compose:
+        if target_proc is not None:
+            target_proc.terminate()
+        elif target.is_compose:
             _stop_compose(target)
         else:
             subprocess.run(["docker", "rm", "-f", container], capture_output=True)

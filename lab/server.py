@@ -99,4 +99,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+    import sys
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()

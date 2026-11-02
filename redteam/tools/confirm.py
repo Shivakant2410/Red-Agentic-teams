@@ -34,6 +34,15 @@ def _make_fetch(ctx: ToolContext, req: dict):
     and falls back to a host-side request when there is no sandbox (e.g. a localhost
     benchmark target the container cannot reach). Both paths scope-check the URL first."""
     ctx.scope.check(req["url"])
+    # Session-aware like tools/http.make_fetch: a stored request may reference
+    # credentials indirectly via session_label — the propose side must resolve it
+    # exactly like the independent re-check does, or a proof passes here and 401s
+    # in the replay.
+    label = req.get("session_label") or ""
+    if label and ctx.sessions is not None:
+        sess = ctx.sessions.get(label)
+        if sess is not None:
+            req = dict(req, headers=sess.apply(req.get("headers") or {}))
     if ctx.sandbox is not None:
         return _sandbox_fetch(ctx, req)
     return _host_fetch(req)

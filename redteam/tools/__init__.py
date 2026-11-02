@@ -12,6 +12,7 @@ Each tool exposes:
 from __future__ import annotations
 
 import contextvars
+import os
 from dataclasses import dataclass
 from typing import Callable, Optional, Protocol
 
@@ -118,4 +119,12 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
         tools += [BrowserNavigateTool(), BrowserContentTool(), BrowserClickTool(),
                   BrowserFillTool(), BrowserScreenshotTool()]
     tools += [RecordFindingTool(), RequestApprovalTool()]
+    # Opt-in terminal plane for dockerless hosts (see tools/local_exec.py): NEVER
+    # registered by default — the operator sets RED_LOCAL_EXEC=1 and accepts that
+    # commands run on this host with no container confinement. Also DISTRACTS web
+    # agents (observed: raw-socket HTTP via shell instead of http_probe) — enable
+    # per run, not globally.
+    if os.environ.get("RED_LOCAL_EXEC") == "1":
+        from .local_exec import LocalExecTool
+        tools.append(LocalExecTool())
     return {t.name: t for t in tools}

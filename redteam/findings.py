@@ -83,6 +83,22 @@ class FindingStore:
                 if finding.reproductions > existing.reproductions:
                     existing.reproductions = finding.reproductions
                     existing.trials = finding.trials
+                # Verification state must be able to move FORWARD when a real proof
+                # lands on an agent-asserted record (terminal bench 20261102: a
+                # record_finding 'firm' note that was then PROVEN via confirm_finding
+                # kept 'firm' through the merge — verify_finding_independently refused
+                # it and a fully-solved objective dead-ended). A pending/confirmed
+                # proof supersedes the weaker self-assertions and brings its replay
+                # material; terminal verdicts are never overwritten or resurrected.
+                if existing.confidence in ("tentative", "firm") \
+                        and finding.confidence in ("pending_verification", "confirmed"):
+                    existing.confidence = finding.confidence
+                    if finding.check_type and not existing.check_type:
+                        existing.check_type = finding.check_type
+                    if finding.check_spec and not existing.check_spec:
+                        existing.check_spec = finding.check_spec
+                if finding.cwe and not existing.cwe:
+                    existing.cwe = finding.cwe
                 self._flush()
                 return existing
             self._findings.append(finding)

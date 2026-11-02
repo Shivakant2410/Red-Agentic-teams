@@ -8,7 +8,9 @@ false-positive rate meaningfully without pretending to enumerate every planted b
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from .scoring import GroundTruthVuln
 
@@ -28,10 +30,19 @@ class BenchTarget:
     # compose_dir is an absolute path to the directory holding docker-compose.yml.
     compose_dir: str = ""
     compose_flag: str = ""   # value passed as --build-arg flag=... / FLAG=...
+    # Dockerless targets: start via a local command instead of Docker (lab fixtures in
+    # lab/). `env` is layered over the parent environment when spawning. Lets hosts
+    # without Docker (CI containers, this dev sandbox) run the benchmark matrix.
+    cmd: list[str] = field(default_factory=list)
+    env: dict = field(default_factory=dict)
 
     @property
     def is_compose(self) -> bool:
         return bool(self.compose_dir)
+
+    @property
+    def is_cmd(self) -> bool:
+        return bool(self.cmd)
 
     def docker_run(self, container_name: str) -> list[str]:
         return ["docker", "run", "-d", "--rm", "--name", container_name,
@@ -139,7 +150,149 @@ XBEN_001 = BenchTarget(
     },
 )
 
-REGISTRY = {"juice-shop": JUICE_SHOP, "dvwa": DVWA, "xben-001": XBEN_001}
+# --- Dockerless lab targets (run anywhere; lab/ fixtures, no Docker) --------------
+# Same scoring machinery as the Docker targets (score_run + score_objective_run);
+# the runner starts them via `cmd` and tears them down in `finally`. Ground truth
+# stays small and high-confidence: every item is provable with a hard oracle.
+
+_LAB_DIR = Path(__file__).resolve().parent.parent.parent / "lab"
+
+LAB_IDOR = BenchTarget(
+    name="Local IDOR Lab (cross-tenant records)",
+    container_port=8899, host_port=8899,
+    base_url="http://127.0.0.1:8899",
+    cmd=[sys.executable, str(_LAB_DIR / "server.py"), "8899"],
+    env={"LAB_AUTHZ_PROFILE": "broken-owner-check"},
+    ground_truth=[
+        GroundTruthVuln("labidor-cross-tenant-read", "idor", "CWE-639",
+                        "/api/records/", "critical"),
+    ],
+    objective={
+        "name": "Cross-tenant record read",
+        "description": "Prove an authenticated low-privilege principal can read a "
+                       "record belonging to a different tenant.",
+        "success_criteria": [
+            {"id": "cross_tenant_read", "kind": "data_access", "target": "record-a",
+             "description": "HTTP 200 on another tenant's record using only the "
+                            "tenant-b credential"},
+        ],
+    },
+)
+
+LAB_FORUM = BenchTarget(
+    name="Local Community Lab (stored XSS + ACL)",
+    container_port=8898, host_port=8898,
+    base_url="http://127.0.0.1:8898",
+    cmd=[sys.executable, str(_LAB_DIR / "forum_server.py"), "8898"],
+    env={"FORUM_XSS_PROFILE": "raw-echo",
+         "FORUM_ACL_PROFILE": "member-readable",
+         "FORUM_PM_PROFILE": "open"},
+    ground_truth=[
+        GroundTruthVuln("labforum-stored-xss", "xss", "CWE-79", "/topic/", "high"),
+        GroundTruthVuln("labforum-staff-forum-bypass", "access_control", "CWE-284",
+                        "/forum/5", "high"),
+        GroundTruthVuln("labforum-pm-cross-read", "access_control", "CWE-639",
+                        "/pm/", "high"),
+    ],
+    objective={
+        "name": "Stored XSS in community replies",
+        "description": "Prove reply content is stored and rendered back unescaped "
+                       "(stored XSS) — the community's listed primary bug class.",
+        "success_criteria": [
+            {"id": "xss_stored", "kind": "data_access", "target": "127.0.0.1",
+             "description": "A marker reply renders raw (unescaped) in the topic HTML "
+                            "for any viewer"},
+        ],
+    },
+)
+
+# --- Difficulty-ladder targets (subagent-built; single stdlib fixture per level) ----
+# L1 easy: single-hop, hint-dense surfaces. L2 medium: two-step chain where each
+# flaw alone is provably insufficient. L3 hard: four-hop cross-service chain (SSRF ->
+# internal discovery -> token disclosure -> token-bearing SSRF read of an in-memory FLAG).
+
+LAB_BLOGMENT = BenchTarget(
+    name="L1 Easy: Blogment (reflected XSS + backup exposure)",
+    container_port=8895, host_port=8895,
+    base_url="http://127.0.0.1:8895",
+    cmd=[sys.executable, str(_LAB_DIR / "blogment.py"), "8895"],
+    env={"BLOGMENT_REFLECT_PROFILE": "raw",
+         "BLOGMENT_BACKUP_PROFILE": "exposed"},
+    ground_truth=[
+        GroundTruthVuln("blogment-reflected-xss", "xss", "CWE-79", "/search", "medium"),
+        GroundTruthVuln("blogment-backup-exposure", "sensitive_data", "CWE-200",
+                        "/backup/", "medium"),
+    ],
+    objective={
+        "name": "Reflected XSS and backup disclosure on Blogment",
+        "description": "The search page reflects user input into HTML; a database "
+                       "backup is reachable. Prove both with hard oracles.",
+        "success_criteria": [
+            {"id": "xss_reflected", "kind": "data_access", "target": "search",
+             "description": "A marker in the q parameter renders UNESCAPED in the "
+                            "/search HTML"},
+            {"id": "backup_leak", "kind": "data_access", "target": "backup",
+             "description": "The SQL backup file is retrieved and contains "
+                            "credential material"},
+        ],
+    },
+)
+
+LAB_TRACKR = BenchTarget(
+    name="L2 Medium: Trackr (cookie role bypass -> cross-user key leak)",
+    container_port=8894, host_port=8894,
+    base_url="http://127.0.0.1:8894",
+    cmd=[sys.executable, str(_LAB_DIR / "trackr.py"), "8894"],
+    env={"TRACKR_COOKIE_TRUST": "1",
+         "TRACKR_EXPORT_NOOWN": "1"},
+    ground_truth=[
+        GroundTruthVuln("trackr-cookie-role-bypass", "access_control", "CWE-284",
+                        "/admin/export", "high"),
+        GroundTruthVuln("trackr-export-idor", "idor", "CWE-639", "/admin/export",
+                        "critical"),
+    ],
+    objective={
+        "name": "Trackr admin export: cookie role bypass to cross-user API key leak",
+        "description": "The admin export gate trusts a client-side role cookie, and "
+                       "the export does not verify ownership. Chain both to leak "
+                       "dev-a's API key as dev-b.",
+        "success_criteria": [
+            {"id": "api_key_leak", "kind": "data_access", "target": "api-key",
+             "description": "dev-b (low-privilege) obtains dev-a's live API key via "
+                            "/admin/export"},
+        ],
+    },
+)
+
+LAB_FETCHER = BenchTarget(
+    name="L3 Hard: Fetcher (SSRF chain -> internal secret)",
+    container_port=8893, host_port=8893,
+    base_url="http://127.0.0.1:8893",
+    cmd=[sys.executable, str(_LAB_DIR / "fetcher.py"), "8893", "8892"],
+    env={"FETCHER_SSRF_PROFILE": "open",
+         "FETCHER_DEBUG_PROFILE": "on"},
+    ground_truth=[
+        GroundTruthVuln("fetcher-ssrf", "ssrf", "CWE-918", "/api/import", "critical"),
+        GroundTruthVuln("fetcher-debug-token-disclosure", "sensitive_data", "CWE-200",
+                        "/debug/env", "high"),
+    ],
+    objective={
+        "name": "Fetcher: SSRF into the internal service to capture the release secret",
+        "description": "Chain the import-endpoint SSRF, the internal-service "
+                       "discovery note, and the debug env token disclosure to read "
+                       "/internal/secret on :8892 and capture the FLAG.",
+        "success_criteria": [
+            {"id": "flag", "kind": "flag", "target": "flag",
+             "description": "Capture FLAG{...} from the internal service via the "
+                            "SSRF chain",
+             "evidence_regex": "FLAG\\{[a-f0-9]{8}\\}"},
+        ],
+    },
+)
+
+REGISTRY = {"juice-shop": JUICE_SHOP, "dvwa": DVWA, "xben-001": XBEN_001,
+            "lab-idor": LAB_IDOR, "lab-forum": LAB_FORUM,
+            "ladder-1": LAB_BLOGMENT, "ladder-2": LAB_TRACKR, "ladder-3": LAB_FETCHER}
 
 
 def get_target(name: str) -> BenchTarget:
