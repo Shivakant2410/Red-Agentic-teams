@@ -287,10 +287,21 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="runs/bench")
     ap.add_argument("--objective",
                     default="Find and CONFIRM real vulnerabilities. Do a quick map, then "
-                            "immediately start proving bugs: use confirm_finding for injection/XSS, "
-                            "authenticate then test_idor for IDOR, and test_access_control for "
-                            "broken access control. Prioritize confirming findings over browsing. "
+                            "immediately start proving bugs: verify_vulnerability designs a "
+                            "proof from named requests + conditions (status / body_regex / "
+                            "json_differs / reflected_unescaped) and confirm_finding runs "
+                            "single/differential HTTP proofs; both only reach "
+                            "pending_verification until an independent pass confirms. "
+                            "authenticate first when the surface needs a session, then "
+                            "prove IDOR with a baseline-vs-swapped-id differential and "
+                            "broken access control with an unauthenticated/low-priv request "
+                            "to a protected endpoint. Prioritize proving over browsing. "
                             "When one lands, chain it. Only confirmed findings count.")
+    # (The old default named test_idor / test_access_control — tools that do not exist
+    # anywhere in the registry. Live-fire, the model called both and burned steps on
+    # 'unknown tool' errors: exactly the hallucination class the registry-honest
+    # system prompt (agent.py's _environment_block) exists to prevent. The default
+    # objective is part of the prompt surface and must only name real tools.)
     ap.add_argument("--multi-agent", action="store_true",
                     help="Drive the run with the orchestrator + specialist swarm.")
     args = ap.parse_args(argv)

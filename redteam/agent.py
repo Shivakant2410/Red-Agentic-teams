@@ -205,6 +205,7 @@ class RedTeamAgent:
         stall_turns = 0
         stall_nudges_given = 0     # how many times the stall nudge below has fired
         nudges = 0                 # times we've refused an early "I'm done"
+        novel_signatures: set[str] = set()   # every DISTINCT tool call this run (see stall relief)
 
         final_text = ""
         for step in range(self._max_steps):
@@ -280,6 +281,7 @@ class RedTeamAgent:
                                       findings=len(self._ctx.findings.all()))
                 break
 
+            made_novel_call = False   # any DISPATCHED call this turn that was this run's first of its exact shape
             for tc in tool_calls:
                 fn = tc.get("function", {})
                 name = fn.get("name", "")
@@ -292,6 +294,9 @@ class RedTeamAgent:
                     continue
                 # Repetition guard: block identical calls that keep failing.
                 signature = f"{name}:" + json.dumps(args, sort_keys=True, default=str)
+                if signature not in novel_signatures:
+                    novel_signatures.add(signature)
+                    made_novel_call = True
                 blocked = guard.check_before(signature)
                 if blocked is not None:
                     self._ctx.audit.record("agent.repeat_blocked", tool=name)
@@ -338,10 +343,24 @@ class RedTeamAgent:
 
             # Stall detection: if several turns pass with no new knowledge or findings, nudge
             # the agent to change strategy instead of grinding the same unproductive path.
+            # FOOTHOLD-PHASE RELIEF (live-fire 2026-11-02, ladder-2/lab-idor): a credential
+            # hunt (try_credential across usernames, probes of not-yet-tried paths) moves
+            # NEITHER the graph nor the findings counter, so the old counter euthanized
+            # active foothold work at ~13 turns — and a lab-idor run that had ALREADY
+            # proven the IDOR (P=R=1.0) was halted before it could report the objective.
+            # A DISPATCHED call that is the run's first of its exact shape is exploration,
+            # not grinding: it HOLDS the stall clock for that turn. Repeating calls, or
+            # emitting no calls, still increments — true dead ends still stall, only the
+            # window stretches while the agent is trying genuinely new things. The
+            # repetition guard bounds the pathological case (vary-one-byte payload sprays
+            # stay novel but max_steps/budget bound them anyway), and the asymmetry is the
+            # point: a late stall costs a few turns, a false stall costs the objective.
             graph_nodes = len(self._graph.nodes()) if self._graph is not None else 0
             progress = graph_nodes + len(self._ctx.findings.all())
             if progress > last_progress:
                 last_progress, stall_turns = progress, 0
+            elif made_novel_call:
+                pass              # novel exploration — hold the clock, do not increment
             else:
                 stall_turns += 1
             if stall_turns >= 4:

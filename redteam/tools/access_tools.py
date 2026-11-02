@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 
 from ..access import KINDS
+from ..objective import REQUIRED_SOURCE, regex_match
 from . import ToolContext
 
 
@@ -144,18 +145,49 @@ class ClaimObjectiveTool:
                 })
             if criterion.target and finding.target and criterion.target not in finding.target \
                     and finding.target not in criterion.target:
-                return json.dumps({
-                    "error": f"finding {finding_id!r} targets {finding.target!r}, which does not "
-                             f"match this criterion's target {criterion.target!r}.",
-                    "met": False,
-                })
-            proven = True
-            detail = f"{evidence} [finding {finding_id}: {finding.title}]"
+                # Containment miss. A criterion that declares evidence_regex can still
+                # be claimed by it (live-fire 2026-11-02: the finding targeted the
+                # fetcher URL, the criterion's target was the symbolic key 'flag', the
+                # regex FLAG\{..\} matched the confirmed finding's summary). Same proof
+                # requirement as containment: the finding must already be CONFIRMED.
+                snippet = regex_match(criterion.evidence_regex,
+                                      finding.target, finding.title, finding.summary,
+                                      finding.evidence) if criterion.evidence_regex else ""
+                if not snippet:
+                    return json.dumps({
+                        "error": f"finding {finding_id!r} targets {finding.target!r}, which does not "
+                                 f"match this criterion's target {criterion.target!r}.",
+                        "met": False,
+                    })
+                proven = True
+                detail = f"{evidence} [finding {finding_id}: {finding.title}] " \
+                         f"[evidence_regex match {snippet!r}]"
+            else:
+                proven = True
+                detail = f"{evidence} [finding {finding_id}: {finding.title}]"
         elif criterion.target and getattr(ctx, "access", None) is not None:
-            # Fall back to the access graph: the target must already be demonstrably HELD.
+            # Fall back to the access graph: the target must already be demonstrably HELD —
+            # by exact key, or (evidence_regex) by the regex matching a held node's key or
+            # evidence. The regex path keeps the REQUIRED_SOURCE gate: broader matching
+            # must never mean weaker sourcing (an agent-labeled node matching a regex is
+            # still just a label).
             proven = ctx.access.reached(criterion.target)
             if proven:
                 detail = f"{evidence} [access graph: {criterion.target} held]"
+            elif criterion.evidence_regex:
+                snippet = regex_match(criterion.evidence_regex,
+                                      *(t for n in ctx.access.held()
+                                        for t in (n.key, n.evidence) if t))
+                if snippet:
+                    required = REQUIRED_SOURCE.get(criterion.kind)
+                    node = next((n for n in ctx.access.held()
+                                 if (snippet in (n.key or "") or snippet in (n.evidence or ""))
+                                 and (not required or n.source in required)), None)
+                    if node is not None:
+                        proven = True
+                        detail = (f"{evidence} [access graph: held node {node.key!r} "
+                                  f"via {node.source or 'unknown'}; evidence_regex match "
+                                  f"{snippet!r}]")
 
         if not proven:
             ctx.audit.record("objective.claim_rejected", criterion_id=criterion_id)

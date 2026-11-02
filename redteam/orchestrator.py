@@ -62,6 +62,14 @@ from .llm.routing import PARSE, PLAN
 from .reflection import coach_note, reflect
 from .tools import ToolContext, Tool
 
+
+def profile_for(technique: str | None):
+    """Module-level alias so callers (and tests) can reach the router without the
+    specialists import — kept as a function attribute to avoid a circular import
+    at module load time (specialists.py imports SpecialistProfile from here)."""
+    from .specialists import profile_for as _pf
+    return _pf(technique)
+
 # Kill-chain stages that mean "there is a foothold worth pressing further" — if
 # KillChain.recommend() names any of these, an ACCESS round (not another EXPLOIT round)
 # is the next useful move.
@@ -451,13 +459,19 @@ class Orchestrator:
                 technique = TECHNIQUES.get(claimed.technique)
                 desc = technique.description if technique else claimed.technique
                 findings_before = len(self._ctx.findings.all())
+                # Gen-3 class routing: every claimed hypothesis goes to the OWASP class
+                # expert that owns the technique (see specialists.py) — claim/noise/
+                # verify machinery unchanged. Unowned techniques still run the generic
+                # EXPLOIT profile, and RED_CLASS_SPECIALISTS=0 disables routing outright
+                # (the specialists-vs-generalist A/B switch).
+                profile = profile_for(claimed.technique)
                 exploit = self._make_specialist(
-                    EXPLOIT, agent_name=f"exploit-w{worker_id}",
+                    profile, agent_name=f"{profile.name}-w{worker_id}",
                     addon_suffix=f"\n\nYOUR ASSIGNED TARGET THIS TURN: "
                     f"{claimed.technique} on {claimed.target} — {desc}. Work ONLY this "
                     f"hypothesis; other workers are covering the rest of the attack tree "
-                    f"in parallel. You are exploit-w{worker_id}: if you need context you "
-                    f"don't have (an error body, a token shape, whether a sibling already "
+                    f"in parallel. You are {profile.name}-w{worker_id}: if you need context "
+                    f"you don't have (an error body, a token shape, whether a sibling already "
                     f"looked here), search_peer_traces shows what the OTHER workers' raw "
                     f"tool activity actually saw — hits are leads, prove them yourself.")
                 summary = exploit.run(

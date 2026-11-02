@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as _dt
 from dataclasses import dataclass, field
+import re
 
 # What kind of win a criterion represents.
 DATA_ACCESS = "data_access"       # read/exfiltrate specific data
@@ -34,6 +35,29 @@ REQUIRED_SOURCE = {
     DATA_ACCESS: ("verified_finding", "prove_privilege"),
     FLAG: ("verified_finding", "prove_privilege", "try_credential"),
 }
+
+
+def regex_match(pattern: str, *texts: str) -> str:
+    """First regex match across `texts`, as a snippet — or "" when nothing matches,
+    the pattern is empty, or the pattern itself is invalid (fail closed: a broken
+    regex must never crash the creditor mid-run, and must never credit by accident).
+    Used by autoevaluate / the creditor / claim_objective to consume a criterion's
+    evidence_regex — the field existed, was loaded, and was read by nothing (found
+    live: a confirmed FLAG capture scored 0/1 because the agent keyed the access
+    node with the flag value instead of the criterion's symbolic target)."""
+    if not pattern:
+        return ""
+    try:
+        pat = re.compile(pattern)
+    except re.error:
+        return ""
+    for text in texts:
+        if not text:
+            continue
+        m = pat.search(text)
+        if m:
+            return m.group(0)
+    return ""
 
 
 @dataclass
@@ -109,6 +133,14 @@ class Objective:
            this, an agent that merely *labels* its session "admin" would satisfy an
            "become admin" criterion from a self-chosen string, which is how run 13 credited
            admin without proof.
+
+        Third path (live-fire 2026-11-02, ladder-3): the agent captured FLAG{5f9e22b8}, got
+        the finding independently confirmed, and held it — but keyed the access node with
+        the flag VALUE while the criterion's target was the symbolic key "flag", and the
+        containment/substring rules match neither direction. A criterion that declares an
+        evidence_regex therefore ALSO credits when the regex matches a held node's key or
+        evidence — under the SAME REQUIRED_SOURCE gate as the exact-key path, so a regex
+        match is never a way around the proof mechanism, only a way around key-naming.
         """
         newly: list[str] = []
         if access is None:
@@ -116,6 +148,7 @@ class Objective:
         for c in self.outstanding():
             if not c.target:
                 continue
+            credited = False
             for node in access.held():
                 if node.key != c.target:
                     continue
@@ -126,7 +159,25 @@ class Objective:
                     continue          # demonstrated access must be evidenced
                 self.mark(c.id, f"{node.evidence} [via {node.source or 'unknown'}]")
                 newly.append(c.id)
+                credited = True
                 break
+            if credited or not c.evidence_regex:
+                continue
+            # evidence_regex pass — same source gate, matched snippet as the evidence.
+            snippet = regex_match(c.evidence_regex,
+                                  *(t for n in access.held()
+                                    for t in (n.key, n.evidence) if t))
+            if not snippet:
+                continue
+            for node in access.held():
+                required = REQUIRED_SOURCE.get(c.kind)
+                if required and node.source not in required:
+                    continue
+                if snippet in (node.key or "") or (node.evidence and snippet in node.evidence):
+                    self.mark(c.id, f"evidence_regex match {snippet!r} "
+                                    f"[held node {node.key!r} via {node.source or 'unknown'}]")
+                    newly.append(c.id)
+                    break
         return newly
 
     def save(self, path) -> None:

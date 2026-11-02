@@ -28,7 +28,7 @@ Hard limits, on purpose:
 
 from __future__ import annotations
 
-from .objective import HOST_ACCESS, DATA_ACCESS, FLAG, PRIVILEGE
+from .objective import HOST_ACCESS, DATA_ACCESS, FLAG, PRIVILEGE, regex_match
 
 # Criterion kind -> access-graph node kind for the hold. FLAG is material we read,
 # i.e. a resource. PRIVILEGE is deliberately absent (see module docstring).
@@ -48,6 +48,24 @@ def _target_matches(criterion_target: str, finding_target: str) -> bool:
     if not criterion_target or not finding_target:
         return False
     return criterion_target in finding_target or finding_target in criterion_target
+
+
+def _finding_proves(criterion, finding) -> str:
+    """Why this confirmed finding satisfies this criterion — "" when it doesn't.
+
+    Path 1 is the original containment rule on targets. Path 2 (live-fire
+    2026-11-02, ladder-3) is the criterion's own evidence_regex scanned over the
+    finding's target/title/summary/evidence: the agent chained the SSRF, captured
+    FLAG{5f9e22b8}, the finding was independently confirmed — and still scored
+    0/1 because the finding's target was the fetcher URL while the criterion's
+    target was the symbolic key 'flag', which containment matches neither way.
+    The regex is the engagement author's declaration of what proof LOOKS like,
+    and a confirmed finding is already past the verify gate — matching it is
+    evidence collection, not label-trust. Returns the matched snippet."""
+    if _target_matches(criterion.target, finding.target):
+        return finding.target
+    return regex_match(criterion.evidence_regex,
+                       finding.target, finding.title, finding.summary, finding.evidence)
 
 
 def credit_confirmed_findings(ctx, objective=None, access=None) -> list[dict]:
@@ -76,13 +94,15 @@ def credit_confirmed_findings(ctx, objective=None, access=None) -> list[dict]:
         # just let autoevaluate look at it again — no duplicate evidence write.
         already_held = any(n.held and n.key == criterion.target and n.kind == node_kind
                            for n in access.held())
-        match = next((f for f in confirmed
-                      if _target_matches(criterion.target, f.target)), None)
+        match = next((f for f in confirmed if _finding_proves(criterion, f)), None)
         if match is None:
             continue
         if not already_held:
+            snippet = regex_match(criterion.evidence_regex,
+                                  match.target, match.title, match.summary, match.evidence)
             evidence = (f"confirmed finding {match.id}: {match.title} "
-                        f"({match.severity}) on {match.target}")
+                        f"({match.severity}) on {match.target}"
+                        + (f" — evidence_regex match {snippet!r}" if snippet else ""))
             access.hold(node_kind, criterion.target, evidence=evidence,
                         source="verified_finding")
         newly = objective.autoevaluate(access)
