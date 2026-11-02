@@ -37,12 +37,12 @@ Engagement:
 - Out-of-scope (never touch): {excluded_hosts}
 
 Environment you operate in:
-- kali_exec runs shell commands in a Kali Linux sandbox (nmap, ffuf, sqlmap, nikto,
-  gobuster, curl, etc.). The sandbox firewall only lets you reach in-scope targets;
-  off-scope hosts are unreachable, so don't waste steps trying.
-- browser_* tools drive a headless browser for anything that needs a real DOM/JS.
+{environment_block}
 - record_finding stores evidenced findings. request_approval asks a human before any
   destructive or otherwise sensitive action.
+
+Known/likely target base URLs (derived from the RoE — probe these first):
+{target_urls}
 
 Hard rules:
 1. Stay in scope. If a tool blocks or refuses something, do not try to work around it —
@@ -107,6 +107,53 @@ class RedTeamAgent:
             self._manifest = (manifest, manifest_path)
         return self
 
+    @staticmethod
+    def _environment_block(tools: dict) -> str:
+        """Describe ONLY the surfaces that actually exist in this run's registry.
+        Advertising absent tools makes models hallucinate them (live-fire: an agent
+        without a sandbox called the advertised kali_exec and burned turns on
+        'unknown tool' errors)."""
+        lines = []
+        if "kali_exec" in tools:
+            lines.append("- kali_exec runs shell commands in a Kali Linux sandbox (nmap, "
+                         "ffuf, sqlmap, nikto, gobuster, curl, etc.). The sandbox firewall "
+                         "only lets you reach in-scope targets; off-scope hosts are "
+                         "unreachable, so don't waste steps trying.")
+        elif "local_exec" in tools:
+            lines.append("- local_exec runs one bash command on the operator host, cwd "
+                         "pinned to the engagement root (filesystem/terminal work only; "
+                         "no network scope beyond the RoE).")
+        else:
+            lines.append("- There is NO shell in this run. Work through http_probe, "
+                         "surface_scan, and the proof tools — never claim to have run "
+                         "shell commands.")
+        if "browser_navigate" in tools:
+            lines.append("- browser_* tools drive a headless browser for anything that "
+                         "needs a real DOM/JS.")
+        else:
+            lines.append("- There is NO browser in this run: judge responses by their "
+                         "HTTP bodies (html/json), not rendered behavior.")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _candidate_urls(engagement, cap: int = 8) -> str:
+        """RoE-derived candidate base URLs: the engagement schema's target list IS the
+        scope grid (allowed_hosts x allowed_ports x allowed_schemes) — surface it in
+        text so the model doesn't have to rediscover it by flailing."""
+        hosts = [h for h in (engagement.allowed_hosts or [])
+                 if not h.startswith("*.") and "/" not in h][:4]
+        ports = list((engagement.allowed_ports or [])[:3])
+        schemes = list((engagement.allowed_schemes or ["https"])[:2])
+        urls = []
+        for scheme in schemes:
+            for host in hosts:
+                for port in ports:
+                    if (scheme == "http" and port == 80) or (scheme == "https" and port == 443):
+                        urls.append(f"{scheme}://{host}")
+                    else:
+                        urls.append(f"{scheme}://{host}:{port}")
+        return ", ".join(urls[:cap]) or "(none derivable from the RoE)"
+
     def _system(self) -> str:
         e = self._eng
         base = SYSTEM_PROMPT.format(
@@ -114,6 +161,8 @@ class RedTeamAgent:
             starts=e.starts, ends=e.ends,
             allowed_hosts=", ".join(e.allowed_hosts),
             excluded_hosts=", ".join(e.excluded_hosts) or "(none)",
+            environment_block=self._environment_block(self._tools),
+            target_urls=self._candidate_urls(e),
         )
         if self._system_addon:
             base += "\n\nYOUR ROLE IN THE TEAM:\n" + self._system_addon

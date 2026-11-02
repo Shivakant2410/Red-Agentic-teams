@@ -352,6 +352,30 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         run_dir = require_run(run_id)
         return {"proxy": _read_json(run_dir / "proxy.json", None)}
 
+    @app.get("/api/bench")
+    def bench_board() -> dict:
+        """Benchmark board feed: the bench harness exports one structured card per
+        run (bench.json) and a merged runs/bench-summary.json. Serve the merged
+        file, falling back to a scan of bench-* run dirs; a run directory that is
+        mid-write simply doesn't contribute a card yet (never an error)."""
+        merged = _read_json(runs_root / "bench-summary.json", None)
+        rows = merged.get("runs") if isinstance(merged, dict) else None
+        if not isinstance(rows, list):
+            rows = []
+            for d in sorted(runs_root.glob("bench-*")):
+                if not d.is_dir():
+                    continue
+                card = _read_json(d / "bench.json", None)
+                if isinstance(card, dict):
+                    rows.append(card)
+        rows = [r for r in rows if isinstance(r, dict)]
+        rows.sort(key=lambda r: (r.get("ts", ""), r.get("run_id", "")))
+        arms = sorted({str(r.get("arm", "?")) for r in rows})
+        achieved = sum(1 for r in rows if r.get("objective_achieved"))
+        confirmed = sum(int(r.get("confirmed") or 0) for r in rows)
+        return {"runs": rows, "arms": arms, "achieved": achieved,
+                "confirmed": confirmed, "total": len(rows)}
+
     @app.get("/api/runs/{run_id}/graph")
     def run_graph(run_id: str) -> dict:
         # The exploration chain (ARTEX 探索链路): layered assets → endpoints →
