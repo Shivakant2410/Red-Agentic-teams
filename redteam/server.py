@@ -370,6 +370,13 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
                     rows.append(card)
         rows = [r for r in rows if isinstance(r, dict)]
         rows.sort(key=lambda r: (r.get("ts", ""), r.get("run_id", "")))
+        # Latest card per target wins: an interrupted run leaves a zero-token row
+        # behind, and the board must reflect the newest attempt, not accumulate.
+        latest: dict[str, dict] = {}
+        for r in rows:
+            latest[str(r.get("target_key") or r.get("run_id", "?"))] = r
+        rows = sorted(latest.values(),
+                      key=lambda r: (r.get("ts", ""), r.get("run_id", "")))
         arms = sorted({str(r.get("arm", "?")) for r in rows})
         achieved = sum(1 for r in rows if r.get("objective_achieved"))
         confirmed = sum(int(r.get("confirmed") or 0) for r in rows)
