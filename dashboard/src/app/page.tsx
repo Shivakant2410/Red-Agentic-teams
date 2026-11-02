@@ -8,6 +8,7 @@ import {
   cx,
 } from "@/components/Bits";
 import { LaunchRunPanel } from "@/components/LaunchRunPanel";
+import { BenchmarkBoard } from "@/components/BenchmarkBoard";
 import { RunsTable } from "@/components/RunsTable";
 import { StatCard } from "@/components/StatCard";
 import { fmtInt } from "@/lib/format";
@@ -91,6 +92,8 @@ export default function RunsOverviewPage() {
           </StatCard>
           <StatCard label="TOTAL FINDINGS">{fmtInt(stats.findings)}</StatCard>
         </section>
+
+        <BenchmarkBoard />
 
         <section className="mt-4 grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
           <div className="min-w-0 space-y-3">

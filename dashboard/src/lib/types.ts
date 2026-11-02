@@ -206,3 +206,30 @@ export interface LaunchResponse {
   status: string;
   [k: string]: unknown;
 }
+
+export interface BenchCard {
+  run_id: string;
+  ts: string;
+  arm: string;
+  target_key: string;
+  target: string;
+  objective_achieved: boolean;
+  completion: number;
+  confirmed: number;
+  precision: number;
+  recall: number;
+  f1: number;
+  steps: number;
+  actions: number;
+  tokens: number;
+  elapsed_s: number;
+  halt_reason: string;
+}
+
+export interface BenchBoard {
+  runs: BenchCard[];
+  arms: string[];
+  achieved: number;
+  confirmed: number;
+  total: number;
+}

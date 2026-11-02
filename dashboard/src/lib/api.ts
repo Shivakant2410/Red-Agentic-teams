@@ -97,6 +97,8 @@ export const api = {
       `/api/approvals/${encodeURIComponent(approvalId)}`,
       { method: "POST", body: JSON.stringify({ approve }) },
     ),
+
+  bench: () => request<import("./types").BenchBoard>("/api/bench"),
 };
 
 export function reportUrl(runId: string): string {

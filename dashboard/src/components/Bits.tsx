@@ -98,13 +98,15 @@ export function Micro({
 export function Panel({
   children,
   className,
+  ...rest
 }: {
   children: ReactNode;
   className?: string;
-}) {
+} & Omit<React.HTMLAttributes<HTMLElement>, "className">) {
   return (
     <section
       className={cx("rounded-lg border border-edge bg-panel", className)}
+      {...rest}
     >
       {children}
     </section>
