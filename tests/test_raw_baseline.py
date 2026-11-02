@@ -225,3 +225,122 @@ def test_round_messages_carry_objective_scope_and_contract():
     # last round instructs final proof behavior
     last = build_round_messages("o", "http://127.0.0.1:8899", "", "s", [], 3, 3)
     assert "LAST round" in last[1]["content"]
+
+
+# -- End-to-end with a stub LLM + the real lab fixture (no network beyond loopback) -------
+
+def _start_stub_llm(port):
+    """OpenAI-compat stub: one turn, returns the exact contract a strong model would."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    plan = {
+        "claims": [{
+            "title": "Cross-tenant record read (IDOR)",
+            "cwe": "CWE-639", "path": "/api/records/record-a", "severity": "critical",
+            "evidence": '"tenant_id": "tenant-a"',
+            "request": {"method": "GET", "path": "/api/records/record-a",
+                        "headers": {"Authorization": "Bearer lab-token-b"}, "body": ""},
+        }],
+        "requests": [{
+            "name": "cross-tenant read", "method": "GET",
+            "path": "/api/records/record-a",
+            "headers": {"Authorization": "Bearer lab-token-b"}, "body": "",
+        }],
+    }
+
+    class Stub(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = json.dumps({"object": "list",
+                               "data": [{"id": "stub-model", "object": "model"}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            self.rfile.read(length)
+            body = json.dumps({
+                "id": "stub-1", "object": "chat.completion", "model": "stub-model",
+                "choices": [{"index": 0, "finish_reason": "stop",
+                             "message": {"role": "assistant",
+                                         "content": json.dumps(plan)}}],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 50,
+                          "total_tokens": 150},
+            }).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", port), Stub)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_run_raw_end_to_end_confirms_idor_and_credits_objective(tmp_path):
+    import os
+    import subprocess
+    import sys
+    import time as _t
+
+    from redteam.bench.raw_baseline import run_raw
+
+    target_port, llm_port = 18899, 18898
+    lab = subprocess.Popen(
+        [sys.executable, "lab/server.py", str(target_port)],
+        env={**os.environ, "LAB_AUTHZ_PROFILE": "broken-owner-check"},
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    stub = _start_stub_llm(llm_port)
+    try:
+        deadline = _t.time() + 15
+        import urllib.request
+        while _t.time() < deadline:
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{target_port}/health",
+                                       timeout=2)
+                break
+            except Exception:
+                _t.sleep(0.3)
+
+        eng = tmp_path / "engagement.yaml"
+        eng.write_text(
+            "name: 'Bench: Local IDOR Lab (cross-tenant records)'\n"
+            "client: c\nauthorized_by: a\nticket: t\nstarts: '2026-01-01'\n"
+            "ends: '2030-01-01'\n"
+            "scope:\n  allowed_hosts: ['127.0.0.1']\n  allowed_ports: "
+            f"[{target_port}]\n  allowed_schemes: ['http']\n"
+            "  allow_private_ranges: true\n"
+            "llm:\n"
+            "  providers:\n    - kind: openai_compat\n      name: stub\n"
+            f"      base_url: http://127.0.0.1:{llm_port}/v1\n"
+            "      models_allow: ['stub-model']\n      prefer_free: false\n"
+            "      require_tool_support: false\n      priority: 10\n"
+            "objective:\n  name: Cross-tenant record read\n  description: d\n"
+            "  success_criteria:\n    - id: cross_tenant_read\n"
+            "      kind: data_access\n      target: record-a\n"
+            "      description: HTTP 200 on another tenant's record\n")
+
+        out = tmp_path / "raw"
+        summary = run_raw(str(eng), "Prove the cross-tenant read.", out, rounds=1)
+
+        findings = json.loads((out / "findings.json").read_text())
+        assert findings[0]["confidence"] == "confirmed"
+        assert findings[0]["evidence_checked"] is True
+        assert summary["confirmed"] == 1
+        assert summary["recall"] == 1.0 and summary["f1"] == 1.0
+        assert summary["tokens"] == 150
+        assert summary["requests_executed"] == 1
+
+        obj = json.loads((out / "objective.json").read_text())
+        assert obj["criteria"][0]["achieved"] is True
+        assert "cross_tenant_read" in summary["objective_credited"]
+    finally:
+        lab.terminate()
+        stub.shutdown()

@@ -313,10 +313,13 @@ def run_raw(engagement_path: str, objective_text: str, out_dir: Path, rounds: in
     engagement = load_engagement(engagement_path)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    from dataclasses import replace
+
     from ..config import LlmConfig
     llm_cfg: LlmConfig = engagement.llm
     if model:
-        llm_cfg.role_models = {**llm_cfg.role_models, role: model}
+        # LlmConfig is frozen — role pins are a derived config, never a mutation.
+        llm_cfg = replace(llm_cfg, role_models={**llm_cfg.role_models, role: model})
     llm = build_llm_client(llm_cfg)
 
     # Derive the target base from scope: lab engagements scope a single host:port.
@@ -325,12 +328,12 @@ def run_raw(engagement_path: str, objective_text: str, out_dir: Path, rounds: in
     scheme = sorted(engagement.allowed_schemes)[0]
     base_url = f"{scheme}://{host}:{port}"
 
-    from ..objective import load_objective
+    from ..objective import Objective
+    obj_path = out_dir / "objective.json"
     objective = getattr(engagement, "objective", None)
     if objective is None:                    # plain engagements: pre-seeded objective.json
-        obj_path = out_dir / "objective.json"
         if obj_path.exists():
-            objective = load_objective(obj_path)
+            objective = Objective.load(obj_path)
     credential_note = ""
 
     scope = ScopeFilter(engagement)
@@ -438,11 +441,14 @@ def run_raw(engagement_path: str, objective_text: str, out_dir: Path, rounds: in
 
 
 def _ground_truth_for(engagement) -> list:
-    """Ground truth is keyed by target name in the registry; lab engagement names carry
-    the registry key (the ladder writes engagement.yaml from BenchTarget)."""
+    """Ground truth is keyed by target name in the registry; ladder/runner engagement
+    names carry decorative prefixes ("Bench: ", "Benchmark: ") that must not break it."""
     from .targets import REGISTRY
     name = engagement.name
-    for key, target in REGISTRY.items():
+    for prefix in ("Bench: ", "Benchmark: "):
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+    for target in REGISTRY.values():
         if target.name == name:
             return target.ground_truth
     return []

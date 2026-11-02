@@ -61,7 +61,10 @@ def _backend_preset(name: str, model: str) -> dict:
                            base_url="http://127.0.0.1:9825/v1",
                            api_key_env="ZAI_BRIDGE_KEY",
                            models=["glm-4.6"], prefer_free=False,
-                           require_tool_support=False, priority=10),
+                           require_tool_support=False, priority=10,
+                           # The local bridge runs auth-off; the env var only has to
+                           # EXIST so the gateway doesn't skip the provider.
+                           env_if_missing={"ZAI_BRIDGE_KEY": "bridge-local"}),
         "zai-direct": dict(kind="zai", name="zai", api_key_env="ZAI_API_KEY",
                            models=["glm-4.6"], prefer_free=False,
                            require_tool_support=False, priority=10),
@@ -119,9 +122,13 @@ def write_engagement(target, path: Path, backend_preset: dict) -> None:
                    "max_run_seconds": 600, "max_llm_tokens": 800000},
         "llm": {
             "temperature": 0.2, "max_tokens": 4096,
-            "providers": [{k: v for k, v in backend_preset.items() if v != ""}],
+            "providers": [{k: v for k, v in backend_preset.items()
+                           if k != "env_if_missing" and v != ""}],
         },
         "sandbox": {"enable": False},
+        # The structured scoreboard — every arm (raw included) is scored on the SAME
+        # criteria block, not on whatever it self-reports.
+        "objective": target.objective,
     }
     path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
 
@@ -179,6 +186,11 @@ def run_cell(target_key: str, mode: str, backend: str, out_root: Path,
 
     eng_path = cell_dir / "engagement.yaml"
     write_engagement(target, eng_path, preset)
+    # Stale artifacts from a previous attempt of the same cell must never bleed into
+    # this run's score.
+    for stale in ("audit.log.jsonl", "findings.json", "manifest.json",
+                  "raw.card.json", "objective.json"):
+        (cell_dir / stale).unlink(missing_ok=True)
     (cell_dir / "objective.json").write_text(json.dumps({
         "name": target.objective["name"],
         "description": target.objective["description"],
@@ -188,6 +200,8 @@ def run_cell(target_key: str, mode: str, backend: str, out_root: Path,
     objective_text = canonical_objective_text(target)
 
     proc, log = start_target(target, cell_dir)
+    sub_env = {**os.environ, **{k: v for k, v in preset.get("env_if_missing", {}).items()
+                                if not os.environ.get(k)}}
     started = time.time()
     try:
         if mode in ("flat", "swarm"):
@@ -196,14 +210,14 @@ def run_cell(target_key: str, mode: str, backend: str, out_root: Path,
                    "--yes-to-all", "--max-steps", str(max_steps)]
             if mode == "swarm":
                 cmd.append("--multi-agent")
-            subprocess.run(cmd, check=False)
+            subprocess.run(cmd, check=False, env=sub_env)
         elif mode in ("raw", "rawk"):
             cmd = [sys.executable, "-m", "redteam.bench.raw_baseline",
                    "--engagement", str(eng_path), "--objective", objective_text,
                    "--out", str(cell_dir),
                    "--rounds", str(RAW_ROUNDS[mode]),
                    "--model", f"{preset['name']}:{preset['models'][0]}"]
-            subprocess.run(cmd, check=False)
+            subprocess.run(cmd, check=False, env=sub_env)
         else:
             raise SystemExit(f"unknown mode {mode!r}; known: {MODES}")
     finally:
@@ -241,6 +255,9 @@ def score_cell(cell_dir: Path, target_key: str, mode: str, backend: str,
         tokens = int(manifest.get("tokens") or 0)
         steps = int(manifest.get("steps") or 0)
         halt_reason = str(manifest.get("halt_reason") or "")
+    elif not (cell_dir / "findings.json").exists():
+        # A crashed cell must be visible as crashed, never silently scored as zeros.
+        halt_reason = "no run artifacts (subprocess crashed before scoring)"
     audit_path = cell_dir / "audit.log.jsonl"
     if audit_path.exists():
         for line in audit_path.read_text(encoding="utf-8").splitlines():
