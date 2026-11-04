@@ -90,6 +90,21 @@ llm/
   providers.py         OpenAI-compatible + native Anthropic providers
   gateway.py           LLMGateway: role routing, round-robin failover, 429 cooldowns
   routing.py            Model routing logic
+llmred/                LLM-as-TARGET red teaming — a DIFFERENT module from llm/
+                       (llm/ is the agent's brain; llmred/ attacks LLM endpoints):
+  targets.py            OpenAI-compatible, stateful session-id, and scripted targets;
+                        per-call host allowlist + mandatory authorized_by/ticket
+  objectives.py         Probe pack (8 objectives), OWASP LLM Top 10 2026 mapping
+  strategies.py         Encoding transforms, multilingual wrappers, plant-then-ask /
+                        cross-session / multishot turn flows, pair-lite (attacker port)
+  detectors.py          Deterministic verdicts: leaked / blocked / UNDETERMINED
+                        (undetermined is not false; judge may upgrade, never downgrade)
+  campaign.py           Thompson-allocated campaign runner (bandit.py, cost-aware);
+                        writes campaign.jsonl + summary.json with Wilson CIs
+  regression.py         Posture diff across summaries (stable/new/hardened/regressed)
+                        + CI gate exit codes
+  report.py             Markdown report with OWASP rollup and evidence pointers
+  __main__.py           python -m redteam.llmred --target t.yaml --out dir [--gate]
 sandbox/
   Dockerfile            Kali rolling + tools + firewall deps
   entrypoint.sh         Installs the egress allowlist, then idles (fail closed)
@@ -193,6 +208,12 @@ assuming behavior isn't covered.
     pydantic models break schema generation with `from __future__ import annotations`).
 - Free OpenRouter model availability changes constantly — `llm/openrouter.py` does
   live discovery filtered on `supported_parameters: tools`, never hardcode a model list.
+- `llmred/` is fail-closed by itself: the sandbox egress firewall cannot see an
+  HTTPS chat endpoint, so llmred re-checks the target host allowlist before EVERY
+  HTTP call and refuses to start without `authorized_by`/`ticket`. Its verdicts
+  are deterministic-only (canaries, by-construction tokens, echo markers); the
+  optional judge may upgrade UNDETERMINED to leaked, never the reverse. ASRs are
+  successes/decided with Wilson intervals — never bare percentages.
 - Findings require **proof**, not just a label (`proof.py`) — recent commit history
   ("Require proof, not a label, to credit a privilege objective") tightened this; don't
   relax finding-credit logic without checking `proof.py`/`verify.py`/`falsify.py`.
