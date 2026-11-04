@@ -13,6 +13,43 @@ Experience):
   - Reflection is DETERMINISTIC here (derived from audit events + findings), so lessons
     are never hallucinated. LLM-distilled reflection is a later upgrade.
 
+Poison resistance (W5 — the highest-relevance weakness class in our red-team paper):
+  everything the TARGET returns to us is attacker-controlled content. If target-shaped
+  text ever reaches this store through the same door as self-derived tradecraft, a
+  planted lesson persists cross-run and outranks real tradecraft on the next
+  engagement (memory-poisoning propagates exactly this way: 58-74% self-propagation
+  in the literature). So provenance is decided at WRITE time, not filtered at read
+  time — read-time rerankers were measured to cost ~4.4 points of benign utility in
+  the memory-defense literature, while a write-path flag costs nothing:
+
+  - DERIVED  : distilled deterministically from OUR OWN audit events / confirmed
+               findings (reflect_on_run) — the only path learn() allows.
+  - IMPORTED : human-curated bootstrap tradecraft (seed_tradecraft).
+  - OBSERVED : anything that originated in target-controlled text. Must enter via
+               learn_observed(); starts at capped utility; is recalled at half
+               weight; never appears unlabeled in a briefing.
+  - QUARANTINE: learn_observed screens for instruction-impersonation (text trying to
+               look like operator directives: "system:", "ignore your scope",
+               "approve all findings", ...). Quarantined lessons are kept for
+               forensics, excluded from recall and briefings, and decay out
+               naturally. A false quarantine costs a note; a missed one costs the
+               next engagement.
+
+Tamper evidence on LOAD (HMAC): a store file is a writable artifact, so every row is
+signed at flush time (HMAC-SHA256 over its security fields — text, kind, tags,
+utility, provenance, source, quarantined). The key comes from REDTEAM_MEMORY_KEY when
+set, else lives in a sibling `<store>.key` file (0600, created on first write). On
+load, any row whose MAC is missing or invalid is demoted to OBSERVED and its utility
+clamped — fail-closed. This means (a) a tampered or forged-badge row is contained,
+and (b) stores written by PRE-hardening versions demote once, then rebuild through
+seeding + reflection within a run — the honest store re-derives its tradecraft
+cheaply; the poisoned one is the expensive failure we avoid. Caveat, stated plainly:
+this is tamper EVIDENCE, not encryption — an attacker who can also rewrite the key
+file can re-sign; in hostile environments point REDTEAM_MEMORY_KEY at read-only
+storage. Stores backed ONLY by a pluggable backend (no path argument) hold an
+ephemeral in-process key: cross-process rows then load demoted to OBSERVED unless
+REDTEAM_MEMORY_KEY is set — fail-closed by design.
+
 Backend is pluggable (`Backend`): a local JSON file today, HelixDB (graph+vector) later —
 the agent code never changes when the backend does.
 """
@@ -20,18 +57,88 @@ the agent code never changes when the backend does.
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
+import hmac
 import json
+import os
 import re
+import secrets
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol
 
 SUCCESS, FAILURE, CAUTION = "success", "failure", "caution"
+DERIVED, IMPORTED, OBSERVED = "derived", "imported", "observed"
+_ALLOWED_PROVENANCE = (DERIVED, IMPORTED, OBSERVED)
+
+# Utility ceiling applied on LOAD: no lesson, however corrupted, should enter a run
+# holding more ranking power than a handful of corroborated lessons could give it.
+_MAX_UTILITY_ON_LOAD = 5.0
+
+# Text patterns that make an "observed" lesson look like an OPERATOR directive rather
+# than a lesson about the target. Matched case-insensitively. Deliberately broad in
+# the imperative-voice families: the cost of a false positive is one quarantined note,
+# the cost of a false negative is attacker-authored tradecraft executing next run.
+_IMPERSONATION_PATTERNS = (
+    r"\bsystem\s*:",                        # fake role markers
+    r"\[system\]",
+    r"\byou (must|should|are now)\b",
+    r"\bfrom now on\b",
+    r"\bignore (all |your |any |previous|prior)",
+    r"\bdisregard (all |your |any |previous|prior)",
+    r"\balways (approve|confirm|mark|record|accept)\b",
+    r"\bapprove (all|every)\b",
+    r"\b(exfiltrate|send|post|upload|forward)\b.*\b(credentials|token|secret|flag)\b",
+    r"\b(out of|outside) scope (is |has been )?(now )?(authorized|approved|allowed)\b",
+    r"\boverride (the )?(scope|guard|ro[em])\b",
+    r"\bnew (operator |engagement )?(directive|instruction|policy)\b",
+)
+_IMPERSONATION_RE = re.compile("|".join(_IMPERSONATION_PATTERNS), re.IGNORECASE)
+
+
+def _impersonates_operator(text: str) -> bool:
+    """True when the text tries to sound like an OPERATOR directive rather than a
+    lesson about a target. Applied at BOTH entry points: learn_observed() at write
+    time, and the load path for any row that ends up OBSERVED (tampered rows never
+    passed through learn_observed, so the content must be screened there too)."""
+    return bool(_IMPERSONATION_RE.search(text or ""))
+
+
+# Fields covered by the row MAC — everything an attacker could use to buy ranking
+# power or forge trust. Bookkeeping fields (uses/helped/support/timestamps) change
+# constantly and buy nothing, so they stay outside the signature.
+_MAC_FIELDS = ("text", "kind", "tags", "utility", "provenance", "source", "quarantined")
+_MAC_KEY_ENV = "REDTEAM_MEMORY_KEY"
 
 
 def _now() -> str:
     return _dt.datetime.now(_dt.timezone.utc).isoformat()
+
+
+def _row_mac(key: bytes, row: dict) -> str:
+    payload = json.dumps({f: row.get(f) for f in _MAC_FIELDS},
+                         sort_keys=True, ensure_ascii=False)
+    return hmac.new(key, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _load_key(path: str | Path | None) -> bytes:
+    env = os.environ.get(_MAC_KEY_ENV)
+    if env:
+        return bytes.fromhex(env)
+    if path is None:
+        return secrets.token_bytes(32)      # in-process integrity only
+    key_path = Path(str(path) + ".key")
+    if key_path.exists():
+        return bytes.fromhex(key_path.read_text(encoding="utf-8").strip())
+    key = secrets.token_bytes(32)
+    key_path.parent.mkdir(parents=True, exist_ok=True)
+    key_path.write_text(key.hex(), encoding="utf-8")
+    try:
+        os.chmod(key_path, 0o600)
+    except OSError:
+        pass
+    return key
 
 
 @dataclass
@@ -46,6 +153,9 @@ class Lesson:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     created: str = field(default_factory=_now)
     last_used: str = field(default_factory=_now)
+    provenance: str = DERIVED       # derived | imported | observed (see module docstring)
+    source: str = ""                # where observed content came from (URL, artifact)
+    quarantined: bool = False       # instruction-impersonation screening failed
 
     @property
     def signature(self) -> str:
@@ -78,6 +188,7 @@ class ExperienceStore:
     def __init__(self, path: str | Path | None = None, backend: Backend | None = None,
                  max_lessons: int = 200, decay: float = 0.98, floor: float = 0.15):
         self._backend = backend or (LocalJSONBackend(path) if path else None)
+        self._key = _load_key(path)         # HMAC key for tamper evidence
         self._max = max_lessons
         self._decay = decay
         self._floor = floor                 # forget lessons whose utility falls below this
@@ -85,18 +196,38 @@ class ExperienceStore:
         self._lessons: dict[str, Lesson] = {}
         if self._backend:
             for row in self._backend.load():
-                les = Lesson(**row)
+                les = Lesson(**{k: v for k, v in row.items()
+                                if k in Lesson.__dataclass_fields__})
+                # -- tamper containment (see module docstring) ---------------------
+                # Fail-closed: a row we cannot verify (no MAC, bad MAC, forged badge)
+                # loads as OBSERVED with clamped utility — never as trusted.
+                claimed = les.provenance
+                if claimed not in _ALLOWED_PROVENANCE:
+                    les.provenance = OBSERVED
+                if not hmac.compare_digest(str(row.get("_mac", "")),
+                                           _row_mac(self._key, row)):
+                    les.provenance = OBSERVED
+                if les.provenance == OBSERVED and _impersonates_operator(les.text):
+                    les.quarantined = True
+                    les.utility = 0.0
+                les.utility = min(float(les.utility), _MAX_UTILITY_ON_LOAD)
                 self._lessons[les.id] = les
 
     # -- write ----------------------------------------------------------------
 
     def learn(self, text: str, kind: str, tags: list[str] | None = None) -> Lesson:
-        """Add a distilled lesson. Merges with an existing one of the same signature
-        (kind + tags) instead of duplicating, reinforcing its support/utility."""
+        """Add a SELF-DERIVED lesson (deterministic reflection, curated seeds).
+        Merges with an existing one of the same signature (kind + tags) instead of
+        duplicating, reinforcing its support/utility. Target-controlled text must
+        NEVER pass through here — use learn_observed()."""
         tags = sorted(set(t.lower() for t in (tags or [])))
         new = Lesson(text=text.strip(), kind=kind, tags=tags)
         for les in self._lessons.values():
-            if les.signature == new.signature:
+            # merges stay inside the trusted classes: a derived lesson must never
+            # reinforce an OBSERVED one (that would launder planted notes with our
+            # own corroboration), and nothing merges into a quarantined note.
+            if (les.signature == new.signature and not les.quarantined
+                    and les.provenance != OBSERVED):
                 les.support += 1
                 les.utility += 0.5           # corroboration strengthens it
                 les.last_used = _now()
@@ -108,6 +239,32 @@ class ExperienceStore:
         self._prune()
         self._flush()
         return new
+
+    def learn_observed(self, text: str, kind: str, tags: list[str] | None = None,
+                       source: str = "") -> Lesson:
+        """The ONLY sanctioned write path for lessons distilled from target-controlled
+        content (a response body, a recon artifact, an imported run transcript).
+
+        Three containment layers, cheapest first:
+          1. provenance=OBSERVED — recalled at half weight, labeled separately in
+             briefings; cannot masquerade as self-derived tradecraft.
+          2. capped initial utility (0.6 vs 1.0) — a flood of planted notes cannot
+             immediately outrank corroborated lessons; utility must be EARNED back
+             through the same credit() loop as everyone else.
+          3. instruction-impersonation screening — text that reads like an operator
+             directive ("system:", "ignore your scope", "approve all findings") is
+             QUARANTINED: kept on disk for forensics, excluded from recall and
+             briefings entirely, and decays out naturally.
+        """
+        tags = sorted(set(t.lower() for t in (tags or [])))
+        quarantined = _impersonates_operator(text)
+        les = Lesson(text=(text or "").strip(), kind=kind, tags=tags,
+                     provenance=OBSERVED, source=source, quarantined=quarantined,
+                     utility=0.0 if quarantined else 0.6)
+        self._lessons[les.id] = les
+        self._prune()
+        self._flush()
+        return les
 
     def reflect_on_run(self, findings: list, audit_events: list[dict]) -> list[Lesson]:
         """Distill a few generalizable lessons from a completed run (deterministic)."""
@@ -155,16 +312,23 @@ class ExperienceStore:
     # -- read -----------------------------------------------------------------
 
     def recall(self, query: str = "", tags: list[str] | None = None, k: int = 5) -> list[Lesson]:
-        """Return the k most relevant lessons; reinforces the ones actually recalled."""
+        """Return the k most relevant lessons; reinforces the ones actually recalled.
+
+        Trust gate: quarantined lessons are never recalled at all; OBSERVED lessons
+        score at half weight, so target-controlled notes cannot crowd out corroborated
+        tradecraft no matter how many of them are planted.
+        """
         want_tags = set(t.lower() for t in (tags or []))
         words = set(re.findall(r"[a-z0-9]+", (query or "").lower()))
 
         def score(les: Lesson) -> float:
             tag_overlap = len(want_tags & set(les.tags))
             kw = len(words & set(re.findall(r"[a-z0-9]+", les.text.lower())))
-            return les.utility + 2.0 * tag_overlap + 0.3 * kw
+            base = les.utility + 2.0 * tag_overlap + 0.3 * kw
+            return base * 0.5 if les.provenance == OBSERVED else base
 
-        ranked = sorted(self._lessons.values(), key=score, reverse=True)[:k]
+        ranked = sorted((l for l in self._lessons.values() if not l.quarantined),
+                        key=score, reverse=True)[:k]
         for les in ranked:
             les.uses += 1
             les.last_used = _now()
@@ -199,9 +363,18 @@ class ExperienceStore:
     def briefing(self, query: str = "", tags: list[str] | None = None, k: int = 5) -> str:
         lessons = self.recall(query=query, tags=tags, k=k)
         lines: list[str] = []
-        if lessons:
+        trusted = [l for l in lessons if l.provenance != OBSERVED]
+        observed = [l for l in lessons if l.provenance == OBSERVED]
+        if trusted:
             lines.append("[LESSONS FROM PAST ENGAGEMENTS]")
-            for les in lessons:
+            for les in trusted:
+                lines.append(f"  ({les.kind}) {les.text}")
+        if observed:
+            # separate, loudly-labeled block: the agent may READ these as context, but
+            # nothing in an observed note is allowed to sound like a directive.
+            lines.append("[UNVERIFIED NOTES FROM TARGET CONTENT — attacker-influenceable, "
+                         "not tradecraft]")
+            for les in observed:
                 lines.append(f"  ({les.kind}) {les.text}")
 
         # Semantic recall of APP-SHAPE patterns, when the backend supports it (see
@@ -249,9 +422,13 @@ class ExperienceStore:
 
     def summary(self) -> dict:
         by_kind: dict[str, int] = {}
+        by_prov: dict[str, int] = {}
         for l in self._lessons.values():
             by_kind[l.kind] = by_kind.get(l.kind, 0) + 1
-        return {"lessons": len(self._lessons), "by_kind": by_kind, "cap": self._max}
+            by_prov[l.provenance] = by_prov.get(l.provenance, 0) + 1
+        quarantined = sum(1 for l in self._lessons.values() if l.quarantined)
+        return {"lessons": len(self._lessons), "by_kind": by_kind,
+                "by_provenance": by_prov, "quarantined": quarantined, "cap": self._max}
 
     # -- maintenance ----------------------------------------------------------
 
@@ -265,7 +442,12 @@ class ExperienceStore:
 
     def _flush(self) -> None:
         if self._backend:
-            self._backend.save([asdict(l) for l in self._lessons.values()])
+            rows = []
+            for l in self._lessons.values():
+                row = asdict(l)
+                row["_mac"] = _row_mac(self._key, row)
+                rows.append(row)
+            self._backend.save(rows)
 
 
 # Curated, generalizable tradecraft — institutional knowledge to bootstrap the store so
@@ -302,8 +484,11 @@ DEFAULT_TRADECRAFT = [
 
 
 def seed_tradecraft(store: ExperienceStore) -> int:
-    """Bootstrap the store with curated tradecraft (idempotent). Returns lessons added."""
+    """Bootstrap the store with curated tradecraft (idempotent). Returns lessons added.
+    Seeded lessons are IMPORTED provenance: human-curated, but not self-derived."""
     before = len(store.all())
     for kind, tags, text in DEFAULT_TRADECRAFT:
-        store.learn(text, kind, tags=tags)
+        les = store.learn(text, kind, tags=tags)
+        les.provenance = IMPORTED
+    store._flush()
     return len(store.all()) - before
