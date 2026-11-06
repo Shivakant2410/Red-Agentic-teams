@@ -1,11 +1,11 @@
 {
   "tool": "swarm",
-  "version": "0.3.0-m0",
-  "generated": "2026-11-06T14:46:05+0000",
-  "elapsed_s": 2.4,
-  "requests": 295,
+  "version": "0.4.0-m1",
+  "generated": "2026-11-06T15:23:36+0000",
+  "elapsed_s": 6.2,
+  "requests": 374,
   "statefuzz_sub_budget_requests": null,
-  "rounds": 32,
+  "rounds": 40,
   "roster": [
     "recon",
     "surface_mapper",
@@ -13,18 +13,20 @@
     "exploit",
     "verify",
     "access",
-    "statefuzz_spec"
+    "statefuzz_spec",
+    "window_driver"
   ],
   "spawn_events": [],
   "llm_seam_calls": [],
+  "markers_registered": 5,
   "ledger": {
-    "facts": 39,
+    "facts": 49,
     "by_kind": {
-      "CONTROL": 11,
-      "OBSERVATION": 8,
+      "CONTROL": 14,
+      "OBSERVATION": 12,
       "SURFACE": 1,
       "HYPOTHESIS": 10,
-      "FINDING": 8,
+      "FINDING": 11,
       "ESCALATION": 1
     },
     "by_source": {
@@ -33,27 +35,44 @@
       "surface_mapper": 3,
       "hypothesis": 10,
       "exploit": 10,
-      "verify": 8,
+      "verify": 11,
       "access": 1,
-      "router": 1
+      "router": 1,
+      "window_driver": 7
     }
   },
   "hypothesis_ledger": {
     "stats": {
-      "total": 11,
+      "total": 16,
       "by_status": {
+        "confirmed": 9,
+        "refuted": 3,
         "inconclusive": 2,
         "tested": 1,
-        "confirmed": 6,
-        "refuted": 1,
         "confirmed-by-transcript": 1
       },
       "by_source": {
-        "swarm-board/e291f4": 10,
-        "deferred-window/e291f4": 1
+        "window-driver/scan": 4,
+        "window-driver/fresh": 1,
+        "swarm-board/305b07": 10,
+        "deferred-window/305b07": 1
+      },
+      "by_tag": {
+        "marker": 5,
+        "h_idor": 1,
+        "h_fsm": 1,
+        "h_hidden_verbs": 1,
+        "h_state_guard": 1,
+        "h_mass_assign": 1,
+        "h_cross_tenant": 1,
+        "h_async_toctou": 1,
+        "h_terminal_credit": 1,
+        "h_arith_cycle": 1,
+        "h_quota_race": 1,
+        "deferred-window": 1
       }
     },
-    "score": 7.75
+    "score": 12.75
   },
   "memory_before": {
     "recon": {
@@ -127,6 +146,12 @@
     },
     "statefuzz_spec": {
       "name": "statefuzz_spec",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "window_driver": {
+      "name": "window_driver",
       "techniques": {},
       "insights": 0,
       "trials": 0
@@ -207,6 +232,12 @@
       "techniques": {},
       "insights": 0,
       "trials": 0
+    },
+    "window_driver": {
+      "name": "window_driver",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
     }
   },
   "findings": [
@@ -254,7 +285,7 @@
         "h_state_guard"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0057"
+        "SF-EXPLOIT-0074"
       ]
     },
     {
@@ -269,7 +300,7 @@
         "endpoint": "POST /api/vaults/{vault_id}/resize (terminal-state)",
         "evidence": [
           {
-            "canceled_object": "VLT-cf5ae18a98",
+            "canceled_object": "VLT-67bb261d52",
             "verb": "resize",
             "status": 200,
             "credit_after_terminal": 100,
@@ -299,7 +330,7 @@
         "h_state_guard"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0058"
+        "SF-EXPLOIT-0075"
       ]
     },
     {
@@ -314,8 +345,8 @@
         "endpoint": "GET /api/audit",
         "evidence": [
           {
-            "victim": "xtv-95-363367",
-            "leaked_id": "VLT-c7d162d352",
+            "victim": "xtv-95-610103",
+            "leaked_id": "VLT-e8b46e396c",
             "leak_path": "/api/audit"
           }
         ],
@@ -341,7 +372,7 @@
         "h_cross_tenant"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0061"
+        "SF-EXPLOIT-0078"
       ]
     },
     {
@@ -356,9 +387,9 @@
         "endpoint": "POST /api/vaults/{vault_id}/resize (cross-tenant)",
         "evidence": [
           {
-            "victim": "xtv-95-363367",
-            "attacker": "xta-98-363372",
-            "object": "VLT-c7d162d352",
+            "victim": "xtv-95-610103",
+            "attacker": "xta-98-610108",
+            "object": "VLT-e8b46e396c",
             "attacker_gain": 99,
             "obtained_via": "/api/audit"
           }
@@ -385,7 +416,7 @@
         "h_cross_tenant"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0062"
+        "SF-EXPLOIT-0079"
       ]
     },
     {
@@ -404,7 +435,7 @@
             "drained_during_window": 250000,
             "settled_amount": 125000,
             "final_balance": -125000,
-            "event": "/api/events/EV-4f279092a29a"
+            "event": "/api/events/EV-23ebcc1f79bf"
           }
         ],
         "preconditions": [
@@ -430,7 +461,7 @@
         "h_async_toctou"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0065"
+        "SF-EXPLOIT-0082"
       ]
     },
     {
@@ -445,7 +476,7 @@
         "endpoint": "POST /api/payouts/{payout_id}/cancel",
         "evidence": [
           {
-            "payout": "PAY-f2d5690f14",
+            "payout": "PAY-a4c7086b3b",
             "amount": 83333,
             "settled_debit": 83333,
             "cancel_credit": 83333,
@@ -466,17 +497,22 @@
       "status": "verified",
       "verification": {
         "by": "verify",
-        "method": "independent re-execution reproduced the violation with fresh principals",
+        "method": "fresh replay: cancel after settle refunded 83333",
         "independent_principals": []
       },
       "provenance": [
-        "exploit"
+        "exploit",
+        "window_driver"
       ],
       "techniques": [
-        "h_terminal_credit"
+        "h_terminal_credit",
+        "h_window_driver"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0067"
+        "SF-EXPLOIT-0084",
+        "SF-WINDOW_DRIVER-0096",
+        "SF-WINDOW_DRIVER-0097",
+        "SF-WINDOW_DRIVER-0098"
       ]
     },
     {
@@ -520,7 +556,7 @@
         "h_arith_cycle"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0069"
+        "SF-EXPLOIT-0086"
       ]
     },
     {
@@ -540,14 +576,14 @@
             "successful_claims": 8,
             "advertised_quota": 3,
             "winning_principals": [
-              "qrc0-244-365528",
-              "qrc1-246-365531",
-              "qrc2-248-365534",
-              "qrc3-250-365538",
-              "qrc4-252-365541",
-              "qrc5-254-365544",
-              "qrc6-256-365548",
-              "qrc7-258-365551"
+              "qrc0-246-612478",
+              "qrc1-248-612481",
+              "qrc2-250-612484",
+              "qrc3-252-612487",
+              "qrc4-254-612491",
+              "qrc5-256-612494",
+              "qrc6-258-612497",
+              "qrc7-260-612501"
             ],
             "last_byte_sync": true
           }
@@ -575,7 +611,7 @@
         "h_quota_race"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0071"
+        "SF-EXPLOIT-0088"
       ]
     }
   ],

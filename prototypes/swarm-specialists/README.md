@@ -25,6 +25,7 @@ Every module below cites its research basis (M1–M8, E1–E6).
 | VERIFY | `verify` | FINDING candidate | fresh_principal | independent re-execution, fresh principals (E3) |
 | ACCESS | `access` | finding_verified CONTROL | chain | capability chains → ESCALATION facts |
 | LOGIC | `statefuzz_spec` | spawn-only | run_statefuzz | the Phase-B tool, sub-budget isolated |
+| WINDOW | `window_driver` | OBSERVATION async-opened / stall | (ledger-driven) | M1: registers 202/event markers, drives deferred windows (GV-4/GV-5) |
 
 ## Quickstart
 

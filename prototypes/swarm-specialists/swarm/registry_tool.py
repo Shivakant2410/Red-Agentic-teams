@@ -219,8 +219,11 @@ def run(ctx, budget=None):
 
     llm = LLMSeam(backend=ctx.get("llm_backend"))
     board = Blackboard()
-    # M0 ledger seam: passive spine by default (it never steers dispatch in
-    # M0 — that is M1); "ledger": False keeps the pure deterministic path.
+    # M0 seam: the promoted HypothesisLedger spine. M1: it no longer only
+    # resolves — the WINDOW specialist registers live markers from observed
+    # 202/event shapes and the WindowDriver drives their deferred windows
+    # between dispatch rounds. ctx["ledger"] False keeps the pure
+    # deterministic v1 path.
     ledger = HypothesisLedger() \
         if (_SPINE_AVAILABLE and ctx.get("ledger", True)) else None
     ctx2 = {"executor": ex, "memory": memory, "llm": llm, "run_id": run_id,
@@ -237,7 +240,7 @@ def run(ctx, budget=None):
     specialists = [cls(ctx2) for cls in
                    (ROSTER["RECON"], ROSTER["SURFACE"], ROSTER["HYPOTHESES"],
                     ROSTER["EXPLOIT"], ROSTER["VERIFY"], ROSTER["ACCESS"],
-                    ROSTER["LOGIC"])]
+                    ROSTER["LOGIC"], ROSTER["WINDOW"])]
 
     started = time.time()
     board.publish(Fact.make("CONTROL", "orchestrator",
@@ -280,11 +283,16 @@ def run(ctx, budget=None):
 
 def _dedupe(findings):
     """Merge duplicate findings by (invariant, endpoint): keep the first,
-    record who else found it (provenance merging)."""
+    record who else found it (provenance merging). Endpoint templates are
+    normalised ({vault_id} -> {id}) so two finders that name the same
+    mechanism with different parameter names merge (M1: the window driver
+    and the technique library both report settle/cancel classes)."""
+    import re as _re
     out, index = [], {}
     for f in findings:
         fd = f["payload"]["finding"]
-        key = (fd["invariant"], fd["endpoint"])
+        key = (fd["invariant"],
+               _re.sub(r"\{[^}]*\}", "{id}", fd["endpoint"]))
         if key not in index:
             entry = {"finding": dict(fd), "status": f["payload"]["status"],
                      "verification": f["payload"].get("verification"),
@@ -319,7 +327,7 @@ def _assemble(board, router, ex, started, out_dir, memory_dir,
     if os.path.exists(sf_doc_path):
         sf_requests = json.load(open(sf_doc_path)).get("requests")
 
-    doc = {"tool": "swarm", "version": "0.3.0-m0",
+    doc = {"tool": "swarm", "version": "0.4.0-m1",
            "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
            "elapsed_s": round(time.time() - started, 1),
            "requests": ex.count,
@@ -328,6 +336,8 @@ def _assemble(board, router, ex, started, out_dir, memory_dir,
            "roster": [s.name for s in router.specialists],
            "spawn_events": router.spawn_events,
            "llm_seam_calls": llm.calls,
+           "markers_registered": (ledger_stats or {}).get("stats", {})
+           .get("by_tag", {}).get("marker", 0),
            "ledger": board.ledger(),
            "hypothesis_ledger": ledger_stats,
            "memory_before": mem_before, "memory_after": mem_after,
@@ -346,6 +356,8 @@ def _assemble(board, router, ex, started, out_dir, memory_dir,
             "elapsed_s": doc["elapsed_s"],
             "ledger": doc["ledger"], "roster": doc["roster"],
             "hypothesis_ledger": ledger_stats,
+            "markers_registered": (ledger_stats or {}).get("stats", {})
+            .get("by_tag", {}).get("marker", 0),
             "spawn_events": doc["spawn_events"],
             "llm_seam_calls": doc["llm_seam_calls"],
             "findings": [{"id": f["finding"]["id"],

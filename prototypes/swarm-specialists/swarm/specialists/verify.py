@@ -80,6 +80,25 @@ class VerifySpecialist(Specialist):
 
     # -------------------------------------------------- independent checks ---
     def _independent_check(self, fd, board=None, technique=None):
+        if technique == "h_window_driver" and board is not None:
+            # M1: window-driver findings re-execute through the SAME driver
+            # code with a fresh principal (E3) — the seam is re-opened, the
+            # window re-driven, the violation re-derived from wallets.
+            try:
+                from engine.window import WindowDriver
+            except ImportError:
+                return ("refuted", "spine absent: cannot replay the window")
+            ledger = self.ctx.get("ledger")
+            if ledger is None:
+                return ("refuted", "spine off: cannot replay the window")
+            surfaces = board.query(kind="SURFACE")
+            surface = surfaces[-1]["payload"] if surfaces else {}
+            driver = WindowDriver(ledger, self.ctx["executor"], surface,
+                                  anon=self.ctx.get("anon"), phase="verify")
+            try:
+                return driver.verify_finding(fd)
+            except Exception as e:          # verification plan errored
+                return ("refuted", "re-execution errored: %s" % repr(e)[:80])
         if technique in techniques.GENERIC_TAGS and board is not None:
             surfaces = board.query(kind="SURFACE")
             surface = surfaces[-1]["payload"] if surfaces else {}

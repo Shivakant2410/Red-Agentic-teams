@@ -1,8 +1,8 @@
 {
   "tool": "statefuzz",
   "version": "0.1.0",
-  "generated": "2026-11-06T14:46:11+0000",
-  "elapsed_s": 1.0,
+  "generated": "2026-11-06T15:23:41+0000",
+  "elapsed_s": 0.9,
   "requests": 87,
   "invariant_classes": [
     "I1",
@@ -61,7 +61,7 @@
           "req_body": null,
           "status": 201,
           "resp_body": {
-            "order_id": "ORD-6ba68a46",
+            "order_id": "ORD-64d9223a",
             "status": "initiated",
             "total_cents": -2700
           }
@@ -70,12 +70,12 @@
           "method": "POST",
           "path": "/api/checkout/confirm",
           "req_body": {
-            "order_id": "ORD-6ba68a46"
+            "order_id": "ORD-64d9223a"
           },
           "status": 200,
           "resp_body": {
             "charged_cents": -2700,
-            "order_id": "ORD-6ba68a46",
+            "order_id": "ORD-64d9223a",
             "status": "paid"
           }
         },
@@ -318,7 +318,7 @@
           "req_body": null,
           "status": 201,
           "resp_body": {
-            "order_id": "ORD-1622ef8f",
+            "order_id": "ORD-7a59a008",
             "status": "initiated",
             "total_cents": 1800
           }
@@ -329,23 +329,23 @@
           "req_body": null,
           "status": 201,
           "resp_body": {
-            "order_id": "ORD-82b9d46b",
+            "order_id": "ORD-6d328c20",
             "status": "initiated",
             "total_cents": 1800
           }
         },
         {
           "order_ids": [
-            "ORD-1622ef8f",
-            "ORD-82b9d46b"
+            "ORD-7a59a008",
+            "ORD-6d328c20"
           ],
           "violation": {
             "invariant": "I2",
             "assertion": "cart snapshot: 1 -> <=1 order",
             "observed": {
               "order_ids": [
-                "ORD-1622ef8f",
-                "ORD-82b9d46b"
+                "ORD-7a59a008",
+                "ORD-6d328c20"
               ]
             },
             "detail": "checkout/init replayed from the same cart produced 2 orders with identical item sets"
@@ -383,23 +383,23 @@
           "req_body": null,
           "status": 201,
           "resp_body": {
-            "order_id": "ORD-1662668f",
+            "order_id": "ORD-e7c0d4ce",
             "status": "initiated",
             "total_cents": 129900
           }
         },
         {
           "method": "POST",
-          "path": "/api/orders/ORD-1662668f/ship",
+          "path": "/api/orders/ORD-e7c0d4ce/ship",
           "req_body": null,
           "status": 200,
           "resp_body": {
-            "order_id": "ORD-1662668f",
+            "order_id": "ORD-e7c0d4ce",
             "status": "shipped"
           }
         },
         {
-          "order_id": "ORD-1662668f",
+          "order_id": "ORD-e7c0d4ce",
           "violation": {
             "invariant": "I2",
             "assertion": "action in delta(alpha(s))",
@@ -442,11 +442,11 @@
       "evidence": [
         {
           "method": "GET",
-          "path": "/api/orders/ORD-5010b3d3",
+          "path": "/api/orders/ORD-7ac9f829",
           "req_body": null,
           "status": 200,
           "resp_body": {
-            "id": "ORD-5010b3d3",
+            "id": "ORD-7ac9f829",
             "items": {
               "SKU-GPU": 1
             },
@@ -496,23 +496,23 @@
       "evidence": [
         {
           "method": "POST",
-          "path": "/api/orders/ORD-be407457/refund",
+          "path": "/api/orders/ORD-ac284ed2/refund",
           "req_body": null,
           "status": 200,
           "resp_body": {
             "credited_cents": 129900,
-            "order_id": "ORD-be407457",
+            "order_id": "ORD-ac284ed2",
             "status": "refunded"
           }
         },
         {
           "method": "POST",
-          "path": "/api/orders/ORD-be407457/refund",
+          "path": "/api/orders/ORD-ac284ed2/refund",
           "req_body": null,
           "status": 200,
           "resp_body": {
             "credited_cents": 129900,
-            "order_id": "ORD-be407457",
+            "order_id": "ORD-ac284ed2",
             "status": "refunded"
           }
         },
@@ -553,23 +553,23 @@
       "evidence": [
         {
           "method": "POST",
-          "path": "/api/orders/ORD-be407457/refund",
+          "path": "/api/orders/ORD-ac284ed2/refund",
           "req_body": null,
           "status": 200,
           "resp_body": {
             "credited_cents": 129900,
-            "order_id": "ORD-be407457",
+            "order_id": "ORD-ac284ed2",
             "status": "refunded"
           }
         },
         {
           "method": "POST",
-          "path": "/api/orders/ORD-be407457/refund",
+          "path": "/api/orders/ORD-ac284ed2/refund",
           "req_body": null,
           "status": 200,
           "resp_body": {
             "credited_cents": 129900,
-            "order_id": "ORD-be407457",
+            "order_id": "ORD-ac284ed2",
             "status": "refunded"
           }
         },
@@ -634,11 +634,11 @@
           "wallet_before": 870100,
           "wallet_after": 1129900,
           "callback": {
-            "marker": "05b34ebc7291",
+            "marker": "4651027abe89",
             "refund_cents": 129900,
             "status": "done"
           },
-          "marker": "05b34ebc7291"
+          "marker": "4651027abe89"
         }
       ],
       "reproduction": [

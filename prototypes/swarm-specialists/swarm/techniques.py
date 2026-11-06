@@ -32,6 +32,12 @@ VERB_WORDLIST = ("release", "settle", "capture", "approve", "confirm",
                  "complete", "retry", "restore", "refund", "revoke")
 PRICE_CANDIDATES = ("unit_price_cents", "unit_cents", "price_cents",
                     "amount_cents", "discount_pct")
+# G1(a): standard async money-resource nouns — the probe LIST only finds a
+# candidate route; the MARKER is registered solely from an observed
+# 202/event shape (grounded-only, E6). Presence classification: 404/405
+# means absent; any validation/auth status means the resource exists.
+ASYNC_SEAM_NOUNS = ("payouts", "withdrawals", "settlements", "refunds",
+                    "transfers", "disbursements")
 
 
 # ------------------------------------------------- U3: schema-from-errors --
@@ -91,7 +97,8 @@ def _body_from_schema(schema):
     return body
 EST = {"h_quota_race": 50, "h_arith_cycle": 40, "h_state_guard": 14,
        "h_async_toctou": 18, "h_mass_assign": 18, "h_cross_tenant": 24,
-       "h_hidden_verbs": 20, "h_terminal_credit": 20}
+       "h_hidden_verbs": 20, "h_terminal_credit": 20,
+       "h_async_seam": 16}
 
 GENERIC_TAGS = tuple(EST)
 
@@ -833,11 +840,72 @@ def t_terminal_credit(env):
     return []
 
 
+def t_async_seam(env):
+    """G1(a): a money surface with NO documented async seam may hide one.
+    Probes the standard async money-resource nouns, learns the create field
+    from the validation error (U3 analogue), opens ONE seam, and publishes
+    the async-opened observation the window driver consumes. Discovery is
+    probe-grounded; the marker itself is registered only from the observed
+    202/event shape (grounded-only, E6)."""
+    try:
+        from engine.window import classify_async, field_from_error
+    except ImportError:                         # spine absent: v1 path
+        return []
+    p = env.register("seam")
+    b = env.wallet(p)
+    if not b:
+        return []                               # not a money target
+    for path in env.surface.get("endpoints", []) or []:
+        low = str(path).lower()
+        if any(w in low for w in ("async", "callback", "/events")):
+            return []          # documented async seam: h_async covers it
+    hit = None
+    for noun in ASYNC_SEAM_NOUNS:
+        if env.remaining() < 6:
+            return []
+        path = "/api/%s" % noun
+        r = env.ex.request(p, "POST", path, body={}, phase=env.phase,
+                           tag="seam-probe")
+        if r["status"] not in (404, 405):
+            hit = (noun, path, r)
+            break
+    if not hit:
+        return []
+    noun, path, probe = hit
+    field = field_from_error(probe["resp_body"]) or "amount"
+    amt = max(1, b // 2)
+    r2 = env.ex.request(p, "POST", path, body={field: amt},
+                        phase=env.phase, tag="seam-open")
+    shape = classify_async(r2)
+    if not shape:
+        # resource exists but is not async-shaped: discovery fact only
+        return [{"kind": "OBSERVATION", "tags": ["async-seam"],
+                 "payload": {"async_seam": {"noun": noun, "path": path,
+                                            "open_status": r2["status"]},
+                            "evidence": "probe %d, open %d (not async "
+                                        "shaped)" % (probe["status"],
+                                                     r2["status"])}}]
+    shape["principal"] = p.name
+    shape["baseline"] = env.wallet(p)
+    return [{"kind": "OBSERVATION", "tags": ["async-seam", "async-opened"],
+             "payload": {"async_opened": shape,
+                         "seam": {"noun": noun, "path": path,
+                                  "field": field, "amount": amt,
+                                  "baseline": shape["baseline"],
+                                  "principal": p.name,
+                                  "event": shape["event_path"]},
+                         "evidence": "POST %s {} -> %d; POST %s {%s: %d} "
+                                     "-> 202 %s" % (path, probe["status"],
+                                                    path, field, amt,
+                                                    shape["event_path"])}}]
+
+
 RUNNERS = {"h_quota_race": t_quota_race, "h_arith_cycle": t_arith_cycle,
            "h_state_guard": t_state_guard, "h_async_toctou": t_async_toctou,
            "h_mass_assign": t_mass_assign, "h_cross_tenant": t_cross_tenant,
            "h_hidden_verbs": t_hidden_verbs,
-           "h_terminal_credit": t_terminal_credit}
+           "h_terminal_credit": t_terminal_credit,
+           "h_async_seam": t_async_seam}
 
 
 def run(tag, env):

@@ -47,6 +47,10 @@ GENERIC_RULES = [
      "accumulate rounding drift", 0.45, "cycle 12x, net wallet delta"),
     ("h_quota_race", "Quota-limited claims may lose the check-then-act race "
      "to distinct principals", 0.50, "multi-principal last-byte race"),
+    ("h_async_seam", "A money surface with no documented async seam may "
+     "hide one (deferred-effect lifecycle with unguarded settle/cancel)",
+     0.45, "noun-probe resource creates; learn the field from the error "
+           "contract; open one seam; window driver takes it from there"),
 ]
 
 
@@ -87,6 +91,14 @@ def _generic_gate(tag, surface):
     if tag == "h_quota_race":
         return any(a.get("verb") in ("claim", "redeem", "consume", "activate")
                    for a in actions)
+    if tag == "h_async_seam":
+        # money target (a discovered read-back) with NO documented async
+        # seam — the stale-doc class where deferred windows hide (G1)
+        documented = [str(p).lower() for p in (surface.get("endpoints") or [])]
+        async_doc = any(w in p for p in documented
+                        for w in ("async", "callback", "/events"))
+        return bool(surface.get("readback")) and not async_doc and \
+            any(g.get("create") for g in graph.values())
     return False
 
 

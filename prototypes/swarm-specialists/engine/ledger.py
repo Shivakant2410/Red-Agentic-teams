@@ -90,6 +90,43 @@ class HypothesisLedger:
                          "expectation": expectation, "ttl": ttl}
         return e
 
+    # ---------------------------------------------------- M1: live markers --
+    def mark(self, source, shape, derived_from, ttl=6.0):
+        """M1 (G1a): register a LIVE deferred-effect marker from an observed
+        202/event shape. This is the spine generating hypotheses, not only
+        resolving them: the marker is a proposed belief — "this seam will
+        move the balance exactly once by -amount" — that the window driver
+        must test before it can become anything.
+
+        Grounding discipline (E6): derived_from MUST be a surface or
+        observation fact id — a marker is never registered from nothing.
+
+        shape: {event_path, create_path, resource, object_id, amount,
+                amount_field, principal, baseline}
+        """
+        assert derived_from, "marker without grounded provenance"
+        ev = shape.get("event_path") or "?"
+        e = self.propose(source, "marker",
+                         "async seam %s will debit %s exactly once"
+                         % (ev, shape.get("amount", "?")), prior=0.55,
+                         plan="drain inside window -> poll %s -> cancel "
+                              "after settle -> wallet read-back" % ev,
+                         derived_from=derived_from, hid=shape.get("hid"))
+        e["marker"] = dict(shape, ttl=ttl, state="registered",
+                           actions_done=[])
+        return e
+
+    def markers(self, state=None):
+        """All live marker entries (optionally filtered by marker state)."""
+        out = []
+        for e in self.entries:
+            if e["tag"] != "marker":
+                continue
+            if state and (e.get("marker") or {}).get("state") != state:
+                continue
+            out.append(e)
+        return out
+
     # -------------------------------------------------------------- views --
     def _get(self, hid):
         for e in self.entries:
@@ -102,12 +139,13 @@ class HypothesisLedger:
                 if e["source"].startswith(source_prefix)]
 
     def stats(self):
-        by_status, by_source = {}, {}
+        by_status, by_source, by_tag = {}, {}, {}
         for e in self.entries:
             by_status[e["status"]] = by_status.get(e["status"], 0) + 1
             by_source[e["source"]] = by_source.get(e["source"], 0) + 1
+            by_tag[e["tag"]] = by_tag.get(e["tag"], 0) + 1
         return {"total": len(self.entries), "by_status": by_status,
-                "by_source": by_source}
+                "by_source": by_source, "by_tag": by_tag}
 
     def score(self):
         """Sum of resolution weights — the engine's honest yield, where a

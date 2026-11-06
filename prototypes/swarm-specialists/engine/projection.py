@@ -146,7 +146,11 @@ def project_swarm(ledger, facts, trace, run_label, requests_spent,
                            {"note": "never dispatched (budget, stall, or "
                                     "router priority)"})
 
-    # deferred settle windows: ONE hypothesis per run, evidence = the polls
+    # deferred settle windows: ONE hypothesis per run, evidence = the polls.
+    # M1: event paths already covered by LIVE markers (the window driver
+    # registered them mid-run) are not re-registered here.
+    marked_paths = {(e.get("marker") or {}).get("event_path")
+                    for e in ledger.entries if e.get("tag") == "marker"}
     events = {}
     if traffic_path and os.path.exists(traffic_path):
         for line in open(traffic_path):
@@ -155,7 +159,7 @@ def project_swarm(ledger, facts, trace, run_label, requests_spent,
             if isinstance(rb, dict) and x.get("status") == 202:
                 ev = next((v for v in rb.values()
                            if isinstance(v, str) and v.startswith("/")), None)
-                if ev:
+                if ev and ev not in marked_paths:
                     events.setdefault(ev, 0)
             if x.get("tag") == "event-poll" and x.get("path") in events:
                 events[x["path"]] += 1

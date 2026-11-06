@@ -1,0 +1,100 @@
+{
+  "generated": "2026-11-06T15:23:05+0000",
+  "tree": "/home/z/my-project/ra-work/prototypes/swarm-specialists",
+  "exit": {
+    "gv_hits": [
+      "GV-4",
+      "GV-5",
+      "GV-7"
+    ],
+    "per_run": {
+      "run1": [
+        "GV-7:verified",
+        "GV-5:verified",
+        "GV-4:verified"
+      ],
+      "run2": [
+        "GV-7:verified",
+        "GV-5:verified",
+        "GV-4:verified"
+      ]
+    },
+    "decoy_false_positives": [],
+    "markers": [
+      {
+        "run": "run1",
+        "markers": 2,
+        "grounded": true,
+        "confirmed": 2,
+        "refuted": 0
+      },
+      {
+        "run": "run2",
+        "markers": 2,
+        "grounded": true,
+        "confirmed": 2,
+        "refuted": 0
+      }
+    ],
+    "requests_run1": 203,
+    "requests_run2": 136,
+    "rounds_run1": 40,
+    "llm_seam_calls": 0
+  },
+  "labs": {
+    "freightlane": {
+      "gv_hits": [
+        "GV-4",
+        "GV-5",
+        "GV-7"
+      ],
+      "per_run": {
+        "run1": [
+          "GV-7:verified",
+          "GV-5:verified",
+          "GV-4:verified"
+        ],
+        "run2": [
+          "GV-7:verified",
+          "GV-5:verified",
+          "GV-4:verified"
+        ]
+      },
+      "decoy_false_positives": [],
+      "markers": [
+        {
+          "run": "run1",
+          "markers": 2,
+          "grounded": true,
+          "confirmed": 2,
+          "refuted": 0
+        },
+        {
+          "run": "run2",
+          "markers": 2,
+          "grounded": true,
+          "confirmed": 2,
+          "refuted": 0
+        }
+      ],
+      "requests_run1": 203,
+      "requests_run2": 136,
+      "rounds_run1": 40,
+      "llm_seam_calls": 0
+    },
+    "dvlba": {
+      "seeds_hit": [
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "B5",
+        "B6",
+        "B7",
+        "B8"
+      ],
+      "false_positives": {}
+    }
+  },
+  "pass": true
+}

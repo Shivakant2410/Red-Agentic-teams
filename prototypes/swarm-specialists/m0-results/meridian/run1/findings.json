@@ -1,11 +1,11 @@
 {
   "tool": "swarm",
-  "version": "0.3.0-m0",
-  "generated": "2026-11-06T14:46:02+0000",
-  "elapsed_s": 3.0,
-  "requests": 309,
+  "version": "0.4.0-m1",
+  "generated": "2026-11-06T15:23:29+0000",
+  "elapsed_s": 3.7,
+  "requests": 365,
   "statefuzz_sub_budget_requests": null,
-  "rounds": 32,
+  "rounds": 40,
   "roster": [
     "recon",
     "surface_mapper",
@@ -13,18 +13,20 @@
     "exploit",
     "verify",
     "access",
-    "statefuzz_spec"
+    "statefuzz_spec",
+    "window_driver"
   ],
   "spawn_events": [],
   "llm_seam_calls": [],
+  "markers_registered": 10,
   "ledger": {
-    "facts": 39,
+    "facts": 56,
     "by_kind": {
       "CONTROL": 11,
-      "OBSERVATION": 8,
+      "OBSERVATION": 17,
       "SURFACE": 1,
       "HYPOTHESIS": 10,
-      "FINDING": 8,
+      "FINDING": 16,
       "ESCALATION": 1
     },
     "by_source": {
@@ -35,25 +37,42 @@
       "exploit": 10,
       "verify": 8,
       "access": 1,
-      "router": 1
+      "router": 1,
+      "window_driver": 17
     }
   },
   "hypothesis_ledger": {
     "stats": {
-      "total": 11,
+      "total": 21,
       "by_status": {
+        "confirmed": 14,
+        "refuted": 3,
         "inconclusive": 2,
         "tested": 1,
-        "confirmed": 6,
-        "refuted": 1,
         "confirmed-by-transcript": 1
       },
       "by_source": {
-        "swarm-board/f7b1d8": 10,
-        "deferred-window/f7b1d8": 1
+        "window-driver/scan": 9,
+        "window-driver/fresh": 1,
+        "swarm-board/5aac47": 10,
+        "deferred-window/5aac47": 1
+      },
+      "by_tag": {
+        "marker": 10,
+        "h_idor": 1,
+        "h_fsm": 1,
+        "h_hidden_verbs": 1,
+        "h_state_guard": 1,
+        "h_mass_assign": 1,
+        "h_cross_tenant": 1,
+        "h_async_toctou": 1,
+        "h_terminal_credit": 1,
+        "h_arith_cycle": 1,
+        "h_quota_race": 1,
+        "deferred-window": 1
       }
     },
-    "score": 7.75
+    "score": 17.75
   },
   "memory_before": {
     "recon": {
@@ -110,6 +129,12 @@
     },
     "statefuzz_spec": {
       "name": "statefuzz_spec",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "window_driver": {
+      "name": "window_driver",
       "techniques": {},
       "insights": 0,
       "trials": 0
@@ -190,6 +215,12 @@
       "techniques": {},
       "insights": 0,
       "trials": 0
+    },
+    "window_driver": {
+      "name": "window_driver",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
     }
   },
   "findings": [
@@ -252,7 +283,7 @@
         "endpoint": "POST /api/vaults/{vault_id}/resize (terminal-state)",
         "evidence": [
           {
-            "canceled_object": "VLT-20148ad012",
+            "canceled_object": "VLT-0f5d8f0823",
             "verb": "resize",
             "status": 200,
             "credit_after_terminal": 100,
@@ -297,8 +328,8 @@
         "endpoint": "GET /api/audit",
         "evidence": [
           {
-            "victim": "xtv-103-359962",
-            "leaked_id": "VLT-84d49bd63e",
+            "victim": "xtv-103-606030",
+            "leaked_id": "VLT-431a6d5bf1",
             "leak_path": "/api/audit"
           }
         ],
@@ -339,9 +370,9 @@
         "endpoint": "POST /api/vaults/{vault_id}/resize (cross-tenant)",
         "evidence": [
           {
-            "victim": "xtv-103-359962",
-            "attacker": "xta-106-359967",
-            "object": "VLT-84d49bd63e",
+            "victim": "xtv-103-606030",
+            "attacker": "xta-106-606035",
+            "object": "VLT-431a6d5bf1",
             "attacker_gain": 99,
             "obtained_via": "/api/audit"
           }
@@ -387,7 +418,7 @@
             "drained_during_window": 250000,
             "settled_amount": 125000,
             "final_balance": -125000,
-            "event": "/api/events/EV-b5572b61fb7c"
+            "event": "/api/events/EV-06200aa1fd6b"
           }
         ],
         "preconditions": [
@@ -428,7 +459,7 @@
         "endpoint": "POST /api/payouts/{payout_id}/cancel",
         "evidence": [
           {
-            "payout": "PAY-72a08aff90",
+            "payout": "PAY-125f67a881",
             "amount": 83333,
             "settled_debit": 83333,
             "cancel_credit": 83333,
@@ -453,13 +484,23 @@
         "independent_principals": []
       },
       "provenance": [
-        "exploit"
+        "exploit",
+        "window_driver"
       ],
       "techniques": [
-        "h_terminal_credit"
+        "h_terminal_credit",
+        "h_window_driver"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0030"
+        "SF-EXPLOIT-0030",
+        "SF-WINDOW_DRIVER-0047",
+        "SF-WINDOW_DRIVER-0048",
+        "SF-WINDOW_DRIVER-0049",
+        "SF-WINDOW_DRIVER-0050",
+        "SF-WINDOW_DRIVER-0051",
+        "SF-WINDOW_DRIVER-0052",
+        "SF-WINDOW_DRIVER-0053",
+        "SF-WINDOW_DRIVER-0054"
       ]
     },
     {
@@ -523,14 +564,14 @@
             "successful_claims": 8,
             "advertised_quota": 3,
             "winning_principals": [
-              "qrc0-258-362728",
-              "qrc1-260-362731",
-              "qrc2-262-362734",
-              "qrc3-264-362737",
-              "qrc4-266-362740",
-              "qrc5-268-362743",
-              "qrc6-270-362746",
-              "qrc7-272-362749"
+              "qrc0-257-608707",
+              "qrc1-259-608710",
+              "qrc2-261-608714",
+              "qrc3-263-608717",
+              "qrc4-265-608721",
+              "qrc5-267-608724",
+              "qrc6-269-608727",
+              "qrc7-271-608730"
             ],
             "last_byte_sync": true
           }

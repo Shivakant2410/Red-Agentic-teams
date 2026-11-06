@@ -3,7 +3,7 @@
     "id": "F-005",
     "kind": "CONTROL",
     "source": "orchestrator",
-    "ts": 1793976366.0342011,
+    "ts": 1793978616.5496824,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -13,10 +13,10 @@
     "derived_from": []
   },
   {
-    "id": "SF-RECON-0075",
+    "id": "SF-RECON-0102",
     "kind": "OBSERVATION",
     "source": "recon",
-    "ts": 1793976366.0390592,
+    "ts": 1793978616.5542984,
     "confidence": 1.0,
     "tags": [
       "openapi"
@@ -347,10 +347,10 @@
     ]
   },
   {
-    "id": "SF-RECON-0076",
+    "id": "SF-RECON-0103",
     "kind": "OBSERVATION",
     "source": "recon",
-    "ts": 1793976366.0442476,
+    "ts": 1793978616.5595758,
     "confidence": 1.0,
     "tags": [
       "fingerprint"
@@ -364,10 +364,10 @@
     ]
   },
   {
-    "id": "SF-SURFACE_MAPPER-0077",
+    "id": "SF-SURFACE_MAPPER-0104",
     "kind": "SURFACE",
     "source": "surface_mapper",
-    "ts": 1793976366.0565133,
+    "ts": 1793978616.5711644,
     "confidence": 1.0,
     "tags": [
       "surface"
@@ -620,14 +620,14 @@
       "other": []
     },
     "derived_from": [
-      "SF-RECON-0075"
+      "SF-RECON-0102"
     ]
   },
   {
-    "id": "SF-SURFACE_MAPPER-0078",
+    "id": "SF-SURFACE_MAPPER-0105",
     "kind": "OBSERVATION",
     "source": "surface_mapper",
-    "ts": 1793976366.0565183,
+    "ts": 1793978616.5711706,
     "confidence": 1.0,
     "tags": [
       "auth-boundary"
@@ -637,14 +637,14 @@
       "evidence": "anon GET /api/wallet -> 401"
     },
     "derived_from": [
-      "SF-RECON-0075"
+      "SF-RECON-0102"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0079",
+    "id": "SF-HYPOTHESIS-0106",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793976366.056624,
+    "ts": 1793978616.5712903,
     "confidence": 0.5,
     "tags": [
       "h_race"
@@ -658,14 +658,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0077"
+      "SF-SURFACE_MAPPER-0104"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0080",
+    "id": "SF-HYPOTHESIS-0107",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793976366.0566268,
+    "ts": 1793978616.571293,
     "confidence": 0.55,
     "tags": [
       "h_async"
@@ -679,14 +679,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0077"
+      "SF-SURFACE_MAPPER-0104"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0081",
+    "id": "SF-HYPOTHESIS-0108",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793976366.0566287,
+    "ts": 1793978616.5712953,
     "confidence": 0.6,
     "tags": [
       "h_idor"
@@ -700,14 +700,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0077"
+      "SF-SURFACE_MAPPER-0104"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0082",
+    "id": "SF-HYPOTHESIS-0109",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793976366.0566308,
+    "ts": 1793978616.571297,
     "confidence": 0.6,
     "tags": [
       "h_refund"
@@ -721,14 +721,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0077"
+      "SF-SURFACE_MAPPER-0104"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0083",
+    "id": "SF-HYPOTHESIS-0110",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793976366.0566328,
+    "ts": 1793978616.571299,
     "confidence": 0.5,
     "tags": [
       "h_coupon"
@@ -742,14 +742,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0077"
+      "SF-SURFACE_MAPPER-0104"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0084",
+    "id": "SF-HYPOTHESIS-0111",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793976366.0566354,
+    "ts": 1793978616.5713017,
     "confidence": 0.7,
     "tags": [
       "h_fsm"
@@ -763,14 +763,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0077"
+      "SF-SURFACE_MAPPER-0104"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0085",
+    "id": "SF-HYPOTHESIS-0112",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793976366.0566378,
+    "ts": 1793978616.5713038,
     "confidence": 0.5,
     "tags": [
       "h_mass_assign"
@@ -784,14 +784,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0077"
+      "SF-SURFACE_MAPPER-0104"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0086",
+    "id": "SF-HYPOTHESIS-0113",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793976366.0566397,
+    "ts": 1793978616.571306,
     "confidence": 0.45,
     "tags": [
       "h_arith_cycle"
@@ -805,14 +805,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0077"
+      "SF-SURFACE_MAPPER-0104"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0087",
+    "id": "SF-HYPOTHESIS-0114",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793976366.0566418,
+    "ts": 1793978616.5713084,
     "confidence": 0.5,
     "tags": [
       "h_quota_race"
@@ -826,14 +826,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0077"
+      "SF-SURFACE_MAPPER-0104"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0088",
+    "id": "SF-EXPLOIT-0115",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793976366.1072319,
+    "ts": 1793978616.6213934,
     "confidence": 1.0,
     "tags": [
       "h_race",
@@ -934,14 +934,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0079"
+      "SF-HYPOTHESIS-0106"
     ]
   },
   {
-    "id": "SF-VERIFY-0089",
+    "id": "SF-VERIFY-0116",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793976366.107291,
+    "ts": 1793978616.621454,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -951,14 +951,14 @@
       "technique": "h_race"
     },
     "derived_from": [
-      "SF-EXPLOIT-0088"
+      "SF-EXPLOIT-0115"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0090",
+    "id": "SF-EXPLOIT-0117",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793976367.228196,
+    "ts": 1793978617.7407093,
     "confidence": 1.0,
     "tags": [
       "h_async",
@@ -981,7 +981,7 @@
             "wallet_after": 1129900,
             "order_total": 129900,
             "callback": {
-              "marker": "8eabfc92e68e",
+              "marker": "ee87939bbdb0",
               "refund_cents": 129900,
               "status": "done"
             },
@@ -1008,19 +1008,19 @@
         "by": "verify",
         "method": "double refund credited twice",
         "independent_principals": [
-          "verify-9f964f-0"
+          "verify-6e06ce-0"
         ]
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0080"
+      "SF-HYPOTHESIS-0107"
     ]
   },
   {
-    "id": "SF-VERIFY-0091",
+    "id": "SF-VERIFY-0118",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793976367.2438383,
+    "ts": 1793978617.7553473,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -1030,14 +1030,14 @@
       "technique": "h_async"
     },
     "derived_from": [
-      "SF-EXPLOIT-0090"
+      "SF-EXPLOIT-0117"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0092",
+    "id": "SF-EXPLOIT-0119",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793976367.255686,
+    "ts": 1793978617.7664475,
     "confidence": 1.0,
     "tags": [
       "h_idor",
@@ -1056,18 +1056,18 @@
         "evidence": [
           {
             "method": "GET",
-            "path": "/api/orders/ORD-7404169d",
-            "principal": "atk-9f964f-3",
+            "path": "/api/orders/ORD-53f7c62f",
+            "principal": "atk-6e06ce-3",
             "status": 200,
-            "owner": "own-9f964f-2",
+            "owner": "own-6e06ce-2",
             "violation": {
               "invariant": "I3",
               "assertion": "caller == object.owner",
               "observed": {
-                "caller": "atk-9f964f-3",
-                "owner": "own-9f964f-2"
+                "caller": "atk-6e06ce-3",
+                "owner": "own-6e06ce-2"
               },
-              "detail": "atk-9f964f-3 accessed order owned by own-9f964f-2"
+              "detail": "atk-6e06ce-3 accessed order owned by own-6e06ce-2"
             }
           }
         ],
@@ -1088,20 +1088,20 @@
         "by": "verify",
         "method": "fresh cross-user read succeeded",
         "independent_principals": [
-          "verify-9f964f-1",
-          "verify-9f964f-2"
+          "verify-6e06ce-1",
+          "verify-6e06ce-2"
         ]
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0081"
+      "SF-HYPOTHESIS-0108"
     ]
   },
   {
-    "id": "SF-VERIFY-0093",
+    "id": "SF-VERIFY-0120",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793976367.26946,
+    "ts": 1793978617.7792482,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -1111,14 +1111,14 @@
       "technique": "h_idor"
     },
     "derived_from": [
-      "SF-EXPLOIT-0092"
+      "SF-EXPLOIT-0119"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0094",
+    "id": "SF-EXPLOIT-0121",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793976367.288289,
+    "ts": 1793978617.7964783,
     "confidence": 1.0,
     "tags": [
       "h_refund",
@@ -1137,8 +1137,8 @@
         "evidence": [
           {
             "wallet_delta": 259800,
-            "owner": "rowner-9f964f-4",
-            "caller": "ratk-9f964f-5"
+            "owner": "rowner-6e06ce-4",
+            "caller": "ratk-6e06ce-5"
           }
         ],
         "reproduction": [],
@@ -1158,20 +1158,20 @@
         "by": "verify",
         "method": "fresh cross-user refund credited caller",
         "independent_principals": [
-          "verify-9f964f-3",
-          "verify-9f964f-4"
+          "verify-6e06ce-3",
+          "verify-6e06ce-4"
         ]
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0082"
+      "SF-HYPOTHESIS-0109"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0095",
+    "id": "SF-EXPLOIT-0122",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793976367.288304,
+    "ts": 1793978617.7964928,
     "confidence": 1.0,
     "tags": [
       "h_refund",
@@ -1204,7 +1204,7 @@
                 ],
                 "overcredit": 129900
               },
-              "detail": "refunded ratk-9f964f-5 over price by 129900 cents"
+              "detail": "refunded ratk-6e06ce-5 over price by 129900 cents"
             }
           }
         ],
@@ -1225,20 +1225,20 @@
         "by": "verify",
         "method": "double refund credited twice",
         "independent_principals": [
-          "verify-9f964f-4",
-          "verify-9f964f-5"
+          "verify-6e06ce-4",
+          "verify-6e06ce-5"
         ]
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0082"
+      "SF-HYPOTHESIS-0109"
     ]
   },
   {
-    "id": "SF-VERIFY-0096",
+    "id": "SF-VERIFY-0123",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793976367.3043678,
+    "ts": 1793978617.8119226,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -1248,14 +1248,14 @@
       "technique": "h_refund"
     },
     "derived_from": [
-      "SF-EXPLOIT-0094"
+      "SF-EXPLOIT-0121"
     ]
   },
   {
-    "id": "SF-VERIFY-0097",
+    "id": "SF-VERIFY-0124",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793976367.3188264,
+    "ts": 1793978617.825843,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -1265,14 +1265,14 @@
       "technique": "h_refund"
     },
     "derived_from": [
-      "SF-EXPLOIT-0095"
+      "SF-EXPLOIT-0122"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0098",
+    "id": "SF-EXPLOIT-0125",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793976367.3470402,
+    "ts": 1793978617.8524237,
     "confidence": 1.0,
     "tags": [
       "h_coupon",
@@ -1297,7 +1297,7 @@
               },
               "subtotal_cents": 129900,
               "total_cents": -25980,
-              "user": "cpn-9f964f-6"
+              "user": "cpn-6e06ce-6"
             },
             "violation": {
               "invariant": "I4",
@@ -1326,20 +1326,20 @@
         "by": "verify",
         "method": "stacked discount exceeded subtotal",
         "independent_principals": [
-          "verify-9f964f-5",
-          "verify-9f964f-6"
+          "verify-6e06ce-5",
+          "verify-6e06ce-6"
         ]
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0083"
+      "SF-HYPOTHESIS-0110"
     ]
   },
   {
-    "id": "SF-VERIFY-0099",
+    "id": "SF-VERIFY-0126",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793976367.3742228,
+    "ts": 1793978617.876634,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -1349,14 +1349,14 @@
       "technique": "h_coupon"
     },
     "derived_from": [
-      "SF-EXPLOIT-0098"
+      "SF-EXPLOIT-0125"
     ]
   },
   {
-    "id": "SF-EXPLOIT-STATEF-0100",
+    "id": "SF-EXPLOIT-STATEF-0127",
     "kind": "FINDING",
     "source": "exploit/statefuzz_spec",
-    "ts": 1793976368.3271945,
+    "ts": 1793978618.826112,
     "confidence": 0.9,
     "tags": [
       "h_fsm",
@@ -1402,7 +1402,7 @@
             "req_body": null,
             "status": 201,
             "resp_body": {
-              "order_id": "ORD-74d7f833",
+              "order_id": "ORD-c3023d78",
               "status": "initiated",
               "total_cents": -2700
             }
@@ -1411,12 +1411,12 @@
             "method": "POST",
             "path": "/api/checkout/confirm",
             "req_body": {
-              "order_id": "ORD-74d7f833"
+              "order_id": "ORD-c3023d78"
             },
             "status": 200,
             "resp_body": {
               "charged_cents": -2700,
-              "order_id": "ORD-74d7f833",
+              "order_id": "ORD-c3023d78",
               "status": "paid"
             }
           },
@@ -1451,20 +1451,20 @@
         "by": "verify",
         "method": "negative-qty checkout credited wallet",
         "independent_principals": [
-          "verify-9f964f-6",
-          "verify-9f964f-7"
+          "verify-6e06ce-6",
+          "verify-6e06ce-7"
         ]
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0084"
+      "SF-HYPOTHESIS-0111"
     ]
   },
   {
-    "id": "SF-EXPLOIT-STATEF-0101",
+    "id": "SF-EXPLOIT-STATEF-0128",
     "kind": "FINDING",
     "source": "exploit/statefuzz_spec",
-    "ts": 1793976368.3272026,
+    "ts": 1793978618.8261197,
     "confidence": 0.9,
     "tags": [
       "h_fsm",
@@ -1670,20 +1670,20 @@
         "by": "verify",
         "method": "stacked discount exceeded subtotal",
         "independent_principals": [
-          "verify-9f964f-7",
-          "verify-9f964f-8"
+          "verify-6e06ce-7",
+          "verify-6e06ce-8"
         ]
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0084"
+      "SF-HYPOTHESIS-0111"
     ]
   },
   {
-    "id": "SF-EXPLOIT-STATEF-0102",
+    "id": "SF-EXPLOIT-STATEF-0129",
     "kind": "FINDING",
     "source": "exploit/statefuzz_spec",
-    "ts": 1793976368.3272052,
+    "ts": 1793978618.8261225,
     "confidence": 0.9,
     "tags": [
       "h_fsm",
@@ -1713,7 +1713,7 @@
             "req_body": null,
             "status": 201,
             "resp_body": {
-              "order_id": "ORD-416024d8",
+              "order_id": "ORD-828d6e12",
               "status": "initiated",
               "total_cents": 1800
             }
@@ -1724,23 +1724,23 @@
             "req_body": null,
             "status": 201,
             "resp_body": {
-              "order_id": "ORD-653c649b",
+              "order_id": "ORD-bb974ca6",
               "status": "initiated",
               "total_cents": 1800
             }
           },
           {
             "order_ids": [
-              "ORD-416024d8",
-              "ORD-653c649b"
+              "ORD-828d6e12",
+              "ORD-bb974ca6"
             ],
             "violation": {
               "invariant": "I2",
               "assertion": "cart snapshot: 1 -> <=1 order",
               "observed": {
                 "order_ids": [
-                  "ORD-416024d8",
-                  "ORD-653c649b"
+                  "ORD-828d6e12",
+                  "ORD-bb974ca6"
                 ]
               },
               "detail": "checkout/init replayed from the same cart produced 2 orders with identical item sets"
@@ -1761,20 +1761,20 @@
         "by": "verify",
         "method": "one cart yielded two orders",
         "independent_principals": [
-          "verify-9f964f-8",
-          "verify-9f964f-9"
+          "verify-6e06ce-8",
+          "verify-6e06ce-9"
         ]
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0084"
+      "SF-HYPOTHESIS-0111"
     ]
   },
   {
-    "id": "SF-EXPLOIT-STATEF-0103",
+    "id": "SF-EXPLOIT-STATEF-0130",
     "kind": "FINDING",
     "source": "exploit/statefuzz_spec",
-    "ts": 1793976368.327207,
+    "ts": 1793978618.8261244,
     "confidence": 0.9,
     "tags": [
       "h_fsm",
@@ -1805,23 +1805,23 @@
             "req_body": null,
             "status": 201,
             "resp_body": {
-              "order_id": "ORD-25077d6c",
+              "order_id": "ORD-81524509",
               "status": "initiated",
               "total_cents": 129900
             }
           },
           {
             "method": "POST",
-            "path": "/api/orders/ORD-25077d6c/ship",
+            "path": "/api/orders/ORD-81524509/ship",
             "req_body": null,
             "status": 200,
             "resp_body": {
-              "order_id": "ORD-25077d6c",
+              "order_id": "ORD-81524509",
               "status": "shipped"
             }
           },
           {
-            "order_id": "ORD-25077d6c",
+            "order_id": "ORD-81524509",
             "violation": {
               "invariant": "I2",
               "assertion": "action in delta(alpha(s))",
@@ -1852,20 +1852,20 @@
         "by": "verify",
         "method": "unpaid order shipped",
         "independent_principals": [
-          "verify-9f964f-9",
-          "verify-9f964f-10"
+          "verify-6e06ce-9",
+          "verify-6e06ce-10"
         ]
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0084"
+      "SF-HYPOTHESIS-0111"
     ]
   },
   {
-    "id": "SF-EXPLOIT-STATEF-0104",
+    "id": "SF-EXPLOIT-STATEF-0131",
     "kind": "FINDING",
     "source": "exploit/statefuzz_spec",
-    "ts": 1793976368.3272095,
+    "ts": 1793978618.8261268,
     "confidence": 0.9,
     "tags": [
       "h_fsm",
@@ -1891,11 +1891,11 @@
         "evidence": [
           {
             "method": "GET",
-            "path": "/api/orders/ORD-e509c181",
+            "path": "/api/orders/ORD-7e09114a",
             "req_body": null,
             "status": 200,
             "resp_body": {
-              "id": "ORD-e509c181",
+              "id": "ORD-7e09114a",
               "items": {
                 "SKU-GPU": 1
               },
@@ -1933,20 +1933,20 @@
         "by": "verify",
         "method": "fresh cross-user read succeeded",
         "independent_principals": [
-          "verify-9f964f-11",
-          "verify-9f964f-12"
+          "verify-6e06ce-11",
+          "verify-6e06ce-12"
         ]
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0084"
+      "SF-HYPOTHESIS-0111"
     ]
   },
   {
-    "id": "SF-EXPLOIT-STATEF-0105",
+    "id": "SF-EXPLOIT-STATEF-0132",
     "kind": "FINDING",
     "source": "exploit/statefuzz_spec",
-    "ts": 1793976368.3272116,
+    "ts": 1793978618.826129,
     "confidence": 0.9,
     "tags": [
       "h_fsm",
@@ -1972,23 +1972,23 @@
         "evidence": [
           {
             "method": "POST",
-            "path": "/api/orders/ORD-c03f862c/refund",
+            "path": "/api/orders/ORD-aff13dfa/refund",
             "req_body": null,
             "status": 200,
             "resp_body": {
               "credited_cents": 129900,
-              "order_id": "ORD-c03f862c",
+              "order_id": "ORD-aff13dfa",
               "status": "refunded"
             }
           },
           {
             "method": "POST",
-            "path": "/api/orders/ORD-c03f862c/refund",
+            "path": "/api/orders/ORD-aff13dfa/refund",
             "req_body": null,
             "status": 200,
             "resp_body": {
               "credited_cents": 129900,
-              "order_id": "ORD-c03f862c",
+              "order_id": "ORD-aff13dfa",
               "status": "refunded"
             }
           },
@@ -2016,20 +2016,20 @@
         "by": "verify",
         "method": "fresh cross-user refund credited caller",
         "independent_principals": [
-          "verify-9f964f-13",
-          "verify-9f964f-14"
+          "verify-6e06ce-13",
+          "verify-6e06ce-14"
         ]
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0084"
+      "SF-HYPOTHESIS-0111"
     ]
   },
   {
-    "id": "SF-EXPLOIT-STATEF-0106",
+    "id": "SF-EXPLOIT-STATEF-0133",
     "kind": "FINDING",
     "source": "exploit/statefuzz_spec",
-    "ts": 1793976368.3272133,
+    "ts": 1793978618.8261306,
     "confidence": 0.9,
     "tags": [
       "h_fsm",
@@ -2056,23 +2056,23 @@
         "evidence": [
           {
             "method": "POST",
-            "path": "/api/orders/ORD-c03f862c/refund",
+            "path": "/api/orders/ORD-aff13dfa/refund",
             "req_body": null,
             "status": 200,
             "resp_body": {
               "credited_cents": 129900,
-              "order_id": "ORD-c03f862c",
+              "order_id": "ORD-aff13dfa",
               "status": "refunded"
             }
           },
           {
             "method": "POST",
-            "path": "/api/orders/ORD-c03f862c/refund",
+            "path": "/api/orders/ORD-aff13dfa/refund",
             "req_body": null,
             "status": 200,
             "resp_body": {
               "credited_cents": 129900,
-              "order_id": "ORD-c03f862c",
+              "order_id": "ORD-aff13dfa",
               "status": "refunded"
             }
           },
@@ -2111,20 +2111,20 @@
         "by": "verify",
         "method": "double refund credited twice",
         "independent_principals": [
-          "verify-9f964f-14",
-          "verify-9f964f-15"
+          "verify-6e06ce-14",
+          "verify-6e06ce-15"
         ]
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0084"
+      "SF-HYPOTHESIS-0111"
     ]
   },
   {
-    "id": "SF-EXPLOIT-STATEF-0107",
+    "id": "SF-EXPLOIT-STATEF-0134",
     "kind": "FINDING",
     "source": "exploit/statefuzz_spec",
-    "ts": 1793976368.3272154,
+    "ts": 1793978618.826133,
     "confidence": 0.9,
     "tags": [
       "h_fsm",
@@ -2164,11 +2164,11 @@
             "wallet_before": 870100,
             "wallet_after": 1129900,
             "callback": {
-              "marker": "e91e77a04838",
+              "marker": "e3565ce70053",
               "refund_cents": 129900,
               "status": "done"
             },
-            "marker": "e91e77a04838"
+            "marker": "e3565ce70053"
           }
         ],
         "reproduction": [
@@ -2186,20 +2186,20 @@
         "by": "verify",
         "method": "double refund credited twice",
         "independent_principals": [
-          "verify-9f964f-15",
-          "verify-9f964f-16"
+          "verify-6e06ce-15",
+          "verify-6e06ce-16"
         ]
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0084"
+      "SF-HYPOTHESIS-0111"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0108",
+    "id": "SF-EXPLOIT-0135",
     "kind": "CONTROL",
     "source": "exploit",
-    "ts": 1793976368.3272312,
+    "ts": 1793978618.8261483,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -2214,10 +2214,10 @@
     "derived_from": []
   },
   {
-    "id": "SF-VERIFY-0109",
+    "id": "SF-VERIFY-0136",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793976368.3398404,
+    "ts": 1793978618.838322,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -2227,14 +2227,14 @@
       "technique": "h_fsm"
     },
     "derived_from": [
-      "SF-EXPLOIT-STATEF-0100"
+      "SF-EXPLOIT-STATEF-0127"
     ]
   },
   {
-    "id": "SF-VERIFY-0110",
+    "id": "SF-VERIFY-0137",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793976368.3672884,
+    "ts": 1793978618.8659065,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -2244,14 +2244,14 @@
       "technique": "h_fsm"
     },
     "derived_from": [
-      "SF-EXPLOIT-STATEF-0101"
+      "SF-EXPLOIT-STATEF-0128"
     ]
   },
   {
-    "id": "SF-VERIFY-0111",
+    "id": "SF-VERIFY-0138",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793976368.3759575,
+    "ts": 1793978618.8744237,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -2261,14 +2261,14 @@
       "technique": "h_fsm"
     },
     "derived_from": [
-      "SF-EXPLOIT-STATEF-0102"
+      "SF-EXPLOIT-STATEF-0129"
     ]
   },
   {
-    "id": "SF-VERIFY-0112",
+    "id": "SF-VERIFY-0139",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793976368.3845968,
+    "ts": 1793978618.8832471,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -2278,14 +2278,14 @@
       "technique": "h_fsm"
     },
     "derived_from": [
-      "SF-EXPLOIT-STATEF-0103"
+      "SF-EXPLOIT-STATEF-0130"
     ]
   },
   {
-    "id": "SF-VERIFY-0113",
+    "id": "SF-VERIFY-0140",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793976368.397958,
+    "ts": 1793978618.8966663,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -2295,14 +2295,14 @@
       "technique": "h_fsm"
     },
     "derived_from": [
-      "SF-EXPLOIT-STATEF-0104"
+      "SF-EXPLOIT-STATEF-0131"
     ]
   },
   {
-    "id": "SF-VERIFY-0114",
+    "id": "SF-VERIFY-0141",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793976368.4144995,
+    "ts": 1793978618.9130967,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -2312,14 +2312,14 @@
       "technique": "h_fsm"
     },
     "derived_from": [
-      "SF-EXPLOIT-STATEF-0105"
+      "SF-EXPLOIT-STATEF-0132"
     ]
   },
   {
-    "id": "SF-VERIFY-0115",
+    "id": "SF-VERIFY-0142",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793976368.4290924,
+    "ts": 1793978618.928485,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -2329,14 +2329,14 @@
       "technique": "h_fsm"
     },
     "derived_from": [
-      "SF-EXPLOIT-STATEF-0106"
+      "SF-EXPLOIT-STATEF-0133"
     ]
   },
   {
-    "id": "SF-VERIFY-0116",
+    "id": "SF-VERIFY-0143",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793976368.444083,
+    "ts": 1793978618.9431417,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -2346,14 +2346,14 @@
       "technique": "h_fsm"
     },
     "derived_from": [
-      "SF-EXPLOIT-STATEF-0107"
+      "SF-EXPLOIT-STATEF-0134"
     ]
   },
   {
-    "id": "SF-ACCESS-0117",
+    "id": "SF-ACCESS-0144",
     "kind": "ESCALATION",
     "source": "access",
-    "ts": 1793976368.4864318,
+    "ts": 1793978618.983709,
     "confidence": 1.0,
     "tags": [
       "chain",
@@ -2378,15 +2378,15 @@
       ]
     },
     "derived_from": [
-      "SF-EXPLOIT-0092",
-      "SF-EXPLOIT-0094"
+      "SF-EXPLOIT-0119",
+      "SF-EXPLOIT-0121"
     ]
   },
   {
-    "id": "SF-ACCESS-0118",
+    "id": "SF-ACCESS-0145",
     "kind": "ESCALATION",
     "source": "access",
-    "ts": 1793976368.4864445,
+    "ts": 1793978618.9837167,
     "confidence": 1.0,
     "tags": [
       "chain",
@@ -2411,15 +2411,15 @@
       ]
     },
     "derived_from": [
-      "SF-EXPLOIT-0092",
-      "SF-EXPLOIT-STATEF-0103"
+      "SF-EXPLOIT-0119",
+      "SF-EXPLOIT-STATEF-0130"
     ]
   },
   {
-    "id": "SF-ACCESS-0119",
+    "id": "SF-ACCESS-0146",
     "kind": "ESCALATION",
     "source": "access",
-    "ts": 1793976368.4864495,
+    "ts": 1793978618.9837213,
     "confidence": 1.0,
     "tags": [
       "chain",
@@ -2444,8 +2444,8 @@
       ]
     },
     "derived_from": [
-      "SF-EXPLOIT-0094",
-      "SF-EXPLOIT-STATEF-0103"
+      "SF-EXPLOIT-0121",
+      "SF-EXPLOIT-STATEF-0130"
     ]
   }
 ]
