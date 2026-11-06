@@ -1,0 +1,79 @@
+\section{Method: search protocol and verification rules}\label{sec:method}
+
+\subsection{Scope and sources}
+
+We searched four bodies of material, in this order of trust: (i) peer-reviewed and
+preprint research (arXiv primarily, 2023--2026, with a bias to 2025--2026 for
+agentic topics); (ii) standards and reference frameworks (OWASP Top 10 for LLM
+Applications 2025 and the 2026 agentic edition, MITRE ATLAS 2026.10, NIST AI RMF
+and its Generative AI Profile, ISO/IEC 42001, the EU AI Act); (iii) incident
+artifacts (CVE entries, NVD records, disclosure posts, tribunal decisions); and
+(iv) practitioner tooling documentation (PyRIT, garak, promptfoo, and
+municipal-red-teaming reports). Books were used for the risk-analysis foundations:
+Siva Kumar and Anderson's edited volume on red teaming \cite{sivakumar-anderson}
+and Sotiropoulos's practitioner handbook \cite{sotiropoulos}.
+
+\subsection{Two validation rules}
+
+Every quantitative claim in this paper passes one of two gates:
+
+\begin{enumerate}[itemsep=2pt, topsep=4pt]
+  \item \textbf{Primary-source gate.} The number is copied from the artifact we
+        cite (a paper's own table, an NVD record, a standard's text), and the cite
+        is to that artifact---never to a secondary report of it.
+  \item \textbf{Computed gate.} The number is derived from cited inputs by our
+        scripts (Wilson intervals, pooling, at-least-one arithmetic,
+        sensitivity), and the
+        derivation is reproduced in Section~\ref{sec:stats}. No number in this
+        paper is remembered, rounded from memory, or inherited from a blog.
+\end{enumerate}
+
+\subsection{Named exclusions}\label{sec:exclusions}
+
+Because the negative space matters as much as the positives, here is what we
+looked for and \emph{excluded} for failing the gates above:
+
+\begin{itemize}[itemsep=2pt, topsep=4pt]
+  \item A widely repeated ``\$\$X per successful jailbreak'' figure attributed to a
+        vendor blog: the cited blog post is no longer reachable at its original
+        URL; excluded as unverifiable.
+  \item ``Scaling laws for red teaming'': no such paper exists in the sources we
+        could retrieve; the phrase circulates in summaries of other work; excluded.
+  \item A claimed ``EPSS v3'' feature set (``$\sim$1000 features''): the EPSS
+        documentation does not carry that label or that count; we cite EPSS only
+        for what its documentation states \cite{epss-first,epss-paper}.
+  \item Risk-formula folklore of the form ``risk = threat $\times$ vulnerability
+        $\times$ consequence'' attributed to NIST: not in the NIST AI RMF
+        vocabulary; we use FAIR's factor decomposition instead, which does define
+        its terms \cite{fair}.
+  \item ``Agent Smith''-style swarm-propagation numbers: the primary artifact could
+        not be retrieved and verified within our protocol; the multi-agent claims
+        we make rest only on verified sources (Prompt Infection \cite{promptinfection},
+        MAST \cite{mast}).
+\end{itemize}
+
+\subsection{Statistical conventions}
+
+Four conventions hold throughout. First, every measured proportion carries a Wilson
+95\% interval---never a bare percentage (Section~\ref{sec:wilson}). Second, we
+never naively pool attack-success rates across studies as one binomial sample;
+pooling uses per-study Beta($1,1$) posteriors combined by inverse-variance
+weighting, because studies differ in targets, guards, and judges
+(Section~\ref{sec:pooling}). Third, judge-model dependence is stated wherever an
+attack-success rate came from an LLM-judged benchmark; judge miscalibration is
+itself one of our weakness classes (W8) \cite{judgesurvey,judgecalib}. Fourth,
+``probability'' in our relevance model is a calibrated prior informed by published
+rates, not a frequency claim about our own (much smaller) experience.
+
+\subsection{Validity threats}
+
+Four threats bound what this paper can claim. (1)~\emph{Prior elicitation is
+judgment}: the $P$ values in Section~\ref{sec:model} are informed by published
+rates but chosen by us; the sensitivity analysis shows which conclusions survive
+$\pm 0.10$ movement. (2)~\emph{ASR heterogeneity}: attack-success rates are not
+commensurable across targets and defenses; we therefore never rank raw rates, only
+pooled posteriors with stated limitations. (3)~\emph{Preprint volatility}: agentic
+security moves fast; 2026 preprints may be revised or withdrawn, and we flag
+which load-bearing claims rest on them. (4)~\emph{Single-framework grounding}: the
+deep mapping (Section~\ref{sec:map}) describes one codebase; the taxonomy and
+statistics are portable, the module names are not.

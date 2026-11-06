@@ -1,0 +1,110 @@
+\section{Mapping to our framework}\label{sec:map}
+
+\subsection{The relevance matrix}\label{sec:matrix}
+
+Table~\ref{tab:matrix} is the paper's operational core: every class with its
+model parameters, its relevance, and the evidence anchor that informed $P$.
+Values are computed by \texttt{figures.py}; nothing here is hand-derived.
+
+\begin{longtable}{r L{0.8cm} L{2.7cm} c c c c L{2.9cm}}
+\caption{The relevance matrix. P: elicited prior from published anchors
+($^{\dagger}$ = undefended anchor, read as an upper bound relative to defended
+anchors); I: impact 1--5;
+D: defendedness from our code audit; R: ranking statistic
+(Eq.~\ref{eq:model}).}\label{tab:matrix}\\
+\toprule
+Rank & ID & Class & P & I & D & R & Evidence anchor \\
+\midrule
+\endfirsthead
+\toprule
+Rank & ID & Class & P & I & D & R & Evidence anchor \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+1 & W5 & Memory poisoning & 0.800 & 5 & 0.050 & 3.80 & $^{\dagger}$PoisonedRAG 90\%@5 docs; AgentPoison $>$80\%@0.1\% \cite{poisonedrag,agentpoison} \\
+2 & W2 & Adaptive jailbreak & 0.500 & 5 & 0.048 & 2.38 & $^{\dagger}$Frontier adaptive 100\%; PAIR/TAP economics \cite{pair,tap} \\
+3 & W12 & Output-chain 2nd order & 0.380 & 4 & 0.125 & 1.33 & Air Canada/DPD; EchoLeak egress \cite{echolake-paper} \\
+4 & W6 & Hidden-context exfil & 0.450 & 4 & 0.280 & 1.30 & EchoLeak chain; own two-half storage story \cite{echolake-cve} \\
+5 & W3 & Swarm cascade & 0.350 & 4 & 0.140 & 1.20 & $^{\dagger}$Prompt Infection; MAST \cite{promptinfection,mast} \\
+6 & W13 & Multilingual erosion & 0.450 & 3 & 0.130 & 1.17 & $^{\dagger}$79\%$\to$80.9\%; 9--18 pt guard drop \cite{langbarrier,lowresjb} \\
+7 & W11 & Misuse compliance & 0.350 & 3 & 0.085 & 0.96 & $^{\dagger}$AgentHarm 34.7\%; SafeArena \cite{agentharm,safearena} \\
+8 & W14 & Supply-chain drift & 0.300 & 3 & 0.000 & 0.90 & MCP CVE family; no pinning today \cite{ox-mcp-family} \\
+9 & W10 & Cost amplification & 0.300 & 3 & 0.100 & 0.81 & Agentic loop DoS surface \\
+10 & W9 & Single-seed reliability & 0.300 & 3 & 0.180 & 0.74 & tau-bench pass$^8$$<$25\% \cite{taubench} \\
+11 & W7 & Retry inflation & 0.400 & 2 & 0.125 & 0.70 & $p{=}0.03,k{=}20 \to$ 0.456 session \cite{pair} \\
+12 & W8 & Judge miscalibration & 0.350 & 2 & 0.170 & 0.58 & Judge surveys \cite{judgesurvey,judgecalib} \\
+13 & W4 & Tool/MCP supply chain & 0.350 & 2 & 0.400 & 0.42 & ToolFuzz 20$\times$; sandbox/approver cover \cite{toolfuzz} \\
+14 & W1 & Injection vs defended & 0.075 & 5 & 0.040 & 0.36 & Defended AgentDojo residual 6.8--8.0\% \cite{camel,agentdojo} \\
+\end{longtable}
+
+\subsection{Deep map: class $\to$ module $\to$ gap}\label{sec:deepmap}
+
+Table~\ref{tab:deepmap} names the module that owns each class in our codebase
+today and the audit gap that remains after the first integration wave. Module
+names are ours; the pattern generalizes to any agentic framework: guard plane,
+memory plane, tool plane, swarm plane, measurement plane.
+
+\begin{longtable}{L{1.0cm} L{4.2cm} L{8.2cm}}
+\caption{Deep mapping. ``Wave 1'' items are implemented and tested in the
+framework as of commit \texttt{770f2af}.}\label{tab:deepmap}\\
+\toprule
+ID & Owns it today & Audit gap after wave 1 \\
+\midrule
+\endfirsthead
+\toprule
+ID & Owns it today & Audit gap after wave 1 \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+W5 & \texttt{memory.py} ExperienceStore & CLOSED (wave 1): write-time provenance
+triad (derived/imported/observed), impersonation quarantine at write and load,
+HMAC tamper-evident rows, trust-gated recall, merge provenance isolation.
+Remaining: adversarial \emph{recall} evaluation with an LLM attacker (wave 2). \\
+W2 & \texttt{selfprobe.py} campaign plane & PARTIAL (wave 1): 14-attempt
+arsenal, deterministic fail-closed classifier, 3-move escalation ladder,
+guard-wear reporting, Wilson CI card. Remaining: wire a real LLM attacker as
+\texttt{GuardFn} counterpart; schedule against the full agent stack. \\
+W13 & \texttt{selfprobe.py} arsenal & PARTIAL: 8-language authority-spoof pack
+ships with the campaign. Remaining: extend all TTPs (not just one) across
+languages; judge-side multilingual calibration. \\
+W7 & \texttt{stats.py} resampling null & CLOSED for the estimator; every bench
+cell must now print its retry policy and null check (wave 2 wiring). \\
+W9 & \texttt{stats.py} pass$^k$ & Estimator shipped; benchmark matrix must add
+multi-seed cells (wave 2). \\
+W1 & \texttt{scope.py} ScopeGuard + \texttt{verify.py}/\texttt{falsify.py}
+oracles & Guard chain covers URL/host/credential discipline; residual 7--8\%
+band is the accepted risk (documented, monitored via self-probe). \\
+W4 & \texttt{sandbox/}, \texttt{ratelimit.py}, tool registry & Execution edge
+covered (sandbox, approver). Gap: no ToolFuzz-style fuzzing of OUR tool registry;
+no tool-description integrity checks (wave 2). \\
+W3 & \texttt{orchestrator.py} swarm bus & Bus carries plain text; no dissent
+probe, no quarantine path, no message-integrity checks (wave 2). \\
+W6 & egress/render paths & Rendered-content trust boundary undefined; the
+two-half storage story shows the shape; needs an egress allowlist review
+(wave 2). \\
+W8 & judge wiring in bench & Judge calibration harness absent; interval-wrapped
+judge rates required before cross-model comparisons (wave 2). \\
+W10 & \texttt{ratelimit.py} & Protects targets; no self-side budget guard on
+agentic loops (wave 2). \\
+W11 & RoE contract + killchain discipline & Covered by objective scoping;
+self-probe includes misuse-shaped attempts for monitoring. \\
+W12 & report/importers & Output consumers unauthenticated downstream; needs
+consumer-side contract review (wave 2). \\
+W14 & pins/config & No model/backend pinning or drift detection (wave 2). \\
+\end{longtable}
+
+\subsection{Two structural observations}\label{sec:observations}
+
+First, \emph{the statistical layer is ahead of the evaluation layer}. The
+estimators (Wilson, pooling, retry null, pass$^k$) now exist as a library; the
+cells that should consume them still print bare numbers. Closing that gap is
+mechanical but unglamorous---and it is what makes every future claim in the
+benchmark board auditable.
+
+Second, \emph{the experience store is the highest-leverage defensive surface}.
+It is the only component whose compromise \emph{compounds}: a poisoned lesson
+changes behavior in every future run, silently, with our own credit-reinforcement
+loop strengthening the poison. That is why W5 ranks first by a factor of 1.6
+over the runner-up, and why the first integration wave spent its effort there.

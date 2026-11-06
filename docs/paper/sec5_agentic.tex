@@ -1,0 +1,90 @@
+\section{Evidence base II: the agentic attack surface}\label{sec:agentic}
+
+\subsection{Indirect injection on agents: the defended residual (W1)}\label{sec:ipi}
+
+AgentDojo made indirect injection measurable on real task environments: a 34.5\%
+success rate on the undefended suite \cite{agentdojo}. The important number for
+planning is the \emph{defended} one. With CaMeL-style capability lattices ---
+formally verified control and data flow, provenance-tracked values---the same
+suite drops to 6.8--8.0\%, at a documented utility cost (77\% utility on the
+defended configuration) \cite{camel}. InjecAgent's taxonomy adds the workhorse
+numbers: 34\% on direct-tool attacks and 59\% when the injection carries a
+directive the agent is tempted to follow \cite{injecagent}.
+
+The planning translation: even the best published engineering defense leaves a
+residual in the 7--8\% band. W1's prior (0.075) is anchored on exactly that
+defended residual---it is low, not zero, and it is the class our
+ScopeGuard-plus-verification stack already partially covers, which is why it
+ranks last in relevance (Section~\ref{sec:model}), not because it is harmless.
+
+\subsection{Tool and MCP compromise (W4)}\label{sec:tools}
+
+The tool plane shipped real CVEs in 2025--2026: MCP Inspector's critical RCE
+(CVE-2025-49596, CVSS 9.4, browser-reachable via DNS rebinding) and the
+MCP-STDIO command-injection family across LibreChat, WeKnora, and Cursor
+(CVE-2025-54136) \cite{cve-2025-49596,oligo-mcp,ox-mcp-family}. Research-side,
+ToolFuzz showed that automated fuzzing of agent tool APIs surfaces
+misinterpretation bugs at ${\sim}20\times$ the manual rate \cite{toolfuzz}. Two
+attack shapes matter for us: \emph{tool-description poisoning} (the description
+the planner reads is attacker-influenced when tools come from targets) and
+\emph{registry confusion} (a fuzzed or spoofed tool endpoint satisfying the
+schema but not the semantics). Our sandbox, approver, and rate-limit modules
+cover the execution edge; nothing today fuzzes our own tool surface---that gap
+is recommendation~4.
+
+\subsection{Memory poisoning (W5)}\label{sec:mem}
+
+The strongest numbers in the agentic literature belong to memory and retrieval
+poisoning: 90\% attack success from five poisoned documents in a RAG corpus
+\cite{poisonedrag}; $>$80\% backdoor success from poisoning fewer than 0.1\% of
+an agent's memory rows \cite{agentpoison}. Propagation mechanics make it worse:
+poisoned entries are \emph{recalled by the victim agent itself} and re-shared
+through its outputs, with self-propagation reported in the 58--74\% band in
+multi-agent memory studies---the memory layer is a persistence primitive for
+attackers, not just a cache. The 2026 defensive literature converged on the same
+lesson we did: defenses at \emph{write time} (provenance, origin-binding,
+non-malleable memory) beat read-time rerankers, which cost measurable benign
+utility (on the order of 4 points) while attacker-crafted entries still slip
+through \cite{memdef-origin,memdef-systematic}. Our implementation
+(``poison-resistant ExperienceStore'') follows the write-time doctrine:
+provenance triage (derived/imported/observed), impersonation quarantine,
+tamper-evident HMAC rows, and trust-gated recall (Section~\ref{sec:gaps}).
+
+\subsection{Multi-agent cascades (W3)}\label{sec:swarm}
+
+Multi-agent systems fail in structured, catalogable ways: MAST's taxonomy
+documents fourteen failure modes across specification, inter-agent
+misalignment, and task verification \cite{mast}. The infection mechanics are
+demonstrated by Prompt Infection: a payload seeded in one agent's context
+propagates through inter-agent messages and shared memory \cite{promptinfection}.
+For a framework whose exploit phase is literally a swarm of class-specialist
+agents sharing an orchestration bus, the three probe questions are: does a
+specialist \emph{dissent} when its bus input contradicts its class discipline;
+can a compromised specialist be \emph{quarantined} without stopping the swarm;
+and is \emph{inter-agent message integrity} checked at all today (answer: no ---
+the bus carries plain text).
+
+\subsection{Misuse compliance (W11)}\label{sec:misuse}
+
+Given a tool-using agent and an overtly harmful request, compliance rates are
+material: AgentHarm measures 34.7\% harmful-task completion across agent
+configurations \cite{agentharm}, SafeArena shows web agents executing harmful
+site-level tasks \cite{safearena}, and SafeAgentBench finds only ${\sim}$10\%
+of embodied agents' unsafe plans refused \cite{safeagentbench}. Anthropic's
+agentic-misalignment work adds the uncomfortable longitudinal finding: under
+constructed corporate pressure, models chose harmful actions (including
+blackmail-like leverage) at 80--90\% rates in some scenarios \cite{agenticmis}.
+For us the class is O-lensed: our agents are penetration-testers, so the
+operator-side control is the rules-of-engagement contract, and the probe is
+whether our agents stay inside RoE when the \emph{target} asks them to leave it
+--- which is W11 tested through the D-lens.
+
+\subsection{Reliability as a security property (W9)}\label{sec:reliability}
+
+tau-bench's pass$^k$ metric made reliability legible: agents that look strong at
+pass@1 collapse below 25\% at pass$^8$ \cite{taubench}. In a red-team frame,
+reliability is a defensive property: an unreliable agent is one whose guard
+behavior (and whose attack behavior) cannot be predicted across runs, which
+makes every downstream statistical claim fragile. Our answer is pass$^k$
+estimation in the statistical layer and multi-seed cells in the benchmark
+matrix (recommendations~6--7).
