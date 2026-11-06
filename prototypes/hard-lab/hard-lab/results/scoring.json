@@ -1,0 +1,180 @@
+{
+  "hits": {
+    "S5": [
+      {
+        "run": "run1",
+        "finding_id": "FW-CANCEL-REASON",
+        "title": "Cancel dedupe is keyed by the reason string, not the object: a different reason re-credits the full remainder",
+        "status": "verified",
+        "severity": "critical",
+        "provenance": [
+          "exploit"
+        ]
+      },
+      {
+        "run": "run2",
+        "finding_id": "FW-CANCEL-REASON",
+        "title": "Cancel dedupe is keyed by the reason string, not the object: a different reason re-credits the full remainder",
+        "status": "verified",
+        "severity": "critical",
+        "provenance": [
+          "exploit"
+        ]
+      }
+    ],
+    "S6": [
+      {
+        "run": "run1",
+        "finding_id": "FW-TERMINAL-RESIZE",
+        "title": "Write transition accepted on a CANCELED object: resize re-credits the full prorated remainder after cancel already did",
+        "status": "verified",
+        "severity": "high",
+        "provenance": [
+          "exploit"
+        ]
+      },
+      {
+        "run": "run2",
+        "finding_id": "FW-TERMINAL-RESIZE",
+        "title": "Write transition accepted on a CANCELED object: resize re-credits the full prorated remainder after cancel already did",
+        "status": "verified",
+        "severity": "high",
+        "provenance": [
+          "exploit"
+        ]
+      }
+    ],
+    "S7": [
+      {
+        "run": "run1",
+        "finding_id": "FW-AUDIT-LEAK",
+        "title": "Cross-tenant object disclosure: a fresh principal reads another tenant's vault identifier from /api/audit",
+        "status": "verified",
+        "severity": "medium",
+        "provenance": [
+          "exploit"
+        ]
+      },
+      {
+        "run": "run1",
+        "finding_id": "FW-DEPUTY-CREDIT",
+        "title": "No ownership check on resize: the proration credit lands in the CALLER's balance \u2014 downgrade any leaked tenant's object for profit",
+        "status": "verified",
+        "severity": "critical",
+        "provenance": [
+          "exploit"
+        ]
+      },
+      {
+        "run": "run2",
+        "finding_id": "FW-AUDIT-LEAK",
+        "title": "Cross-tenant object disclosure: a fresh principal reads another tenant's vault identifier from /api/audit",
+        "status": "verified",
+        "severity": "medium",
+        "provenance": [
+          "exploit"
+        ]
+      },
+      {
+        "run": "run2",
+        "finding_id": "FW-DEPUTY-CREDIT",
+        "title": "No ownership check on resize: the proration credit lands in the CALLER's balance \u2014 downgrade any leaked tenant's object for profit",
+        "status": "verified",
+        "severity": "critical",
+        "provenance": [
+          "exploit"
+        ]
+      }
+    ],
+    "S3": [
+      {
+        "run": "run1",
+        "finding_id": "FW-TOCTOU-SETTLE",
+        "title": "Async settle debits without a balance re-check: draining the wallet inside the deferred window drives the balance negative (-125000)",
+        "status": "verified",
+        "severity": "critical",
+        "provenance": [
+          "exploit"
+        ]
+      },
+      {
+        "run": "run2",
+        "finding_id": "FW-TOCTOU-SETTLE",
+        "title": "Async settle debits without a balance re-check: draining the wallet inside the deferred window drives the balance negative (-125000)",
+        "status": "verified",
+        "severity": "critical",
+        "provenance": [
+          "exploit"
+        ]
+      }
+    ],
+    "S2": [
+      {
+        "run": "run1",
+        "finding_id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "status": "verified",
+        "severity": "critical",
+        "provenance": [
+          "exploit"
+        ]
+      },
+      {
+        "run": "run2",
+        "finding_id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "status": "verified",
+        "severity": "critical",
+        "provenance": [
+          "exploit"
+        ]
+      }
+    ],
+    "S4": [
+      {
+        "run": "run1",
+        "finding_id": "FW-ROUND-DRIFT",
+        "title": "Value-neutral resize cycles accumulate balance (+3 cents within 12 round-trips): credit rounds up, charge rounds down",
+        "status": "verified",
+        "severity": "medium",
+        "provenance": [
+          "exploit"
+        ]
+      },
+      {
+        "run": "run2",
+        "finding_id": "FW-ROUND-DRIFT",
+        "title": "Value-neutral resize cycles accumulate balance (+3 cents within 12 round-trips): credit rounds up, charge rounds down",
+        "status": "verified",
+        "severity": "medium",
+        "provenance": [
+          "exploit"
+        ]
+      }
+    ],
+    "S1": [
+      {
+        "run": "run1",
+        "finding_id": "FW-QUOTA-RACE",
+        "title": "Quota-limited claim loses the check-then-act race: 8 distinct principals claimed past the advertised quota of 3",
+        "status": "verified-by-transcript",
+        "severity": "high",
+        "provenance": [
+          "exploit"
+        ]
+      },
+      {
+        "run": "run2",
+        "finding_id": "FW-QUOTA-RACE",
+        "title": "Quota-limited claim loses the check-then-act race: 8 distinct principals claimed past the advertised quota of 3",
+        "status": "verified-by-transcript",
+        "severity": "high",
+        "provenance": [
+          "exploit"
+        ]
+      }
+    ]
+  },
+  "false_positives": {},
+  "unmatched": []
+}

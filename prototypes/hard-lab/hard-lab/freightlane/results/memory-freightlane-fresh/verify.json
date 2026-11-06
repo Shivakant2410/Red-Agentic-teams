@@ -1,0 +1,16 @@
+{
+  "bandit": {
+    "check:FW-ROUND-DRIFT": {
+      "alpha": 2.0,
+      "beta": 1.0
+    }
+  },
+  "insights": [],
+  "history": [
+    {
+      "technique": "check:FW-ROUND-DRIFT",
+      "outcome": "success",
+      "weight": 1.0
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "bandit": {
+    "check:FW-AUDIT-LEAK": {
+      "alpha": 2.0,
+      "beta": 1.0
+    },
+    "check:FW-CANCEL-REASON": {
+      "alpha": 2.0,
+      "beta": 1.0
+    },
+    "check:FW-DEPUTY-CREDIT": {
+      "alpha": 2.0,
+      "beta": 1.0
+    },
+    "check:FW-QUOTA-RACE": {
+      "alpha": 2.0,
+      "beta": 1.0
+    },
+    "check:FW-ROUND-DRIFT": {
+      "alpha": 2.0,
+      "beta": 1.0
+    },
+    "check:FW-SETTLED-CANCEL": {
+      "alpha": 2.0,
+      "beta": 1.0
+    },
+    "check:FW-TERMINAL-RESIZE": {
+      "alpha": 2.0,
+      "beta": 1.0
+    },
+    "check:FW-TOCTOU-SETTLE": {
+      "alpha": 2.0,
+      "beta": 1.0
+    }
+  },
+  "insights": [],
+  "history": [
+    {
+      "technique": "check:FW-AUDIT-LEAK",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-CANCEL-REASON",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-DEPUTY-CREDIT",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-QUOTA-RACE",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-ROUND-DRIFT",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-SETTLED-CANCEL",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-TERMINAL-RESIZE",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-TOCTOU-SETTLE",
+      "outcome": "success",
+      "weight": 1.0
+    }
+  ]
+}

@@ -1,0 +1,205 @@
+{
+  "tool": "swarm",
+  "version": "0.2.0",
+  "generated": "2026-11-04T19:10:42+0000",
+  "elapsed_s": 0.2,
+  "requests": 115,
+  "statefuzz_sub_budget_requests": null,
+  "rounds": 13,
+  "roster": [
+    "recon",
+    "surface_mapper",
+    "hypothesis",
+    "exploit",
+    "verify",
+    "access",
+    "statefuzz_spec"
+  ],
+  "spawn_events": [],
+  "llm_seam_calls": [],
+  "ledger": {
+    "facts": 16,
+    "by_kind": {
+      "CONTROL": 4,
+      "OBSERVATION": 4,
+      "SURFACE": 1,
+      "HYPOTHESIS": 6,
+      "FINDING": 1
+    },
+    "by_source": {
+      "orchestrator": 1,
+      "recon": 2,
+      "surface_mapper": 2,
+      "hypothesis": 6,
+      "exploit": 3,
+      "verify": 1,
+      "router": 1
+    }
+  },
+  "memory_before": {
+    "recon": {
+      "name": "recon",
+      "techniques": {
+        "fetch_robots": 0.5,
+        "fetch_openapi": 0.5,
+        "probe_common_paths": 0.5,
+        "fingerprint_server": 0.5
+      },
+      "insights": 0,
+      "trials": 0
+    },
+    "surface_mapper": {
+      "name": "surface_mapper",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "hypothesis": {
+      "name": "hypothesis",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "exploit": {
+      "name": "exploit",
+      "techniques": {
+        "h_hidden_verbs": 0.5,
+        "h_mass_assign": 0.5,
+        "h_cross_tenant": 0.5,
+        "h_arith_cycle": 0.5,
+        "h_quota_race": 0.5
+      },
+      "insights": 0,
+      "trials": 0
+    },
+    "verify": {
+      "name": "verify",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "access": {
+      "name": "access",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "statefuzz_spec": {
+      "name": "statefuzz_spec",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    }
+  },
+  "memory_after": {
+    "recon": {
+      "name": "recon",
+      "techniques": {
+        "fetch_robots": 0.364,
+        "fetch_openapi": 0.6,
+        "probe_common_paths": 0.364,
+        "fingerprint_server": 0.556
+      },
+      "insights": 1,
+      "trials": 4
+    },
+    "surface_mapper": {
+      "name": "surface_mapper",
+      "techniques": {
+        "map_surface": 0.6
+      },
+      "insights": 0,
+      "trials": 1
+    },
+    "hypothesis": {
+      "name": "hypothesis",
+      "techniques": {
+        "generate": 0.667
+      },
+      "insights": 1,
+      "trials": 1
+    },
+    "exploit": {
+      "name": "exploit",
+      "techniques": {
+        "h_hidden_verbs": 0.556,
+        "h_mass_assign": 0.364,
+        "h_cross_tenant": 0.364,
+        "h_arith_cycle": 0.556,
+        "h_quota_race": 0.364,
+        "h_fsm": 0.556
+      },
+      "insights": 1,
+      "trials": 6
+    },
+    "verify": {
+      "name": "verify",
+      "techniques": {
+        "check:FW-ROUND-DRIFT": 0.667
+      },
+      "insights": 0,
+      "trials": 1
+    },
+    "access": {
+      "name": "access",
+      "techniques": {
+        "escalate": 0.364
+      },
+      "insights": 0,
+      "trials": 1
+    },
+    "statefuzz_spec": {
+      "name": "statefuzz_spec",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    }
+  },
+  "findings": [
+    {
+      "finding": {
+        "id": "FW-ROUND-DRIFT",
+        "title": "Value-neutral resize cycles accumulate balance (+3 cents within 12 round-trips): credit rounds up, charge rounds down",
+        "severity": "medium",
+        "invariant": "I4",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/shipments/{shipment_id}/rerate (resize-cycle)",
+        "evidence": [
+          {
+            "cycles": 12,
+            "net_delta_cents": 3,
+            "expect": "0: down->up returns to the same state at the same price",
+            "credit_seen": true
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own active subscription"
+        ],
+        "grants": [
+          "farm sub-cent proration drift into unlimited credit"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      },
+      "provenance": [
+        "exploit"
+      ],
+      "techniques": [
+        "h_arith_cycle"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0013"
+      ]
+    }
+  ],
+  "escalations": []
+}
