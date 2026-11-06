@@ -1,0 +1,151 @@
+{
+  "vulnerable": {
+    "duration_s": 0.31,
+    "budget": 300,
+    "spent": 81,
+    "mutants_total": 37,
+    "mutants_executed": 37,
+    "mutants_skipped_unapproved": 0,
+    "findings_count": 19,
+    "violations_count": 19,
+    "aborted": "",
+    "technique_yield": {
+      "SF-RACE": 1,
+      "SF-REORDER": 4,
+      "SF-NEGATIVE": 7,
+      "SF-CROSSUSER": 3,
+      "SF-REPLAY": 2,
+      "SF-PARTIAL": 0,
+      "SF-IDEM": 2,
+      "SF-SKIP": 0
+    },
+    "top_chains": [
+      {
+        "score": 7.5,
+        "findings": [
+          "F-0015",
+          "F-0004"
+        ],
+        "titles": [
+          "INV-I3/SF-CROSSUSER",
+          "INV-I2/SF-REORDER"
+        ]
+      },
+      {
+        "score": 7.5,
+        "findings": [
+          "F-0015",
+          "F-0005"
+        ],
+        "titles": [
+          "INV-I3/SF-CROSSUSER",
+          "INV-I2/SF-REORDER"
+        ]
+      },
+      {
+        "score": 7.5,
+        "findings": [
+          "F-0015",
+          "F-0012"
+        ],
+        "titles": [
+          "INV-I3/SF-CROSSUSER",
+          "INV-I4/SF-NEGATIVE"
+        ]
+      },
+      {
+        "score": 7.5,
+        "findings": [
+          "F-0015",
+          "F-0013"
+        ],
+        "titles": [
+          "INV-I3/SF-CROSSUSER",
+          "INV-I4/SF-NEGATIVE"
+        ]
+      },
+      {
+        "score": 7.5,
+        "findings": [
+          "F-0015",
+          "F-0014"
+        ],
+        "titles": [
+          "INV-I3/SF-CROSSUSER",
+          "INV-I3/SF-CROSSUSER"
+        ]
+      },
+      {
+        "score": 7.5,
+        "findings": [
+          "F-0015",
+          "F-0018"
+        ],
+        "titles": [
+          "INV-I3/SF-CROSSUSER",
+          "INV-I5/SF-REPLAY"
+        ]
+      },
+      {
+        "score": 7.5,
+        "findings": [
+          "F-0015",
+          "F-0019"
+        ],
+        "titles": [
+          "INV-I3/SF-CROSSUSER",
+          "INV-I5/SF-IDEM"
+        ]
+      },
+      {
+        "score": 6.0,
+        "findings": [
+          "F-0014"
+        ],
+        "titles": [
+          "INV-I3/SF-CROSSUSER"
+        ]
+      },
+      {
+        "score": 5.0,
+        "findings": [
+          "F-0001"
+        ],
+        "titles": [
+          "INV-I1/SF-RACE"
+        ]
+      },
+      {
+        "score": 5.0,
+        "findings": [
+          "F-0004"
+        ],
+        "titles": [
+          "INV-I2/SF-REORDER"
+        ]
+      }
+    ]
+  },
+  "fixed": {
+    "duration_s": 0.005,
+    "budget": 300,
+    "spent": 81,
+    "mutants_total": 37,
+    "mutants_executed": 37,
+    "mutants_skipped_unapproved": 0,
+    "findings_count": 0,
+    "violations_count": 0,
+    "aborted": "",
+    "technique_yield": {
+      "SF-RACE": 0,
+      "SF-REORDER": 0,
+      "SF-NEGATIVE": 0,
+      "SF-CROSSUSER": 0,
+      "SF-REPLAY": 0,
+      "SF-PARTIAL": 0,
+      "SF-IDEM": 0,
+      "SF-SKIP": 0
+    },
+    "top_chains": []
+  }
+}
