@@ -7,6 +7,9 @@
 
 Target config (YAML): kind openai_chat | session | scripted, plus the
 fail-closed authorization block (name, authorized_by, ticket, allowed_hosts).
+Agentic targets (kind agentic) wrap a real tool-calling loop and are built in
+code — construct AgenticLoopTarget(config, harness) and pass it via
+CampaignConfig.target_factory; they cannot be expressed in YAML alone.
 See targets.py for the field reference and docs/competitor-landscape.md for
 why each control exists.
 
@@ -74,17 +77,23 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     out_dir = Path(args.out)
-    summary = Campaign(CampaignConfig(
-        target=target,
-        objectives=objectives,
-        strategies=strategies,
-        budget=args.budget,
-        max_total_requests=args.max_total_requests,
-        rate_per_second=args.rate,
-        seed=args.seed,
-        discount=args.discount,
-        out_dir=out_dir,
-    )).run()
+    try:
+        summary = Campaign(CampaignConfig(
+            target=target,
+            objectives=objectives,
+            strategies=strategies,
+            budget=args.budget,
+            max_total_requests=args.max_total_requests,
+            rate_per_second=args.rate,
+            seed=args.seed,
+            discount=args.discount,
+            out_dir=out_dir,
+        )).run()
+    except TargetAuthError as exc:
+        # e.g. kind agentic without a harness — fail as a config error, not a
+        # traceback.
+        print(f"llmred config error: {exc}", file=sys.stderr)
+        return 2
 
     diff_rows = None
     if args.prev_summary:

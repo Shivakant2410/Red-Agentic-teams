@@ -23,8 +23,11 @@ Architecture (deliberately recognizable — each piece maps to prior art we stud
 full teardown in docs/competitor-landscape.md §AI-red-teaming-vendors):
 
   targets.py      PyRIT Targets / Lakera Red "Targets": stateless OpenAI-compatible
-                  and stateful (session-id) endpoints, plus a scripted in-process
-                  target for offline tests. Host allowlist enforced per call.
+                  and stateful (session-id) endpoints, a scripted in-process
+                  target for offline tests, and the agentic adapter
+                  (AgenticLoopTarget) that wraps a REAL tool-calling loop and
+                  records actual tool invocations so verdicts can measure what
+                  an agent DID, not what it said. Host allowlist enforced per call.
   objectives.py   promptfoo "plugins" / Lakera "objectives": the probe pack, each
                   objective mapped to the OWASP LLM Top 10 2026 numbering used by
                   the paper (Red-Teaming AI Systems in the Agentic Era, sec. 3).
@@ -35,7 +38,10 @@ full teardown in docs/competitor-landscape.md §AI-red-teaming-vendors):
   detectors.py    PyRIT scorers, filtered through this repo's falsify discipline:
                   deterministic verdicts only, with UNDETERMINED as a first-class
                   outcome ("undetermined" is not "false" — PyRIT's rule, and the
-                  honest answer most of the time).
+                  honest answer most of the time). Action evidence (evaluate_tool_trace)
+                  outranks text: an observed tool invocation is a leak even when
+                  the reply refuses, and a compliance token without the matching
+                  invocation is UNDETERMINED on an agent target.
   campaign.py     PyRIT scenarios + our own statistics layer: runs the
                   objective x strategy matrix under a hard budget, allocates each
                   attempt with the Thompson-sampling bandit from `bandit.py`
@@ -56,34 +62,46 @@ errors are reported, never laundered into either success or failure.
 
 from __future__ import annotations
 
-from .detectors import Verdict, evaluate
-from .objectives import PROBE_PACK, Objective, select_objectives
+from .detectors import Verdict, evaluate, evaluate_tool_trace
+from .objectives import PROBE_PACK, Objective, ToolCondition, select_objectives
 from .regression import diff_summaries, gate_exit_code
 from .report import render_markdown
 from .strategies import TRANSFORMS, Strategy, encode, select_strategies
 from .targets import (
+    AgenticLoopTarget,
+    AgentHarness,
+    AgentRun,
+    OpenAIToolLoop,
     ScriptedTarget,
     TargetAuthError,
     TargetConfig,
     TargetError,
     TargetRateLimited,
+    ToolInvocation,
     target_from_config,
 )
 
 __all__ = [
     "PROBE_PACK",
+    "AgenticLoopTarget",
+    "AgentHarness",
+    "AgentRun",
     "Objective",
+    "OpenAIToolLoop",
     "ScriptedTarget",
     "Strategy",
     "TargetAuthError",
     "TargetConfig",
     "TargetError",
     "TargetRateLimited",
+    "ToolCondition",
+    "ToolInvocation",
     "TRANSFORMS",
     "Verdict",
     "diff_summaries",
     "encode",
     "evaluate",
+    "evaluate_tool_trace",
     "gate_exit_code",
     "render_markdown",
     "select_objectives",

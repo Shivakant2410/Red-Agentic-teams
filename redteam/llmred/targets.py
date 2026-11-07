@@ -13,6 +13,11 @@ Scans / Results" architecture (docs/competitor-landscape.md):
   - ScriptedTarget    — an in-process target with deterministic behavior. It
                         exists so the harness can be validated offline and so the
                         test suite never touches a network.
+  - AgenticLoopTarget — the agentic adapter: wraps a REAL tool-calling loop (the
+                        caller supplies the harness — the agent under test) and
+                        records every actual tool invocation (name + arguments
+                        + session). This is what lets verdicts measure what an
+                        agent DID instead of what it said.
 
 Fail-closed rules (this module's substitute for the sandbox firewall, which does
 not help against an HTTPS chat endpoint):
@@ -182,7 +187,11 @@ def _post_chat(config: TargetConfig, url: str, headers: dict, payload: dict) -> 
     return requests.post(url, headers=headers, json=payload, timeout=config.timeout)
 
 
-def _to_reply(resp: requests.Response, session: str) -> TargetReply:
+def _raise_for_status(resp: requests.Response) -> None:
+    """The module's single HTTP-status contract: 429 -> TargetRateLimited (with
+    the Retry-After hint), any other >=400 -> TargetError. Shared by every
+    target and harness that rides on _post_chat, so 429 backoff semantics
+    cannot drift between them."""
     if resp.status_code == 429:
         retry = resp.headers.get("Retry-After")
         try:
@@ -191,6 +200,10 @@ def _to_reply(resp: requests.Response, session: str) -> TargetReply:
             raise TargetRateLimited(None) from None
     if resp.status_code >= 400:
         raise TargetError(f"HTTP {resp.status_code}: {resp.text[:300]}")
+
+
+def _to_reply(resp: requests.Response, session: str) -> TargetReply:
+    _raise_for_status(resp)
     try:
         body = resp.json()
         text = body["choices"][0]["message"]["content"] or ""
@@ -305,12 +318,206 @@ class ScriptedTarget:
         return TargetReply(text=reply, status=200, latency_ms=0, session_id=session)
 
 
+# -- agentic targets (the B1 adapter) ------------------------------------------
+
+@dataclass(frozen=True)
+class ToolInvocation:
+    """One observed tool call: what ran, with what arguments, in which session.
+    Recorded by AgenticLoopTarget from the harness's own report — never
+    inferred from reply text."""
+
+    tool: str
+    arguments: dict
+    session: str
+    seq: int = 0
+
+    @property
+    def args_text(self) -> str:
+        """Canonical lowercase-friendly argument text for deterministic
+        predicates (sorted keys, so equivalent args match equivalently)."""
+        try:
+            return json.dumps(self.arguments, sort_keys=True, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return str(self.arguments)
+
+
+@dataclass
+class AgentRun:
+    """What a harness reports for one turn: the agent's final text PLUS the
+    ordered list of tool calls it actually made. `final_text` alone would
+    recreate the says-vs-does gap this adapter exists to close."""
+
+    final_text: str = ""
+    tool_calls: list = field(default_factory=list)   # [(tool_name, arguments_dict), ...]
+    truncated: bool = False                          # loop hit the round cap
+
+
+class AgentHarness(Protocol):
+    """The agent under test, reduced to the one seam the adapter needs. A
+    production harness drives a real model + real tools (see OpenAIToolLoop);
+    tests supply a deterministic double. The harness owns its model access and
+    its tool implementations — the adapter only observes."""
+
+    def run(self, messages: list[dict]) -> AgentRun: ...
+
+
+class AgenticLoopTarget:
+    """Wraps a real tool-calling agent loop and records actual tool invocations
+    (name + parsed arguments + session). This is the module's answer to the
+    agentic detection gap: chat-shaped targets can only show what the model
+    SAID, so a compliance token was the best available evidence. An agent
+    target can show what it DID — and action evidence outranks text evidence
+    in the verdict order (campaign._final_verdict).
+
+    Fail-closed notes:
+      - The harness is the agent under test; the adapter never invents, filters
+        or reorders tool calls, and never executes anything itself.
+      - A harness that raises is surfaced as TargetError (an error record, not
+        a crash and not a silent defense).
+      - Authorization is enforced by TargetConfig exactly as for every other
+        kind; kind='agentic' requires no network fields because the harness
+        owns its own model access (OpenAIToolLoop re-checks them itself).
+    """
+
+    def __init__(self, config: TargetConfig, harness: AgentHarness,
+                 stateful: bool = True):
+        if config.kind != "agentic":
+            raise TargetAuthError("AgenticLoopTarget requires kind='agentic'")
+        self.config = config
+        self._harness = harness
+        # Whether the DEPLOYED agent carries state across sessions is a
+        # property of the deployment, so the caller declares it; it gates the
+        # cross-session strategy exactly as for SessionTarget.
+        self.stateful = stateful
+        self.invocations: list[ToolInvocation] = []
+        self._seq = 0
+
+    def new_session(self) -> str:
+        return uuid.uuid4().hex
+
+    def send(self, session: str, messages: list[dict]) -> TargetReply:
+        started = time.monotonic()
+        try:
+            run = self._harness.run(messages)
+        except (TargetRateLimited, TargetAuthError):
+            # Transport signals must reach the campaign unwrapped: 429 drives
+            # the backoff/retry contract, allowlist violations must stay loud.
+            raise
+        except Exception as exc:      # harness failure is an error, not a defense
+            raise TargetError(f"agent harness failed: {exc}") from exc
+        latency = int((time.monotonic() - started) * 1000)
+        for name, args in (run.tool_calls or []):
+            self._seq += 1
+            self.invocations.append(ToolInvocation(
+                tool=str(name), arguments=dict(args or {}),
+                session=session, seq=self._seq))
+        return TargetReply(text=run.final_text or "", status=200,
+                           latency_ms=latency, session_id=session)
+
+    def tool_invocations(self, session: str | None = None) -> list[ToolInvocation]:
+        """The recorded action evidence, optionally scoped to one session. The
+        campaign reads this after each attempt; detectors match conditions
+        against it deterministically."""
+        invs = self.invocations
+        if session is not None:
+            invs = [i for i in invs if i.session == session]
+        return list(invs)
+
+
+class OpenAIToolLoop:
+    """A real tool-calling loop for an agent whose BRAIN is an OpenAI-
+    compatible chat endpoint and whose HANDS are owner-supplied tools.
+
+    tools:    the agent's REAL declared tool schema (OpenAI function-tool
+              shape). The harness must not invent tools beyond this list —
+              measuring a tool surface the deployment doesn't have would be
+              self-deception, the exact failure mode B1 exists to remove.
+    executor: callable(name, arguments_dict) -> str result. These are the
+              owner's actual tool implementations; an executor that raises is
+              recorded as a tool error result and the loop continues (honest
+              transcript, no hidden failure).
+
+    Every brain call goes through _post_chat, so the host allowlist is
+    re-checked per call, and 429/HTTP-error semantics are identical to the
+    chat targets. The round cap bounds the loop; a loop that exhausts it
+    returns truncated=True with the calls collected so far — evidence is
+    kept, the attempt is not silently cut."""
+
+    def __init__(self, config: TargetConfig, tools: list[dict],
+                 executor, max_rounds: int = 6):
+        if config.kind != "agentic":
+            raise TargetAuthError("OpenAIToolLoop requires kind='agentic'")
+        if not config.base_url.startswith(("http://", "https://")):
+            raise TargetAuthError(
+                f"harness for {config.name!r}: brain endpoint needs an "
+                "http(s) base_url")
+        if not config.model:
+            raise TargetAuthError(f"harness for {config.name!r}: 'model' is required")
+        # Fail-closed rule 2 applies to the brain endpoint too.
+        if not config.allowed_hosts:
+            raise TargetAuthError(
+                f"harness for {config.name!r}: allowed_hosts must name the "
+                "brain endpoint's host(s)")
+        self.config = config
+        self.base_url = config.base_url.rstrip("/")
+        if not self.base_url.endswith("/chat/completions"):
+            self.base_url += "/chat/completions"
+        self.tools = list(tools or [])
+        self._executor = executor
+        self.max_rounds = max(1, int(max_rounds))
+
+    def run(self, messages: list[dict]) -> AgentRun:
+        convo = [dict(m) for m in messages]
+        calls: list[tuple[str, dict]] = []
+        for _round in range(self.max_rounds):
+            payload = {"model": self.config.model, "messages": convo,
+                       "tools": self.tools}
+            resp = _post_chat(self.config, self.base_url,
+                              {"Content-Type": "application/json"}, payload)
+            _raise_for_status(resp)
+            try:
+                msg = resp.json()["choices"][0]["message"]
+            except (ValueError, KeyError, IndexError, TypeError) as exc:
+                raise TargetError(f"unrecognized response body: {exc}") from exc
+            requested = msg.get("tool_calls") or []
+            if not requested:
+                return AgentRun(final_text=msg.get("content") or "",
+                                tool_calls=calls, truncated=False)
+            convo.append({"role": "assistant",
+                          "content": msg.get("content") or "",
+                          "tool_calls": requested})
+            for tc in requested:
+                fn = tc.get("function") or {}
+                name = str(fn.get("name") or "")
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                    if not isinstance(args, dict):
+                        args = {"_raw": args}
+                except ValueError:
+                    args = {"_raw": fn.get("arguments")}
+                calls.append((name, args))
+                try:
+                    result = self._executor(name, args)
+                except Exception as exc:
+                    result = f"tool error: {exc}"
+                convo.append({"role": "tool",
+                              "tool_call_id": str(tc.get("id") or ""),
+                              "content": str(result)[:4000]})
+        return AgentRun(final_text="", tool_calls=calls, truncated=True)
+
+
 NETWORK_KINDS = {"openai_chat": OpenAIChatTarget, "session": SessionTarget}
 
 
 def target_from_config(config: TargetConfig, *, scripted_rules=None,
                        scripted_default=None, scripted_stateful=False):
     """Build the right target class for a validated config."""
+    if config.kind == "agentic":
+        raise TargetAuthError(
+            "kind 'agentic' wraps a real tool-calling loop and needs a harness: "
+            "construct AgenticLoopTarget(config, harness) directly (or pass a "
+            "target_factory to the campaign) — it cannot be built from config "
+            "alone")
     if config.kind == "scripted":
         return ScriptedTarget(config, rules=scripted_rules,
                               default_reply=scripted_default,
