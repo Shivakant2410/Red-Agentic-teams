@@ -371,3 +371,288 @@ def test_cumulative_round_broadcasts_pool_exactly_once():
                         "alpha": 1.0, "beta": 1.5}], source="run-c")
     arm = store._get("injection.sqli", "generic")
     assert (arm.alpha, arm.beta) == (1.0, 8.0)
+
+
+# -- Phase A4: DriftPlusPenaltyScheduler --------------------------------------------------
+
+import io
+import time as _time
+
+from redteam.orchestrator import DriftPlusPenaltyScheduler
+from redteam.sandbox.detection_belief import DetectionBelief
+from redteam.tools import http as _http_mod
+
+
+class _FakeRaw:
+    def __init__(self, payload: bytes):
+        self._payload = payload
+
+    def read(self, n, decode_content=True):
+        return self._payload[:n]
+
+
+class _FakeResp:
+    def __init__(self, payload: bytes, status=200, headers=None):
+        self.raw, self.status_code, self.encoding, self.headers = (
+            _FakeRaw(payload), status, "utf-8", headers or {})
+
+
+def _sched(total=12.0, belief=None, mu=None, v=None):
+    return DriftPlusPenaltyScheduler(total, belief_filter=belief, mu=mu, v_dial=v)
+
+
+def _items(pairs):
+    """Bandit.select-shaped items: score IS the progress-per-cost estimate."""
+    return [{"technique": f"t{i}", "bucket": "generic", "cost": c,
+             "draw": p, "score": p, "meta": object()}
+            for i, (c, p) in enumerate(pairs)]
+
+
+def test_alias_preserves_the_noisebudget_import_surface():
+    """Every existing caller (tests, specialists.py docs) keeps importing
+    NoiseBudget; it is the scheduler now, with the same spend semantics."""
+    from redteam.orchestrator import NoiseBudget as Aliased
+    assert Aliased is DriftPlusPenaltyScheduler
+    b = DriftPlusPenaltyScheduler(3.0)
+    assert b.try_spend(2.0) and not b.try_spend(2.0) and b.try_spend(1.0)
+    assert not b.try_spend(0.5)
+    b.refund(2.0)
+    assert b.remaining == 2.0
+    b.refund(999)
+    assert b.remaining == 3.0
+
+
+def test_at_quiet_belief_the_fill_order_is_the_bandit_order():
+    """Q ~ 0: score = -V * progress = -V * (draw/cost) -> exactly the old
+    cost-aware bandit ordering, and every positive-progress candidate is
+    admitted (the old greedy knapsack behavior)."""
+    ranked = _items([(5.0, 0.10), (1.0, 0.60), (3.0, 0.50), (2.0, 0.80)])
+    bandit_order = [it["technique"] for it in sorted(ranked, key=lambda x: -x["score"])]
+    s = _sched(50.0)                        # quiet: fresh scheduler, no belief
+    assert s.q_value == 0.0
+    re_ranked = s.rank_bandit_items(ranked)
+    assert [it["technique"] for it in re_ranked] == bandit_order
+    for it in re_ranked:                    # admission gate passes at Q=0
+        assert s.try_spend(it["cost"], progress=it["progress"])
+
+
+def test_ties_keep_the_producer_order():
+    """Two candidates with identical score/cost: the stable sort must keep the
+    bandit's own order (the old fill order's tie-breaking convention)."""
+    a, b = object(), object()
+    ranked = [{"technique": "first", "bucket": "g", "cost": 2.0, "draw": 0.5,
+               "score": 0.25, "meta": a},
+              {"technique": "second", "bucket": "g", "cost": 2.0, "draw": 0.5,
+               "score": 0.25, "meta": b}]
+    out = _sched(50.0).rank_bandit_items(ranked)
+    assert [it["meta"] for it in out] == [a, b]
+
+
+def _spend_round(sched, pairs):
+    """One scheduler round: reset (closes the Lyapunov recursion), then admit
+    the fixed candidate set in scheduler order. Returns the round's spend."""
+    sched.reset()
+    ordered = sched.rank_bandit_items(_items(pairs))
+    return sum(it["cost"] for it in ordered
+               if sched.try_spend(it["cost"], progress=it["progress"]))
+
+
+def _fixed_belief(risk):
+    class _Fixed:
+        def risk_score(self):
+            return risk
+    return _Fixed()
+
+
+def test_high_belief_throttles_the_same_candidate_set():
+    """Same candidates, same allowance: a post-challenge belief (risk 0.9 ->
+    Q = 0.9 * 12 = 10.8) must spend strictly less than a quiet round."""
+    pairs = [(1.0, 0.7), (2.0, 0.7), (3.0, 0.8), (5.0, 0.9)]
+    quiet = _spend_round(_sched(12.0), pairs)
+    throttled = _spend_round(_sched(12.0, belief=_fixed_belief(0.9)), pairs)
+    assert quiet == 11.0                    # everything admitted
+    assert throttled < quiet                # visibly throttled
+
+
+def test_certain_blocked_belief_skips_the_round_entirely():
+    pairs = [(1.0, 0.7), (2.0, 0.7), (3.0, 0.8), (5.0, 0.9)]
+    assert _spend_round(_sched(12.0, belief=_fixed_belief(1.0)), pairs) == 0.0
+
+
+def test_high_q_prefers_cheap_techniques_in_the_fill_order():
+    """Equal progress, different price: at Q=0 the tie keeps the producer's
+    order, but as Q rises the score Q*cost - V*progress separates them — the
+    expensive arm falls behind and fails the admission gate first."""
+    pairs = [(2.0, 0.5), (1.0, 0.5)]        # same progress, loud costs double
+    s = _sched(12.0)
+    low_q = [it["technique"] for it in s.rank_bandit_items(_items(pairs))]
+    s2 = _sched(12.0, belief=_fixed_belief(4.0 / 12.0))   # Q = 4
+    high_q = [it["technique"] for it in s2.rank_bandit_items(_items(pairs))]
+    admitted = [it["technique"] for it in s2.rank_bandit_items(_items(pairs))
+                if s2.try_spend(it["cost"], progress=it["progress"])]
+    assert low_q == ["t0", "t1"]            # Q=0: tie, producer order kept
+    assert high_q == ["t1", "t0"]           # Q>0: cheap-first
+    assert admitted == ["t1"]               # loud arm gated, quiet arm bought
+
+
+def test_stealth_dial_v_is_monotonic_at_fixed_belief():
+    """Higher V = more willing to spend at the same Q: admitted spend must be
+    non-decreasing across a V sweep (monotonic relationship, not exact pins)."""
+    pairs = [(1.0, 0.6), (2.0, 0.7), (3.0, 0.8), (5.0, 0.9)]
+    spends = [_spend_round(_sched(12.0, belief=_fixed_belief(0.5), v=v), pairs)
+              for v in (2.0, 5.0, 10.0, 20.0, 50.0)]
+    assert spends == sorted(spends)         # non-decreasing in V
+    assert spends[0] < spends[-1]           # and the dial actually moves spend
+
+
+def test_lyapunov_accumulator_follows_the_recursion_and_drains_at_mu():
+    """Q(t+1) = max(Q(t) + spent - mu, 0), capped at SCALE."""
+    s = _sched(12.0, mu=2.0)
+    s.reset()
+    assert s.try_spend(5.0, progress=1.0)   # round spends 5
+    s.reset()                               # Q = max(0 + 5 - 2, 0) = 3
+    assert s.raw_q == 3.0
+    s.reset()                               # quiet round: Q = max(3 + 0 - 2, 0) = 1
+    assert s.raw_q == 1.0
+    s.reset()                               # Q = 0
+    assert s.raw_q == 0.0
+
+
+def test_accumulator_is_capped_at_scale():
+    """The recursion Q(t+1) = max(Q(t) + arrivals - mu, 0), capped at SCALE;
+    spends here bypass the admission gate (progress=None) to isolate it."""
+    s = _sched(12.0, mu=0.5)
+    s.reset()
+    s.try_spend(12.0)                       # allowance-only: gate not engaged
+    s.reset()                               # max(0 + 12 - 0.5, 0) = 11.5
+    assert s.raw_q == 11.5
+    s.try_spend(12.0)
+    s.reset()                               # min(max(11.5 + 12 - 0.5, 0), 12) = 12
+    assert s.raw_q == 12.0                  # capped, never runs away
+
+
+def test_refunded_reservations_never_reach_the_accumulator():
+    """A lost claim race refunds the reservation — the round never 'arrived'
+    for the Lyapunov recursion, so Q must not grow from phantom spends."""
+    s = _sched(12.0, mu=2.0)
+    s.reset()
+    assert s.try_spend(5.0, progress=1.0)
+    s.refund(5.0)
+    s.reset()
+    assert s.raw_q == 0.0                   # spent - refunded = 0 arrivals
+
+
+def test_belief_blend_dominates_the_accumulator_in_both_directions():
+    """Q(t) = max(raw, risk * SCALE): a challenge spikes Q instantly on a
+    fresh accumulator, and a hot accumulator ignores a calm belief."""
+    s = _sched(12.0, belief=_fixed_belief(0.8))
+    assert s.q_value == 0.8 * 12.0          # belief pushes Q up fast (raw = 0)
+    s2 = _sched(12.0, belief=_fixed_belief(0.05))
+    s2._raw = 9.0
+    assert s2.q_value == 9.0                # accumulator keeps its floor
+
+
+def test_zero_progress_candidates_are_never_bought():
+    s = _sched(12.0)
+    assert not s.try_spend(1.0, progress=0.0)
+    assert s.try_spend(1.0, progress=0.01)  # any positive progress clears at Q=0
+
+
+def test_orchestrator_wires_the_belief_filter_into_the_shared_ctx(tmp_path):
+    """Phase A4 wiring: a budgeted Orchestrator attaches ONE DetectionBelief to
+    the ToolContext and hands it to the scheduler; mu/V flow from the call."""
+    audit = RecordingAudit()
+    ctx = _ctx(tmp_path, audit)
+    orch = Orchestrator(_engagement(), tools={}, ctx=ctx, client=FakeClient(),
+                        graph=ctx.graph, attack_tree=None, memory=None,
+                        noise_budget=12.0, noise_decay_mu=4.0, stealth_speed_dial=20.0)
+    assert isinstance(ctx.detection_belief, DetectionBelief)
+    assert orch._noise is not None
+    assert orch._noise.belief_filter is ctx.detection_belief
+    assert orch._noise.mu == 4.0
+    assert orch._noise.v_dial == 20.0
+    assert orch._noise._scale == 12.0       # SCALE = round budget
+
+
+def test_orchestrator_without_budget_stays_pure_legacy(tmp_path):
+    audit = RecordingAudit()
+    ctx = _ctx(tmp_path, audit)
+    Orchestrator(_engagement(), tools={}, ctx=ctx, client=FakeClient(),
+                 graph=ctx.graph, attack_tree=None, memory=None, noise_budget=None)
+    assert not hasattr(ctx, "detection_belief")
+
+
+# -- Phase A4 end-to-end: HTTP observations -> belief -> scheduler spend --------
+
+def test_http_challenge_window_throttles_scheduler_and_recovers(tmp_path, monkeypatch):
+    """The full loop: responses through tools/http.py's observation hook teach
+    the belief; the scheduler's round-level spend drops during the challenge
+    window and recovers after the target returns to normal.
+
+    Timeline: two quiet rounds (spend 3.0 each), two challenge rounds (spend 0),
+    one recovery round (spend 3.0 again). The quiet candidates sum to 3.0 < mu
+    ramp so the raw accumulator alone never gates a quiet round — the throttle
+    under test is the BELIEF's."""
+    audit = RecordingAudit()
+    bus = FakeBus()
+    # The default _ctx resolver answers with a reserved documentation IP, which
+    # the scope guard (rightly) refuses for REAL fetches; this E2E fetches, so
+    # it resolves the same host to a public address instead.
+    eng = _engagement()
+    ctx = ToolContext(scope=ScopeGuard(eng, resolver=lambda h, p: [
+                          (2, 1, 6, "", ("93.184.216.34", 0))]),
+                      limiter=RateLimiter(100, 1000), audit=audit,
+                      findings=FindingStore(tmp_path / "f.json"), approve=lambda a, d: True,
+                      graph=KnowledgeGraph(tmp_path / "g.json"), events=bus)
+    orch = Orchestrator(_engagement(), tools={}, ctx=ctx, client=FakeClient(),
+                        graph=ctx.graph, attack_tree=None, memory=None,
+                        noise_budget=12.0, noise_decay_mu=2.0, stealth_speed_dial=10.0)
+    sched = orch._noise
+    belief = ctx.detection_belief
+
+    mode = {"kind": "normal"}
+
+    def fake_request(method, url, headers=None, data=None, timeout=20,
+                     allow_redirects=False, stream=True):
+        if mode["kind"] == "challenge":
+            _time.sleep(0.03)               # tarpit-slow vs the ~1ms baseline
+            return _FakeResp(b"Attention Required - solve the captcha",
+                             status=403, headers={"cf-mitigated": "challenge",
+                                                  "Retry-After": "60"})
+        return _FakeResp(b"ok")
+
+    monkeypatch.setattr(_http_mod.requests, "request", fake_request)
+    url = {"url": "https://api.acme.example/api/items/7", "method": "GET"}
+
+    def fetch(kind):
+        mode["kind"] = kind
+        _http_mod.fetch_once(ctx, url)
+
+    for _ in range(3):
+        fetch("normal")                     # establish the latency baseline
+
+    quiet_pairs = [(1.0, 0.7), (1.0, 0.8), (1.0, 0.9)]
+
+    def spend_round():
+        sched.reset()
+        ordered = sched.rank_bandit_items(_items(quiet_pairs))
+        return sum(it["cost"] for it in ordered
+                   if sched.try_spend(it["cost"], progress=it["progress"]))
+
+    spends = []
+    spends.append(spend_round())            # round 0: quiet -> full spend
+    fetch("normal"); fetch("normal")
+    spends.append(spend_round())            # round 1: still quiet -> full spend
+    fetch("challenge"); fetch("challenge")  # the target starts fighting back
+    assert belief.risk_score() > 0.5        # the hook actually moved the belief
+    spends.append(spend_round())            # round 2: challenge window -> 0
+    fetch("challenge"); fetch("challenge")
+    spends.append(spend_round())            # round 3: still challenged -> 0
+    for _ in range(4):
+        fetch("normal")                     # the defender cools down
+    spends.append(spend_round())            # round 4: recovery -> full spend
+
+    assert spends[0] == 3.0 and spends[1] == 3.0
+    assert spends[2] == 0.0 and spends[3] == 0.0
+    assert spends[4] == 3.0
+    assert spends[2] < spends[0] and spends[4] > spends[3]

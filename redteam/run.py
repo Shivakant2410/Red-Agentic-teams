@@ -234,6 +234,16 @@ class RunOptions:
     # much — cheap quiet gambits first, loud ones only when the bandit's evidence
     # clears the price. <=0 disables budgeting (unlimited spend, legacy behavior).
     round_noise_budget: float = 12.0
+    # Drift-plus-penalty scheduler (Phase A4): mu is the per-round risk-decay
+    # rate — how many noise credits of defender attention evaporate per round.
+    # Default is deliberately conservative (slow decay): one fully-spent
+    # 12-credit round takes ~5 rounds to drain at mu=2.0. See
+    # orchestrator.DriftPlusPenaltyScheduler's calibration notes.
+    noise_decay_mu: float = 2.0
+    # Stealth/speed dial V for the same scheduler: higher = more willing to
+    # spend noise for progress (overt pentest), lower = throttle harder at the
+    # same defender-belief (stealthy assumed-breach). Per-engagement, not global.
+    stealth_speed_dial: float = 10.0
     # Evidence proxy (MITM recording plane for sandbox tool traffic). On by default
     # whenever the sandbox runs; opt out with no_evidence_proxy. When TLS
     # interception is impossible (no `cryptography`), the proxy degrades to
@@ -491,7 +501,9 @@ def execute_run(opts: RunOptions) -> dict:
             from .orchestrator import Orchestrator
             driver = Orchestrator(engagement, tools, ctx, client, graph=graph,
                                   attack_tree=attack_tree, memory=memory,
-                                  noise_budget=opts.round_noise_budget)
+                                  noise_budget=opts.round_noise_budget,
+                                  noise_decay_mu=opts.noise_decay_mu,
+                                  stealth_speed_dial=opts.stealth_speed_dial)
         else:
             driver = RedTeamAgent(engagement, tools, ctx, client, max_steps=opts.max_steps,
                                   graph=graph, attack_tree=attack_tree, memory=memory,
