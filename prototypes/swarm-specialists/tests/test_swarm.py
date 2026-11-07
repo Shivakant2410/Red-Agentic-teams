@@ -195,7 +195,7 @@ def test_full_swarm_engagement_end_to_end(tmp_path):
     try:
         out = run({"base_url": base, "out_dir": str(tmp_path / "r1"),
                    "memory_dir": str(tmp_path / "mem"),
-                   "approvals": "lab", "budget": 380,
+                   "approvals": "lab", "budget": 460,
                    "stop_file": str(tmp_path / "r1" / "STOP")})
         assert out["ok"] is True
 
@@ -233,7 +233,7 @@ def test_full_swarm_engagement_end_to_end(tmp_path):
         try:
             out2 = run({"base_url": base2, "out_dir": str(tmp_path / "r2"),
                         "memory_dir": str(tmp_path / "mem"),   # persisted!
-                        "approvals": "lab", "budget": 380,
+                        "approvals": "lab", "budget": 460,
                         "stop_file": str(tmp_path / "r2" / "STOP")})
             assert out2["ok"] is True
             assert len(out2["findings"]) >= 9          # no capability loss

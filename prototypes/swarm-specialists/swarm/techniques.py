@@ -152,8 +152,11 @@ class Env:
 
     def wallet(self, p):
         """Discovered money read-back: first readback path returning an
-        integer field named like balance/credit/wallet."""
-        if "balance_path" not in self.cache:
+        integer field named like balance/credit/wallet. Discovery failure is
+        cached PER PRINCIPAL (M5 fix): an anon 401 is not evidence that no
+        balance path exists — the next authenticated principal retries."""
+        if not self.cache.get("balance_path") and \
+                p.name not in self.cache.setdefault("balance_failed", set()):
             self.cache["balance_path"] = None
             self.cache["balance_field"] = None
             for path in self.surface.get("readback", []):
@@ -169,6 +172,8 @@ class Env:
                             break
                 if self.cache["balance_path"]:
                     break
+            if not self.cache["balance_path"]:
+                self.cache["balance_failed"].add(p.name)
         path = self.cache.get("balance_path")
         if not path:
             return None

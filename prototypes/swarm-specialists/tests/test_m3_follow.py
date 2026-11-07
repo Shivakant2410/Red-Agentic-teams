@@ -260,7 +260,7 @@ def test_freightlane_m3_exit_in_miniature(tmp_path):
     try:
         out = run({"base_url": base, "out_dir": str(tmp_path / "m3"),
                    "memory_dir": str(tmp_path / "m3mem"),
-                   "approvals": "lab", "budget": 720,
+                   "approvals": "lab", "budget": 800,
                    "stop_file": str(tmp_path / "m3" / "STOP")})
         assert out["ok"] is True, out
         statuses = {f["id"]: f["status"] for f in out["findings"]}

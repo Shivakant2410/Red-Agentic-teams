@@ -159,7 +159,8 @@ class Orchestrator:
                 "per_specialist_dispatch_cap": ctx.get(
                     "per_specialist_dispatch_cap", 16)}
         specialists = [cls(ctx2) for cls in
-                       (ROSTER["RECON"], ROSTER["SURFACE"], ROSTER["HYPOTHESES"],
+                       (ROSTER["RECON"], ROSTER["SURFACE"], ROSTER["PREEX"],
+                        ROSTER["HYPOTHESES"],
                         ROSTER["EXPLOIT"], ROSTER["VERIFY"], ROSTER["ACCESS"],
                         ROSTER["LOGIC"], ROSTER["WINDOW"], ROSTER["GRAPH"])]
 
@@ -307,10 +308,19 @@ def _assemble(board, router, ex, started, out_dir, memory_dir,
               mem_before, mem_after, llm, ledger_stats=None, ag_stats=None,
               ambient_stats=None):
     findings = _dedupe(board.query(kind="FINDING"))
-    escalations = [{"chain": f["payload"]["chain"],
-                    "impact": f["payload"]["impact"],
-                    "severity": f["payload"]["severity"]}
-                   for f in board.query(kind="ESCALATION")]
+    escalations = []
+    postex_escalations = []
+    for f in board.query(kind="ESCALATION"):
+        if "postex" in (f.get("tags") or []):
+            # M5 post-ex ladder evidence (amplification/persistence/
+            # capability footprint) — measured, on verified work only
+            postex_escalations.append(
+                {"technique": f["payload"].get("technique"),
+                 "payload": f["payload"].get("postex")})
+            continue
+        escalations.append({"chain": f["payload"]["chain"],
+                            "impact": f["payload"]["impact"],
+                            "severity": f["payload"]["severity"]})
 
     sf_requests = None
     sf_doc_path = os.path.join(out_dir, "statefuzz", "findings.json")
@@ -333,7 +343,8 @@ def _assemble(board, router, ex, started, out_dir, memory_dir,
            "ledger": board.ledger(),
            "hypothesis_ledger": ledger_stats,
            "memory_before": mem_before, "memory_after": mem_after,
-           "findings": findings, "escalations": escalations}
+           "findings": findings, "escalations": escalations,
+           "postex_escalations": postex_escalations}
     with open(os.path.join(out_dir, "findings.json"), "w") as fh:
         json.dump(doc, fh, indent=2)
     with open(os.path.join(out_dir, "blackboard.json"), "w") as fh:
@@ -362,6 +373,7 @@ def _assemble(board, router, ex, started, out_dir, memory_dir,
                           "provenance": f["provenance"]}
                          for f in findings],
             "escalations": escalations,
+            "postex_escalations": postex_escalations,
             "memory_before": mem_before, "memory_after": mem_after,
             "trace_file": os.path.join(out_dir, "dispatch_trace.jsonl"),
             "artifacts": {"findings": os.path.join(out_dir, "findings.json"),
