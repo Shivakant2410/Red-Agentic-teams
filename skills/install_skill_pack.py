@@ -27,10 +27,15 @@ single <memory_dir>/chains.json (planner artifact, not Skill objects) unless
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/z/my-project/repo-analysis")
+# The pack lives inside the Red-Agentic-teams repo (skills/), so the repo root
+# (which provides redteam/skills.py) is one level up. Override with
+# RAT_REPO=/path/to/Red-Agentic-teams when running from a standalone pack copy.
+_REPO = Path(os.environ.get("RAT_REPO") or Path(__file__).resolve().parent.parent)
+sys.path.insert(0, str(_REPO))
 
 from redteam.skills import SkillLibrary         # noqa: E402
 

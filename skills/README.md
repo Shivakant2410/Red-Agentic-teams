@@ -12,7 +12,7 @@ commix, PortSwigger research — and rewritten into our proof-first DSL.
 ## Layout
 
 ```
-skill-pack/
+skills/
 ├── categories/access_control/  (3 skills)
 ├── categories/admin_panels/  (6 skills)
 ├── categories/ai_agentic_tools/  (7 skills)

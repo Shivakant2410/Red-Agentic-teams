@@ -17,17 +17,22 @@ Gates:
                   repo's own run_negative_control must NOT falsify on the benign set
                   (i.e. a benign control request fails at least one condition).
 
-Usage:  RATEAMS_REPO=/path/to/Red-Agentic-teams python3 validate_skill_pack.py
+Usage:  python3 validate_skill_pack.py [/path/to/Red-Agentic-teams]
+        (arg wins; else env RAT_REPO; else the repo root one level up when the
+        pack lives inside Red-Agentic-teams as skills/)
 """
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import tempfile
 from pathlib import Path
 
-REPO = sys.argv[1] if len(sys.argv) > 1 else "/home/z/my-project/repo-analysis"
+REPO = (sys.argv[1] if len(sys.argv) > 1
+        else os.environ.get("RAT_REPO")
+        or str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, REPO)
 
 from redteam.skills import SkillLibrary, substitute          # noqa: E402
