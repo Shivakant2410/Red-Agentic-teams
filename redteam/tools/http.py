@@ -23,6 +23,7 @@ from urllib.parse import urlparse
 import requests
 
 from . import ToolContext
+from ..sandbox.detection_belief import observe_http_response
 
 _MARKER = "__RT_STATUS__"
 
@@ -147,9 +148,13 @@ def fetch_once(ctx: ToolContext, req: dict, tool: str = "", session: str = ""):
     else:
         result = _host_request(req)
     status, body, _elapsed, headers = result
-    _record_traffic(ctx, req, status, time.monotonic() - start, headers, body,
+    elapsed = time.monotonic() - start
+    _record_traffic(ctx, req, status, elapsed, headers, body,
                     tool=tool, session=session)
     _passive_observe(ctx, req, status, headers, body)
+    # Phase A4: feed the POMDP detection-belief layer (no extra requests — this
+    # is the same exchange, observed). Best-effort, never raises.
+    observe_http_response(ctx, req, status, elapsed, headers, body)
     return result
 
 
@@ -193,8 +198,10 @@ def make_fetch(ctx: ToolContext, req: dict, tool: str = ""):
             status, body, elapsed, headers = _sandbox_request(ctx, req)
         else:
             status, body, elapsed, headers = _host_request(req)
-        _record_traffic(ctx, req, status, time.monotonic() - start, headers, body,
+        wall = time.monotonic() - start
+        _record_traffic(ctx, req, status, wall, headers, body,
                         tool=tool or "verify", session="")
         _passive_observe(ctx, req, status, headers, body)
+        observe_http_response(ctx, req, status, wall, headers, body)
         return status, body, elapsed
     return fetch

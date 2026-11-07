@@ -60,6 +60,7 @@ from .killchain import (CREDENTIAL_ACCESS, DISCOVERY, LATERAL_MOVEMENT,
 from .llm.openrouter import OpenRouterClient
 from .llm.routing import PARSE, PLAN
 from .reflection import coach_note, reflect
+from .sandbox.detection_belief import DetectionBelief
 from .tools import ToolContext, Tool
 
 
@@ -259,19 +260,130 @@ def run_verify_pass(engagement: Engagement, tools: dict[str, Tool], ctx: ToolCon
     return remaining
 
 
-class NoiseBudget:
-    """Per-round OPSEC spend cap for the exploit swarm (docs/multi-gambit.md §3.4).
+class DriftPlusPenaltyScheduler:
+    """Per-round OPSEC spend control for the exploit swarm (Phase A4) — replaces
+    the flat, one-shot knapsack NoiseBudget with a Lyapunov drift-plus-penalty
+    scheduler driven by a POMDP belief over the defender's posture
+    (redteam/sandbox/detection_belief.py).
 
-    Every claim reserves its technique's OPSEC price (attack_tree.technique_cost)
-    from a shared round budget; a gambit that doesn't fit the remainder is skipped
-    in favor of cheaper ones still to hand (greedy knapsack), and a lost claim race
-    refunds the reservation. Thread-safe — swarm workers spend concurrently. A
-    budget of 0 disables spend tracking entirely (pre-bandit behavior)."""
+    NoiseBudget knew the PRICE of every technique but never whether the target
+    had started REACTING. This scheduler closes that loop:
 
-    def __init__(self, total: float):
+        Q(t+1) = max(Q(t) + noise_cost(spent) - mu, 0)     # Lyapunov virtual queue
+
+    with one deliberate deviation from the naive recursion (Phase A4 spec): the
+    queue is blended with the belief filter so a challenge page spikes risk
+    immediately instead of waiting for loud techniques to accumulate —
+
+        Q(t) = max(raw_accumulator(t), belief.risk_score(t) * SCALE)
+
+    Selection, per round, over the tree's actionable frontier:
+
+        score(a) = Q(t) * noise_cost(a) - V * progress_value(a)
+
+    Candidates are ordered ascending by score (most negative first = highest
+    progress per unit of risk-weighted cost; STABLE sort, so ties keep the
+    producer's own order — the bandit's fill order at Q ~ 0) and each candidate
+    must clear the admission gate `V * progress > Q * cost` (score < 0) before
+    `try_spend` reserves its price. At a quiet belief every candidate with
+    positive progress clears the gate and the ordering collapses to the old
+    cost-aware bandit order (progress-per-cost descending) — legacy behavior.
+    As Q rises, loud and unproven arms fail the gate first; at Q >= V nothing
+    clears and the round is skipped entirely. That is the drift-plus-penalty
+    control loop: overspend and the queue rises until spend falls under mu,
+    then the queue drains and the swarm re-opens. 0-progress candidates are
+    never bought — no progress estimate, no spend.
+
+    PUBLIC SURFACE (every existing NoiseBudget caller keeps working; the
+    `NoiseBudget = DriftPlusPenaltyScheduler` alias below preserves the old
+    import name): remaining / can_afford / try_spend(cost[, progress]) /
+    refund / reset. try_spend keeps its atomic reserve-or-False contract; the
+    optional `progress` argument adds admission control and defaults to None
+    (no estimate available -> allowance-only, exactly legacy semantics).
+    NEW for callers that want the scheduler's ordering opinion:
+    rank_bandit_items() / rank_nodes() return candidates in ascending-score
+    order with progress annotated.
+
+    CALIBRATION (what mu, V and SCALE are set to, and why):
+
+    - mu = 2.0 noise credits per round (RunOptions.noise_decay_mu). mu is the
+      assumed per-round decay of defender attention. At the default 12-credit
+      round budget, one fully-spent loud round leaves Q at ~10, throttling the
+      following ~4-5 rounds before the queue drains — slow on purpose
+      (conservative default: defenders remember). The pre-A4 swarm tests run
+      round budgets of 1.0-2.0, which mu=2.0 fully drains every round, so those
+      runs keep exact legacy semantics.
+    - V = 10.0 (RunOptions.stealth_speed_dial) — the stealth/speed dial,
+      operator-tunable per engagement (overt pentest = high V, stealthy
+      assumed-breach = low V). Chosen so the admission boundary
+      `V * progress > Q * cost` lands between the two observable scales:
+      bandit progress (Thompson draw / OPSEC cost) lives in ~[0.1, 0.9] and
+      technique_cost in [1, 5], so at mild suspicion (risk ~0.3 -> Q ~ 3.6)
+      quiet cost-1 probes (V*p >= ~6 > 3.6) still pass while loud cost-3+
+      techniques are gated — and at certainty (risk -> 1 -> Q -> SCALE) the
+      round is skipped outright.
+    - SCALE = the round budget itself (the scheduler's `total`, i.e.
+      RunOptions.round_noise_budget). The spec requires risk_score()'s [0, 1]
+      range to be comparable in magnitude to the accumulator's range; the
+      accumulator is bounded by what one round can spend, which is the budget
+      (12.0 default). SCALE = budget therefore maps a certain-BLOCKED belief
+      to the loudest Q the accumulator could reach in a single round — derived
+      from the configured cap, not a magic number. The raw accumulator is
+      additionally capped at SCALE so a long engagement can never push Q past
+      the belief scale.
+    """
+
+    # Defaults for the scheduler's knobs (RunOptions.noise_decay_mu /
+    # RunOptions.stealth_speed_dial override per run; see the calibration
+    # paragraph above for the reasoning behind these values).
+    NOISE_DECAY_MU_DEFAULT = 2.0
+    STEALTH_SPEED_DIAL_DEFAULT = 10.0
+
+    def __init__(self, total: float, belief_filter=None,
+                 mu: float | None = None, v_dial: float | None = None,
+                 scale: float | None = None):
         self._total = max(float(total), 0.0)
+        self._scale = self._total if scale is None else max(float(scale), 1e-9)
+        self._mu = max(float(mu) if mu is not None else self.NOISE_DECAY_MU_DEFAULT, 1e-6)
+        self._v = max(float(v_dial) if v_dial is not None else self.STEALTH_SPEED_DIAL_DEFAULT, 1e-6)
+        self._belief = belief_filter
+        self._raw = 0.0              # Lyapunov virtual queue (raw accumulator)
+        self._round_spend = 0.0      # reservations this round, net of refunds
         self._remaining = self._total
         self._lock = threading.Lock()
+
+    # -- Lyapunov state -------------------------------------------------------
+
+    def _risk(self) -> float:
+        return self._belief.risk_score() if self._belief is not None else 0.0
+
+    @property
+    def q_value(self) -> float:
+        """Q(t) = max(raw_accumulator(t), belief.risk_score(t) * SCALE)."""
+        return max(self._raw, self._risk() * self._scale)
+
+    @property
+    def raw_q(self) -> float:
+        """The un-blended accumulator — observability for tests and dashboards."""
+        return self._raw
+
+    @property
+    def belief_filter(self):
+        """The attached POMDP belief layer (DetectionBelief), or None when the
+        scheduler runs accumulator-only (no belief available)."""
+        return self._belief
+
+    @property
+    def mu(self) -> float:
+        """Per-round risk-decay rate (RunOptions.noise_decay_mu)."""
+        return self._mu
+
+    @property
+    def v_dial(self) -> float:
+        """Stealth/speed dial (RunOptions.stealth_speed_dial)."""
+        return self._v
+
+    # -- NoiseBudget-compatible surface (identical semantics) -----------------
 
     @property
     def remaining(self) -> float:
@@ -282,36 +394,97 @@ class NoiseBudget:
         with self._lock:
             return self._remaining >= cost - 1e-9
 
-    def try_spend(self, cost: float) -> bool:
-        """Atomically reserve `cost` from the remaining budget; False if it doesn't
-        fit (the caller moves on to a cheaper candidate — nothing was spent)."""
+    def try_spend(self, cost: float, progress: float | None = None) -> bool:
+        """Atomically reserve `cost` from the remaining round allowance; False
+        if it doesn't fit (the caller moves on to a cheaper candidate — nothing
+        was spent). With a `progress` estimate supplied, the reservation ALSO
+        has to clear the drift-plus-penalty admission gate
+        `Q(t) * cost - V * progress < 0`: when the risk-weighted cost outweighs
+        the expected progress the candidate is refused this round, exactly like
+        a candidate that doesn't fit the allowance."""
         with self._lock:
-            if self._remaining >= cost - 1e-9:
-                self._remaining -= cost
-                return True
-            return False
+            if self._remaining < cost - 1e-9:
+                return False
+            if progress is not None:
+                q = max(self._raw, self._risk() * self._scale)
+                if q * cost - self._v * float(progress) >= 0.0:
+                    return False   # admission control: not worth the risk this round
+            self._remaining -= cost
+            self._round_spend += cost
+            return True
 
     def refund(self, cost: float) -> None:
         """Return a reservation to the budget (capped at the total — refunds can
-        never mint budget that was never there)."""
+        never mint budget that was never there). A refunded reservation never
+        materialized into work, so it also leaves the Lyapunov arrival rate."""
         with self._lock:
             self._remaining = min(self._total, self._remaining + cost)
+            self._round_spend = max(0.0, self._round_spend - float(cost))
 
     def reset(self) -> None:
-        """Restore the full allowance — called ONCE per exploit round. 'Per-round'
-        is the documented contract (RunOptions.round_noise_budget); without the
-        reset, round 0's spend starves every later round and the swarm stops
-        exploring after its first claims (caught by the product E2E run of
-        2026-10-30: 12 rounds started, only round 0 ever claimed)."""
+        """Restore the full allowance and CLOSE the previous round's Lyapunov
+        recursion — called ONCE per exploit round. 'Per-round' is the documented
+        contract (RunOptions.round_noise_budget); without the reset, round 0's
+        spend starves every later round and the swarm stops exploring after its
+        first claims (caught by the product E2E run of 2026-10-30: 12 rounds
+        started, only round 0 ever claimed)."""
         with self._lock:
+            self._raw = min(max(self._raw + self._round_spend - self._mu, 0.0),
+                            self._scale)
+            self._round_spend = 0.0
             self._remaining = self._total
+
+    # -- drift-plus-penalty ordering (new in Phase A4) -------------------------
+
+    def rank_bandit_items(self, items: list[dict]) -> list[dict]:
+        """Re-rank bandit.select() output by the drift-plus-penalty score.
+
+        Items are the dicts bandit.select returns ({technique, bucket, cost,
+        draw, score[, meta]}); `score` (Thompson draw / OPSEC cost) is the
+        engine's existing expected-progress-per-cost estimate and becomes
+        progress_value(a) — reused, not re-invented. STABLY sorted ascending by
+        Q*cost - V*progress: ties keep the bandit's order, and at Q ~ 0 the
+        result IS the bandit's fill order. Each item gains a `progress` key for
+        the try_spend admission gate."""
+        q = self.q_value
+        for item in items:
+            item["progress"] = max(0.0, min(float(item.get("score", 0.0)), 1.0))
+        items.sort(key=lambda it: q * float(it["cost"]) - self._v * it["progress"])
+        return items
+
+    def rank_nodes(self, nodes) -> list[tuple]:
+        """No-bandit path: progress from the tree's own priority doctrine
+        (entry priority / 100; chain-boosted follow-ups capped at 1.0 —
+        pressing a foothold is the highest-progress work the tree knows).
+        Returns [(node, progress)] ascending by the drift-plus-penalty score;
+        at Q ~ 0 this is the tree's priority order."""
+        q = self.q_value
+        keyed = []
+        for n in nodes:
+            t = TECHNIQUES.get(n.technique)
+            if t is None:
+                progress = 0.5   # unknown technique: neutral estimate
+            else:
+                progress = min((t.priority + (100.0 if t.chained else 0.0)) / 100.0, 1.0)
+            keyed.append((q * technique_cost(n.technique) - self._v * progress,
+                          progress, n))
+        keyed.sort(key=lambda x: x[0])
+        return [(n, p) for _, p, n in keyed]
+
+
+# Backward-compat alias: every existing NoiseBudget caller (the swarm tests,
+# specialists.py) keeps importing the same name; the class above now carries
+# the behavior.
+NoiseBudget = DriftPlusPenaltyScheduler
 
 
 class Orchestrator:
     def __init__(self, engagement: Engagement, tools: dict[str, Tool], ctx: ToolContext,
                  client: OpenRouterClient, graph=None, attack_tree=None, memory=None,
                  max_exploit_rounds: int = 12, max_access_rounds: int = 4,
-                 max_swarm_workers: int = 3, noise_budget: float | None = None):
+                 max_swarm_workers: int = 3, noise_budget: float | None = None,
+                 noise_decay_mu: float | None = None,
+                 stealth_speed_dial: float | None = None):
         self._eng = engagement
         self._tools = tools
         self._ctx = ctx
@@ -334,11 +507,25 @@ class Orchestrator:
         # Phase 5/6 notes), 3 concurrent is the realistic ceiling, not a target to raise
         # without also raising the token budget.
         self._max_swarm_workers = max_swarm_workers
-        # Per-round OPSEC budget (docs/multi-gambit.md §3.4): None/0 = unlimited
-        # spend (exact legacy behavior); a positive value caps what the swarm may
-        # spend per round in noise credits, spent according to the bandit's
-        # yield-per-cost ranking (when a bandit is attached) or plain priority.
-        self._noise = NoiseBudget(noise_budget) if noise_budget and noise_budget > 0 else None
+        # Per-round OPSEC spend control (docs/multi-gambit.md §3.4, Phase A4):
+        # None/0 = unlimited spend (exact legacy behavior). A positive value
+        # arms the drift-plus-penalty scheduler: the swarm's per-round spend is
+        # shaped by the Lyapunov queue and the POMDP detection-belief filter
+        # (sandbox/detection_belief.py), fed by the HTTP observation hook in
+        # tools/http.py. The belief layer attaches to the SHARED ToolContext so
+        # every response the team already makes teaches it — no extra requests.
+        self._noise = None
+        if noise_budget and noise_budget > 0:
+            belief = getattr(self._ctx, "detection_belief", None)
+            if belief is None:
+                belief = DetectionBelief()
+                try:
+                    self._ctx.detection_belief = belief
+                except Exception:
+                    pass  # frozen/mock ctx — scheduler still runs, accumulator-only
+            self._noise = DriftPlusPenaltyScheduler(
+                noise_budget, belief_filter=belief,
+                mu=noise_decay_mu, v_dial=stealth_speed_dial)
         self._budget = None
         self._manifest = None
 
@@ -428,19 +615,35 @@ class Orchestrator:
                     ranked = bandit.select(
                         [(n.technique, n.bucket, technique_cost(n.technique), n)
                          for n in nodes], k=len(nodes))
+                    if self._noise is not None:
+                        # Drift-plus-penalty fill (Phase A4): re-rank the bandit's
+                        # cost-aware order by Q*cost - V*progress and gate every
+                        # admission. At a quiet belief this IS the bandit's fill
+                        # order (same behavior as before); as the belief spikes,
+                        # loud/unproven arms are refused first.
+                        ranked = self._noise.rank_bandit_items(ranked)
                     for item in ranked:
                         node, cost = item["meta"], item["cost"]
-                        if self._noise is not None and not self._noise.try_spend(cost):
-                            continue   # doesn't fit the remaining round budget — a cheaper one may
+                        if self._noise is not None and not self._noise.try_spend(
+                                cost, progress=item.get("progress")):
+                            continue   # doesn't fit / fails the gate — a cheaper one may
                         if self._attack_tree.claim(node.technique, node.target):
                             claimed = node
                             break
                         if self._noise is not None:
                             self._noise.refund(cost)   # lost the claim race — budget back
                 else:
-                    for node in self._attack_tree.actionable(limit=self._max_swarm_workers * 4):
+                    candidates = self._attack_tree.actionable(limit=self._max_swarm_workers * 4)
+                    if self._noise is not None:
+                        # Drift-plus-penalty fill (Phase A4), no-bandit path:
+                        # static-priority progress, same score/admission rule.
+                        ordered = self._noise.rank_nodes(candidates)
+                    else:
+                        ordered = [(n, None) for n in candidates]
+                    for node, progress in ordered:
                         cost = technique_cost(node.technique)
-                        if self._noise is not None and not self._noise.try_spend(cost):
+                        if self._noise is not None and not self._noise.try_spend(
+                                cost, progress=progress):
                             continue
                         if self._attack_tree.claim(node.technique, node.target):
                             claimed = node
