@@ -1,31 +1,32 @@
 {
-  "generated": "2026-11-07T02:55:41+0000",
+  "generated": "2026-11-07T03:34:35+0000",
   "tree": "/home/z/my-project/ra-work/prototypes/swarm-specialists",
   "labs": {
     "meridian": {
       "summaries": {
         "run1": {
           "ok": true,
-          "requests": 425,
+          "requests": 518,
           "statefuzz_sub_budget_requests": null,
           "rounds": 40,
-          "elapsed_s": 2.9,
+          "elapsed_s": 3.6,
           "ledger": {
-            "facts": 59,
+            "facts": 63,
             "by_kind": {
               "CONTROL": 11,
-              "OBSERVATION": 18,
+              "OBSERVATION": 20,
               "SURFACE": 1,
               "HYPOTHESIS": 11,
-              "FINDING": 17,
-              "ESCALATION": 1
+              "ESCALATION": 3,
+              "FINDING": 17
             },
             "by_source": {
               "orchestrator": 1,
               "recon": 5,
               "surface_mapper": 3,
               "hypothesis": 11,
-              "exploit": 10,
+              "exploit": 12,
+              "attack_graph": 2,
               "verify": 8,
               "access": 1,
               "router": 1,
@@ -40,7 +41,8 @@
             "verify",
             "access",
             "statefuzz_spec",
-            "window_driver"
+            "window_driver",
+            "attack_graph"
           ],
           "hypothesis_ledger": {
             "stats": {
@@ -55,8 +57,8 @@
               "by_source": {
                 "window-driver/scan": 10,
                 "window-driver/fresh": 1,
-                "swarm-board/a1bbcf": 11,
-                "deferred-window/a1bbcf": 1
+                "swarm-board/217fe0": 11,
+                "deferred-window/217fe0": 1
               },
               "by_tag": {
                 "marker": 11,
@@ -77,6 +79,78 @@
             "score": 19.75
           },
           "markers_registered": 11,
+          "attack_graph": {
+            "surface_nodes": 10,
+            "surface_edges": 5,
+            "money_paths": 10,
+            "next_actions": []
+          },
+          "ambient_watch": {
+            "events": 14,
+            "unexplained": 3,
+            "deltas": [
+              {
+                "tag": "h_open_vocab",
+                "delta": -500,
+                "attributed": false
+              },
+              {
+                "tag": "h_hidden_verbs",
+                "delta": -100,
+                "attributed": false
+              },
+              {
+                "tag": "h_hidden_verbs",
+                "delta": -100,
+                "attributed": false
+              },
+              {
+                "tag": "h_state_guard",
+                "delta": 200,
+                "attributed": true
+              },
+              {
+                "tag": "h_cross_tenant",
+                "delta": -100,
+                "attributed": true
+              },
+              {
+                "tag": "h_cross_tenant",
+                "delta": 99,
+                "attributed": true
+              },
+              {
+                "tag": "h_async_toctou",
+                "delta": -500,
+                "attributed": true
+              },
+              {
+                "tag": "h_async_toctou",
+                "delta": -500,
+                "attributed": true
+              },
+              {
+                "tag": "h_async_toctou",
+                "delta": -375000,
+                "attributed": true
+              },
+              {
+                "tag": "h_async_toctou",
+                "delta": 250000,
+                "attributed": true
+              },
+              {
+                "tag": "h_arith_cycle",
+                "delta": -97,
+                "attributed": true
+              },
+              {
+                "tag": "h_quota_race",
+                "delta": 5000,
+                "attributed": true
+              }
+            ]
+          },
           "spawn_events": [],
           "llm_seam_calls": [],
           "findings": [
@@ -163,6 +237,24 @@
             }
           ],
           "escalations": [
+            {
+              "chain": [
+                "technique:h_open_vocab",
+                "ambient-wallet-delta",
+                "unattributed-value-movement"
+              ],
+              "impact": "discovery moved value with no finding: ov-19-476288 -500",
+              "severity": "medium"
+            },
+            {
+              "chain": [
+                "technique:h_hidden_verbs",
+                "ambient-wallet-delta",
+                "unattributed-value-movement"
+              ],
+              "impact": "discovery moved value with no finding: hdv-91-476408 -100; hdv-105-476430 -100",
+              "severity": "medium"
+            },
             {
               "chain": {
                 "chain_id": "CH-FW-AUDIT-LEAK-FW-DEPUTY-CREDIT",
@@ -243,6 +335,12 @@
               "techniques": {},
               "insights": 0,
               "trials": 0
+            },
+            "attack_graph": {
+              "name": "attack_graph",
+              "techniques": {},
+              "insights": 0,
+              "trials": 0
             }
           },
           "memory_after": {
@@ -278,7 +376,7 @@
             "exploit": {
               "name": "exploit",
               "techniques": {
-                "h_open_vocab": 0.364,
+                "h_open_vocab": 0.556,
                 "h_hidden_verbs": 0.556,
                 "h_state_guard": 0.556,
                 "h_mass_assign": 0.364,
@@ -327,6 +425,12 @@
               "techniques": {},
               "insights": 0,
               "trials": 0
+            },
+            "attack_graph": {
+              "name": "attack_graph",
+              "techniques": {},
+              "insights": 0,
+              "trials": 0
             }
           },
           "artifacts": {
@@ -334,34 +438,35 @@
             "blackboard": "/home/z/my-project/ra-work/prototypes/swarm-specialists/m0-results/meridian/run1/blackboard.json",
             "traffic": "/home/z/my-project/ra-work/prototypes/swarm-specialists/m0-results/meridian/run1/traffic.jsonl"
           },
-          "wall_s": 2.9
+          "wall_s": 3.6
         },
         "run2": {
           "ok": true,
-          "requests": 360,
+          "requests": 477,
           "statefuzz_sub_budget_requests": null,
           "rounds": 40,
-          "elapsed_s": 5.5,
+          "elapsed_s": 3.5,
           "ledger": {
-            "facts": 49,
+            "facts": 53,
             "by_kind": {
-              "CONTROL": 13,
-              "OBSERVATION": 12,
+              "CONTROL": 11,
+              "OBSERVATION": 15,
               "SURFACE": 1,
               "HYPOTHESIS": 11,
-              "FINDING": 11,
-              "ESCALATION": 1
+              "ESCALATION": 3,
+              "FINDING": 12
             },
             "by_source": {
               "orchestrator": 1,
               "recon": 5,
               "surface_mapper": 3,
               "hypothesis": 11,
-              "exploit": 10,
-              "verify": 10,
+              "exploit": 12,
+              "attack_graph": 2,
+              "verify": 8,
               "access": 1,
               "router": 1,
-              "window_driver": 7
+              "window_driver": 9
             }
           },
           "roster": [
@@ -372,26 +477,27 @@
             "verify",
             "access",
             "statefuzz_spec",
-            "window_driver"
+            "window_driver",
+            "attack_graph"
           ],
           "hypothesis_ledger": {
             "stats": {
-              "total": 17,
+              "total": 18,
               "by_status": {
-                "confirmed": 9,
+                "confirmed": 10,
                 "refuted": 4,
                 "inconclusive": 2,
                 "tested": 1,
                 "confirmed-by-transcript": 1
               },
               "by_source": {
-                "window-driver/scan": 4,
+                "window-driver/scan": 5,
                 "window-driver/fresh": 1,
-                "swarm-board/5894f8": 11,
-                "deferred-window/5894f8": 1
+                "swarm-board/d4fd53": 11,
+                "deferred-window/d4fd53": 1
               },
               "by_tag": {
-                "marker": 5,
+                "marker": 6,
                 "h_idor": 1,
                 "h_fsm": 1,
                 "h_open_vocab": 1,
@@ -406,9 +512,81 @@
                 "deferred-window": 1
               }
             },
-            "score": 13.75
+            "score": 14.75
           },
-          "markers_registered": 5,
+          "markers_registered": 6,
+          "attack_graph": {
+            "surface_nodes": 10,
+            "surface_edges": 5,
+            "money_paths": 5,
+            "next_actions": []
+          },
+          "ambient_watch": {
+            "events": 13,
+            "unexplained": 3,
+            "deltas": [
+              {
+                "tag": "h_open_vocab",
+                "delta": -500,
+                "attributed": false
+              },
+              {
+                "tag": "h_hidden_verbs",
+                "delta": -100,
+                "attributed": false
+              },
+              {
+                "tag": "h_hidden_verbs",
+                "delta": -100,
+                "attributed": false
+              },
+              {
+                "tag": "h_state_guard",
+                "delta": 200,
+                "attributed": true
+              },
+              {
+                "tag": "h_cross_tenant",
+                "delta": -100,
+                "attributed": true
+              },
+              {
+                "tag": "h_cross_tenant",
+                "delta": 99,
+                "attributed": true
+              },
+              {
+                "tag": "h_async_toctou",
+                "delta": -500,
+                "attributed": true
+              },
+              {
+                "tag": "h_async_toctou",
+                "delta": -375000,
+                "attributed": true
+              },
+              {
+                "tag": "h_async_toctou",
+                "delta": 250000,
+                "attributed": true
+              },
+              {
+                "tag": "h_arith_cycle",
+                "delta": -97,
+                "attributed": true
+              },
+              {
+                "tag": "h_quota_race",
+                "delta": 5000,
+                "attributed": true
+              },
+              {
+                "tag": "h_quota_race",
+                "delta": 5000,
+                "attributed": true
+              }
+            ]
+          },
           "spawn_events": [],
           "llm_seam_calls": [],
           "findings": [
@@ -496,6 +674,24 @@
           ],
           "escalations": [
             {
+              "chain": [
+                "technique:h_open_vocab",
+                "ambient-wallet-delta",
+                "unattributed-value-movement"
+              ],
+              "impact": "discovery moved value with no finding: ov-18-480281 -500",
+              "severity": "medium"
+            },
+            {
+              "chain": [
+                "technique:h_hidden_verbs",
+                "ambient-wallet-delta",
+                "unattributed-value-movement"
+              ],
+              "impact": "discovery moved value with no finding: hdv-90-480401 -100; hdv-104-480424 -100",
+              "severity": "medium"
+            },
+            {
               "chain": {
                 "chain_id": "CH-FW-AUDIT-LEAK-FW-DEPUTY-CREDIT",
                 "members": [
@@ -543,7 +739,7 @@
             "exploit": {
               "name": "exploit",
               "techniques": {
-                "h_open_vocab": 0.364,
+                "h_open_vocab": 0.556,
                 "h_hidden_verbs": 0.556,
                 "h_state_guard": 0.556,
                 "h_mass_assign": 0.364,
@@ -592,6 +788,12 @@
               "techniques": {},
               "insights": 0,
               "trials": 0
+            },
+            "attack_graph": {
+              "name": "attack_graph",
+              "techniques": {},
+              "insights": 0,
+              "trials": 0
             }
           },
           "memory_after": {
@@ -627,7 +829,7 @@
             "exploit": {
               "name": "exploit",
               "techniques": {
-                "h_open_vocab": 0.364,
+                "h_open_vocab": 0.6,
                 "h_hidden_verbs": 0.6,
                 "h_state_guard": 0.6,
                 "h_mass_assign": 0.364,
@@ -640,7 +842,7 @@
                 "h_idor": 0.286
               },
               "insights": 1,
-              "trials": 20
+              "trials": 21
             },
             "verify": {
               "name": "verify",
@@ -676,6 +878,12 @@
               "techniques": {},
               "insights": 0,
               "trials": 0
+            },
+            "attack_graph": {
+              "name": "attack_graph",
+              "techniques": {},
+              "insights": 0,
+              "trials": 0
             }
           },
           "artifacts": {
@@ -683,7 +891,7 @@
             "blackboard": "/home/z/my-project/ra-work/prototypes/swarm-specialists/m0-results/meridian/run2/blackboard.json",
             "traffic": "/home/z/my-project/ra-work/prototypes/swarm-specialists/m0-results/meridian/run2/traffic.jsonl"
           },
-          "wall_s": 5.5
+          "wall_s": 3.5
         }
       },
       "scoring": {
@@ -884,7 +1092,7 @@
       "summaries": {
         "run1": {
           "ok": true,
-          "requests": 255,
+          "requests": 270,
           "statefuzz_sub_budget_requests": 87,
           "rounds": 40,
           "elapsed_s": 2.5,
@@ -917,7 +1125,8 @@
             "verify",
             "access",
             "statefuzz_spec",
-            "window_driver"
+            "window_driver",
+            "attack_graph"
           ],
           "hypothesis_ledger": {
             "stats": {
@@ -928,8 +1137,8 @@
                 "refuted": 4
               },
               "by_source": {
-                "swarm-board/8eca31": 10,
-                "deferred-window/8eca31": 1,
+                "swarm-board/6a291a": 10,
+                "deferred-window/6a291a": 1,
                 "statefuzz/swarm-embedded": 9
               },
               "by_tag": {
@@ -958,6 +1167,17 @@
             "score": 19.5
           },
           "markers_registered": 0,
+          "attack_graph": {
+            "surface_nodes": 19,
+            "surface_edges": 10,
+            "money_paths": 0,
+            "next_actions": []
+          },
+          "ambient_watch": {
+            "events": 0,
+            "unexplained": 0,
+            "deltas": []
+          },
           "spawn_events": [
             {
               "parent": "exploit",
@@ -1167,6 +1387,12 @@
               "techniques": {},
               "insights": 0,
               "trials": 0
+            },
+            "attack_graph": {
+              "name": "attack_graph",
+              "techniques": {},
+              "insights": 0,
+              "trials": 0
             }
           },
           "memory_after": {
@@ -1256,6 +1482,12 @@
               "techniques": {},
               "insights": 0,
               "trials": 0
+            },
+            "attack_graph": {
+              "name": "attack_graph",
+              "techniques": {},
+              "insights": 0,
+              "trials": 0
             }
           },
           "artifacts": {
@@ -1300,7 +1532,8 @@
             "verify",
             "access",
             "statefuzz_spec",
-            "window_driver"
+            "window_driver",
+            "attack_graph"
           ],
           "hypothesis_ledger": {
             "stats": {
@@ -1311,8 +1544,8 @@
                 "refuted": 4
               },
               "by_source": {
-                "swarm-board/ea3e50": 10,
-                "deferred-window/ea3e50": 1,
+                "swarm-board/e3475c": 10,
+                "deferred-window/e3475c": 1,
                 "statefuzz/swarm-embedded": 9
               },
               "by_tag": {
@@ -1341,6 +1574,17 @@
             "score": 19.5
           },
           "markers_registered": 0,
+          "attack_graph": {
+            "surface_nodes": 19,
+            "surface_edges": 10,
+            "money_paths": 0,
+            "next_actions": []
+          },
+          "ambient_watch": {
+            "events": 0,
+            "unexplained": 0,
+            "deltas": []
+          },
           "spawn_events": [
             {
               "parent": "exploit",
@@ -1577,6 +1821,12 @@
               "techniques": {},
               "insights": 0,
               "trials": 0
+            },
+            "attack_graph": {
+              "name": "attack_graph",
+              "techniques": {},
+              "insights": 0,
+              "trials": 0
             }
           },
           "memory_after": {
@@ -1663,6 +1913,12 @@
             },
             "window_driver": {
               "name": "window_driver",
+              "techniques": {},
+              "insights": 0,
+              "trials": 0
+            },
+            "attack_graph": {
+              "name": "attack_graph",
               "techniques": {},
               "insights": 0,
               "trials": 0

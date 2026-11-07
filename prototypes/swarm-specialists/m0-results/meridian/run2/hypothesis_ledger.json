@@ -1,24 +1,24 @@
 {
   "tool": "hypothesis-ledger",
   "version": "1.0.0",
-  "generated": "2026-11-07T02:55:51+0000",
+  "generated": "2026-11-07T03:34:43+0000",
   "stats": {
-    "total": 17,
+    "total": 18,
     "by_status": {
-      "confirmed": 9,
+      "confirmed": 10,
       "refuted": 4,
       "inconclusive": 2,
       "tested": 1,
       "confirmed-by-transcript": 1
     },
     "by_source": {
-      "window-driver/scan": 4,
+      "window-driver/scan": 5,
       "window-driver/fresh": 1,
-      "swarm-board/5894f8": 11,
-      "deferred-window/5894f8": 1
+      "swarm-board/d4fd53": 11,
+      "deferred-window/d4fd53": 1
     },
     "by_tag": {
-      "marker": 5,
+      "marker": 6,
       "h_idor": 1,
       "h_fsm": 1,
       "h_open_vocab": 1,
@@ -33,17 +33,17 @@
       "deferred-window": 1
     }
   },
-  "score": 13.75,
+  "score": 14.75,
   "entries": [
     {
       "id": "H-0001",
       "source": "window-driver/scan",
       "tag": "marker",
-      "title": "async seam /api/events/EV-f076ae912929 will debit 500 exactly once",
+      "title": "async seam /api/events/EV-72c9744f0b6e will debit 500 exactly once",
       "prior": 0.55,
-      "plan": "drain inside window -> poll /api/events/EV-f076ae912929 -> cancel after settle -> wallet read-back",
+      "plan": "drain inside window -> poll /api/events/EV-72c9744f0b6e -> cancel after settle -> wallet read-back",
       "derived_from": [
-        "SF-WINDOW_DRIVER-0096"
+        "SF-WINDOW_DRIVER-0104"
       ],
       "status": "confirmed",
       "tests": [
@@ -54,7 +54,7 @@
           "finding_ids": [
             "FW-SETTLED-CANCEL"
           ],
-          "ts": 1794020148.0280018
+          "ts": 1794022483.0985143
         }
       ],
       "evidence": [
@@ -71,28 +71,28 @@
             },
             {
               "step": "post-settle-wallet",
-              "wallet": 249500
+              "wallet": 249000
             },
             {
               "step": "cancel",
               "verb": "cancel",
               "status": 200,
               "refund": 500,
-              "wallet": 250000
+              "wallet": 249500
             }
           ]
         }
       ],
-      "created": 1794020148.0187328,
-      "resolved": 1794020148.0280032,
+      "created": 1794022483.0887468,
+      "resolved": 1794022483.098516,
       "marker": {
-        "event_path": "/api/events/EV-f076ae912929",
+        "event_path": "/api/events/EV-72c9744f0b6e",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-f8a616f5c6",
+        "object_id": "PAY-f3f61aeab3",
         "amount": 500,
         "amount_field": "amount_cents",
-        "principal": "hdv-18-145666",
+        "principal": "ov-18-480281",
         "ttl": 6.0,
         "state": "resolved",
         "actions_done": [
@@ -104,11 +104,11 @@
       "id": "H-0002",
       "source": "window-driver/scan",
       "tag": "marker",
-      "title": "async seam /api/events/EV-a13af65cec92 will debit 125000 exactly once",
+      "title": "async seam /api/events/EV-12876ad22100 will debit 100 exactly once",
       "prior": 0.55,
-      "plan": "drain inside window -> poll /api/events/EV-a13af65cec92 -> cancel after settle -> wallet read-back",
+      "plan": "drain inside window -> poll /api/events/EV-12876ad22100 -> cancel after settle -> wallet read-back",
       "derived_from": [
-        "SF-WINDOW_DRIVER-0097"
+        "SF-WINDOW_DRIVER-0105"
       ],
       "status": "confirmed",
       "tests": [
@@ -119,7 +119,72 @@
           "finding_ids": [
             "FW-SETTLED-CANCEL"
           ],
-          "ts": 1794020148.0336335
+          "ts": 1794022483.1046762
+        }
+      ],
+      "evidence": [
+        {
+          "note": "violation: FW-SETTLED-CANCEL",
+          "wallet_trace": [
+            {
+              "step": "baseline",
+              "wallet": null
+            },
+            {
+              "step": "poll",
+              "status": "settled"
+            },
+            {
+              "step": "post-settle-wallet",
+              "wallet": 249900
+            },
+            {
+              "step": "cancel",
+              "verb": "cancel",
+              "status": 200,
+              "refund": 100,
+              "wallet": 250000
+            }
+          ]
+        }
+      ],
+      "created": 1794022483.0887575,
+      "resolved": 1794022483.1046784,
+      "marker": {
+        "event_path": "/api/events/EV-12876ad22100",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-24a8286a14",
+        "amount": 100,
+        "amount_field": "amount_cents",
+        "principal": "hdv-90-480401",
+        "ttl": 6.0,
+        "state": "resolved",
+        "actions_done": [
+          "cancel-after-settle"
+        ]
+      }
+    },
+    {
+      "id": "H-0003",
+      "source": "window-driver/scan",
+      "tag": "marker",
+      "title": "async seam /api/events/EV-0a8331a4c5e4 will debit 125000 exactly once",
+      "prior": 0.55,
+      "plan": "drain inside window -> poll /api/events/EV-0a8331a4c5e4 -> cancel after settle -> wallet read-back",
+      "derived_from": [
+        "SF-WINDOW_DRIVER-0106"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "window-drive",
+          "detail": "violation: FW-SETTLED-CANCEL",
+          "requests_spent": 0,
+          "finding_ids": [
+            "FW-SETTLED-CANCEL"
+          ],
+          "ts": 1794022483.1109405
         }
       ],
       "evidence": [
@@ -148,16 +213,16 @@
           ]
         }
       ],
-      "created": 1794020148.0187426,
-      "resolved": 1794020148.0336351,
+      "created": 1794022483.0887742,
+      "resolved": 1794022483.1109421,
       "marker": {
-        "event_path": "/api/events/EV-a13af65cec92",
+        "event_path": "/api/events/EV-0a8331a4c5e4",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-b6e70eb17a",
+        "object_id": "PAY-35ecfde617",
         "amount": 125000,
         "amount_field": "amount_cents",
-        "principal": "toc-131-145838",
+        "principal": "toc-218-480609",
         "ttl": 6.0,
         "state": "resolved",
         "actions_done": [
@@ -166,14 +231,14 @@
       }
     },
     {
-      "id": "H-0003",
+      "id": "H-0004",
       "source": "window-driver/scan",
       "tag": "marker",
-      "title": "async seam /api/events/EV-495dbedf6b0f will debit 83333 exactly once",
+      "title": "async seam /api/events/EV-47d5fb07abf4 will debit 83333 exactly once",
       "prior": 0.55,
-      "plan": "drain inside window -> poll /api/events/EV-495dbedf6b0f -> cancel after settle -> wallet read-back",
+      "plan": "drain inside window -> poll /api/events/EV-47d5fb07abf4 -> cancel after settle -> wallet read-back",
       "derived_from": [
-        "SF-WINDOW_DRIVER-0098"
+        "SF-WINDOW_DRIVER-0107"
       ],
       "status": "confirmed",
       "tests": [
@@ -184,7 +249,7 @@
           "finding_ids": [
             "FW-SETTLED-CANCEL"
           ],
-          "ts": 1794020148.0394557
+          "ts": 1794022483.116974
         }
       ],
       "evidence": [
@@ -213,16 +278,16 @@
           ]
         }
       ],
-      "created": 1794020148.018749,
-      "resolved": 1794020148.0394576,
+      "created": 1794022483.0887814,
+      "resolved": 1794022483.1169758,
       "marker": {
-        "event_path": "/api/events/EV-495dbedf6b0f",
+        "event_path": "/api/events/EV-47d5fb07abf4",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-adf16b13b8",
+        "object_id": "PAY-88732f803b",
         "amount": 83333,
         "amount_field": "amount_cents",
-        "principal": "tcm-170-147204",
+        "principal": "tcm-267-481897",
         "ttl": 6.0,
         "state": "resolved",
         "actions_done": [
@@ -231,14 +296,14 @@
       }
     },
     {
-      "id": "H-0004",
+      "id": "H-0005",
       "source": "window-driver/scan",
       "tag": "marker",
-      "title": "async seam /api/events/EV-b48b6b367554 will debit 100 exactly once",
+      "title": "async seam /api/events/EV-743dc923ed18 will debit 100 exactly once",
       "prior": 0.55,
-      "plan": "drain inside window -> poll /api/events/EV-b48b6b367554 -> cancel after settle -> wallet read-back",
+      "plan": "drain inside window -> poll /api/events/EV-743dc923ed18 -> cancel after settle -> wallet read-back",
       "derived_from": [
-        "SF-WINDOW_DRIVER-0099"
+        "SF-WINDOW_DRIVER-0108"
       ],
       "status": "refuted",
       "tests": [
@@ -247,7 +312,7 @@
           "detail": "expectation held: settle debited exactly once, cancel (if any) did not re-credit",
           "requests_spent": 0,
           "finding_ids": [],
-          "ts": 1794020148.0452871
+          "ts": 1794022483.756425
         }
       ],
       "evidence": [
@@ -276,30 +341,30 @@
           ]
         }
       ],
-      "created": 1794020148.018755,
-      "resolved": 1794020148.0452893,
+      "created": 1794022483.0887873,
+      "resolved": 1794022483.756427,
       "marker": {
-        "event_path": "/api/events/EV-b48b6b367554",
+        "event_path": "/api/events/EV-743dc923ed18",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-0dd76559dc",
+        "object_id": "PAY-77c575edaf",
         "amount": 100,
         "amount_field": "amount_cents",
-        "principal": "cyc-200-147854",
+        "principal": "cyc-311-482874",
         "ttl": 6.0,
         "state": "resolved",
         "actions_done": []
       }
     },
     {
-      "id": "H-0005",
+      "id": "H-0006",
       "source": "window-driver/fresh",
       "tag": "marker",
-      "title": "async seam /api/events/EV-f451cfd3d97f will debit 125000 exactly once",
+      "title": "async seam /api/events/EV-1c162ca2b4f4 will debit 125000 exactly once",
       "prior": 0.55,
-      "plan": "drain inside window -> poll /api/events/EV-f451cfd3d97f -> cancel after settle -> wallet read-back",
+      "plan": "drain inside window -> poll /api/events/EV-1c162ca2b4f4 -> cancel after settle -> wallet read-back",
       "derived_from": [
-        "SF-SURFACE_MAPPER-0063"
+        "SF-SURFACE_MAPPER-0067"
       ],
       "status": "refuted",
       "tests": [
@@ -308,7 +373,7 @@
           "detail": "drained window settled without a negative balance",
           "requests_spent": 0,
           "finding_ids": [],
-          "ts": 1794020149.0747106
+          "ts": 1794022483.7435217
         }
       ],
       "evidence": [
@@ -338,14 +403,6 @@
             },
             {
               "step": "poll",
-              "status": "pending"
-            },
-            {
-              "step": "poll",
-              "status": "pending"
-            },
-            {
-              "step": "poll",
               "status": "settled"
             },
             {
@@ -356,16 +413,16 @@
           ]
         }
       ],
-      "created": 1794020148.051335,
-      "resolved": 1794020149.0747128,
+      "created": 1794022483.123459,
+      "resolved": 1794022483.7435243,
       "marker": {
-        "event_path": "/api/events/EV-f451cfd3d97f",
+        "event_path": "/api/events/EV-1c162ca2b4f4",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-93d90c81e6",
+        "object_id": "PAY-d19395b05e",
         "amount": 125000,
         "amount_field": "amount_cents",
-        "principal": "wind-313-148045",
+        "principal": "wind-456-483116",
         "baseline": 250000,
         "ttl": 6.0,
         "state": "resolved",
@@ -373,14 +430,14 @@
       }
     },
     {
-      "id": "H-0006",
-      "source": "swarm-board/5894f8",
+      "id": "H-0007",
+      "source": "swarm-board/d4fd53",
       "tag": "h_idor",
       "title": "Parameterised object endpoints may lack ownership checks",
       "prior": 0.6,
       "plan": "cross-user read of a fresh order",
       "derived_from": [
-        "SF-HYPOTHESIS-0065"
+        "SF-HYPOTHESIS-0069"
       ],
       "status": "inconclusive",
       "tests": [
@@ -389,7 +446,7 @@
           "detail": "dispatched; produced 0 facts",
           "requests_spent": 0,
           "finding_ids": [],
-          "ts": 1794020151.1381152
+          "ts": 1794022483.7668889
         }
       ],
       "evidence": [
@@ -397,18 +454,18 @@
           "note": "dvlba-shaped probe prerequisites absent on this surface"
         }
       ],
-      "created": 1794020151.1379015,
-      "resolved": 1794020151.1381178
+      "created": 1794022483.7667837,
+      "resolved": 1794022483.7668912
     },
     {
-      "id": "H-0007",
-      "source": "swarm-board/5894f8",
+      "id": "H-0008",
+      "source": "swarm-board/d4fd53",
       "tag": "h_fsm",
       "title": "Order lifecycle is a two-step state machine; transition guards may be missing",
       "prior": 0.7,
       "plan": "spawn statefuzz specialist",
       "derived_from": [
-        "SF-HYPOTHESIS-0066"
+        "SF-HYPOTHESIS-0070"
       ],
       "status": "inconclusive",
       "tests": [
@@ -417,7 +474,7 @@
           "detail": "honestly skipped: surface lacks the modeled checkout lifecycle",
           "requests_spent": 0,
           "finding_ids": [],
-          "ts": 1794020151.1381395
+          "ts": 1794022483.7669103
         }
       ],
       "evidence": [
@@ -425,18 +482,18 @@
           "note": "FSM spawn skipped on shape mismatch (see CONTROL skip-statefuzz)"
         }
       ],
-      "created": 1794020151.1379077,
-      "resolved": 1794020151.1381407
+      "created": 1794022483.7667902,
+      "resolved": 1794022483.7669115
     },
     {
-      "id": "H-0008",
-      "source": "swarm-board/5894f8",
+      "id": "H-0009",
+      "source": "swarm-board/d4fd53",
       "tag": "h_open_vocab",
       "title": "The live surface may hold value resources, verbs and read-backs the stale document never mentioned",
       "prior": 0.55,
       "plan": "probe the open noun/verb/subpath vocabularies against the live target; fold every fact into a revised surface",
       "derived_from": [
-        "SF-HYPOTHESIS-0067"
+        "SF-HYPOTHESIS-0071"
       ],
       "status": "refuted",
       "tests": [
@@ -445,7 +502,7 @@
           "detail": "dispatched; produced 0 facts",
           "requests_spent": 0,
           "finding_ids": [],
-          "ts": 1794020151.1381454
+          "ts": 1794022483.766916
         }
       ],
       "evidence": [
@@ -453,27 +510,27 @@
           "note": "probe ran against the live target and demonstrated no violation"
         }
       ],
-      "created": 1794020151.1379106,
-      "resolved": 1794020151.1381469
+      "created": 1794022483.7667928,
+      "resolved": 1794022483.7669177
     },
     {
-      "id": "H-0009",
-      "source": "swarm-board/5894f8",
+      "id": "H-0010",
+      "source": "swarm-board/d4fd53",
       "tag": "h_hidden_verbs",
       "title": "Parameterised money resources may expose undocumented ops verbs",
       "prior": 0.4,
       "plan": "verb wordlist probe on param paths",
       "derived_from": [
-        "SF-HYPOTHESIS-0068"
+        "SF-HYPOTHESIS-0072"
       ],
       "status": "tested",
       "tests": [
         {
           "kind": "probe",
           "detail": "probe produced observations without a violation",
-          "requests_spent": 360,
+          "requests_spent": 477,
           "finding_ids": [],
-          "ts": 1794020151.1381524
+          "ts": 1794022483.7669225
         }
       ],
       "evidence": [
@@ -481,38 +538,38 @@
           "note": "technique ran; observation-only outcome (e.g. hidden verbs enumerated)"
         }
       ],
-      "created": 1794020151.1379128,
-      "resolved": 1794020151.138154
+      "created": 1794022483.7667956,
+      "resolved": 1794022483.7669241
     },
     {
-      "id": "H-0010",
-      "source": "swarm-board/5894f8",
+      "id": "H-0011",
+      "source": "swarm-board/d4fd53",
       "tag": "h_state_guard",
       "title": "Cancel-terminated resources may leave sibling write verbs open and the dedupe keyed to the body",
       "prior": 0.55,
       "plan": "create -> cancel -> replay/mutate -> sibling write",
       "derived_from": [
-        "SF-HYPOTHESIS-0069"
+        "SF-HYPOTHESIS-0073"
       ],
       "status": "confirmed",
       "tests": [
         {
           "kind": "finding",
           "detail": "Cancel dedupe is keyed by the reason string, not the object: a different reason re-credits the full remainder (verified)",
-          "requests_spent": 360,
+          "requests_spent": 477,
           "finding_ids": [
             "FW-CANCEL-REASON"
           ],
-          "ts": 1794020151.137947
+          "ts": 1794022483.7668352
         },
         {
           "kind": "finding",
           "detail": "Write transition accepted on a CANCELED object: resize re-credits the full prorated remainder after cancel already did (verified)",
-          "requests_spent": 360,
+          "requests_spent": 477,
           "finding_ids": [
             "FW-TERMINAL-RESIZE"
           ],
-          "ts": 1794020151.1379545
+          "ts": 1794022483.7668424
         }
       ],
       "evidence": [
@@ -525,18 +582,18 @@
           "status": "verified"
         }
       ],
-      "created": 1794020151.1379151,
-      "resolved": 1794020151.1379564
+      "created": 1794022483.7667978,
+      "resolved": 1794022483.7668443
     },
     {
-      "id": "H-0011",
-      "source": "swarm-board/5894f8",
+      "id": "H-0012",
+      "source": "swarm-board/d4fd53",
       "tag": "h_mass_assign",
       "title": "Undocumented body fields may override pricing or entitlements",
       "prior": 0.5,
       "plan": "differential create with injected candidates",
       "derived_from": [
-        "SF-HYPOTHESIS-0070"
+        "SF-HYPOTHESIS-0074"
       ],
       "status": "refuted",
       "tests": [
@@ -545,7 +602,7 @@
           "detail": "dispatched; produced 0 facts",
           "requests_spent": 0,
           "finding_ids": [],
-          "ts": 1794020151.1381605
+          "ts": 1794022483.76693
         }
       ],
       "evidence": [
@@ -553,38 +610,38 @@
           "note": "probe ran against the live target and demonstrated no violation"
         }
       ],
-      "created": 1794020151.1379173,
-      "resolved": 1794020151.138162
+      "created": 1794022483.7668006,
+      "resolved": 1794022483.7669315
     },
     {
-      "id": "H-0012",
-      "source": "swarm-board/5894f8",
+      "id": "H-0013",
+      "source": "swarm-board/d4fd53",
       "tag": "h_cross_tenant",
       "title": "Global read-backs may leak other tenants' ids; leaked ids may pay the caller",
       "prior": 0.5,
       "plan": "cross-principal readback scan + deputy write",
       "derived_from": [
-        "SF-HYPOTHESIS-0071"
+        "SF-HYPOTHESIS-0075"
       ],
       "status": "confirmed",
       "tests": [
         {
           "kind": "finding",
           "detail": "Cross-tenant object disclosure: a fresh principal reads another tenant's vault identifier from /api/audit (verified)",
-          "requests_spent": 360,
+          "requests_spent": 477,
           "finding_ids": [
             "FW-AUDIT-LEAK"
           ],
-          "ts": 1794020151.13796
+          "ts": 1794022483.7668478
         },
         {
           "kind": "finding",
           "detail": "No ownership check on resize: the credit lands in the CALLER's balance \u2014 monetize any leaked tenant's object  (verified)",
-          "requests_spent": 360,
+          "requests_spent": 477,
           "finding_ids": [
             "FW-DEPUTY-CREDIT"
           ],
-          "ts": 1794020151.1379652
+          "ts": 1794022483.7668529
         }
       ],
       "evidence": [
@@ -597,29 +654,29 @@
           "status": "verified"
         }
       ],
-      "created": 1794020151.1379197,
-      "resolved": 1794020151.1379669
+      "created": 1794022483.7668028,
+      "resolved": 1794022483.7668543
     },
     {
-      "id": "H-0013",
-      "source": "swarm-board/5894f8",
+      "id": "H-0014",
+      "source": "swarm-board/d4fd53",
       "tag": "h_async_toctou",
       "title": "Async settles may debit without re-checking the balance",
       "prior": 0.55,
       "plan": "create async -> drain balance -> await settle",
       "derived_from": [
-        "SF-HYPOTHESIS-0072"
+        "SF-HYPOTHESIS-0076"
       ],
       "status": "confirmed",
       "tests": [
         {
           "kind": "finding",
           "detail": "Async settle debits without a balance re-check: draining the wallet inside the deferred window drives the balance negative (-125000) (verified)",
-          "requests_spent": 360,
+          "requests_spent": 477,
           "finding_ids": [
             "FW-TOCTOU-SETTLE"
           ],
-          "ts": 1794020151.1379707
+          "ts": 1794022483.7668586
         }
       ],
       "evidence": [
@@ -628,29 +685,29 @@
           "status": "verified"
         }
       ],
-      "created": 1794020151.1379223,
-      "resolved": 1794020151.137972
+      "created": 1794022483.7668107,
+      "resolved": 1794022483.76686
     },
     {
-      "id": "H-0014",
-      "source": "swarm-board/5894f8",
+      "id": "H-0015",
+      "source": "swarm-board/d4fd53",
       "tag": "h_terminal_credit",
       "title": "Cancel of a settled async artifact may refund after delivery",
       "prior": 0.5,
       "plan": "create async -> settle -> cancel",
       "derived_from": [
-        "SF-HYPOTHESIS-0073"
+        "SF-HYPOTHESIS-0077"
       ],
       "status": "confirmed",
       "tests": [
         {
           "kind": "finding",
           "detail": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered) (verified)",
-          "requests_spent": 360,
+          "requests_spent": 477,
           "finding_ids": [
             "FW-SETTLED-CANCEL"
           ],
-          "ts": 1794020151.1379752
+          "ts": 1794022483.7668633
         }
       ],
       "evidence": [
@@ -659,29 +716,29 @@
           "status": "verified"
         }
       ],
-      "created": 1794020151.1379247,
-      "resolved": 1794020151.137977
+      "created": 1794022483.7668138,
+      "resolved": 1794022483.7668653
     },
     {
-      "id": "H-0015",
-      "source": "swarm-board/5894f8",
+      "id": "H-0016",
+      "source": "swarm-board/d4fd53",
       "tag": "h_arith_cycle",
       "title": "Value-neutral cycles of a priced transition may accumulate rounding drift",
       "prior": 0.45,
       "plan": "cycle 12x, net wallet delta",
       "derived_from": [
-        "SF-HYPOTHESIS-0074"
+        "SF-HYPOTHESIS-0078"
       ],
       "status": "confirmed",
       "tests": [
         {
           "kind": "finding",
           "detail": "Value-neutral resize cycles accumulate balance (+3 cents within 12 round-trips): credit rounds up, charge rounds down (verified)",
-          "requests_spent": 360,
+          "requests_spent": 477,
           "finding_ids": [
             "FW-ROUND-DRIFT"
           ],
-          "ts": 1794020151.1379807
+          "ts": 1794022483.7668686
         }
       ],
       "evidence": [
@@ -690,29 +747,29 @@
           "status": "verified"
         }
       ],
-      "created": 1794020151.1379266,
-      "resolved": 1794020151.1380966
+      "created": 1794022483.7668157,
+      "resolved": 1794022483.7668703
     },
     {
-      "id": "H-0016",
-      "source": "swarm-board/5894f8",
+      "id": "H-0017",
+      "source": "swarm-board/d4fd53",
       "tag": "h_quota_race",
       "title": "Quota-limited claims may lose the check-then-act race to distinct principals",
       "prior": 0.5,
       "plan": "multi-principal last-byte race",
       "derived_from": [
-        "SF-HYPOTHESIS-0075"
+        "SF-HYPOTHESIS-0079"
       ],
       "status": "confirmed-by-transcript",
       "tests": [
         {
           "kind": "finding",
           "detail": "Quota-limited claim loses the check-then-act race: 8 distinct principals claimed past the advertised quota of 3 (verified-by-transcript)",
-          "requests_spent": 360,
+          "requests_spent": 477,
           "finding_ids": [
             "FW-QUOTA-RACE"
           ],
-          "ts": 1794020151.1381006
+          "ts": 1794022483.7668738
         }
       ],
       "evidence": [
@@ -721,37 +778,37 @@
           "status": "verified-by-transcript"
         }
       ],
-      "created": 1794020151.1379292,
-      "resolved": 1794020151.138103
+      "created": 1794022483.766818,
+      "resolved": 1794022483.766876
     },
     {
-      "id": "H-0017",
-      "source": "deferred-window/5894f8",
+      "id": "H-0018",
+      "source": "deferred-window/d4fd53",
       "tag": "deferred-window",
-      "title": "deferred effect via /api/events/EV-1cf6048127b4;/api/events/EV-231c0845f7ae;/api/events/EV-4d3f3ffdf50e;/api/events/EV-de43acef969a;/api/events/EV-e93a3eb1cb66 (ttl 6.0s)",
+      "title": "deferred effect via /api/events/EV-60cb9ff620c5;/api/events/EV-6c5cb129c438;/api/events/EV-d8ae26f3b4dd (ttl 6.0s)",
       "prior": 0.5,
-      "plan": "poll /api/events/EV-1cf6048127b4;/api/events/EV-231c0845f7ae;/api/events/EV-4d3f3ffdf50e;/api/events/EV-de43acef969a;/api/events/EV-e93a3eb1cb66 until resolved",
+      "plan": "poll /api/events/EV-60cb9ff620c5;/api/events/EV-6c5cb129c438;/api/events/EV-d8ae26f3b4dd until resolved",
       "derived_from": [],
       "status": "confirmed",
       "tests": [
         {
           "kind": "poll",
-          "detail": "5 async settle window(s) opened, 28 event poll(s) issued by the swarm",
-          "requests_spent": 28,
+          "detail": "3 async settle window(s) opened, 17 event poll(s) issued by the swarm",
+          "requests_spent": 17,
           "finding_ids": [],
-          "ts": 1794020151.140519
+          "ts": 1794022483.769799
         }
       ],
       "evidence": [
         {
-          "note": "deferred-window violation (FW-TOCTOU-SETTLE,FW-SETTLED-CANCEL,FW-SETTLED-CANCEL,FW-SETTLED-CANCEL,FW-SETTLED-CANCEL) verified in this run"
+          "note": "deferred-window violation (FW-TOCTOU-SETTLE,FW-SETTLED-CANCEL,FW-SETTLED-CANCEL,FW-SETTLED-CANCEL,FW-SETTLED-CANCEL,FW-SETTLED-CANCEL) verified in this run"
         }
       ],
-      "created": 1794020151.1405122,
-      "resolved": 1794020151.140821,
+      "created": 1794022483.7697923,
+      "resolved": 1794022483.770116,
       "deferred": {
-        "marker": "5 window(s)",
-        "callback_path": "/api/events/EV-1cf6048127b4;/api/events/EV-231c0845f7ae;/api/events/EV-4d3f3ffdf50e;/api/events/EV-de43acef969a;/api/events/EV-e93a3eb1cb66",
+        "marker": "3 window(s)",
+        "callback_path": "/api/events/EV-60cb9ff620c5;/api/events/EV-6c5cb129c438;/api/events/EV-d8ae26f3b4dd",
         "expectation": {},
         "ttl": 6.0
       }

@@ -1,9 +1,9 @@
 {
   "tool": "swarm",
-  "version": "0.5.0-m2",
-  "generated": "2026-11-07T02:55:51+0000",
-  "elapsed_s": 5.5,
-  "requests": 360,
+  "version": "0.6.0-m3",
+  "generated": "2026-11-07T03:34:43+0000",
+  "elapsed_s": 3.5,
+  "requests": 477,
   "statefuzz_sub_budget_requests": null,
   "rounds": 40,
   "roster": [
@@ -14,51 +14,125 @@
     "verify",
     "access",
     "statefuzz_spec",
-    "window_driver"
+    "window_driver",
+    "attack_graph"
   ],
   "spawn_events": [],
   "llm_seam_calls": [],
-  "markers_registered": 5,
+  "markers_registered": 6,
+  "attack_graph": {
+    "surface_nodes": 10,
+    "surface_edges": 5,
+    "money_paths": 5,
+    "next_actions": []
+  },
+  "ambient_watch": {
+    "events": 13,
+    "unexplained": 3,
+    "deltas": [
+      {
+        "tag": "h_open_vocab",
+        "delta": -500,
+        "attributed": false
+      },
+      {
+        "tag": "h_hidden_verbs",
+        "delta": -100,
+        "attributed": false
+      },
+      {
+        "tag": "h_hidden_verbs",
+        "delta": -100,
+        "attributed": false
+      },
+      {
+        "tag": "h_state_guard",
+        "delta": 200,
+        "attributed": true
+      },
+      {
+        "tag": "h_cross_tenant",
+        "delta": -100,
+        "attributed": true
+      },
+      {
+        "tag": "h_cross_tenant",
+        "delta": 99,
+        "attributed": true
+      },
+      {
+        "tag": "h_async_toctou",
+        "delta": -500,
+        "attributed": true
+      },
+      {
+        "tag": "h_async_toctou",
+        "delta": -375000,
+        "attributed": true
+      },
+      {
+        "tag": "h_async_toctou",
+        "delta": 250000,
+        "attributed": true
+      },
+      {
+        "tag": "h_arith_cycle",
+        "delta": -97,
+        "attributed": true
+      },
+      {
+        "tag": "h_quota_race",
+        "delta": 5000,
+        "attributed": true
+      },
+      {
+        "tag": "h_quota_race",
+        "delta": 5000,
+        "attributed": true
+      }
+    ]
+  },
   "ledger": {
-    "facts": 49,
+    "facts": 53,
     "by_kind": {
-      "CONTROL": 13,
-      "OBSERVATION": 12,
+      "CONTROL": 11,
+      "OBSERVATION": 15,
       "SURFACE": 1,
       "HYPOTHESIS": 11,
-      "FINDING": 11,
-      "ESCALATION": 1
+      "ESCALATION": 3,
+      "FINDING": 12
     },
     "by_source": {
       "orchestrator": 1,
       "recon": 5,
       "surface_mapper": 3,
       "hypothesis": 11,
-      "exploit": 10,
-      "verify": 10,
+      "exploit": 12,
+      "attack_graph": 2,
+      "verify": 8,
       "access": 1,
       "router": 1,
-      "window_driver": 7
+      "window_driver": 9
     }
   },
   "hypothesis_ledger": {
     "stats": {
-      "total": 17,
+      "total": 18,
       "by_status": {
-        "confirmed": 9,
+        "confirmed": 10,
         "refuted": 4,
         "inconclusive": 2,
         "tested": 1,
         "confirmed-by-transcript": 1
       },
       "by_source": {
-        "window-driver/scan": 4,
+        "window-driver/scan": 5,
         "window-driver/fresh": 1,
-        "swarm-board/5894f8": 11,
-        "deferred-window/5894f8": 1
+        "swarm-board/d4fd53": 11,
+        "deferred-window/d4fd53": 1
       },
       "by_tag": {
-        "marker": 5,
+        "marker": 6,
         "h_idor": 1,
         "h_fsm": 1,
         "h_open_vocab": 1,
@@ -73,7 +147,7 @@
         "deferred-window": 1
       }
     },
-    "score": 13.75
+    "score": 14.75
   },
   "memory_before": {
     "recon": {
@@ -108,7 +182,7 @@
     "exploit": {
       "name": "exploit",
       "techniques": {
-        "h_open_vocab": 0.364,
+        "h_open_vocab": 0.556,
         "h_hidden_verbs": 0.556,
         "h_state_guard": 0.556,
         "h_mass_assign": 0.364,
@@ -157,6 +231,12 @@
       "techniques": {},
       "insights": 0,
       "trials": 0
+    },
+    "attack_graph": {
+      "name": "attack_graph",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
     }
   },
   "memory_after": {
@@ -192,7 +272,7 @@
     "exploit": {
       "name": "exploit",
       "techniques": {
-        "h_open_vocab": 0.364,
+        "h_open_vocab": 0.6,
         "h_hidden_verbs": 0.6,
         "h_state_guard": 0.6,
         "h_mass_assign": 0.364,
@@ -205,7 +285,7 @@
         "h_idor": 0.286
       },
       "insights": 1,
-      "trials": 20
+      "trials": 21
     },
     "verify": {
       "name": "verify",
@@ -238,6 +318,12 @@
     },
     "window_driver": {
       "name": "window_driver",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "attack_graph": {
+      "name": "attack_graph",
       "techniques": {},
       "insights": 0,
       "trials": 0
@@ -288,7 +374,7 @@
         "h_state_guard"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0078"
+        "SF-EXPLOIT-0086"
       ]
     },
     {
@@ -303,7 +389,7 @@
         "endpoint": "POST /api/vaults/{vault_id}/resize (terminal-state)",
         "evidence": [
           {
-            "canceled_object": "VLT-710037175a",
+            "canceled_object": "VLT-da4aafd5b5",
             "verb": "resize",
             "status": 200,
             "credit_after_terminal": 100,
@@ -333,7 +419,7 @@
         "h_state_guard"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0079"
+        "SF-EXPLOIT-0087"
       ]
     },
     {
@@ -348,8 +434,8 @@
         "endpoint": "GET /api/audit",
         "evidence": [
           {
-            "victim": "xtv-95-145783",
-            "leaked_id": "VLT-158276c1cc",
+            "victim": "xtv-173-480536",
+            "leaked_id": "VLT-c23ff4fa4c",
             "leak_path": "/api/audit"
           }
         ],
@@ -375,7 +461,7 @@
         "h_cross_tenant"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0082"
+        "SF-EXPLOIT-0090"
       ]
     },
     {
@@ -390,9 +476,9 @@
         "endpoint": "POST /api/vaults/{vault_id}/resize (cross-tenant)",
         "evidence": [
           {
-            "victim": "xtv-95-145783",
-            "attacker": "xta-98-145788",
-            "object": "VLT-158276c1cc",
+            "victim": "xtv-173-480536",
+            "attacker": "xta-177-480542",
+            "object": "VLT-c23ff4fa4c",
             "attacker_gain": 99,
             "verb": "resize",
             "body": {
@@ -424,7 +510,7 @@
         "h_cross_tenant"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0083"
+        "SF-EXPLOIT-0091"
       ]
     },
     {
@@ -443,7 +529,7 @@
             "drained_during_window": 250000,
             "settled_amount": 125000,
             "final_balance": -125000,
-            "event": "/api/events/EV-a13af65cec92"
+            "event": "/api/events/EV-0a8331a4c5e4"
           }
         ],
         "preconditions": [
@@ -469,7 +555,7 @@
         "h_async_toctou"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0086"
+        "SF-EXPLOIT-0094"
       ]
     },
     {
@@ -484,7 +570,7 @@
         "endpoint": "POST /api/payouts/{payout_id}/cancel",
         "evidence": [
           {
-            "payout": "PAY-adf16b13b8",
+            "payout": "PAY-88732f803b",
             "amount": 83333,
             "settled_debit": 83333,
             "cancel_credit": 83333,
@@ -505,7 +591,7 @@
       "status": "verified",
       "verification": {
         "by": "verify",
-        "method": "fresh replay: cancel after settle refunded 125000",
+        "method": "independent re-execution reproduced the violation with fresh principals",
         "independent_principals": []
       },
       "provenance": [
@@ -517,10 +603,11 @@
         "h_window_driver"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0088",
-        "SF-WINDOW_DRIVER-0100",
-        "SF-WINDOW_DRIVER-0101",
-        "SF-WINDOW_DRIVER-0102"
+        "SF-EXPLOIT-0096",
+        "SF-WINDOW_DRIVER-0109",
+        "SF-WINDOW_DRIVER-0110",
+        "SF-WINDOW_DRIVER-0111",
+        "SF-WINDOW_DRIVER-0112"
       ]
     },
     {
@@ -564,7 +651,7 @@
         "h_arith_cycle"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0090"
+        "SF-EXPLOIT-0098"
       ]
     },
     {
@@ -584,14 +671,14 @@
             "successful_claims": 8,
             "advertised_quota": 3,
             "winning_principals": [
-              "qrc0-244-147923",
-              "qrc1-246-147926",
-              "qrc2-248-147929",
-              "qrc3-250-147932",
-              "qrc4-252-147935",
-              "qrc5-254-147938",
-              "qrc6-256-147941",
-              "qrc7-258-147952"
+              "qrc0-369-482968",
+              "qrc1-372-482972",
+              "qrc2-375-482977",
+              "qrc3-378-482982",
+              "qrc4-380-482985",
+              "qrc5-382-482989",
+              "qrc6-384-482992",
+              "qrc7-386-482995"
             ],
             "last_byte_sync": true
           }
@@ -619,11 +706,29 @@
         "h_quota_race"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0092"
+        "SF-EXPLOIT-0100"
       ]
     }
   ],
   "escalations": [
+    {
+      "chain": [
+        "technique:h_open_vocab",
+        "ambient-wallet-delta",
+        "unattributed-value-movement"
+      ],
+      "impact": "discovery moved value with no finding: ov-18-480281 -500",
+      "severity": "medium"
+    },
+    {
+      "chain": [
+        "technique:h_hidden_verbs",
+        "ambient-wallet-delta",
+        "unattributed-value-movement"
+      ],
+      "impact": "discovery moved value with no finding: hdv-90-480401 -100; hdv-104-480424 -100",
+      "severity": "medium"
+    },
     {
       "chain": {
         "chain_id": "CH-FW-AUDIT-LEAK-FW-DEPUTY-CREDIT",

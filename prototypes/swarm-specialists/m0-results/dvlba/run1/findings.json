@@ -1,9 +1,9 @@
 {
   "tool": "swarm",
-  "version": "0.5.0-m2",
-  "generated": "2026-11-07T02:55:54+0000",
+  "version": "0.6.0-m3",
+  "generated": "2026-11-07T03:34:46+0000",
   "elapsed_s": 2.5,
-  "requests": 255,
+  "requests": 270,
   "statefuzz_sub_budget_requests": 87,
   "rounds": 40,
   "roster": [
@@ -14,7 +14,8 @@
     "verify",
     "access",
     "statefuzz_spec",
-    "window_driver"
+    "window_driver",
+    "attack_graph"
   ],
   "spawn_events": [
     {
@@ -25,6 +26,17 @@
   ],
   "llm_seam_calls": [],
   "markers_registered": 0,
+  "attack_graph": {
+    "surface_nodes": 19,
+    "surface_edges": 10,
+    "money_paths": 0,
+    "next_actions": []
+  },
+  "ambient_watch": {
+    "events": 0,
+    "unexplained": 0,
+    "deltas": []
+  },
   "ledger": {
     "facts": 47,
     "by_kind": {
@@ -55,8 +67,8 @@
         "refuted": 4
       },
       "by_source": {
-        "swarm-board/8eca31": 10,
-        "deferred-window/8eca31": 1,
+        "swarm-board/6a291a": 10,
+        "deferred-window/6a291a": 1,
         "statefuzz/swarm-embedded": 9
       },
       "by_tag": {
@@ -141,6 +153,12 @@
     },
     "window_driver": {
       "name": "window_driver",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "attack_graph": {
+      "name": "attack_graph",
       "techniques": {},
       "insights": 0,
       "trials": 0
@@ -230,6 +248,12 @@
     },
     "window_driver": {
       "name": "window_driver",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "attack_graph": {
+      "name": "attack_graph",
       "techniques": {},
       "insights": 0,
       "trials": 0
@@ -335,7 +359,7 @@
         "h_race"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0119"
+        "SF-EXPLOIT-0127"
       ]
     },
     {
@@ -355,7 +379,7 @@
             "wallet_after": 1129900,
             "order_total": 129900,
             "callback": {
-              "marker": "0b7fecd397f7",
+              "marker": "548e8e2f9357",
               "refund_cents": 129900,
               "status": "done"
             },
@@ -381,8 +405,8 @@
         "by": "verify",
         "method": "double refund credited twice",
         "independent_principals": [
-          "verify-8eca31-15",
-          "verify-8eca31-16"
+          "verify-6a291a-15",
+          "verify-6a291a-16"
         ]
       },
       "provenance": [
@@ -394,8 +418,8 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0121",
-        "SF-EXPLOIT-STATEF-0138"
+        "SF-EXPLOIT-0129",
+        "SF-EXPLOIT-STATEF-0146"
       ]
     },
     {
@@ -411,18 +435,18 @@
         "evidence": [
           {
             "method": "GET",
-            "path": "/api/orders/ORD-e71deda8",
-            "principal": "atk-8eca31-3",
+            "path": "/api/orders/ORD-bdc17260",
+            "principal": "atk-6a291a-3",
             "status": 200,
-            "owner": "own-8eca31-2",
+            "owner": "own-6a291a-2",
             "violation": {
               "invariant": "I3",
               "assertion": "caller == object.owner",
               "observed": {
-                "caller": "atk-8eca31-3",
-                "owner": "own-8eca31-2"
+                "caller": "atk-6a291a-3",
+                "owner": "own-6a291a-2"
               },
-              "detail": "atk-8eca31-3 accessed order owned by own-8eca31-2"
+              "detail": "atk-6a291a-3 accessed order owned by own-6a291a-2"
             }
           }
         ],
@@ -442,8 +466,8 @@
         "by": "verify",
         "method": "fresh cross-user read succeeded",
         "independent_principals": [
-          "verify-8eca31-11",
-          "verify-8eca31-12"
+          "verify-6a291a-11",
+          "verify-6a291a-12"
         ]
       },
       "provenance": [
@@ -455,8 +479,8 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0123",
-        "SF-EXPLOIT-STATEF-0135"
+        "SF-EXPLOIT-0131",
+        "SF-EXPLOIT-STATEF-0143"
       ]
     },
     {
@@ -472,8 +496,8 @@
         "evidence": [
           {
             "wallet_delta": 259800,
-            "owner": "rowner-8eca31-4",
-            "caller": "ratk-8eca31-5"
+            "owner": "rowner-6a291a-4",
+            "caller": "ratk-6a291a-5"
           }
         ],
         "reproduction": [],
@@ -492,8 +516,8 @@
         "by": "verify",
         "method": "fresh cross-user refund credited caller",
         "independent_principals": [
-          "verify-8eca31-13",
-          "verify-8eca31-14"
+          "verify-6a291a-13",
+          "verify-6a291a-14"
         ]
       },
       "provenance": [
@@ -505,8 +529,8 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0125",
-        "SF-EXPLOIT-STATEF-0136"
+        "SF-EXPLOIT-0133",
+        "SF-EXPLOIT-STATEF-0144"
       ]
     },
     {
@@ -536,7 +560,7 @@
                 ],
                 "overcredit": 129900
               },
-              "detail": "refunded ratk-8eca31-5 over price by 129900 cents"
+              "detail": "refunded ratk-6a291a-5 over price by 129900 cents"
             }
           }
         ],
@@ -556,8 +580,8 @@
         "by": "verify",
         "method": "double refund credited twice",
         "independent_principals": [
-          "verify-8eca31-14",
-          "verify-8eca31-15"
+          "verify-6a291a-14",
+          "verify-6a291a-15"
         ]
       },
       "provenance": [
@@ -569,8 +593,8 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0126",
-        "SF-EXPLOIT-STATEF-0137"
+        "SF-EXPLOIT-0134",
+        "SF-EXPLOIT-STATEF-0145"
       ]
     },
     {
@@ -592,7 +616,7 @@
               },
               "subtotal_cents": 129900,
               "total_cents": -25980,
-              "user": "cpn-8eca31-6"
+              "user": "cpn-6a291a-6"
             },
             "violation": {
               "invariant": "I4",
@@ -620,8 +644,8 @@
         "by": "verify",
         "method": "stacked discount exceeded subtotal",
         "independent_principals": [
-          "verify-8eca31-7",
-          "verify-8eca31-8"
+          "verify-6a291a-7",
+          "verify-6a291a-8"
         ]
       },
       "provenance": [
@@ -633,8 +657,8 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0129",
-        "SF-EXPLOIT-STATEF-0132"
+        "SF-EXPLOIT-0137",
+        "SF-EXPLOIT-STATEF-0140"
       ]
     },
     {
@@ -677,7 +701,7 @@
             "req_body": null,
             "status": 201,
             "resp_body": {
-              "order_id": "ORD-13582b95",
+              "order_id": "ORD-cf1cbb3f",
               "status": "initiated",
               "total_cents": -2700
             }
@@ -686,12 +710,12 @@
             "method": "POST",
             "path": "/api/checkout/confirm",
             "req_body": {
-              "order_id": "ORD-13582b95"
+              "order_id": "ORD-cf1cbb3f"
             },
             "status": 200,
             "resp_body": {
               "charged_cents": -2700,
-              "order_id": "ORD-13582b95",
+              "order_id": "ORD-cf1cbb3f",
               "status": "paid"
             }
           },
@@ -724,8 +748,8 @@
         "by": "verify",
         "method": "negative-qty checkout credited wallet",
         "independent_principals": [
-          "verify-8eca31-6",
-          "verify-8eca31-7"
+          "verify-6a291a-6",
+          "verify-6a291a-7"
         ]
       },
       "provenance": [
@@ -735,7 +759,7 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-STATEF-0131"
+        "SF-EXPLOIT-STATEF-0139"
       ]
     },
     {
@@ -762,7 +786,7 @@
             "req_body": null,
             "status": 201,
             "resp_body": {
-              "order_id": "ORD-e375a89f",
+              "order_id": "ORD-c2d954db",
               "status": "initiated",
               "total_cents": 1800
             }
@@ -773,23 +797,23 @@
             "req_body": null,
             "status": 201,
             "resp_body": {
-              "order_id": "ORD-b63bb310",
+              "order_id": "ORD-f79caa0e",
               "status": "initiated",
               "total_cents": 1800
             }
           },
           {
             "order_ids": [
-              "ORD-e375a89f",
-              "ORD-b63bb310"
+              "ORD-c2d954db",
+              "ORD-f79caa0e"
             ],
             "violation": {
               "invariant": "I2",
               "assertion": "cart snapshot: 1 -> <=1 order",
               "observed": {
                 "order_ids": [
-                  "ORD-e375a89f",
-                  "ORD-b63bb310"
+                  "ORD-c2d954db",
+                  "ORD-f79caa0e"
                 ]
               },
               "detail": "checkout/init replayed from the same cart produced 2 orders with identical item sets"
@@ -808,8 +832,8 @@
         "by": "verify",
         "method": "one cart yielded two orders",
         "independent_principals": [
-          "verify-8eca31-8",
-          "verify-8eca31-9"
+          "verify-6a291a-8",
+          "verify-6a291a-9"
         ]
       },
       "provenance": [
@@ -819,7 +843,7 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-STATEF-0133"
+        "SF-EXPLOIT-STATEF-0141"
       ]
     },
     {
@@ -847,23 +871,23 @@
             "req_body": null,
             "status": 201,
             "resp_body": {
-              "order_id": "ORD-5e6c49b0",
+              "order_id": "ORD-0b56401b",
               "status": "initiated",
               "total_cents": 129900
             }
           },
           {
             "method": "POST",
-            "path": "/api/orders/ORD-5e6c49b0/ship",
+            "path": "/api/orders/ORD-0b56401b/ship",
             "req_body": null,
             "status": 200,
             "resp_body": {
-              "order_id": "ORD-5e6c49b0",
+              "order_id": "ORD-0b56401b",
               "status": "shipped"
             }
           },
           {
-            "order_id": "ORD-5e6c49b0",
+            "order_id": "ORD-0b56401b",
             "violation": {
               "invariant": "I2",
               "assertion": "action in delta(alpha(s))",
@@ -892,8 +916,8 @@
         "by": "verify",
         "method": "unpaid order shipped",
         "independent_principals": [
-          "verify-8eca31-9",
-          "verify-8eca31-10"
+          "verify-6a291a-9",
+          "verify-6a291a-10"
         ]
       },
       "provenance": [
@@ -903,7 +927,7 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-STATEF-0134"
+        "SF-EXPLOIT-STATEF-0142"
       ]
     }
   ],

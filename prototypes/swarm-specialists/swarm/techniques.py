@@ -105,17 +105,20 @@ EST = {"h_quota_race": 50, "h_arith_cycle": 40, "h_state_guard": 14,
        "h_async_toctou": 18, "h_mass_assign": 18, "h_cross_tenant": 24,
        "h_hidden_verbs": 20, "h_terminal_credit": 20,
        "h_async_seam": 16, "h_open_vocab": 80, "h_value_replay": 16,
-       "h_credit_race": 22}
+       "h_credit_race": 22, "h_state_skip": 34, "h_fsm_live": 26}
 
 GENERIC_TAGS = tuple(EST)
 
 
 # ------------------------------------------------------------------ env ----
 class Env:
-    """Per-technique-run environment: executor + surface + budget guard."""
+    """Per-technique-run environment: executor + surface + budget guard.
+    M3: an optional ambient WalletWatcher — register() adopts every new
+    principal so money movement during the act is observed at the balance,
+    not inferred from response keys."""
 
     def __init__(self, ex, anon, surface, budget, artifacts=None,
-                 phase="technique", notes=None):
+                 phase="technique", notes=None, watch=None):
         self.ex = ex
         self.anon = anon
         self.surface = surface or {}
@@ -124,6 +127,7 @@ class Env:
         self.phase = phase
         self.notes = notes if notes is not None else {}
         self.cache = {}
+        self.watch = watch
 
     def remaining(self):
         return self.budget - self.ex.count
@@ -139,6 +143,11 @@ class Env:
                        phase=self.phase, tag="bootstrap")
         p = Principal(name, token=r["resp_body"].get("token"))
         ex.principals[name] = p
+        if self.watch is not None:      # M3: baseline for the ambient oracle
+            try:
+                self.watch.adopt(p)
+            except Exception:
+                pass
         return p
 
     def wallet(self, p):
@@ -1079,11 +1088,14 @@ def t_open_vocab(env):
 
 
 def t_value_replay(env):
-    """M2 follow-through (GV-1 shape): a discovered verb that CREDITED the
-    prober must be single-shot per object. Replay it twice on a FRESH object
-    with wallet reads; two further credits on one object is an I1 violation.
-    Claim-family verbs are excluded — they have their own classification
-    (single-use signature) and their guards, where they exist, refute."""
+    """M2 follow-through (GV-1 shape), generalized in M3: a discovered verb
+    that CREDITED the prober must be single-shot per object. Replay it twice
+    on a FRESH object with wallet reads; two further positive credits on one
+    object is an I1 violation — whatever the face value (M3: the old
+    `c1+c2 >= 2x face` clause was a severity prior, not validity; rebook's
+    10%-of-rate bonus repeated forever and failed it). Claim-family verbs
+    are excluded — they have their own classification (single-use
+    signature) and their guards, where they exist, refute."""
     facts = (env.surface.get("discoveries") or {}).get("verb_facts") or []
     su = {(s["resource"], s["verb"]) for s in
           (env.surface.get("discoveries") or {}).get("single_use", [])
@@ -1093,7 +1105,10 @@ def t_value_replay(env):
              f["verb"] not in ("consume", "redeem", "claim", "activate")]
     if not cands or env.remaining() < EST["h_value_replay"]:
         return []
-    for fact in cands:
+    out = []
+    for fact in cands[:4]:              # bound: at most 4 candidates tested
+        if len(out) >= 2 or env.remaining() < EST["h_value_replay"] // 2:
+            break
         res, verb = fact["resource"], fact["verb"]
         g = (env.surface.get("resource_actions") or {}).get(res) or {}
         if not g.get("create"):
@@ -1120,10 +1135,9 @@ def t_value_replay(env):
         if None in (w0, w1, w2):
             continue
         c1, c2 = w1 - w0, w2 - w1
-        if c1 > 0 and c2 > 0 and r1["status"] == r2["status"] == 200 and \
-                (face is None or c1 + c2 >= 2 * face):
-            return [_finding(
-                "FW-RELEASE-REPLAY",
+        if c1 > 0 and c2 > 0 and r1["status"] == r2["status"] == 200:
+            out.append(_finding(
+                "FW-%s-REPLAY" % verb.upper(),
                 "Credit verb '%s' on %s is repeatable: two further credits "
                 "(%d + %d cents) on one object — the consumed/released "
                 "state is never committed" % (verb, res, c1, c2),
@@ -1135,8 +1149,8 @@ def t_value_replay(env):
                   "statuses": [r1["status"], r2["status"]],
                   "discovered_via": "open-vocab verb probe"}],
                 ["any account", "own %s object" % res],
-                ["multiply the object's value by replay count"])]
-    return []
+                ["multiply the object's value by replay count"]))
+    return out
 
 
 def t_credit_race(env):
@@ -1199,13 +1213,165 @@ def t_credit_race(env):
     return []
 
 
+def t_state_skip(env):
+    """M3 follow-through (GV-8 shape): a DISCOVERED terminal verb must not
+    succeed from the pristine create state when the resource orders its
+    lifecycle. Fresh object -> state echo -> invoke the terminal verb from
+    state0 -> wallet delta (the payout the stale doc never promised); then,
+    on a SECOND object, induce the lifecycle (engine/fsm): a 409-gated
+    transition proves the resource enforces order elsewhere. Gated sibling
+    found while the terminal verb succeeded from the pristine state = the
+    FSM skip (I2). Without a gated sibling the observation is recorded and
+    no finding fires (honest when settle-from-create is simply lawful)."""
+    try:
+        from engine import fsm
+    except ImportError:                         # spine absent: v1 path
+        return []
+    facts = (env.surface.get("discoveries") or {}).get("verb_facts") or []
+    cands = [f for f in facts if f.get("verb") in fsm.TERMINAL_VERBS]
+    if not cands or env.remaining() < EST["h_state_skip"]:
+        return []
+    credited = {f["verb"] for f in facts if f.get("credited")}
+    for fact in cands:
+        if env.remaining() < EST["h_state_skip"]:
+            break
+        res, verb = fact["resource"], fact["verb"]
+        g = (env.surface.get("resource_actions") or {}).get(res) or {}
+        if not g.get("create"):
+            continue
+        p = env.register("ssk")
+        cr = env.create(p, g)
+        if not cr or cr["status"] == 202:
+            continue
+        oid = _object_id(res, cr)
+        if not oid:
+            continue
+        state0 = fsm.read_state(env.ex, p, g, oid, env.phase)
+        path = "/api/%s/%s/%s" % (res, oid, verb)
+        w0 = env.wallet(p)
+        rt = env.ex.request(p, "POST", path, body={}, phase=env.phase,
+                            tag="terminal-skip")
+        w1 = env.wallet(p)
+        state1 = fsm.read_state(env.ex, p, g, oid, env.phase)
+        if not (200 <= rt["status"] < 300) or None in (w0, w1) or \
+                w1 <= w0:
+            continue                # no pristine-state credit: honest stop
+        # second object: induce the lifecycle for the gated-sibling evidence
+        cr2 = env.create(p, g)
+        if not cr2 or cr2["status"] == 202:
+            continue
+        oid2 = _object_id(res, cr2)
+        induced = {"rows": [], "probes": 0}
+        if oid2:
+            induced = fsm.induce(
+                env.ex, p, res, g, oid2,
+                known_verbs={a.get("verb") for a in g.get("actions", [])},
+                discovered_verbs=[f["verb"] for f in facts
+                                  if f.get("resource") == res],
+                phase=env.phase,
+                budget_guard=lambda: env.remaining() > 6,
+                exclude=credited)
+        gated = fsm.gated_rows(induced)
+        if not gated:
+            env.notes.setdefault("state_observations", []).append(
+                {"resource": res, "verb": verb, "from_state": state0,
+                 "note": "terminal verb succeeded from the create state; "
+                         "no 409-gated sibling found — not claimed as a "
+                         "violation"})
+            continue
+        return [_finding(
+            "FW-STATE-SKIP",
+            "Terminal verb '%s' on %s succeeds straight from the pristine "
+            "create state (%s): the %s payout lands while the induced "
+            "lifecycle shows %d 409-gated transition(s) — the state machine "
+            "is not enforced on the money path"
+            % (verb, res, state0 or "created", res, len(gated)),
+            "critical", "I2", ["SKIP"],
+            "POST /api/%s/{id}/%s (from %s)" % (res, verb,
+                                                state0 or "created"),
+            [{"resource": res, "verb": verb, "from_state": state0,
+              "after_state": state1, "wallet_delta": w1 - w0,
+              "payout_response": rt["resp_body"],
+              "gated_siblings": gated,
+              "induced_probes": induced.get("probes"),
+              "unmodeled_transition": "%s --%s--> credited (order skipped)"
+                                      % (state0 or "created", verb),
+              "discovered_via": "open-vocab verb fact"}],
+            ["any account", "own %s object in its pristine state" % res],
+            ["collect the %s payout without performing the lifecycle" % res])]
+    return []
+
+
+def t_fsm_live(env):
+    """M3 (G3c): the live-induced FSM — the composition path behind the old
+    dvlba-pinned probe library. Gate: >= 1 discovered undocumented verb fact
+    (zero on truthful-doc targets, so dvlba/meridian never spend here).
+    Walks the lifecycle verbs of ONE object (engine/fsm.induce — money
+    verbs excluded: induction never moves value), publishes the induced
+    transition table as an OBSERVATION the attack graph consumes, and
+    flags transitions the walk caught answering 2xx at two different
+    states (the built-in replay check) as I1 candidates."""
+    try:
+        from engine import fsm
+    except ImportError:                         # spine absent: v1 path
+        return []
+    disc = (env.surface.get("discoveries") or {})
+    facts = disc.get("verb_facts") or []
+    if not facts or env.remaining() < EST["h_fsm_live"]:
+        return []
+    by_res = {}
+    for f in facts:
+        by_res.setdefault(f["resource"], []).append(f["verb"])
+    for res, verbs in by_res.items():
+        if env.remaining() < EST["h_fsm_live"]:
+            break
+        g = (env.surface.get("resource_actions") or {}).get(res) or {}
+        if not g.get("create"):
+            continue
+        p = env.register("fsm")
+        cr = env.create(p, g)
+        if not cr or cr["status"] == 202:
+            continue
+        oid = _object_id(res, cr)
+        if not oid:
+            continue
+        known = {a.get("verb") for a in g.get("actions", [])}
+        induced = fsm.induce(
+            env.ex, p, res, g, oid, known, verbs, phase=env.phase,
+            budget_guard=lambda: env.remaining() > 6,
+            exclude={f["verb"] for f in facts if f.get("credited")})
+        out = [{"kind": "OBSERVATION", "tags": ["fsm-live"],
+                "payload": {"induced_fsm": {
+                    "resource": res, "state0": induced.get("state0"),
+                    "rows": induced["rows"], "probes": induced["probes"],
+                    "verbs_absent": induced["verbs_absent"],
+                    "gated": fsm.gated_rows(induced)}}}]
+        for verb, rows in fsm.replayable_rows(induced).items():
+            out.append(_finding(
+                "FW-TRANSITION-REPLAY",
+                "State transition '%s' on %s is repeatable: the induced "
+                "walk advanced the object state twice (%s) — the one-shot "
+                "guard never commits" % (verb, res,
+                                         [(r["state_before"],
+                                           r["state_after"]) for r in rows]),
+                "high", "I1", ["REPLAY"],
+                "POST /api/%s/{id}/%s (induced replay)" % (res, verb),
+                [{"resource": res, "verb": verb, "walk_rows": rows,
+                  "induced_probes": induced.get("probes")}],
+                ["any account", "own %s object" % res],
+                ["re-run the transition to re-enter its target state"]))
+        return out
+    return []
+
+
 RUNNERS = {"h_quota_race": t_quota_race, "h_arith_cycle": t_arith_cycle,
            "h_state_guard": t_state_guard, "h_async_toctou": t_async_toctou,
            "h_mass_assign": t_mass_assign, "h_cross_tenant": t_cross_tenant,
            "h_hidden_verbs": t_hidden_verbs,
            "h_terminal_credit": t_terminal_credit,
            "h_async_seam": t_async_seam, "h_open_vocab": t_open_vocab,
-           "h_value_replay": t_value_replay, "h_credit_race": t_credit_race}
+           "h_value_replay": t_value_replay, "h_credit_race": t_credit_race,
+           "h_state_skip": t_state_skip, "h_fsm_live": t_fsm_live}
 
 
 def run(tag, env):

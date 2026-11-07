@@ -1,7 +1,7 @@
 {
   "tool": "hypothesis-ledger",
   "version": "1.0.0",
-  "generated": "2026-11-07T02:55:56+0000",
+  "generated": "2026-11-07T03:34:49+0000",
   "stats": {
     "total": 20,
     "by_status": {
@@ -10,8 +10,8 @@
       "refuted": 4
     },
     "by_source": {
-      "swarm-board/ea3e50": 10,
-      "deferred-window/ea3e50": 1,
+      "swarm-board/e3475c": 10,
+      "deferred-window/e3475c": 1,
       "statefuzz/swarm-embedded": 9
     },
     "by_tag": {
@@ -41,13 +41,13 @@
   "entries": [
     {
       "id": "H-0001",
-      "source": "swarm-board/ea3e50",
+      "source": "swarm-board/e3475c",
       "tag": "h_race",
       "title": "Single-use redemption may lose check-then-act races",
       "prior": 0.5,
       "plan": "last-byte-synchronised race, 8 workers",
       "derived_from": [
-        "SF-HYPOTHESIS-0155"
+        "SF-HYPOTHESIS-0163"
       ],
       "status": "confirmed-by-transcript",
       "tests": [
@@ -58,7 +58,7 @@
           "finding_ids": [
             "SW-RACE"
           ],
-          "ts": 1794020156.8127918
+          "ts": 1794022489.5257077
         }
       ],
       "evidence": [
@@ -67,18 +67,18 @@
           "status": "verified-by-transcript"
         }
       ],
-      "created": 1794020156.8127422,
-      "resolved": 1794020156.8127947
+      "created": 1794022489.5256693,
+      "resolved": 1794022489.5257108
     },
     {
       "id": "H-0002",
-      "source": "swarm-board/ea3e50",
+      "source": "swarm-board/e3475c",
       "tag": "h_async",
       "title": "Async refund leg may double-credit within the callback window",
       "prior": 0.55,
       "plan": "async refund + sync refund, poll callback",
       "derived_from": [
-        "SF-HYPOTHESIS-0156"
+        "SF-HYPOTHESIS-0164"
       ],
       "status": "confirmed",
       "tests": [
@@ -89,7 +89,7 @@
           "finding_ids": [
             "SW-ASYNC"
           ],
-          "ts": 1794020156.8127983
+          "ts": 1794022489.5257146
         }
       ],
       "evidence": [
@@ -98,18 +98,18 @@
           "status": "verified"
         }
       ],
-      "created": 1794020156.8127468,
-      "resolved": 1794020156.812805
+      "created": 1794022489.5256746,
+      "resolved": 1794022489.525716
     },
     {
       "id": "H-0003",
-      "source": "swarm-board/ea3e50",
+      "source": "swarm-board/e3475c",
       "tag": "h_idor",
       "title": "Parameterised object endpoints may lack ownership checks",
       "prior": 0.6,
       "plan": "cross-user read of a fresh order",
       "derived_from": [
-        "SF-HYPOTHESIS-0157"
+        "SF-HYPOTHESIS-0165"
       ],
       "status": "confirmed",
       "tests": [
@@ -120,7 +120,7 @@
           "finding_ids": [
             "SW-IDOR"
           ],
-          "ts": 1794020156.8128085
+          "ts": 1794022489.525719
         }
       ],
       "evidence": [
@@ -129,18 +129,18 @@
           "status": "verified"
         }
       ],
-      "created": 1794020156.8127494,
-      "resolved": 1794020156.8128095
+      "created": 1794022489.525677,
+      "resolved": 1794022489.5257201
     },
     {
       "id": "H-0004",
-      "source": "swarm-board/ea3e50",
+      "source": "swarm-board/e3475c",
       "tag": "h_refund",
       "title": "Refund transitions may be replayable and mis-credited",
       "prior": 0.6,
       "plan": "replay refund x2 as a second principal",
       "derived_from": [
-        "SF-HYPOTHESIS-0158"
+        "SF-HYPOTHESIS-0166"
       ],
       "status": "confirmed",
       "tests": [
@@ -151,7 +151,7 @@
           "finding_ids": [
             "SW-REF-X"
           ],
-          "ts": 1794020156.8128128
+          "ts": 1794022489.5257232
         },
         {
           "kind": "finding",
@@ -160,7 +160,7 @@
           "finding_ids": [
             "SW-REF-R"
           ],
-          "ts": 1794020156.8128161
+          "ts": 1794022489.5257268
         }
       ],
       "evidence": [
@@ -173,18 +173,18 @@
           "status": "verified"
         }
       ],
-      "created": 1794020156.8127518,
-      "resolved": 1794020156.8128173
+      "created": 1794022489.525679,
+      "resolved": 1794022489.525728
     },
     {
       "id": "H-0005",
-      "source": "swarm-board/ea3e50",
+      "source": "swarm-board/e3475c",
       "tag": "h_coupon",
       "title": "Multi-use coupon application may stack without cap",
       "prior": 0.5,
       "plan": "replay coupon/apply x12",
       "derived_from": [
-        "SF-HYPOTHESIS-0159"
+        "SF-HYPOTHESIS-0167"
       ],
       "status": "confirmed",
       "tests": [
@@ -195,7 +195,7 @@
           "finding_ids": [
             "SW-STACK"
           ],
-          "ts": 1794020156.81282
+          "ts": 1794022489.5257308
         }
       ],
       "evidence": [
@@ -204,18 +204,18 @@
           "status": "verified"
         }
       ],
-      "created": 1794020156.8127537,
-      "resolved": 1794020156.8128211
+      "created": 1794022489.5256813,
+      "resolved": 1794022489.525732
     },
     {
       "id": "H-0006",
-      "source": "swarm-board/ea3e50",
+      "source": "swarm-board/e3475c",
       "tag": "h_fsm",
       "title": "Order lifecycle is a two-step state machine; transition guards may be missing",
       "prior": 0.7,
       "plan": "spawn statefuzz specialist",
       "derived_from": [
-        "SF-HYPOTHESIS-0160"
+        "SF-HYPOTHESIS-0168"
       ],
       "status": "confirmed",
       "tests": [
@@ -226,7 +226,7 @@
           "finding_ids": [
             "SF-NEG-QTY"
           ],
-          "ts": 1794020156.812824
+          "ts": 1794022489.525735
         },
         {
           "kind": "finding",
@@ -235,7 +235,7 @@
           "finding_ids": [
             "SF-STACK-DISC"
           ],
-          "ts": 1794020156.8128273
+          "ts": 1794022489.5257387
         },
         {
           "kind": "finding",
@@ -244,7 +244,7 @@
           "finding_ids": [
             "SF-CKOUT-REPLAY"
           ],
-          "ts": 1794020156.8128307
+          "ts": 1794022489.525742
         },
         {
           "kind": "finding",
@@ -253,7 +253,7 @@
           "finding_ids": [
             "SF-SHIP-UNPAID"
           ],
-          "ts": 1794020156.8128343
+          "ts": 1794022489.5257454
         },
         {
           "kind": "finding",
@@ -262,7 +262,7 @@
           "finding_ids": [
             "SF-IDOR-ORDER"
           ],
-          "ts": 1794020156.8128374
+          "ts": 1794022489.5257485
         },
         {
           "kind": "finding",
@@ -271,7 +271,7 @@
           "finding_ids": [
             "SF-REFUND-CROSS"
           ],
-          "ts": 1794020156.8128412
+          "ts": 1794022489.525752
         },
         {
           "kind": "finding",
@@ -280,7 +280,7 @@
           "finding_ids": [
             "SF-REFUND-REPLAY"
           ],
-          "ts": 1794020156.8128445
+          "ts": 1794022489.5257556
         },
         {
           "kind": "finding",
@@ -289,7 +289,7 @@
           "finding_ids": [
             "SF-ASYNC-DBL"
           ],
-          "ts": 1794020156.8128479
+          "ts": 1794022489.5257592
         }
       ],
       "evidence": [
@@ -326,18 +326,18 @@
           "status": "verified"
         }
       ],
-      "created": 1794020156.8127563,
-      "resolved": 1794020156.8128488
+      "created": 1794022489.5256834,
+      "resolved": 1794022489.5257602
     },
     {
       "id": "H-0007",
-      "source": "swarm-board/ea3e50",
+      "source": "swarm-board/e3475c",
       "tag": "h_open_vocab",
       "title": "The live surface may hold value resources, verbs and read-backs the stale document never mentioned",
       "prior": 0.55,
       "plan": "probe the open noun/verb/subpath vocabularies against the live target; fold every fact into a revised surface",
       "derived_from": [
-        "SF-HYPOTHESIS-0161"
+        "SF-HYPOTHESIS-0169"
       ],
       "status": "refuted",
       "tests": [
@@ -346,7 +346,7 @@
           "detail": "dispatched; produced 0 facts",
           "requests_spent": 0,
           "finding_ids": [],
-          "ts": 1794020156.8128624
+          "ts": 1794022489.5257883
         }
       ],
       "evidence": [
@@ -354,18 +354,18 @@
           "note": "probe ran against the live target and demonstrated no violation"
         }
       ],
-      "created": 1794020156.8127582,
-      "resolved": 1794020156.812864
+      "created": 1794022489.5256855,
+      "resolved": 1794022489.5257907
     },
     {
       "id": "H-0008",
-      "source": "swarm-board/ea3e50",
+      "source": "swarm-board/e3475c",
       "tag": "h_mass_assign",
       "title": "Undocumented body fields may override pricing or entitlements",
       "prior": 0.5,
       "plan": "differential create with injected candidates",
       "derived_from": [
-        "SF-HYPOTHESIS-0162"
+        "SF-HYPOTHESIS-0170"
       ],
       "status": "refuted",
       "tests": [
@@ -374,7 +374,7 @@
           "detail": "dispatched; produced 0 facts",
           "requests_spent": 0,
           "finding_ids": [],
-          "ts": 1794020156.8128676
+          "ts": 1794022489.5257943
         }
       ],
       "evidence": [
@@ -382,18 +382,18 @@
           "note": "probe ran against the live target and demonstrated no violation"
         }
       ],
-      "created": 1794020156.8127604,
-      "resolved": 1794020156.8128688
+      "created": 1794022489.5256875,
+      "resolved": 1794022489.5257957
     },
     {
       "id": "H-0009",
-      "source": "swarm-board/ea3e50",
+      "source": "swarm-board/e3475c",
       "tag": "h_arith_cycle",
       "title": "Value-neutral cycles of a priced transition may accumulate rounding drift",
       "prior": 0.45,
       "plan": "cycle 12x, net wallet delta",
       "derived_from": [
-        "SF-HYPOTHESIS-0163"
+        "SF-HYPOTHESIS-0171"
       ],
       "status": "refuted",
       "tests": [
@@ -402,7 +402,7 @@
           "detail": "dispatched; produced 0 facts",
           "requests_spent": 0,
           "finding_ids": [],
-          "ts": 1794020156.812872
+          "ts": 1794022489.5257988
         }
       ],
       "evidence": [
@@ -410,18 +410,18 @@
           "note": "probe ran against the live target and demonstrated no violation"
         }
       ],
-      "created": 1794020156.8127742,
-      "resolved": 1794020156.8128731
+      "created": 1794022489.5256896,
+      "resolved": 1794022489.5258
     },
     {
       "id": "H-0010",
-      "source": "swarm-board/ea3e50",
+      "source": "swarm-board/e3475c",
       "tag": "h_quota_race",
       "title": "Quota-limited claims may lose the check-then-act race to distinct principals",
       "prior": 0.5,
       "plan": "multi-principal last-byte race",
       "derived_from": [
-        "SF-HYPOTHESIS-0164"
+        "SF-HYPOTHESIS-0172"
       ],
       "status": "refuted",
       "tests": [
@@ -430,7 +430,7 @@
           "detail": "dispatched; produced 0 facts",
           "requests_spent": 0,
           "finding_ids": [],
-          "ts": 1794020156.8128762
+          "ts": 1794022489.5258083
         }
       ],
       "evidence": [
@@ -438,16 +438,16 @@
           "note": "probe ran against the live target and demonstrated no violation"
         }
       ],
-      "created": 1794020156.8127775,
-      "resolved": 1794020156.8128777
+      "created": 1794022489.5256922,
+      "resolved": 1794022489.52581
     },
     {
       "id": "H-0011",
-      "source": "deferred-window/ea3e50",
+      "source": "deferred-window/e3475c",
       "tag": "deferred-window",
-      "title": "deferred effect via /api/callbacks/eef043749511 (ttl 6.0s)",
+      "title": "deferred effect via /api/callbacks/27c6a617606a (ttl 6.0s)",
       "prior": 0.5,
-      "plan": "poll /api/callbacks/eef043749511 until resolved",
+      "plan": "poll /api/callbacks/27c6a617606a until resolved",
       "derived_from": [],
       "status": "confirmed",
       "tests": [
@@ -456,7 +456,7 @@
           "detail": "1 async settle window(s) opened, 0 event poll(s) issued by the swarm",
           "requests_spent": 0,
           "finding_ids": [],
-          "ts": 1794020156.8138728
+          "ts": 1794022489.526794
         }
       ],
       "evidence": [
@@ -464,11 +464,11 @@
           "note": "deferred-window violation (SW-ASYNC,SF-ASYNC-DBL) verified in this run"
         }
       ],
-      "created": 1794020156.8138692,
-      "resolved": 1794020156.8142385,
+      "created": 1794022489.5267901,
+      "resolved": 1794022489.5271575,
       "deferred": {
         "marker": "1 window(s)",
-        "callback_path": "/api/callbacks/eef043749511",
+        "callback_path": "/api/callbacks/27c6a617606a",
         "expectation": {},
         "ttl": 6.0
       }
@@ -497,7 +497,7 @@
             "SF-REFUND-REPLAY",
             "SF-ASYNC-DBL"
           ],
-          "ts": 1794020156.8143895
+          "ts": 1794022489.5273063
         }
       ],
       "evidence": [
@@ -505,8 +505,8 @@
           "note": "probes applied"
         }
       ],
-      "created": 1794020156.814383,
-      "resolved": 1794020156.8143919
+      "created": 1794022489.5272992,
+      "resolved": 1794022489.527309
     },
     {
       "id": "H-0013",
@@ -525,7 +525,7 @@
           "finding_ids": [
             "SF-NEG-QTY"
           ],
-          "ts": 1794020156.8143961
+          "ts": 1794022489.527314
         }
       ],
       "evidence": [
@@ -533,8 +533,8 @@
           "finding": "SF-NEG-QTY"
         }
       ],
-      "created": 1794020156.8143938,
-      "resolved": 1794020156.8143983
+      "created": 1794022489.5273113,
+      "resolved": 1794022489.5273156
     },
     {
       "id": "H-0014",
@@ -553,7 +553,7 @@
           "finding_ids": [
             "SF-STACK-DISC"
           ],
-          "ts": 1794020156.8144016
+          "ts": 1794022489.5273192
         }
       ],
       "evidence": [
@@ -561,8 +561,8 @@
           "finding": "SF-STACK-DISC"
         }
       ],
-      "created": 1794020156.8143995,
-      "resolved": 1794020156.814403
+      "created": 1794022489.5273168,
+      "resolved": 1794022489.527321
     },
     {
       "id": "H-0015",
@@ -581,7 +581,7 @@
           "finding_ids": [
             "SF-CKOUT-REPLAY"
           ],
-          "ts": 1794020156.8144062
+          "ts": 1794022489.5273247
         }
       ],
       "evidence": [
@@ -589,8 +589,8 @@
           "finding": "SF-CKOUT-REPLAY"
         }
       ],
-      "created": 1794020156.814404,
-      "resolved": 1794020156.8144076
+      "created": 1794022489.5273223,
+      "resolved": 1794022489.527326
     },
     {
       "id": "H-0016",
@@ -609,7 +609,7 @@
           "finding_ids": [
             "SF-SHIP-UNPAID"
           ],
-          "ts": 1794020156.8144107
+          "ts": 1794022489.5273297
         }
       ],
       "evidence": [
@@ -617,8 +617,8 @@
           "finding": "SF-SHIP-UNPAID"
         }
       ],
-      "created": 1794020156.8144085,
-      "resolved": 1794020156.8144124
+      "created": 1794022489.5273273,
+      "resolved": 1794022489.5273314
     },
     {
       "id": "H-0017",
@@ -637,7 +637,7 @@
           "finding_ids": [
             "SF-IDOR-ORDER"
           ],
-          "ts": 1794020156.8144157
+          "ts": 1794022489.5273347
         }
       ],
       "evidence": [
@@ -645,8 +645,8 @@
           "finding": "SF-IDOR-ORDER"
         }
       ],
-      "created": 1794020156.8144133,
-      "resolved": 1794020156.8144171
+      "created": 1794022489.5273323,
+      "resolved": 1794022489.5273364
     },
     {
       "id": "H-0018",
@@ -665,7 +665,7 @@
           "finding_ids": [
             "SF-REFUND-CROSS"
           ],
-          "ts": 1794020156.8144202
+          "ts": 1794022489.5273397
         }
       ],
       "evidence": [
@@ -673,8 +673,8 @@
           "finding": "SF-REFUND-CROSS"
         }
       ],
-      "created": 1794020156.8144178,
-      "resolved": 1794020156.8144221
+      "created": 1794022489.5273373,
+      "resolved": 1794022489.5273414
     },
     {
       "id": "H-0019",
@@ -693,7 +693,7 @@
           "finding_ids": [
             "SF-REFUND-REPLAY"
           ],
-          "ts": 1794020156.8144252
+          "ts": 1794022489.5273447
         }
       ],
       "evidence": [
@@ -701,8 +701,8 @@
           "finding": "SF-REFUND-REPLAY"
         }
       ],
-      "created": 1794020156.814423,
-      "resolved": 1794020156.8144271
+      "created": 1794022489.5273423,
+      "resolved": 1794022489.5273461
     },
     {
       "id": "H-0020",
@@ -721,7 +721,7 @@
           "finding_ids": [
             "SF-ASYNC-DBL"
           ],
-          "ts": 1794020156.8144305
+          "ts": 1794022489.5273495
         }
       ],
       "evidence": [
@@ -729,8 +729,8 @@
           "finding": "SF-ASYNC-DBL"
         }
       ],
-      "created": 1794020156.814428,
-      "resolved": 1794020156.8144321
+      "created": 1794022489.527347,
+      "resolved": 1794022489.5273514
     }
   ]
 }

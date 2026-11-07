@@ -7,6 +7,7 @@ from .verify import VerifySpecialist
 from .access import AccessSpecialist
 from .statefuzz_spec import StatefuzzSpecialist
 from .window_driver import WindowDriverSpecialist
+from .attack_graph import AttackGraphSpecialist
 
 ROSTER = {
     "RECON": ReconSpecialist,
@@ -17,8 +18,10 @@ ROSTER = {
     "ACCESS": AccessSpecialist,
     "LOGIC": StatefuzzSpecialist,
     "WINDOW": WindowDriverSpecialist,
+    "GRAPH": AttackGraphSpecialist,
 }
 
 __all__ = ["ROSTER", "ReconSpecialist", "SurfaceMapper", "HypothesisEngine",
            "ExploitSpecialist", "VerifySpecialist", "AccessSpecialist",
-           "StatefuzzSpecialist", "WindowDriverSpecialist"]
+           "StatefuzzSpecialist", "WindowDriverSpecialist",
+           "AttackGraphSpecialist"]

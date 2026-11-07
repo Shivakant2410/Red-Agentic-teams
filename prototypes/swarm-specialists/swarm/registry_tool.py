@@ -231,6 +231,10 @@ def run(ctx, budget=None):
             "results_dir": out_dir, "approvals": ctx.get("approvals", "lab"),
             "budget": budget, "stop_file": stop_file, "base_url": base_url,
             "anon": anon,
+            # M3: the ambient wallet watcher's shared event trace (the
+            # exploit specialist's watcher appends here; the attack-graph
+            # projection reads it)
+            "ambient_events": [],
             # engagement-brief artifacts (campaign codes/tokens) — v0.2
             "artifacts": dict(ctx.get("artifacts") or {},
                               promo_code=(ctx.get("artifacts") or {})
@@ -240,7 +244,7 @@ def run(ctx, budget=None):
     specialists = [cls(ctx2) for cls in
                    (ROSTER["RECON"], ROSTER["SURFACE"], ROSTER["HYPOTHESES"],
                     ROSTER["EXPLOIT"], ROSTER["VERIFY"], ROSTER["ACCESS"],
-                    ROSTER["LOGIC"], ROSTER["WINDOW"])]
+                    ROSTER["LOGIC"], ROSTER["WINDOW"], ROSTER["GRAPH"])]
 
     started = time.time()
     board.publish(Fact.make("CONTROL", "orchestrator",
@@ -275,9 +279,34 @@ def run(ctx, budget=None):
         ledger.save(os.path.join(out_dir, "hypothesis_ledger.json"))
         ledger_stats = {"stats": ledger.stats(), "score": ledger.score()}
 
+    # ------------------------------------------ M3 attack-graph projection --
+    ag_stats, ambient_stats = None, None
+    try:
+        from engine import attackgraph as ag
+        tested = {f["payload"].get("tag") for f in board.facts
+                  if f.get("kind") == "HYPOTHESIS"}
+        doc = ag.build(board.facts,
+                       ambient_events=ctx2.get("ambient_events") or (),
+                       tested_tags=tested)
+        ag.save(doc, out_dir)
+        ag_stats = {"surface_nodes": len(doc["surface_map"]["nodes"]),
+                    "surface_edges": len(doc["surface_map"]["edges"]),
+                    "money_paths": len(doc["money_paths"]),
+                    "next_actions": doc["next_actions"][:3]}
+        ambient = ctx2.get("ambient_events") or []
+        ambient_stats = {"events": len(ambient),
+                         "unexplained": sum(1 for e in ambient
+                                            if not e.get("attributed")),
+                         "deltas": [{"tag": e.get("tag"),
+                                     "delta": e.get("delta"),
+                                     "attributed": e.get("attributed")}
+                                    for e in ambient][:12]}
+    except ImportError:                         # spine absent: v1 path
+        pass
+
     summary = _assemble(board, router, ex, started, out_dir, memory_dir,
                         memory_snapshots_before, memory_snapshots, llm,
-                        ledger_stats)
+                        ledger_stats, ag_stats, ambient_stats)
     return summary
 
 
@@ -315,7 +344,8 @@ def _dedupe(findings):
 
 
 def _assemble(board, router, ex, started, out_dir, memory_dir,
-              mem_before, mem_after, llm, ledger_stats=None):
+              mem_before, mem_after, llm, ledger_stats=None, ag_stats=None,
+              ambient_stats=None):
     findings = _dedupe(board.query(kind="FINDING"))
     escalations = [{"chain": f["payload"]["chain"],
                     "impact": f["payload"]["impact"],
@@ -327,7 +357,7 @@ def _assemble(board, router, ex, started, out_dir, memory_dir,
     if os.path.exists(sf_doc_path):
         sf_requests = json.load(open(sf_doc_path)).get("requests")
 
-    doc = {"tool": "swarm", "version": "0.5.0-m2",
+    doc = {"tool": "swarm", "version": "0.6.0-m3",
            "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
            "elapsed_s": round(time.time() - started, 1),
            "requests": ex.count,
@@ -338,6 +368,8 @@ def _assemble(board, router, ex, started, out_dir, memory_dir,
            "llm_seam_calls": llm.calls,
            "markers_registered": (ledger_stats or {}).get("stats", {})
            .get("by_tag", {}).get("marker", 0),
+           "attack_graph": ag_stats,
+           "ambient_watch": ambient_stats,
            "ledger": board.ledger(),
            "hypothesis_ledger": ledger_stats,
            "memory_before": mem_before, "memory_after": mem_after,
@@ -358,6 +390,8 @@ def _assemble(board, router, ex, started, out_dir, memory_dir,
             "hypothesis_ledger": ledger_stats,
             "markers_registered": (ledger_stats or {}).get("stats", {})
             .get("by_tag", {}).get("marker", 0),
+            "attack_graph": ag_stats,
+            "ambient_watch": ambient_stats,
             "spawn_events": doc["spawn_events"],
             "llm_seam_calls": doc["llm_seam_calls"],
             "findings": [{"id": f["finding"]["id"],

@@ -65,6 +65,16 @@ GENERIC_RULES = [
     ("h_credit_race", "A discovered credit verb without a single-use guard "
      "may lose the check-then-act race", 0.55,
      "open-vocab verb facts -> last-byte race x8 on a fresh object"),
+    ("h_state_skip", "A discovered terminal verb may succeed from the "
+     "pristine create state, skipping a lifecycle the resource enforces "
+     "elsewhere", 0.60,
+     "create -> state echo -> invoke terminal verb from state0 -> wallet "
+     "delta; induce the lifecycle on a second object for the 409-gated "
+     "sibling evidence"),
+    ("h_fsm_live", "The live lifecycle (undocumented transitions) may hide "
+     "order guards the stale doc never stated", 0.50,
+     "walk lifecycle verbs across one object's states; publish the induced "
+     "transition table; flag transitions answered 2xx at two states"),
 ]
 
 
@@ -127,6 +137,15 @@ def _generic_gate(tag, surface):
         return any(f.get("credited") and
                    (f.get("resource"), f.get("verb")) not in su
                    for f in disc.get("verb_facts", []))
+    if tag == "h_state_skip":
+        disc = surface.get("discoveries") or {}
+        return any(f.get("verb") in
+                   ("settle", "complete", "confirm", "fulfill",
+                    "approve", "capture", "close", "terminate")
+                   for f in disc.get("verb_facts", []))
+    if tag == "h_fsm_live":
+        disc = surface.get("discoveries") or {}
+        return bool(disc.get("verb_facts"))
     return False
 
 

@@ -26,6 +26,22 @@ Every module below cites its research basis (M1–M8, E1–E6).
 | ACCESS | `access` | finding_verified CONTROL | chain | capability chains → ESCALATION facts |
 | LOGIC | `statefuzz_spec` | spawn-only | run_statefuzz | the Phase-B tool, sub-budget isolated |
 | WINDOW | `window_driver` | OBSERVATION async-opened / stall | (ledger-driven) | M1: registers 202/event markers, drives deferred windows (GV-4/GV-5) |
+| GRAPH | `attack_graph` | ESCALATION ambient-credit / stall | (no requests) | M3: induces the attack-surface map + attack graph; next_actions guide exploit agents |
+
+## M3 layer (follow-through + ambient oracles + the graph)
+
+- **Ambient wallet oracle** (`engine/watch.py`): every principal baselined at
+  registration, every technique act settled at the balance; unattributed
+  money movement escalates (the band-D leak is mechanically visible).
+- **Attack surface map + attack graph** (`engine/attackgraph.py`): one
+  builder, both artifacts (`attack_surface.json` per run); edges carry cost,
+  evidence state and technique suggestion; `next_actions()` ranks the
+  cheapest untested/credit-only edges to the wallet goal.
+- **Live-FSM composition** (`engine/fsm.py`, `t_state_skip`, `t_fsm_live`):
+  lifecycle induced from 409-gating + state echoes; terminal verbs probed
+  from the pristine state with wallet discipline — GV-8 closed.
+- Full numbers: `M3-PROOF.md` · research: `RESEARCH-M3.md` · method
+  inventory with literature lineage: `TECHNIQUES.md`.
 
 ## Quickstart
 
