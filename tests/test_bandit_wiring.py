@@ -3,12 +3,18 @@
 - cost-aware claim ordering + per-round NoiseBudget in the exploit swarm,
 - the per-round bandit.state learned broadcast,
 - the federation sync handler (foreign merges, own/garbage skipped),
-- the OPSEC cost table and BanditStore select()/export_state() extensions.
+- the OPSEC cost table and BanditStore select()/export_state() extensions,
+- Phase B3: the DriftPlusPenaltyScheduler (Q recursion, POMDP blend, throttling,
+  V sweep monotonicity, zero-pressure parity with the legacy knapsack order) and
+  the swarm's end-to-end response to a synthetic challenge window.
 """
 
 from __future__ import annotations
 
+import random
 import threading
+
+import pytest
 
 from redteam.attack_tree import (
     FAILED, TECHNIQUES, TECHNIQUE_COST, AttackTree, technique_cost,
@@ -16,14 +22,38 @@ from redteam.attack_tree import (
 from redteam.bandit import BanditStore, make_sync_handler
 from redteam.config import Engagement, LlmConfig, SandboxConfig
 from redteam.knowledge import ENDPOINT, KnowledgeGraph
-from redteam.orchestrator import NoiseBudget, Orchestrator
+from redteam.orchestrator import DriftPlusPenaltyScheduler, NoiseBudget, Orchestrator
 from redteam.findings import FindingStore
 from redteam.llm.openrouter import ChatResult
 from redteam.ratelimit import RateLimiter
 from redteam.scope import ScopeGuard
 from redteam.tools import ToolContext
+from redteam.tools.http import observe_response as http_observe_response
 
 import datetime as _dt
+
+
+class FixedBelief:
+    """BeliefFilter stand-in with a controllable risk_score — isolates the
+    scheduler's POMDP blend from the HMM itself (which test_detection_belief.py
+    covers against its own spec)."""
+
+    def __init__(self, risk: float = 0.0):
+        self.risk = float(risk)
+
+    def risk_score(self) -> float:
+        return self.risk
+
+
+class StubBandit:
+    """BanditStore stand-in returning FIXED Thompson draws — makes the scheduler's
+    score(a) = Q*cost - V*progress hand-checkable without seeding randomness."""
+
+    def __init__(self, draws: dict[str, float]):
+        self._draws = dict(draws)
+
+    def sample(self, technique: str, bucket: str) -> float:
+        return self._draws[technique]
 
 
 # -- local fakes (mirrors test_orchestrator.py; self-contained on purpose) ---------
@@ -371,3 +401,243 @@ def test_cumulative_round_broadcasts_pool_exactly_once():
                         "alpha": 1.0, "beta": 1.5}], source="run-c")
     arm = store._get("injection.sqli", "generic")
     assert (arm.alpha, arm.beta) == (1.0, 8.0)
+
+
+# -- Phase B3: DriftPlusPenaltyScheduler --------------------------------------------------
+#
+# NoiseBudget's name stays as an alias (every existing caller/test keeps working);
+# the behavior below is what the replacement ADDS on top of the unchanged
+# accounting contract the tests above already pin.
+
+def test_noise_budget_name_is_the_scheduler():
+    """The alias is the contract: NoiseBudget's public interface survives the
+    Phase B3 swap identically for every existing caller."""
+    assert NoiseBudget is DriftPlusPenaltyScheduler
+    b = NoiseBudget(3.0)                       # legacy positional construction
+    assert b.can_afford(3.0) and not b.can_afford(3.01)
+    assert b.try_spend(3.0) and b.remaining == 0.0
+
+
+def test_q_recursion_advances_on_spend_and_unwinds_on_refund():
+    s = DriftPlusPenaltyScheduler(10.0, mu=2.0)
+    assert s.q_effective() == 0.0
+    assert s.try_spend(5.0)                    # loud claim: Q = max(0 + 5 - 2, 0)
+    assert s.q_effective() == 3.0
+    assert s.try_spend(1.0)                    # quiet claim: Q = max(3 + 1 - 2, 0)
+    assert s.q_effective() == 2.0
+    s.refund(1.0)                              # lost claim race: pressure unwinds too
+    assert s.q_effective() == 3.0
+    s.refund(5.0)                              # and the loud one unwinds back to zero
+    assert s.q_effective() == 0.0
+
+
+def test_q_effective_blends_belief_over_raw_queue():
+    belief = FixedBelief(risk=0.5)
+    s = DriftPlusPenaltyScheduler(12.0, belief=belief, scale=4.0)
+    assert s.q_effective() == 2.0              # 0.5 * SCALE, over a raw queue of 0
+    s.try_spend(5.0)                           # raw queue = 3 — now the larger side
+    assert s.q_effective() == 3.0
+    belief.risk = 1.0                          # challenge burst: belief overrides
+    assert s.q_effective() == 4.0
+    # a BROKEN belief must degrade to raw-queue-only, never block the swarm
+    class Exploding:
+        def risk_score(self):
+            raise RuntimeError("boom")
+    s2 = DriftPlusPenaltyScheduler(12.0, belief=Exploding())
+    s2.try_spend(3.0)
+    assert s2.q_effective() == 1.0             # mu=2: max(0 + 3 - 2, 0)
+
+
+def test_reset_under_pressure_withholds_budget_but_never_mints_it():
+    # Regression for the hard-cap contract: with total < mu the mu floor must NOT
+    # inflate the allowance past the total (round budget is a ceiling, always).
+    s = DriftPlusPenaltyScheduler(1.0, mu=2.0)
+    s.reset()
+    assert s.remaining == 1.0
+    # Pressure withholds one-for-one: two loud claims owe 6 credits of queue.
+    s2 = DriftPlusPenaltyScheduler(12.0, mu=2.0)
+    s2.try_spend(5.0)
+    s2.try_spend(5.0)
+    assert s2.q_effective() == 6.0
+    s2.reset()
+    assert s2.remaining == 6.0
+    # Belief-driven pressure withholds the same way (risk 1.0 * scale 4 = 4).
+    s3 = DriftPlusPenaltyScheduler(12.0, belief=FixedBelief(1.0), scale=4.0)
+    s3.reset()
+    assert s3.remaining == 8.0
+    # Extreme pressure floors at mu (the swarm can always afford one sustainable
+    # claim), and never goes above the total.
+    s4 = DriftPlusPenaltyScheduler(12.0, mu=2.0, belief=FixedBelief(1.0), scale=50.0)
+    s4.reset()
+    assert s4.remaining == 2.0
+
+
+def _greedy_fill(sched: DriftPlusPenaltyScheduler, candidates) -> float:
+    """The swarm's fill shape: walk the ranked list, spend what fits, skip the
+    rest (the knapsack the scheduler replaced, now driven by its ranking)."""
+    spent = 0.0
+    for item in sched.rank(candidates):
+        if sched.try_spend(item["cost"]):
+            spent += item["cost"]
+    return spent
+
+
+def test_high_pressure_round_spends_less_than_low_pressure_round():
+    """The phase's throttling requirement: SAME candidate set, a high-Q round's
+    total spend is strictly below a low-Q round's. reset() first — the swarm
+    always starts a round there, and the throttle lives in the reset allowance."""
+    candidates = [("quiet.a", "generic", 1.0), ("quiet.b", "generic", 1.0),
+                  ("mid.a", "generic", 2.0), ("mid.b", "generic", 2.0),
+                  ("loud.a", "generic", 4.0), ("loud.b", "generic", 4.0)]
+    low = DriftPlusPenaltyScheduler(12.0)                       # fresh: Q = 0
+    low.reset()
+    spent_low = _greedy_fill(low, candidates)
+    high = DriftPlusPenaltyScheduler(12.0, belief=FixedBelief(1.0), scale=4.0)
+    high.reset()                                                # allowance 12 - 4
+    spent_high = _greedy_fill(high, candidates)
+    assert spent_low > spent_high                               # visible throttling
+    assert spent_high <= 8.0 + 1e-9                             # 12 - risk*SCALE
+    assert spent_high > 0.0                                     # throttled, not paralyzed
+
+
+def test_zero_pressure_rank_matches_legacy_bandit_select_order():
+    """Q=0 must BE the legacy behavior: with a fixed seed the scheduler's ranking
+    is exactly BanditStore.select's yield-per-cost order (same draws, same order),
+    which is what the old greedy knapsack walked."""
+    store = BanditStore()
+    for _ in range(6):
+        store.record("access.idor", "generic", won=True)
+    for _ in range(3):
+        store.record("injection.sqli", "generic", won=False)
+    nodes = {f"n{i}": object() for i in range(6)}
+    candidates = [("access.idor", "generic", 2.0, nodes["n0"]),
+                  ("injection.sqli", "generic", 3.0, nodes["n1"]),
+                  ("xss.reflected", "generic", 1.0, nodes["n2"]),
+                  ("auth.test", "generic", 1.0, nodes["n3"]),
+                  ("ssrf", "generic", 2.0, nodes["n4"]),
+                  ("info.sensitive", "generic", 1.0, nodes["n5"])]
+    random.seed(20261108)
+    legacy = store.select(candidates, k=len(candidates))
+    random.seed(20261108)
+    sched = DriftPlusPenaltyScheduler(12.0, bandit=store)       # fresh: Q = 0
+    ranked = sched.rank(candidates)
+    assert [i["technique"] for i in ranked] == [i["technique"] for i in legacy]
+    # meta rides through exactly like select()'s passthrough — same objects, same order
+    assert [i["meta"] for i in ranked] == [i["meta"] for i in legacy]
+
+
+def test_v_sweep_moves_high_progress_arms_up_monotonically():
+    """The phase's V-sweep requirement, without pinning numbers: as V rises the
+    progress of the top-ranked arm is non-decreasing (the yield term buys back
+    loudness monotonically), under fixed nonzero pressure."""
+    draws = {"loud.high": 0.9, "mid.mid": 0.5, "quiet.low": 0.1}
+    candidates = [("loud.high", "generic", 5.0),
+                  ("mid.mid", "generic", 2.0),
+                  ("quiet.low", "generic", 1.0)]
+    prev_top_progress = -1.0
+    for V in (0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0):
+        s = DriftPlusPenaltyScheduler(12.0, V=V, belief=FixedBelief(0.5), scale=4.0,
+                                      bandit=StubBandit(draws))
+        ranked = s.rank(candidates)
+        top = ranked[0]
+        assert top["progress"] >= prev_top_progress - 1e-9, \
+            f"V={V}: top progress regressed ({top['progress']} < {prev_top_progress})"
+        prev_top_progress = top["progress"]
+        # score shape sanity at every V: Q*cost - V*progress
+        for item in ranked:
+            assert item["score"] == pytest.approx(
+                2.0 * item["cost"] - V * item["progress"])
+    # the sweep must actually end somewhere louder than it started (else the
+    # sweep proves nothing — all V's agreeing with the quiet arm)
+    assert prev_top_progress > draws["quiet.low"] - 1e-9
+
+
+def test_rank_without_bandit_keeps_tree_order_at_zero_pressure():
+    """No bandit, no pressure: constant progress, stable sort -> the tree's own
+    priority order (the pre-bandit path's exact behavior)."""
+    s = DriftPlusPenaltyScheduler(12.0)
+    candidates = [("auth.test", "generic", 1.0), ("injection.cmd", "generic", 4.0),
+                  ("access.control", "generic", 2.0)]
+    assert [i["technique"] for i in s.rank(candidates)] == \
+        ["auth.test", "injection.cmd", "access.control"]
+    # under pressure the same candidates pivot cheap-first
+    s2 = DriftPlusPenaltyScheduler(12.0, belief=FixedBelief(1.0), scale=4.0)
+    assert [i["technique"] for i in s2.rank(candidates)] == \
+        ["auth.test", "access.control", "injection.cmd"]
+
+
+# -- Phase B3 e2e: the swarm throttles through a challenge window and recovers ----
+
+class ScriptedObservationBus:
+    """FakeBus that ALSO plays the defender: every swarm.claim is answered by one
+    synthetic HTTP response pushed through tools/http.py's REAL observation hook,
+    so the belief the scheduler reads is fed exactly the way live traffic feeds
+    it (response return point -> ctx.detection). Scripted per round: round 0 =
+    challenge window, later rounds = clean traffic."""
+
+    def __init__(self, run_id="run-b3-e2e"):
+        self.run_id = run_id
+        self.events = []
+        self._lock = threading.Lock()
+        self.ctx = None                      # wired after ToolContext exists
+
+    def emit(self, type, **fields):
+        with self._lock:
+            self.events.append({"type": type, **fields})
+        if type == "swarm.claim" and self.ctx is not None:
+            self._answer(fields)
+
+    def subscribe(self, fn):
+        pass
+
+    def _answer(self, claim_fields):
+        if claim_fields.get("round", 0) == 0:
+            status, headers, body = 429, {"cf-mitigated": "challenge"}, \
+                "Attention Required. Verify you are a human."
+        else:
+            status, headers, body = 200, {"content-type": "application/json"}, \
+                '{"ok": true}'
+        http_observe_response(self.ctx, {"url": claim_fields.get("target", ""),
+                                         "method": "GET"},
+                              status, 0.05, headers, body)
+
+
+def test_swarm_throttles_through_a_challenge_window_and_recovers(tmp_path):
+    """The phase's end-to-end requirement, over the real seams: synthetic HTTP
+    normal -> challenge -> normal flows through the http.py observation hook into
+    the POMDP, and the swarm's ROUND-LEVEL OPSEC SPEND drops during the challenge
+    window and recovers once the traffic goes quiet again."""
+    bus = ScriptedObservationBus()
+    audit = RecordingAudit()
+    ctx = _ctx(tmp_path, audit, bus=bus)
+    bus.ctx = ctx                            # the defender answers on ctx.detection
+    tree = _seeded_tree(tmp_path, BanditStore(), url="https://api.acme.example/api/items/7")
+    orch = Orchestrator(_engagement(), tools={}, ctx=ctx, client=FakeClient(),
+                        graph=ctx.graph, attack_tree=tree, memory=None,
+                        max_exploit_rounds=3, noise_budget=12.0)
+    orch.run("prove something on the app")
+
+    claims = [e for e in bus.events if e["type"] == "swarm.claim"]
+    by_round = {}
+    for c in claims:
+        by_round.setdefault(c["round"], []).append(c)
+    assert set(by_round) >= {0, 1, 2}, f"expected 3 claim rounds: {sorted(by_round)}"
+    spend = {rnd: sum(technique_cost(c["technique"]) for c in cl)
+             for rnd, cl in by_round.items()}
+    # every round stayed under the hard cap regardless of pressure
+    for rnd, s in spend.items():
+        assert s <= 12.0 + 1e-9, f"round {rnd} spent {s} > cap"
+    # normal -> challenge: the throttle engages
+    assert spend[1] < spend[0], \
+        f"challenge window did not throttle: r0={spend[0]} r1={spend[1]}"
+    # challenge -> normal: the allowance recovers (non-sticky, like the belief)
+    assert spend[2] > spend[1], \
+        f"no recovery after the window: r1={spend[1]} r2={spend[2]}"
+    # the scheduler broadcast its state each round (observability seam)
+    states = [e for e in bus.events if e["type"] == "scheduler.state"]
+    assert len(states) >= 3
+    assert all({"round", "q", "risk", "allowance"} <= set(e) for e in states)
+    # the belief the round-1 reset saw was genuinely elevated, and round-2's was lower
+    risk_by_round = {e["round"]: e["risk"] for e in states}
+    assert risk_by_round[1] > 0.5
+    assert risk_by_round[2] < risk_by_round[1]

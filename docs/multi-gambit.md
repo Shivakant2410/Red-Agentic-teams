@@ -209,11 +209,18 @@ Two design consequences worth recording:
   accessor (rewards still flow through `mark()` only).
 - `redteam/orchestrator.py` — the exploit swarm's claim loop is now
   **cost-aware and budget-gated**: candidates come only from the tree's
-  actionable frontier (reorder, never create), re-ranked by Thompson draw /
-  OPSEC cost via `select()`; `NoiseBudget` caps each round's total spend, skips
-  gambits that don't fit the remainder (greedy knapsack), refunds lost claim
-  races. Each round also broadcasts `bandit.state` (sufficient statistics,
-  `min_trials=1`) on the event bus — dashboards see what the swarm learned.
+  actionable frontier (reorder, never create), ranked by drift-plus-penalty
+  score `Q·cost − V·progress` via the `DriftPlusPenaltyScheduler` (Phase B3;
+  `NoiseBudget` remains as its alias); Q accrues per claim as
+  `max(Q + cost − mu, 0)`, blends in the detection POMDP's risk
+  (`max(Q, risk·SCALE)`) so a challenge window throttles the next round's
+  allowance, and at Q=0 the order degenerates to the legacy Thompson-draw /
+  OPSEC-cost ranking. The scheduler caps each round's total spend, skips
+  gambits that don't fit the remainder, refunds lost claim races (pressure
+  included). Each round also broadcasts `bandit.state` (sufficient statistics,
+  `min_trials=1`) and `scheduler.state` (q, risk, allowance) on the event bus —
+  dashboards see what the swarm learned AND how hard the defender is pushing
+  back.
 - `redteam/run.py` — `RunOptions.round_noise_budget` (default 12 noise
   credits/round, `<=0` = legacy unlimited); the run's bus subscribes
   `make_sync_handler(bandit, own_source=bus.run_id)` so FOREIGN `bandit.state`
