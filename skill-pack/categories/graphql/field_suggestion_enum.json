@@ -1,0 +1,31 @@
+{
+  "name": "elite/GraphQL field suggestion enumeration",
+  "description": "[high] GraphQL field-suggestion leakage (Escape.tech research; Clairvoyance reconstructs full schemas from these errors even when introspection is disabled): a misspelled root field returns 'Cannot query field ... Did you mean ...?'. Keywords: graphql field suggestions schema enumeration introspection clairvoyance. ctrl: benign valid query returns data without any suggestion -> not falsified. base_url = host root (skill posts to /graphql; copy skill for /api/graphql, /graphiql). Chain: brute-force candidate names against the suggestion oracle.",
+  "cwe": "CWE-200",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/graphql",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"query\":\"{ qxx9z }\"}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "Did you mean",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "b9f4c7dcd34b",
+  "created": "2026-11-05T18:20:19.655790+00:00",
+  "last_used": "2026-11-05T18:20:19.655790+00:00"
+}

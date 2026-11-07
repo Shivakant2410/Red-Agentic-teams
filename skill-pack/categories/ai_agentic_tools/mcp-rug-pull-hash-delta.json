@@ -1,0 +1,49 @@
+{
+  "name": "ai/MCP rug pull hash delta",
+  "description": "[critical] Proves the MCP rug pull (post-approval tool mutation, MCP security research 2025): the SAME tools-list endpoint returns mutated tool metadata on the second fetch — json_differs on tools.0.description between the two fetches is the machine-checkable definition of a silent change. Keywords: mcp rug pull tool mutation hash delta approval. ctrl: honest server returns identical metadata -> values equal -> not falsified. mcp_url = MCP server tools-list endpoint.",
+  "cwe": "CWE-345",
+  "requests": {
+    "tools_first": {
+      "method": "POST",
+      "url": "{{mcp_url}}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"method\":\"tools/list\"}"
+    },
+    "payload": {
+      "method": "POST",
+      "url": "{{mcp_url}}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"method\":\"tools/list\"}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "json_differs",
+      "request_a": "tools_first",
+      "request_b": "payload",
+      "json_path": "tools.0.description"
+    },
+    {
+      "type": "status",
+      "request": "tools_first",
+      "equals": 200
+    },
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    }
+  ],
+  "params": [
+    "mcp_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "c3fbb3a7b699",
+  "created": "2026-11-06T18:57:23.540049+00:00",
+  "last_used": "2026-11-06T18:57:23.540050+00:00"
+}

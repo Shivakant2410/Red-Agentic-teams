@@ -1,0 +1,31 @@
+{
+  "name": "web/phpinfo diagnostic page exposed",
+  "description": "[basic] phpinfo() diagnostic page left in prod (CWE-200): leaks docroot, env vars, mail/log paths, loaded extensions — map for the next skill. Keywords: phpinfo php configuration disclosure diagnostic page env. ctrl: benign root page lacks phpinfo markers -> not falsified. base_url = site root; copy skill for /info.php, /test.php, /a.php.",
+  "cwe": "CWE-200",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/phpinfo.php"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "phpinfo\\(\\)|PHP Version [0-9]|Configuration File \\(php\\.ini\\)"
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "0e62d8d57da2",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

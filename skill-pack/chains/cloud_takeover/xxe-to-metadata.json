@@ -1,0 +1,98 @@
+{
+  "group": "cloud_takeover",
+  "slug": "xxe-to-metadata",
+  "name": "XXE as SSRF: file proof -> error channel -> metadata creds",
+  "goal": "Use XML entity expansion first as file-read proof, then as an HTTP client toward the cloud metadata service.",
+  "preconditions": "Any XML parser accepting external entities: XML/DOCX/XLSX/SVG uploads, SAML consumers, RSS parsers, XML-RPC, config importers.",
+  "cwe": [
+    "CWE-611",
+    "CWE-918"
+  ],
+  "impact": "Arbitrary local file read (configs, SSH keys) and, where the parser resolves http entities, cloud credentials via metadata.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "web/XXE in-band external entity file read",
+      "purpose": "In-band proof: /etc/passwd rendered into the response confirms entity resolution.",
+      "on_success": "Read app config files next (paths from file listing) for secrets.",
+      "on_fail": "No in-band output -> step 2, use the error channel."
+    },
+    {
+      "n": 2,
+      "skill": "web/XXE error-based file disclosure",
+      "purpose": "Blind variant: exfiltrate file content through parser error messages.",
+      "on_success": "Same evidence, different channel — keep for parsers that suppress output but leak errors.",
+      "on_fail": "Errors sanitized -> OOB via canary DTD (documented gap: needs collaborator endpoint); meanwhile try metadata via step 3."
+    },
+    {
+      "n": 3,
+      "skill": "web/SSRF AWS IMDSv1 credential dump",
+      "purpose": "Repoint the entity at http://169.254.169.254/... through the same parser (XXE-as-SSRF).",
+      "on_success": "Credentials JSON lands in-band or in error text; pivot to chain aws-imds-full-takeover.",
+      "on_fail": "Parser blocks http entities -> file:// read of ~/.aws/credentials, .env, /proc/self/environ instead."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "DOCX/XLSX/PPTX uploads (they are zip+XML)",
+      "SVG uploads (image upload features!)",
+      "SAML response consumption",
+      "RSS/Atom feed importers",
+      "WordPress xmlrpc, SOAP endpoints",
+      "XML config import (nagios/zabbix-style)"
+    ],
+    "recon": [
+      {
+        "name": "Content-Type probe",
+        "how": "Post the same entity payload with text/xml, application/xml, and inside an SVG; parsers differ by route.",
+        "tooling": "Burp Repeater + body swap",
+        "signal": "Parser error mentioning XML = parse surface."
+      },
+      {
+        "name": "Office-file steganography",
+        "how": "Inject DTD into [Content_Types].xml of a real DOCX and upload.",
+        "tooling": "manual zip edit",
+        "signal": "Upload accepted + entity resolved = stealth XXE on 'image/document only' endpoints."
+      },
+      {
+        "name": "Parser fingerprint",
+        "how": "Error text identifies library (libxml2, javax.xml, php xml_parse) -> pick encoding/parameter-entity tricks per parser.",
+        "tooling": "error mining",
+        "signal": "Library tells you which XXE bypasses apply (e.g. PHP param entities, Java jar://)."
+      },
+      {
+        "name": "OOB-free blind detection",
+        "how": "Time or size differentials from huge entity counts (billion laughs) confirm expansion without callbacks.",
+        "tooling": "timing probes",
+        "signal": "Latency spike proves entity processing."
+      }
+    ],
+    "variants": [
+      "XInclude on fragment parsers",
+      "DTD-in-PDF generators",
+      "YAML deserialization surfaces (pyYAML)",
+      "JSON-to-XML converters",
+      "Office macro-free xlsx with external references"
+    ],
+    "dorks": [
+      "github: \"<!DOCTYPE\" \"<!ENTITY\" inurl:upload",
+      "github: \"DocumentBuilderFactory\" -\"setFeature\" (no hardening)",
+      "shodan: http.html:\"xmlrpc.php\""
+    ],
+    "pivot_hints": [
+      "file read -> /etc/hostname + provider configs -> pick metadata variant",
+      "read /proc/net/tcp for internal service map",
+      "combine with path traversal skills once a file-read channel exists"
+    ]
+  },
+  "fallbacks": [
+    "aws-imds-full-takeover",
+    "recon-secrets-to-cloud"
+  ],
+  "sources": [
+    "PayloadsAllTheThings — XXE",
+    "HackTricks — XXE per-language tricks",
+    "PortSwigger — Blind XXE with OOB",
+    "Gosecure — PHP parameter-entity XXE research"
+  ]
+}

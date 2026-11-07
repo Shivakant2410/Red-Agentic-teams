@@ -1,0 +1,32 @@
+{
+  "name": "infra/Portainer API unauth status",
+  "description": "[low] Portainer CE (9000) /api/status without auth (CWE-200): Version field = exact Portainer build (CVE targeting e.g. CVE-2022-1996) and confirms the container-management surface for default-credential follow-ups. Keywords: portainer 9000 api status version docker k8s management unauth. ctrl: auth-gated/proxied installs answer 403 -> not falsified. base_url = http://<portainer>:9000.",
+  "cwe": "CWE-200",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/api/status"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\\"Version\\\":",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "63ddc27e99a4",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

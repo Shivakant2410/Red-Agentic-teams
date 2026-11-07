@@ -1,0 +1,32 @@
+{
+  "name": "web/Backup archive misplacement exposure",
+  "description": "[high] Proves a web-served backup archive (CWE-538): /backup.zip answers 200 with an archive content-type = full source/db dump download (T1552.001 unsecured credentials follow-up). Keywords: backup zip tar gzip dump exposure source download artifact. ctrl: benign path 404s without archive headers -> not falsified. base_url = site root; copy skill for .tar.gz/.sql/.7z/.rar names.",
+  "cwe": "CWE-538",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/backup.zip"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "header_regex",
+      "request": "payload",
+      "pattern": "content-type: ?(?:application/(zip|x-zip-compressed|octet-stream|x-tar|x-gzip))",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "d2bf93454697",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

@@ -1,0 +1,32 @@
+{
+  "name": "infra/Nomad API unauth jobs list",
+  "description": "[medium] HashiCorp Nomad HTTP API (4646) answers /v1/jobs without auth (CWE-306): the job table = workload layout, task-group names, datacenter spread; job specs often embed secrets. Nomad stamps X-Nomad-Index headers on API answers — used as the fingerprint so even an empty [] list proves the surface. Keywords: nomad 4646 jobs unauth api x-nomad-index hcl discovery. ctrl: ACL-hardened Nomad answers 403 without Nomad headers -> not falsified. base_url = http://<nomad>:4646.",
+  "cwe": "CWE-306",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/v1/jobs"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "header_regex",
+      "request": "payload",
+      "pattern": "x-nomad-(index|knownleader|lastcontact)",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "203cff29ff75",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

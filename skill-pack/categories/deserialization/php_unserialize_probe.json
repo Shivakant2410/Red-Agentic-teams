@@ -1,0 +1,31 @@
+{
+  "name": "web/PHP unserialize offset probe",
+  "description": "[high] Proves a PHP unserialize() sink (CWE-502): a truncated serialized payload a:2:{s:3:\"x9f\"; makes PHP throw unserialize(): Error at offset (or __PHP_Incomplete_Class) = attacker-controlled phar/cookie/body bytes reach unserialize (POP-chain follow-up). Keywords: php deserialization unserialize pop chain phar offset error. ctrl: benign POST shows no unserialize error -> not falsified. probe_url = endpoint consuming the tainted field.",
+  "cwe": "CWE-502",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{probe_url}}",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": "data=a%3A2%3A%7Bs%3A3%3A%22x9f%22%3B"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "unserialize\\(\\): Error at offset|__PHP_Incomplete_Class",
+      "present": true
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "495f0b7bf62c",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

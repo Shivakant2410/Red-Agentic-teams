@@ -1,0 +1,32 @@
+{
+  "name": "infra/Adminer db manager exposed",
+  "description": "[medium] Adminer.php is web-served (CWE-1188): the Adminer login surface = arbitrary-DB connector (file-read via LOAD DATA, CVE-2021-21317 SSRF family) whenever credentials or loose DB ACLs exist. Keywords: adminer php db manager connector login exposed file read ssrf. ctrl: absent install 404s -> not falsified. base_url = host serving adminer.php (copy for /adminer, /admin.php names).",
+  "cwe": "CWE-1188",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/adminer.php"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "(?i)adminer",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "342402de2fb3",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

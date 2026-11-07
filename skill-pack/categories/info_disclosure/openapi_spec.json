@@ -1,0 +1,38 @@
+{
+  "name": "web/OpenAPI-Swagger spec exposed",
+  "description": "[medium] Proves a machine-readable API spec is served unauthenticated (CWE-200): openapi.json returns 200 with an \"openapi\"/\"swagger\" key AND a paths map = full endpoint inventory for the recon graph (paths, params, auth schemes). Keywords: openapi swagger api spec disclosure documentation recon endpoints. ctrl: benign path 404s -> not falsified. base_url = host root; copy skill for /swagger.json, /v3/api-docs, /api/openapi.json.",
+  "cwe": "CWE-200",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/openapi.json"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\\"openapi\\\"\\s*:|\\\"swagger\\\"\\s*:",
+      "present": true
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\\"paths\\\"\\s*:",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "7ca99f44b541",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

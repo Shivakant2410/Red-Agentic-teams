@@ -1,0 +1,36 @@
+{
+  "name": "web/WordPress xmlrpc method discovery",
+  "description": "[medium] Proves the WordPress XML-RPC interface is enabled (CWE-200): a system.listMethods call answers with the method list (system.multicall = credential-bruteforce amplification; pingback = SSRF proxy abuse). Keywords: wordpress xmlrpc multicall pingback bruteforce ssrf cms recon. ctrl: xmlrpc-disabled installs answer 403/405/404 -> not falsified. base_url = WordPress root.",
+  "cwe": "CWE-200",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/xmlrpc.php",
+      "headers": {
+        "Content-Type": "text/xml"
+      },
+      "body": "<?xml version=\"1.0\"?><methodCall><methodName>system.listMethods</methodName><params/></methodCall>"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "pingback\\.extensions|system\\.multicall|wp\\.getUsersBlogs",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "bd419c7604d1",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

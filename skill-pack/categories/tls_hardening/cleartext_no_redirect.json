@@ -1,0 +1,26 @@
+{
+  "name": "web/Cleartext HTTP served without TLS redirect",
+  "description": "[medium] Proves cleartext exposure: plain-HTTP request returns 200 content instead of 301/308 to https = sessions/cookies/credentials can ride cleartext (CWE-319). Keywords: tls https redirect cleartext downgrade transport security. ctrl: http->https redirect in place -> not falsified. base_url = http://<host> root.",
+  "cwe": "CWE-319",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "163e29624f7a",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

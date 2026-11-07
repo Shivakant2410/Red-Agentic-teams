@@ -1,0 +1,111 @@
+{
+  "group": "injection_to_rce",
+  "slug": "upload-to-shell",
+  "name": "Upload: locate -> bypass -> execute -> OS proof",
+  "goal": "From discovering the upload directory to executing uploaded code and proving the OS layer.",
+  "preconditions": "Any file upload feature (avatar, ticket attachment, import).",
+  "cwe": [
+    "CWE-434",
+    "CWE-78"
+  ],
+  "impact": "Remote code execution via uploaded script; full host compromise as the web user.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "web/Directory listing autoindex exposed",
+      "purpose": "Locate the upload directory and naming scheme (where files land, whether names are kept).",
+      "on_success": "Direct URL for the payload in step 2/3.",
+      "on_fail": "No listing -> derive paths from page source, JS, or error messages."
+    },
+    {
+      "n": 2,
+      "skill": "web/Upload double-extension filter bypass",
+      "purpose": "Get a PHP-family payload past extension filtering (shell.php.jpg shape).",
+      "on_success": "Payload stored; step 3 proves execution.",
+      "on_fail": "Validation stricter -> phtml/phar/phps/php5 variants, .htaccess/.user.ini drop, or content-type/filename normalization quirks."
+    },
+    {
+      "n": 3,
+      "skill": "web/Upload phtml execution marker",
+      "purpose": "Prove the payload executes (php_uname marker) — upload becomes RCE.",
+      "on_success": "Step 4 for OS-layer proof; also try web/Stored XSS persisted marker for the XSS-flavored upload impact.",
+      "on_fail": "No execution -> pivot placement via web/Path traversal once-strip filter evasion (write outside upload dir)."
+    },
+    {
+      "n": 4,
+      "skill": "web/Command injection output echo marker",
+      "purpose": "Converge on the deterministic uid() OS proof through the shell.",
+      "on_success": "Full chain narrative; proceed to internal recon.",
+      "on_fail": "Blind -> web/Command injection time-based sleep oracle."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "avatar/profile images",
+      "ticket attachments",
+      "bulk import (CSV/zip)",
+      "theme/plugin installers",
+      "API upload endpoints from OpenAPI specs"
+    ],
+    "recon": [
+      {
+        "name": "Upload-path reflection",
+        "how": "Check whether the response or subsequent pages echo the stored path/name — path knowledge is half the exploit.",
+        "tooling": "manual",
+        "signal": "Filename echoed in HTML/JSON."
+      },
+      {
+        "name": "Extension acceptance matrix",
+        "how": "Probe the validator with a matrix (php3/phtml/phar/phps/jpg;php; .jpg/.php hybrids; case tricks; null byte legacy).",
+        "tooling": "Burp Intruder + wordlist",
+        "signal": "One variant stored where others rejected."
+      },
+      {
+        "name": "Validation-code recovery",
+        "how": "Sourcemaps/source disclosure reveal the server-side validator; read before fuzzing.",
+        "tooling": "web/JS source map disclosure",
+        "signal": "Client-side-only checks = trivial bypass."
+      },
+      {
+        "name": "Archive upload angle",
+        "how": "Zip uploads with traversal names (zip slip) place files outside the upload root.",
+        "tooling": "manual crafted zips",
+        "signal": "Files appearing in unexpected directories."
+      },
+      {
+        "name": "Cloud upload diff",
+        "how": "Distinguish local storage vs S3/presigned — cloud storage changes the execution story to bucket takeover/public ACL.",
+        "tooling": "redteam/S3-GCS public bucket listing",
+        "signal": "Storage URLs on cloud domains."
+      }
+    ],
+    "variants": [
+      "SVG upload -> stored XSS",
+      ".htaccess/.user.ini placement",
+      "polyglot GIF+PHP",
+      "zip slip via importers",
+      "race upload-vs-scanner",
+      "web.config for IIS deployments"
+    ],
+    "dorks": [
+      "github: move_uploaded_file(",
+      "google: inurl:uploads site:target.tld",
+      "github: \"content-type\" \"image/\" upload allowlist"
+    ],
+    "pivot_hints": [
+      "shell -> internal creds/configs -> cloud_takeover chains",
+      "pair with directory listing for fleet-wide uploaded payloads",
+      "combine with deserialization-ladder via phar:// for PHP"
+    ]
+  },
+  "fallbacks": [
+    "ssti-escalation-ladder",
+    "deserialization-ladder"
+  ],
+  "sources": [
+    "PayloadsAllTheThings — Upload insecure files",
+    "HackTricks — File upload",
+    "OWASP File Upload Cheat Sheet",
+    "commix/phantom shell methodologies"
+  ]
+}

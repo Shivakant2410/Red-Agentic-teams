@@ -1,0 +1,104 @@
+{
+  "group": "injection_to_rce",
+  "slug": "sqli-blind-to-exfil",
+  "name": "SQLi: boolean differential -> engine errors -> UNION exfil",
+  "goal": "From a boolean-blind confirmation to engine-fingerprinted error extraction to UNION-based bulk exfiltration.",
+  "preconditions": "An injectable parameter (string, numeric, ORDER BY, JSON path).",
+  "cwe": [
+    "CWE-89"
+  ],
+  "impact": "Full database read (and credential harvest feeding auth chains); potential file read depending on engine config.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "web/SQLi boolean-blind response differential",
+      "purpose": "Confirm injection with a deterministic differential (AND 1=1 vs 1=2).",
+      "on_success": "Step 2 to fingerprint the engine.",
+      "on_fail": "Boolean filtered -> time-based siblings (MySQL/PostgreSQL/MSSQL)."
+    },
+    {
+      "n": 2,
+      "skill": "web/SQLi error-based MySQL-family",
+      "purpose": "Engine fingerprint + version + fast extraction through error messages; swap to PostgreSQL/MSSQL/Oracle siblings per fingerprint.",
+      "on_success": "Engine confirmed -> step 3 for bulk.",
+      "on_fail": "Errors suppressed -> stay time-based and enumerate with the sibling time-based skill."
+    },
+    {
+      "n": 3,
+      "skill": "elite/SQLi UNION reflection exfiltration primitive",
+      "purpose": "Column-count-matched UNION reflection for bulk table dumps.",
+      "on_success": "Harvest users table -> credentials feed chain auth-bypass-to-admin.",
+      "on_fail": "Column mismatch resists -> error-based char-by-char extraction; MSSQL -> xp_cmdshell (documented variant, needs privilege)."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "search/filter/sort parameters",
+      "ORDER BY / LIMIT / OFFSET parameters (classic blind spot)",
+      "JSON-path arguments",
+      "cookie/Referer/User-Agent values logged to DB",
+      "GraphQL argument strings",
+      "report/export query builders"
+    ],
+    "recon": [
+      {
+        "name": "Param classification",
+        "how": "Test numeric vs string vs ORDER BY contexts with minimal toggles (' vs \" vs ') before any payload.",
+        "tooling": "manual",
+        "signal": "Syntax error text = context identified."
+      },
+      {
+        "name": "Error fragment mining",
+        "how": "Tracebacks with SQL fragments give engine, table and even the query — selects the right skill instantly.",
+        "tooling": "web/Framework debug traceback disclosure",
+        "signal": "Engine name in error."
+      },
+      {
+        "name": "Second-order candidate list",
+        "how": "Mark stored fields (profile, filenames) as delayed injection surfaces — they hit SQL in background jobs.",
+        "tooling": "manual + patience",
+        "signal": "Stored value later reflected in SQL-driven error."
+      },
+      {
+        "name": "Encoding quirks",
+        "how": "URL-encoding vs raw, unicode tricks, comment variants (--, #, /**/) change filter behavior.",
+        "tooling": "manual matrix",
+        "signal": "One encoding passes where others fail."
+      },
+      {
+        "name": "GraphQL argument injection",
+        "how": "GraphQL resolvers often build SQL from string args — inject inside query strings.",
+        "tooling": "introspection + manual",
+        "signal": "Error fragments inside GraphQL errors."
+      }
+    ],
+    "variants": [
+      "ORDER BY injection (no quote needed)",
+      "LIMIT/OFFSET injection",
+      "INSERT/UPDATE contexts (verbose errors)",
+      "JSON_extract() injection",
+      "second-order via stored values",
+      "NoSQL regex/data-type alternatives"
+    ],
+    "dorks": [
+      "github: executeQuery( + concat",
+      "github: db.query(` + variable (template literal SQL)",
+      "google: inurl:id= \"mysqli_fetch"
+    ],
+    "pivot_hints": [
+      "users table -> auth-bypass-to-admin",
+      "MySQL FILE privilege -> secure_file_priv file read",
+      "database names -> data_stores shelf sweep for direct connections"
+    ]
+  },
+  "fallbacks": [
+    "ssti-escalation-ladder",
+    "auth-bypass-to-admin"
+  ],
+  "sources": [
+    "PayloadsAllTheThings — SQL injection",
+    "PortSwigger — SQLi cheat sheet",
+    "OWASP SQLi Prevention + blind techniques",
+    "sqlmap methodology notes (manual equivalents)"
+  ]
+}

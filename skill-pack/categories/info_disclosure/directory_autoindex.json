@@ -1,0 +1,40 @@
+{
+  "name": "web/Directory listing autoindex exposed",
+  "description": "[basic] Autoindex directory listing on a content path (CWE-548, PortSwigger KB 'Directory listing'): 200 + 'Index of /' listing exposes backups, dumps, source. Keywords: directory listing autoindex index-of uploads backup exposure. ctrl: random sibling directory must 404 (no autoindex) -> not falsified. base_url = site root (copy skill for /backups/, /static/, /files/).",
+  "cwe": "CWE-548",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/uploads/"
+    },
+    "control": {
+      "method": "GET",
+      "url": "{{base_url}}/no-such-dir-9f4/"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "Index of /|Parent Directory|Directory listing for"
+    },
+    {
+      "type": "status",
+      "request": "control",
+      "equals": 404
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "893c621da8ba",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

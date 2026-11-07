@@ -1,0 +1,32 @@
+{
+  "name": "redteam/Spring Boot actuator env leak",
+  "description": "[high] Spring Boot actuator /env exposed: propertySources JSON dumps environment variables and framework properties - frequently DB passwords and API keys (T1552 credential discovery follow-up: /actuator/heapdump). Keywords: spring boot actuator env leak java config. ctrl: 404/gated -> not falsified. base_url = service root.",
+  "cwe": "CWE-200",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/actuator/env"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "propertySources",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "d40c2c73130c",
+  "created": "2026-11-05T18:01:37.085987+00:00",
+  "last_used": "2026-11-05T18:01:37.085987+00:00"
+}

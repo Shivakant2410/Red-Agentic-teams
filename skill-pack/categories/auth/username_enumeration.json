@@ -1,0 +1,43 @@
+{
+  "name": "web/Username enumeration login differential",
+  "description": "[basic] Username enumeration via response differential (CWE-204; OWASP WSTG-IDM-004): known username + wrong password answers differently from an unknown one — the status split IS the oracle. Keywords: username enumeration login differential account oracle. ctrl: hardened targets answer uniformly (both 401) -> not falsified. base_url = login form endpoint; swap body encoding per target.",
+  "cwe": "CWE-204",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/login",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": "username=admin&password=xwrongpw9z"
+    },
+    "unknown": {
+      "method": "POST",
+      "url": "{{base_url}}/login",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": "username=n0user9f3k&password=xwrongpw9z"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "status",
+      "request": "unknown",
+      "equals": 401
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "8507fcb7051f",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

@@ -1,0 +1,32 @@
+{
+  "name": "redteam/Kubelet read-only PodList API",
+  "description": "[critical] Kubelet read-only API on port 10250 returns PodList JSON without auth (T1613 container & resource discovery): pod names, namespaces, mounts and projected service-account token paths for the next hop. Keywords: kubelet kubernetes pods 10250 container discovery cluster. ctrl: 403/404 lacks PodList -> not falsified. base_url = https://<node>:10250.",
+  "cwe": "CWE-284",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/pods"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\"kind\":\\s*\"PodList\"",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "b74ed8c1a6dd",
+  "created": "2026-11-05T18:01:37.085987+00:00",
+  "last_used": "2026-11-05T18:01:37.085987+00:00"
+}

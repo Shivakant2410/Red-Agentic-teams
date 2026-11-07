@@ -1,0 +1,32 @@
+{
+  "name": "infra/Kubernetes API anonymous version disclosure",
+  "description": "[medium] Anonymous access accepted by the K8s API server on 6443 (CWE-306): /version answers 200 with major/minor/gitVersion = exact cluster version (T1613 container & resource discovery precondition; version pins CVE targeting e.g. 1.24- kubelet exec quirks). Keywords: kubernetes kube api 6443 anonymous version unauth cluster discovery. ctrl: RBAC-hardened API answers 403 -> not falsified. base_url = https://<control-plane>:6443.",
+  "cwe": "CWE-306",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/version"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\\"major\\\":\\\"[0-9]",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "675ea83c8f6f",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

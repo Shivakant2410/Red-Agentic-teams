@@ -1,0 +1,108 @@
+{
+  "group": "exposure_to_takeover",
+  "slug": "subdomain-takeover-sweep",
+  "name": "Takeover: fingerprint sweep -> claim -> cookie-scope abuse",
+  "goal": "Sweep abandoned service fingerprints across providers, claim the dangling origin, and abuse parent-scope cookies.",
+  "preconditions": "Subdomain DNS CNAME pointing at a removed service.",
+  "cwe": [
+    "CWE-350"
+  ],
+  "impact": "Attacker-controlled content on trusted origin; cookie injection into parent scope; OAuth allow-list capture.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "web/Subdomain takeover GitHub Pages fingerprint",
+      "purpose": "GitHub Pages dangle detection (404 + 'There isn't a GitHub Pages site here.').",
+      "on_success": "Claim via GH Pages repo -> trusted origin controlled.",
+      "on_fail": "Next fingerprint."
+    },
+    {
+      "n": 2,
+      "skill": "web/Subdomain takeover S3 NoSuchBucket fingerprint",
+      "purpose": "S3 dangle detection (<Code>NoSuchBucket</Code> + BucketName).",
+      "on_success": "Claim the bucket name -> origin controlled.",
+      "on_fail": "Next fingerprint."
+    },
+    {
+      "n": 3,
+      "skill": "web/Subdomain takeover Shopify fingerprint",
+      "purpose": "Shopify dangle fingerprint.",
+      "on_success": "Claim.",
+      "on_fail": "Next fingerprint."
+    },
+    {
+      "n": 4,
+      "skill": "web/Subdomain takeover Fastly unknown-domain fingerprint",
+      "purpose": "Fastly dangle fingerprint ('Fastly error: unknown domain').",
+      "on_success": "Claim.",
+      "on_fail": "No fingerprint hit -> enumerate more providers via can-i-take-over-xyz list (documented extension path)."
+    },
+    {
+      "n": 5,
+      "skill": "web/Cookie Domain scope overbreadth",
+      "purpose": "Convert origin control into session attack: overbroad Domain cookies are injectable from your subdomain.",
+      "on_success": "Cookie fixation/injection into the parent app.",
+      "on_fail": "Cookie scope tight -> content phishing + OAuth allow-list pivot (oauth-session-ato)."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "CT logs (crt.sh) for subdomain census",
+      "passive DNS (SecurityTrails/VirusTotal)",
+      "NXDOMAIN-with-CNAME states",
+      "wayback for dead-but-once-active subdomains"
+    ],
+    "recon": [
+      {
+        "name": "CNAME census",
+        "how": "Resolve every subdomain; collect CNAME targets; flag NXDOMAIN/CNAME pairs and provider fingerprints.",
+        "tooling": "dnsrecon/amass + httpx",
+        "signal": "CNAME to provider + provider 404 fingerprint."
+      },
+      {
+        "name": "Fingerprint library sweep",
+        "how": "Run the full can-i-take-over-xyz fingerprint list (Heroku, Azure, CloudFront, Tumblr, Zendesk, Tilda, Readme.io, Surge.sh, Pantheon, Unbounce, Short.io, ...).",
+        "tooling": "nuclei takeover tags + manual",
+        "signal": "Any provider 404 body."
+      },
+      {
+        "name": "Wayback orphan hunt",
+        "how": "Subdomains that existed historically but resolve nowhere now = prime candidates.",
+        "tooling": "wayback + DNS diff",
+        "signal": "Historical host, current dangle."
+      },
+      {
+        "name": "Wildcard exclusion",
+        "how": "Verify wildcard DNS records — wildcards mask takeovers; find and handle them.",
+        "tooling": "manual",
+        "signal": "Everything resolves -> check wildcard suffix behavior."
+      }
+    ],
+    "variants": [
+      "Heroku/Azure/CloudFront/Tumblr/Zendesk/Tilda/Readme.io/Surge/Pantheon/Intercom/Webflow/Greenhouse/FogBugz/Unbounce/Short.io fingerprints (extend shelf)",
+      "vhost confusion takeovers",
+      "MX/record-level takeovers (mail)",
+      "CSR/brand abuse via custom domains"
+    ],
+    "dorks": [
+      "shodan: hostname:*.target.tld http.status:404",
+      "google: site:*.target.tld -www",
+      "github: cname.target.tld"
+    ],
+    "pivot_hints": [
+      "OAuth allow-list origins -> oauth-session-ato",
+      "cookie scope -> cross-origin-action-suite",
+      "phishing from trusted subdomain = separate severity narrative"
+    ]
+  },
+  "fallbacks": [
+    "oauth-session-ato",
+    "cross-origin-action-suite"
+  ],
+  "sources": [
+    "can-i-take-over-xyz (EdOverflow et al.)",
+    "nuclei-templates — takeover fingerprints",
+    "HackTricks — Subdomain takeover",
+    "service-provider custom-domain docs"
+  ]
+}

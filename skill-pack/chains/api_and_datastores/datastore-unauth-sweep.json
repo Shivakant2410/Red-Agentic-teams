@@ -1,0 +1,103 @@
+{
+  "group": "api_and_datastores",
+  "slug": "datastore-unauth-sweep",
+  "name": "Data stores: Elasticsearch -> CouchDB -> Solr (+ admin panels fallback)",
+  "goal": "Sweep unauthenticated data-plane stores for direct database reads.",
+  "preconditions": "Data stores reachable (HTTP APIs: ES/CouchDB/Solr; TCP-only stores documented as gaps).",
+  "cwe": [
+    "CWE-200",
+    "CWE-306"
+  ],
+  "impact": "Direct read of application data: indices, documents, DB lists.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "redteam/Elasticsearch unauth data exposure",
+      "purpose": "ES cluster/indices read via /_cat/indices + search endpoints.",
+      "on_success": "Document-level extraction; look for user/password indices.",
+      "on_fail": "No ES -> step 2."
+    },
+    {
+      "n": 2,
+      "skill": "infra/CouchDB unauth _all_dbs",
+      "purpose": "CouchDB db list via /_all_dbs.",
+      "on_success": "DB names -> document reads (documented follow-up).",
+      "on_fail": "No CouchDB -> step 3."
+    },
+    {
+      "n": 3,
+      "skill": "infra/Apache Solr admin cores unauth",
+      "purpose": "Solr admin cores listing; query endpoints follow.",
+      "on_success": "Cores -> query extraction; velocity RCE (documented variant) as escalation.",
+      "on_fail": "None reachable -> TCP-only stores (Mongo/Redis/postgres) are documented gaps (need TCP tooling); pivot to admin panels shelf."
+    },
+    {
+      "n": 4,
+      "skill": "infra/phpMyAdmin panel exposed",
+      "purpose": "Fallback: exposed DB consoles often yield the same data plane with creds found elsewhere (recon-secrets-to-cloud).",
+      "on_success": "Panel + creds -> full DB read.",
+      "on_fail": "Try Adminer (infra/Adminer db manager exposed), H2 console (redteam/H2 database console exposed)."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "ports 9200/5984/8983/8081",
+      "wayback hits for /_cat/indices, /_all_dbs, /solr",
+      "internal service names from recon chains",
+      "cloud-hosted search endpoints misconfigured public"
+    ],
+    "recon": [
+      {
+        "name": "Canonical endpoint sweep",
+        "how": "One curl list across all datastore ports/paths per host.",
+        "tooling": "manual script",
+        "signal": "Store banner JSON."
+      },
+      {
+        "name": "Banner version triage",
+        "how": "Version strings select CVE-era escalations (Solr velocity, CouchDB 12635).",
+        "tooling": "manual",
+        "signal": "Version in banner."
+      },
+      {
+        "name": "Kibana/monitoring adjacency",
+        "how": "Kibana/monitoring panels often sit beside ES and leak index names.",
+        "tooling": "manual",
+        "signal": "Kibana UI accessible."
+      },
+      {
+        "name": "Backup dump pairing",
+        "how": "Dump.sql/backup artifacts (secrets_exposure shelf) pair with store findings for full datasets.",
+        "tooling": "recon-secrets-to-cloud chain",
+        "signal": "Artifact + live store = same dataset twice."
+      }
+    ],
+    "variants": [
+      "ES script_fields injection (RCE-ish)",
+      "CouchDB config endpoint auth bypass (CVE-2017-12635)",
+      "Solr velocity template RCE (CVE-2019-17558)",
+      "Mongo/Redis unauth (documented TCP gap)",
+      "kibana SSRF through exporters"
+    ],
+    "dorks": [
+      "shodan: product:\"Elastic\" port:9200",
+      "shodan: product:\"CouchDB\"",
+      "google: inurl:/_cat/indices"
+    ],
+    "pivot_hints": [
+      "found creds -> admin_panels shelf",
+      "PII scale -> severity framing",
+      "store creds -> datastore reuse across services"
+    ]
+  },
+  "fallbacks": [
+    "container-plane-sweep",
+    "recon-secrets-to-cloud"
+  ],
+  "sources": [
+    "Elasticsearch/CouchDB/Solr security docs",
+    "nuclei-templates — datastore exposures",
+    "HackTricks — Elasticsearch",
+    "CVE-2017-12635 / CVE-2019-17558 advisories"
+  ]
+}

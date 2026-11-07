@@ -1,0 +1,31 @@
+{
+  "name": "redteam/Apache mod_status server-status exposed",
+  "description": "[basic] Apache mod_status /server-status exposed (CWE-200; Tenable 10677, Apache docs, Mobb 2026): live request lines, vhosts and client IPs = recon gold and session hijack surface. Keywords: apache mod_status server-status uptime requests recon exposure. ctrl: benign path is denied/lacks status markers -> not falsified. base_url = web root (copy skill behind proxies with allow rules).",
+  "cwe": "CWE-200",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/server-status"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "Apache Server Status|Server uptime|Server Built"
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "83744f5e6bde",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

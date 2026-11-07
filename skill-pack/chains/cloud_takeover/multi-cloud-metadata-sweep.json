@@ -1,0 +1,95 @@
+{
+  "group": "cloud_takeover",
+  "slug": "multi-cloud-metadata-sweep",
+  "name": "Metadata sweep: GCP + Azure + AWS in one primitive",
+  "goal": "With one header-forwarding SSRF, sweep every major cloud's metadata service and harvest whichever identity plane the workload runs on.",
+  "preconditions": "SSRF sink that forwards or allows injected request headers (needed for GCP Metadata-Flavor and Azure Metadata:true).",
+  "cwe": [
+    "CWE-918",
+    "CWE-200"
+  ],
+  "impact": "GCP access tokens, Azure vmId/subscriptionId/IMDS tokens, or AWS credentials — whichever provider hosts the target.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "web/SSRF GCP metadata instance zone read",
+      "purpose": "GCP check: metadata.google.internal with Metadata-Flavor: Google; projects/\\d+/zones/ proves the identity plane.",
+      "on_success": "Token endpoints follow: /computeMetadata/v1/instance/service-accounts/default/token.",
+      "on_fail": "Not GCP -> step 2 (Azure)."
+    },
+    {
+      "n": 2,
+      "skill": "web/SSRF Azure IMDS instance read",
+      "purpose": "Azure check: 169.254.169.254/metadata/instance with Metadata:true header.",
+      "on_success": "vmId/subscriptionId -> /metadata/identity/oauth2/token for managed identity token.",
+      "on_fail": "Not Azure -> step 3 (AWS)."
+    },
+    {
+      "n": 3,
+      "skill": "web/SSRF AWS IMDSv1 role discovery",
+      "purpose": "AWS check: plain GET, no special header needed.",
+      "on_success": "Jump to chain aws-imds-full-takeover step 3 for the credential dump.",
+      "on_fail": "All three miss -> workload is on-prem or IMDSv2-only; sweep internal services via latency (see discovery.recon)."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "any header-forwarding proxy or template renderer",
+      "fetch sinks where attacker controls some headers",
+      "CRLF-injectable parameters (inject Metadata-Flavor into the sub-request)"
+    ],
+    "recon": [
+      {
+        "name": "Header passthrough test",
+        "how": "Send X-Test headers to your canary through the sink; if they arrive, metadata headers can be forged.",
+        "tooling": "canary host + Burp",
+        "signal": "Attacker-chosen headers reach the sub-request."
+      },
+      {
+        "name": "CRLF header injection primer",
+        "how": "Probe parameters for %0d%0a to smuggle Metadata-Flavor into the internal request.",
+        "tooling": "web/CRLF response-header injection skill",
+        "signal": "Injected header lands in internal request -> GCP/Azure metadata unlocks."
+      },
+      {
+        "name": "Provider banner triangulation",
+        "how": "Error pages, Server headers and timing patterns reveal the hosting provider before you burn probes.",
+        "tooling": "manual recon",
+        "signal": "e.g. gstatic references, Azure App Service headers (x-ms-...), AWS ALB headers."
+      },
+      {
+        "name": "Metadata IP alternatives",
+        "how": "metadata.google.internal, 169.254.169.254, 100.100.100.200 (Alibaba), fd00:ec2::254 (IPv6 AWS).",
+        "tooling": "manual list",
+        "signal": "Any hit identifies the provider directly."
+      }
+    ],
+    "variants": [
+      "Alibaba 100.100.100.200",
+      "DigitalOcean /lib/os-server-info style endpoints",
+      "Oracle Cloud 192.0.0.192",
+      "OpenStack 169.254.169.254 with X-Service-Token",
+      "k8s env-injected credentials instead of IMDS"
+    ],
+    "dorks": [
+      "github: \"Metadata-Flavor\" \"computeMetadata\"",
+      "shodan: http.html:\"x-ms-request-id\"",
+      "github: \"169.254.169.254/metadata/instance\""
+    ],
+    "pivot_hints": [
+      "GCP token -> impersonate service accounts via token scopes",
+      "Azure IMDS -> managed-identity token -> ARM enumeration",
+      "record which provider answered to shorten future sweeps fleet-wide"
+    ]
+  },
+  "fallbacks": [
+    "aws-imds-full-takeover",
+    "xxe-to-metadata"
+  ],
+  "sources": [
+    "GCP metadata API docs",
+    "Azure IMDS protocol docs (version param required)",
+    "HackTricks — Cloud metadata endpoints",
+    "PayloadsAllTheThings — SSRF URLs / cloud providers"
+  ]
+}

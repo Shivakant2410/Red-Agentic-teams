@@ -1,0 +1,27 @@
+{
+  "name": "web/Subdomain takeover Fastly unknown-domain fingerprint",
+  "description": "[medium] Proves the Fastly takeover prerequisite: 'Fastly error: unknown domain:' on the victim subdomain = service unclaimed at the CDN edge; claiming the domain returns content control. Keywords: subdomain takeover fastly unknown domain cname dangling cdn fingerprint. ctrl: normal 404 without the error shape -> not falsified. base_url = http://suspect-subdomain.",
+  "cwe": "CWE-350",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "Fastly error: unknown domain:",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "0394f671dae0",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

@@ -1,0 +1,31 @@
+{
+  "name": "web/SQLi error-based Oracle-family",
+  "description": "[high] Proves error-based SQLi on the Oracle family: broken quote returns ORA-##### errors / oracle.jdbc.driver / ODP.NET / oci8 = PL/SQL interpretation (ORA-01756/ORA-00933 leak query context for UNION follow-up). Keywords: sqli error-based oracle ora- plsql oci injection. ctrl: benign POST shows no ORA error -> not falsified. probe_url = JSON endpoint echoing 'q'.",
+  "cwe": "CWE-89",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{probe_url}}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"q\":\"x9f'\"}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "ORA-\\d{5}:|oracle\\.jdbc\\.driver|ODP\\.NET|oci8\\(\\)",
+      "present": true
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "9e3b4cda5bd6",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

@@ -1,0 +1,33 @@
+{
+  "name": "web/SSTI Velocity set-interpolation proof",
+  "description": "[high] Proves Apache Velocity SSTI (Java): #set($x=7*7)$x evaluates to 49 with the raw directive absent = server-side VTL evaluation, Velocity-specific syntax (#set + $var). Keywords: ssti velocity vtl java template injection #set. ctrl: benign query leaves 49 absent -> not falsified. probe_url = endpoint reflecting the q param into a Velocity template.",
+  "cwe": "CWE-1336",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{probe_url}}?q=%23set%28%24x%3D7%2A7%29%24x"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\b49\\b",
+      "present": true
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "#set\\(\\$x=7\\*7\\)",
+      "present": false
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "167780ee6a98",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

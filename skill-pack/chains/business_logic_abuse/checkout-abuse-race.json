@@ -1,0 +1,104 @@
+{
+  "group": "business_logic_abuse",
+  "slug": "checkout-abuse-race",
+  "name": "Checkout: negative qty -> coupon replay -> token replay -> unthrottled",
+  "goal": "Demonstrate revenue-layer abuse: broken quantity math, reusable coupons, replayable single-use tokens, all unthrottled.",
+  "preconditions": "Cart/checkout/coupon endpoints on any commerce surface.",
+  "cwe": [
+    "CWE-840",
+    "CWE-362"
+  ],
+  "impact": "Direct monetary loss; free orders and unbounded coupon/token reuse.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "web/Negative quantity accepted in cart totals",
+      "purpose": "Prove total math accepts non-positive quantities (money manipulation).",
+      "on_success": "Document the total-diff proof; try coupon stacking next.",
+      "on_fail": "Qty sanitized -> other numeric fields (price, discount, shipping, currency)."
+    },
+    {
+      "n": 2,
+      "skill": "web/Single-use coupon accepted on replay",
+      "purpose": "Coupon replay proves missing uniqueness enforcement on 'single-use' claims.",
+      "on_success": "Pair with step 4 for unbounded replay.",
+      "on_fail": "Coupon rigid -> gift-card/invite/vote-style single-use probes."
+    },
+    {
+      "n": 3,
+      "skill": "web/Rate limiting absent burst acceptance",
+      "purpose": "No throttle = the abuse scales without resistance; also the prerequisite for true races later.",
+      "on_success": "Blast-radius framing: unbounded.",
+      "on_fail": "Throttled -> document separately; slow-abuse within budget."
+    },
+    {
+      "n": 4,
+      "skill": "web/Single-use token reusable on replay",
+      "purpose": "Generic single-use token replay (OTP/invite/transaction) — the transferable proof.",
+      "on_success": "Mechanism-level finding: uniqueness enforcement absent app-wide.",
+      "on_fail": "Token rigid -> client-side price/total tampering (documented variant)."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "cart update endpoints",
+      "coupon/gift-card redeem",
+      "checkout confirm",
+      "refund/cancel flows",
+      "loyalty points"
+    ],
+    "recon": [
+      {
+        "name": "Totals diff matrix",
+        "how": "Send quantity/price mutations and diff server-computed totals vs client display.",
+        "tooling": "manual",
+        "signal": "Server trusts client numbers."
+      },
+      {
+        "name": "Replay harness",
+        "how": "Replay every one-time request verbatim; count accepted repetitions.",
+        "tooling": "Burp Repeater / simple loop",
+        "signal": ">1 acceptance."
+      },
+      {
+        "name": "Encoding ambiguity probe",
+        "how": "Quantities as strings ('1e2'), arrays, nested objects — parsers normalize differently.",
+        "tooling": "hpp skill + manual",
+        "signal": "Type confusion in totals."
+      },
+      {
+        "name": "Flow-state skipping",
+        "how": "Jump checkout steps (call confirm directly); missing state machines accept.",
+        "tooling": "manual",
+        "signal": "Confirm succeeds without intermediate steps."
+      }
+    ],
+    "variants": [
+      "client-side price tampering",
+      "currency/rounding abuse",
+      "free-shipping logic gaps",
+      "referral credit loops",
+      "true parallel races (documented gap: burst executor)"
+    ],
+    "dorks": [
+      "github: cart.total += price",
+      "github: \"coupon\" \"apply\" api",
+      "google: inurl:coupon site:target.tld"
+    ],
+    "pivot_hints": [
+      "pair with auth chains for full fraud narrative",
+      "coupon APIs often in OpenAPI specs (info_disclosure)",
+      "document mechanism-level finding (uniqueness absent) for max severity"
+    ]
+  },
+  "fallbacks": [
+    "cross-origin-action-suite",
+    "idor-mass-extraction"
+  ],
+  "sources": [
+    "OWASP API Top 10 — API4 unrestricted resource consumption",
+    "PortSwigger — Business logic labs",
+    "CWE-840/CWE-362 notes",
+    "commerce write-ups (coupon/qty abuse)"
+  ]
+}

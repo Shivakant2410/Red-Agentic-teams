@@ -1,0 +1,96 @@
+{
+  "group": "api_and_datastores",
+  "slug": "wordpress-footprint-to-auth",
+  "name": "CMS: WP users -> xmlrpc surface -> debug log -> credentials",
+  "goal": "Chain WordPress recon skills into a credentials story: enumerate users, map xmlrpc methods, recover leaked logs.",
+  "preconditions": "WordPress fingerprint on any host.",
+  "cwe": [
+    "CWE-200",
+    "CWE-532"
+  ],
+  "impact": "User list, xmlrpc brute surface, log-recovered secrets — feeds auth chains.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "web/WordPress REST users enumeration",
+      "purpose": "REST users endpoint leaks the author/admin namespace.",
+      "on_success": "Username list for auth chains.",
+      "on_fail": "REST blocked -> sitemap author archives, ?author=N redirects (documented variants)."
+    },
+    {
+      "n": 2,
+      "skill": "web/WordPress xmlrpc method discovery",
+      "purpose": "xmlrpc exposes system.listMethods + wp.getUsersBlogs — the brute surface.",
+      "on_success": "xmlrpc available -> password brute is the documented follow-up (needs burst tooling).",
+      "on_fail": "xmlrpc disabled -> REST auth attempts with username list."
+    },
+    {
+      "n": 3,
+      "skill": "web/WordPress debug.log exposure",
+      "purpose": "wp-content/debug.log leaks errors incl. paths, SQL fragments, plugin internals.",
+      "on_success": "Log-derived secrets/paths -> targeted attacks; also proves poor ops hygiene for the report.",
+      "on_fail": "No log -> other secrets_exposure artifacts (.env/backup) on the same host."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "wp-login/wp-json fingerprints",
+      "multisite networks",
+      "xmlrpc on old installs",
+      "plugin/theme paths from JS"
+    ],
+    "recon": [
+      {
+        "name": "WP fingerprint sweep",
+        "how": "/wp-json, /wp-login.php, /xmlrpc.php, /wp-content paths per host.",
+        "tooling": "ffuf + wp wordlist",
+        "signal": "WP markers in responses."
+      },
+      {
+        "name": "Plugin/version census",
+        "how": "readme.txt and ?v= style versions map plugin CVEs (per-product — extend on demand).",
+        "tooling": "manual + wpscan-style logic",
+        "signal": "Outdated plugin versions."
+      },
+      {
+        "name": "Author archive pivots",
+        "how": "?author=N and sitemap author lists when REST users is blocked.",
+        "tooling": "manual",
+        "signal": "Usernames from archives."
+      },
+      {
+        "name": "Config-artifact pairing",
+        "how": "wp-config backups, .env files, and SQL dump artifacts (secrets_exposure shelf) recover DB creds and salts that pair with the user list.",
+        "tooling": "recon-secrets-to-cloud chain",
+        "signal": "Credentials or table prefixes from artifacts."
+      }
+    ],
+    "variants": [
+      "xmlrpc user enumeration + brute",
+      "REST /users context=edit tricks",
+      "plugin-specific CVEs (extend per target)",
+      "theme editor abuse when admin reached",
+      "db debug constants left on"
+    ],
+    "dorks": [
+      "google: inurl:wp-content/debug.log",
+      "shodan: http.html:\"wp-content\"",
+      "google: inurl:wp-json/wp/v2/users"
+    ],
+    "pivot_hints": [
+      "user list -> auth chains (username enumeration)",
+      "xmlrpc brute (documented: needs burst tool)",
+      "admin reach -> theme editor = SSTI/RCE-like impact (documented variant)"
+    ]
+  },
+  "fallbacks": [
+    "auth-bypass-to-admin",
+    "recon-secrets-to-cloud"
+  ],
+  "sources": [
+    "WordPress REST API docs",
+    "WPScan methodologies",
+    "HackTricks — WordPress",
+    "xmlrpc security write-ups"
+  ]
+}

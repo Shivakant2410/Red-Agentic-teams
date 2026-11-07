@@ -1,0 +1,32 @@
+{
+  "name": "elite/Prometheus metrics endpoint exposure",
+  "description": "[high] Prometheus exposition endpoint exposed: /metrics returns the '# HELP' telemetry format — internal hostnames, k8s targets, request rates, endpoint lists = attack-surface expansion. Keywords: prometheus metrics telemetry exposition recon monitoring. ctrl: benign path lacks '# HELP' -> not falsified. base_url = service root (copy skill for /prometheus/metrics, :9090/metrics). Chain: parse discovered targets and service names for the next hop.",
+  "cwe": "CWE-200",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/metrics"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "# HELP",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "c0aad85588b9",
+  "created": "2026-11-05T18:20:19.655790+00:00",
+  "last_used": "2026-11-05T18:20:19.655790+00:00"
+}

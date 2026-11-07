@@ -1,0 +1,31 @@
+{
+  "name": "web/SQLi error-based PostgreSQL-family",
+  "description": "[high] Proves error-based SQLi (PostgreSQL family): posts a broken quote; dialect-specific driver errors (psycopg PG::, org.postgresql, SQLSTATE 42, unterminated string) in the response = server-side SQL interpretation. Keywords: sqli error-based postgresql exception syntax. ctrl: benign POST shows no driver error -> not falsified. probe_url = JSON endpoint echoing 'email' into SQL.",
+  "cwe": "CWE-89",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{probe_url}}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"email\":\"x'-- -\"}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "(?:org\\.postgresql\\.util\\.PSQLException|PG::(?:SyntaxError|InvalidTextRepresentation)|SQLSTATE\\[42|unterminated quoted string at or near|syntax error at or near)",
+      "present": true
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "7f7bb8501243",
+  "created": "2026-11-05T18:01:37.085987+00:00",
+  "last_used": "2026-11-05T18:01:37.085987+00:00"
+}

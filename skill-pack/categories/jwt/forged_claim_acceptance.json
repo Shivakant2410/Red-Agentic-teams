@@ -1,0 +1,38 @@
+{
+  "name": "elite/JWT forged-claim acceptance check",
+  "description": "[critical] Proves a JWT forgery is ACCEPTED by the server (PortSwigger JWT attacks: jku/x5u key-injection, kid path injection, alg:none): the agent forges the token first, this skill proves privilege change by diffing the me/role object between legit and forged tokens. Keywords: jwt jku x5u kid algorithm none forgery privilege escalation. ctrl: resending the legit token yields equal values, json_differs fails -> not falsified. probe_url = auth-me endpoint taking the token as ?token= (copy skill for JSON-body auth); legit_token/forged_token supplied by agent; copy skill with another json_path if the discriminator is not 'role'.",
+  "cwe": "CWE-345",
+  "requests": {
+    "baseline": {
+      "method": "GET",
+      "url": "{{probe_url}}?token={{legit_token}}"
+    },
+    "payload": {
+      "method": "GET",
+      "url": "{{probe_url}}?token={{forged_token}}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "json_differs",
+      "request_a": "baseline",
+      "request_b": "payload",
+      "json_path": "role"
+    }
+  ],
+  "params": [
+    "forged_token",
+    "legit_token",
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "1efa1845601b",
+  "created": "2026-11-05T18:20:19.655790+00:00",
+  "last_used": "2026-11-05T18:20:19.655790+00:00"
+}

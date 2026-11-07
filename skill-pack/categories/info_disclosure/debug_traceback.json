@@ -1,0 +1,26 @@
+{
+  "name": "web/Framework debug traceback disclosure",
+  "description": "[basic] Debug-mode stack trace disclosure on malformed input (CWE-209; Django error-reporting docs): DEBUG=True turns a forced 500 into a full Python traceback with source lines and settings. Keywords: debug traceback disclosure django stack trace verbose error 500. ctrl: prod-mode generic error page lacks trace markers -> not falsified. base_url = endpoint that errors on bad input.",
+  "cwe": "CWE-209",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/search?q=%27"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "Traceback \\(most recent call last\\)|Django Version|DEBUG = True"
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "509d57b4a90a",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

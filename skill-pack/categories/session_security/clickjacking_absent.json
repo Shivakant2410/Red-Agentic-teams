@@ -1,0 +1,32 @@
+{
+  "name": "web/Frame-clickjacking protections absent",
+  "description": "[low] Hardening proof (CWE-1021): a sensitive page returns 200 with NEITHER X-Frame-Options NOR a CSP frame-ancestors directive = framable by any origin (clickjacking/UI-redress). present:false implements the ABSENCE oracle. Keywords: clickjacking x-frame-options frame-ancestors csp cwe-1021 ui redress. ctrl: benign page sets X-Frame-Options -> absence condition fails -> not falsified. base_url = host with a state-changing/auth page (skill rides /admin; copy for /settings, /transfer).",
+  "cwe": "CWE-1021",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/admin"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "header_regex",
+      "request": "payload",
+      "pattern": "x-frame-options|frame-ancestors",
+      "present": false
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "59e203f2188d",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

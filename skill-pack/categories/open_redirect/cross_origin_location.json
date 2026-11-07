@@ -1,0 +1,41 @@
+{
+  "name": "web/Open redirect cross-origin Location",
+  "description": "[basic] Cross-origin open redirect in a next/redirect parameter (CWE-601; PortSwigger open-redirection): protocol-relative '//attacker' lands in the Location header — a 302 to the attacker origin is the proof. Keywords: open redirect next url redirect location cross-origin phishing oauth. ctrl: benign internal next stays same-origin -> not falsified. base_url = redirect-taking endpoint.",
+  "cwe": "CWE-601",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/login?next=//collab.attacker.example/x"
+    },
+    "baseline": {
+      "method": "GET",
+      "url": "{{base_url}}/login?next=/dashboard"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 302
+    },
+    {
+      "type": "header_regex",
+      "request": "payload",
+      "pattern": "location:\\s*//collab\\.attacker\\.example"
+    },
+    {
+      "type": "header_regex",
+      "request": "baseline",
+      "pattern": "location:\\s*//collab",
+      "present": false
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "c5fa0d67ebcd",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

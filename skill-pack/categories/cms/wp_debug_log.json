@@ -1,0 +1,32 @@
+{
+  "name": "web/WordPress debug.log exposure",
+  "description": "[low] Proves WP_DEBUG logging is web-readable (CWE-532): /wp-content/debug.log returns PHP Notice/Warning/Deprecated/Fatal lines with full paths = code layout + data for further SQLi/path-traversal recon. Keywords: wordpress debug log exposure php notice warning cms. ctrl: benign install 404s -> not falsified. base_url = WordPress root.",
+  "cwe": "CWE-532",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/wp-content/debug.log"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "(?i)PHP (Notice|Warning|Deprecated|Fatal error)",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "edf41a9951ee",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

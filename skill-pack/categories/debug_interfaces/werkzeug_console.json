@@ -1,0 +1,32 @@
+{
+  "name": "redteam/Werkzeug debug console exposed",
+  "description": "[critical] Flask Werkzeug debugger console exposed = interactive code execution behind a PIN that is frequently bypassable (webshell-adjacent, T1505.003 follow-up): the console page embeds the __debugger__ resource. Keywords: werkzeug flask debug console rce pin traceback. ctrl: benign path lacks __debugger__ -> not falsified. base_url = service root.",
+  "cwe": "CWE-489",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/console"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "__debugger__",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "9626df5171fb",
+  "created": "2026-11-05T18:01:37.085987+00:00",
+  "last_used": "2026-11-05T18:01:37.085987+00:00"
+}

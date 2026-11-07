@@ -1,0 +1,31 @@
+{
+  "name": "web/Python pickle invalid-load-key probe",
+  "description": "[high] Proves a Python pickle sink (CWE-502): posting a pickle-magic blob (gASV…, protocol 2 header) makes Python raise _pickle.UnpicklingError / invalid load key / insecure string pickle = the app unpickles attacker bytes (RCE via __reduce__ gadget follow-up). Keywords: python pickle deserialization unpickling rce reduce gadget. ctrl: benign POST shows no pickle error -> not falsified. probe_url = endpoint consuming the opaque blob/cookie.",
+  "cwe": "CWE-502",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{probe_url}}",
+      "headers": {
+        "Content-Type": "application/octet-stream"
+      },
+      "body": "gASVx9Q"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "UnpicklingError|invalid load key|insecure string pickle",
+      "present": true
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "0b840a5ee495",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

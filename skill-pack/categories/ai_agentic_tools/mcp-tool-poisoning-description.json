@@ -1,0 +1,37 @@
+{
+  "name": "ai/MCP tool poisoning description injection",
+  "description": "[critical] Proves MCP tool poisoning (Invariant Labs 2025 research): adversarial instructions ride inside a tool DESCRIPTION/metadata that the agent ingests as trusted context — the poisoned directive is observable in the tools-list payload the agent will consume. Keywords: mcp tool poisoning invariant rug pull metadata asi02. ctrl: clean tool metadata -> directive absent -> not falsified. mcp_url = MCP server tools-list endpoint.",
+  "cwe": "CWE-1427",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{mcp_url}}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"method\":\"tools/list\"}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "<IMPORTANT>",
+      "present": true
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "collab\\.invalid/u",
+      "present": true
+    }
+  ],
+  "params": [
+    "mcp_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "d810d8a54377",
+  "created": "2026-11-06T18:57:23.539966+00:00",
+  "last_used": "2026-11-06T18:57:23.539968+00:00"
+}

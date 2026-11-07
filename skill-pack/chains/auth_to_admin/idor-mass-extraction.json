@@ -1,0 +1,110 @@
+{
+  "group": "auth_to_admin",
+  "slug": "idor-mass-extraction",
+  "name": "Enumeration seed -> IDOR -> alias amplification -> bulk exfil",
+  "goal": "From a valid-user list to bulk extraction of tenant data via object-level authorization gaps, amplified by GraphQL aliases and absent throttling.",
+  "preconditions": "Two accounts and an object-ID scheme reachable cross-tenant.",
+  "cwe": [
+    "CWE-639",
+    "CWE-770"
+  ],
+  "impact": "Mass PII/document extraction with one weak-ID pivot and no rate-limiting resistance.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "web/Username enumeration login differential",
+      "purpose": "Seed the object-owner namespace: valid usernames/emails make IDOR targets concrete.",
+      "on_success": "Target list for step 2.",
+      "on_fail": "Uniform responses -> use public sign-up lists, org directory pages, or WordPress-style REST users enumeration on CMSs."
+    },
+    {
+      "n": 2,
+      "skill": "web/IDOR horizontal object-graph",
+      "purpose": "Find the ID scheme that crosses tenants (sequential, weakly-encoded, role-skipped).",
+      "on_success": "Document the scheme, then scale via step 3/4.",
+      "on_fail": "IDs are GUIDs -> harvest them from exports, emails, API responses, or graphql node(id:) base64 wrappers."
+    },
+    {
+      "n": 3,
+      "skill": "elite/GraphQL alias amplification primitive",
+      "purpose": "One request, hundreds of objects — the scale multiplier when the API is GraphQL.",
+      "on_success": "Bulk dump; pair with introspection for the field list.",
+      "on_fail": "No GraphQL -> export/report functions or batch endpoints serve the same role."
+    },
+    {
+      "n": 4,
+      "skill": "web/Rate limiting absent burst acceptance",
+      "purpose": "Prove no throttling: burst acceptance turns a finding into an unlimited extraction.",
+      "on_success": "Rate the extraction as unbounded; document blast radius.",
+      "on_fail": "Throttled -> rotate sessions/identities (documented variant) or slow-extract within limits."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "invoice/order/document download URLs",
+      "export & report generators",
+      "profile/message view endpoints",
+      "unsubscribe/confirmation token URLs",
+      "GraphQL node(id:) wrappers"
+    ],
+    "recon": [
+      {
+        "name": "Auth Matrix replay",
+        "how": "Record every object request for account A, replay with B; any 200 on foreign objects is IDOR.",
+        "tooling": "Burp Auth Analyzer / manual match-replace",
+        "signal": "200 with A's ID under B's session."
+      },
+      {
+        "name": "ID scheme archaeology",
+        "how": "Collect object IDs from links, emails, exports; look for base64/uuid-encoder wrappers (f_LE rather than uuid).",
+        "tooling": "manual + base64 decode",
+        "signal": "Decodable wrappers exposing raw integers."
+      },
+      {
+        "name": "Response-body diff",
+        "how": "Swap IDs and diff bodies; some endpoints hide objects in UI but still serve data.",
+        "tooling": "Burp Comparer",
+        "signal": "Same shape, different object = authz on client only."
+      },
+      {
+        "name": "Verb/encoding switch",
+        "how": "GET->PATCH->DELETE, JSON vs form, trailing dots/semicolons on the path — authorization sometimes keyed to one shape.",
+        "tooling": "manual",
+        "signal": "One verb/shape bypasses the check."
+      },
+      {
+        "name": "Export-feature audit",
+        "how": "Exports, invoices, webhook configs, and admin previews are the highest-yield IDOR sinks.",
+        "tooling": "manual enumeration",
+        "signal": "Bulk objects in one response."
+      }
+    ],
+    "variants": [
+      "IDOR in file download endpoints",
+      "IDOR via predictable tokens (sequential reset codes)",
+      "IDOR on HTTP methods (GET allowed, POST blocked)",
+      "GraphQL object-level authz gaps",
+      "IDOR behind admin previews (second-order)"
+    ],
+    "dorks": [
+      "google: inurl:invoice?id= site:target.tld",
+      "github: request.args.get(\"user_id\")",
+      "github: \"export\" \"@app.route\" admin"
+    ],
+    "pivot_hints": [
+      "paired with jwt-to-privilege for vertical escalation",
+      "exfil via absent throttling unbounded",
+      "PII scale drives severity rating upward"
+    ]
+  },
+  "fallbacks": [
+    "graphql-recon-to-exfil",
+    "auth-bypass-to-admin"
+  ],
+  "sources": [
+    "OWASP API Top 10 — API1 BOLA",
+    "PortSwigger — IDOR labs",
+    "HackTricks — IDOR",
+    "GraphQL alias amplification research (Escobar)"
+  ]
+}

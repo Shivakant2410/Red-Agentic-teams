@@ -1,0 +1,32 @@
+{
+  "name": "web/Content-Security-Policy header absent",
+  "description": "[low] Proves missing CSP on an HTML endpoint: no content-security-policy header = every injection defect on the page loses its second line of defense (CWE-693). Keywords: csp content security policy header absent hardening xss defense. ctrl: CSP present -> condition (present=False) fails. base_url = HTML endpoint.",
+  "cwe": "CWE-693",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "header_regex",
+      "request": "payload",
+      "pattern": "content-security-policy",
+      "present": false
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "b9b1542b094f",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

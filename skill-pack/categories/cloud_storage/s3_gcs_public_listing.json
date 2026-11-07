@@ -1,0 +1,38 @@
+{
+  "name": "redteam/S3-GCS public bucket listing",
+  "description": "[high] Public cloud object store listing (T1530 cloud infrastructure discovery): bucket root returns ListBucketResult XML with enumerable <Key> objects = world-readable bucket. Keywords: s3 gcs bucket listing cloud enumeration acl public storage. ctrl: AccessDenied XML lacks ListBucketResult -> not falsified. base_url = bucket URL (https://bucket.s3.region.amazonaws.com or https://storage.googleapis.com/bucket).",
+  "cwe": "CWE-732",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "<ListBucketResult",
+      "present": true
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "<Key>",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "fdeab374b379",
+  "created": "2026-11-05T18:01:37.085987+00:00",
+  "last_used": "2026-11-05T18:01:37.085987+00:00"
+}

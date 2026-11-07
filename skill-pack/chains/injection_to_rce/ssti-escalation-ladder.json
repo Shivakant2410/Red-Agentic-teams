@@ -1,0 +1,99 @@
+{
+  "group": "injection_to_rce",
+  "slug": "ssti-escalation-ladder",
+  "name": "SSTI: arith proof -> engine RCE gadget -> OS echo",
+  "goal": "Escalate template-injection proofs to OS command execution on the detected engine, with a full engine-coverage ladder.",
+  "preconditions": "Reflected user input rendered by a server-side template engine (including email/PDF template editors).",
+  "cwe": [
+    "CWE-1336",
+    "CWE-94"
+  ],
+  "impact": "Arbitrary code/OS command execution as the app user.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "web/SSTI Jinja2 arith+repeat proof",
+      "purpose": "Deterministic engine + eval proof (343 marker) for Jinja2.",
+      "on_success": "Step 2 for RCE; other engines detected -> swap the sibling proof (Freemarker/Mako/Velocity/ERB).",
+      "on_fail": "No eval -> client-side reflection -> web/Angular client-side template injection reflection (CSTI)."
+    },
+    {
+      "n": 2,
+      "skill": "elite/Jinja2 SSTI OS command execution",
+      "purpose": "Jinja2 gadget chain to OS command.",
+      "on_success": "Step 3 confirms the OS layer; alternative engines -> web/Twig SSTI RCE map-system gadget, web/Freemarker SSTI RCE Execute gadget.",
+      "on_fail": "Sandboxed Jinja -> Twig/Freemarker/Mako/ERB siblings; sandbox survives -> document eval-only impact."
+    },
+    {
+      "n": 3,
+      "skill": "web/Command injection output echo marker",
+      "purpose": "Deterministic uid() marker through the OS layer — converges every engine chain onto one proof shape.",
+      "on_success": "Full RCE narrative: probe -> gadget -> OS marker.",
+      "on_fail": "Output blind -> web/Command injection time-based sleep oracle as the blind channel."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "user-editable email/subject templates (god-tier sink)",
+      "PDF/invoice generators",
+      "CMS template/theme editors",
+      "i18n message keys",
+      "webhook payload templating",
+      "error-page interpolation"
+    ],
+    "recon": [
+      {
+        "name": "Polyglot canary injection",
+        "how": "Inject {{7*7}} ${7*7} <%= 7*7 %> #{7*7} into every reflected parameter, header (UA), and filename.",
+        "tooling": "Burp Intruder + canary list",
+        "signal": "49/343 rendered — engine identified by which syntax fires."
+      },
+      {
+        "name": "Template-editor hunt",
+        "how": "Search the product surface for template/notification/signature editors — these are intended user-facing template sinks.",
+        "tooling": "product UI walkthrough",
+        "signal": "Editor UI = direct SSTI if server-rendered."
+      },
+      {
+        "name": "Traceback engine reveal",
+        "how": "Force errors; Jinja/Mako/Freemarker/Twig names in tracebacks tell you which proof to run.",
+        "tooling": "web/Framework debug traceback disclosure",
+        "signal": "Engine name = exact skill match."
+      },
+      {
+        "name": "Filename reflection",
+        "how": "Upload/name files with canaries — filenames often pass through templates (attachment names, export titles).",
+        "tooling": "manual",
+        "signal": "Rendered arithmetic in file-derived output."
+      }
+    ],
+    "variants": [
+      "email subject/body template injection",
+      "PDF invoice generators",
+      "i18n key injection",
+      "Flask error handlers rendering user input",
+      " Velocity/Freemarker in Java admin consoles",
+      "Twig in abandoned CMS plugins"
+    ],
+    "dorks": [
+      "github: render_template_string(",
+      "github: Template(source).render(",
+      "github: new Template( velocity"
+    ],
+    "pivot_hints": [
+      "RCE -> internal network recon via latency channel",
+      "pair with upload-to-shell for persistence",
+      "read config for cloud creds (recon-secrets-to-cloud)"
+    ]
+  },
+  "fallbacks": [
+    "upload-to-shell",
+    "sqli-blind-to-exfil"
+  ],
+  "sources": [
+    "PayloadsAllTheThings — SSTI",
+    "HackTricks — SSTI per-engine",
+    "PortSwigger — Template injection",
+    "community engine-specific gadget sheets (Jinja2/Twig/Freemarker)"
+  ]
+}

