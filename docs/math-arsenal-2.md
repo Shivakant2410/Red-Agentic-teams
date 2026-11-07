@@ -1,5 +1,13 @@
 # The Mathematical Arsenal, Vol. 2 — Field-Tested Edition
 
+> **STATUS (Nov 2026): DEFERRED — offense ships first.** Per owner directive, the skills
+> layer (recon, attack surface mapping, pre-exploitation, post-exploitation) comes before
+> the guard/statistics layer. The build order here is superseded by
+> **`docs/offense-arsenal.md`**; the techniques in §§2-6, 11 (BAI certificates,
+> e-processes, SPRT, CUSUM/BOCPD drift, judge calibration) are parked until the offense
+> skills exist. Attack-side items that overlapped (§10 MAP-Elites, §7 IDS) are already
+> reflected in the offense doc. Do not start building from this file.
+
 *Every technique in this volume carries a prior-art verdict: which competitor or paper uses it, or — where nobody does — why that gap is our edge. Nothing here was included because it looked clever; the cut list (§16) holds the five entries that didn't survive their evidence check.*
 
 **Research protocol (why you can trust this list).** For each candidate technique we asked four questions in order: (1) *Is anyone shipping it?* — competitor tools (Microsoft PyRIT, NVIDIA garak, Promptfoo) and published attack engines (Rainbow Teaming, TAP, AutoDAN, GCG, CRT). (2) *Is it in the research literature with numbers?* — venue + citations + ASR results. (3) *Does it solve a problem our repo actually has?* — mapped to specific modules (`bandit.py`, `planner.py`, `judgecalib.py`, `cellcard.py`, `pinning.py`). (4) *Is it required, or decoration?* — if no adoption evidence and no unique capability, it got demoted or cut. Techniques that failed question 1 or 2 are quarantined in §16 (cut list).
