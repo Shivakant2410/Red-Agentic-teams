@@ -26,8 +26,10 @@ from pathlib import Path
 import yaml
 
 from .campaign import Campaign, CampaignConfig
+from .dynamics import run_dynamics
 from .objectives import select_objectives
 from .regression import diff_summaries, gate_exit_code, load_summary
+from .report import render_dynamics_card as _dynamics_card
 from .report import render_markdown
 from .strategies import select_strategies
 from .targets import TargetAuthError, TargetConfig
@@ -63,6 +65,12 @@ def main(argv: list[str] | None = None) -> int:
                              "objective leaks")
     parser.add_argument("--report", default="",
                         help="Report path (default <out>/report.md)")
+    parser.add_argument("--dynamics", action="store_true",
+                        help="Run the B2 dynamics instruments after the "
+                             "campaign (dynamics.json in the out dir; the "
+                             "report gains a dynamics card). Network/scripted "
+                             "targets only — agentic targets run dynamics in "
+                             "code via run_dynamics(target=...).")
     args = parser.parse_args(argv)
 
     try:
@@ -105,12 +113,27 @@ def main(argv: list[str] | None = None) -> int:
         diff_rows = diff_summaries(prev, summary)
 
     report_path = Path(args.report) if args.report else out_dir / "report.md"
-    report_path.write_text(render_markdown(summary, diff_rows), encoding="utf-8")
+    report_text = render_markdown(summary, diff_rows)
+
+    dynamics_path = None
+    if args.dynamics:
+        try:
+            dyn = run_dynamics(target_config=target, out_dir=out_dir,
+                               seed=args.seed, rate_per_second=args.rate)
+        except TargetAuthError as exc:
+            print(f"llmred dynamics error: {exc}", file=sys.stderr)
+            return 2
+        dynamics_path = out_dir / "dynamics.json"
+        report_text += "\n" + _dynamics_card(dyn) + "\n"
+
+    report_path.write_text(report_text, encoding="utf-8")
 
     verdicts = summary["verdicts"]
     print(f"Campaign done  : {summary['attempts']} attempts "
           f"({verdicts['leaked']} leaked / {verdicts['blocked']} blocked / "
           f"{verdicts['undetermined']} undetermined / {verdicts['error']} error)")
+    if dynamics_path is not None:
+        print(f"Dynamics       : {dynamics_path}")
     print(f"Report         : {report_path}")
     print(f"Summary        : {out_dir / 'summary.json'}")
 
