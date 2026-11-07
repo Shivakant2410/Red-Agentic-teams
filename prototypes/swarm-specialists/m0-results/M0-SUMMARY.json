@@ -1,35 +1,35 @@
 {
-  "generated": "2026-11-06T15:23:25+0000",
+  "generated": "2026-11-07T02:55:41+0000",
   "tree": "/home/z/my-project/ra-work/prototypes/swarm-specialists",
   "labs": {
     "meridian": {
       "summaries": {
         "run1": {
           "ok": true,
-          "requests": 365,
+          "requests": 425,
           "statefuzz_sub_budget_requests": null,
           "rounds": 40,
-          "elapsed_s": 3.7,
+          "elapsed_s": 2.9,
           "ledger": {
-            "facts": 56,
+            "facts": 59,
             "by_kind": {
               "CONTROL": 11,
-              "OBSERVATION": 17,
+              "OBSERVATION": 18,
               "SURFACE": 1,
-              "HYPOTHESIS": 10,
-              "FINDING": 16,
+              "HYPOTHESIS": 11,
+              "FINDING": 17,
               "ESCALATION": 1
             },
             "by_source": {
               "orchestrator": 1,
               "recon": 5,
               "surface_mapper": 3,
-              "hypothesis": 10,
+              "hypothesis": 11,
               "exploit": 10,
               "verify": 8,
               "access": 1,
               "router": 1,
-              "window_driver": 17
+              "window_driver": 19
             }
           },
           "roster": [
@@ -44,24 +44,25 @@
           ],
           "hypothesis_ledger": {
             "stats": {
-              "total": 21,
+              "total": 23,
               "by_status": {
-                "confirmed": 14,
-                "refuted": 3,
+                "confirmed": 15,
+                "refuted": 4,
                 "inconclusive": 2,
                 "tested": 1,
                 "confirmed-by-transcript": 1
               },
               "by_source": {
-                "window-driver/scan": 9,
+                "window-driver/scan": 10,
                 "window-driver/fresh": 1,
-                "swarm-board/5aac47": 10,
-                "deferred-window/5aac47": 1
+                "swarm-board/a1bbcf": 11,
+                "deferred-window/a1bbcf": 1
               },
               "by_tag": {
-                "marker": 10,
+                "marker": 11,
                 "h_idor": 1,
                 "h_fsm": 1,
+                "h_open_vocab": 1,
                 "h_hidden_verbs": 1,
                 "h_state_guard": 1,
                 "h_mass_assign": 1,
@@ -73,9 +74,9 @@
                 "deferred-window": 1
               }
             },
-            "score": 17.75
+            "score": 19.75
           },
-          "markers_registered": 10,
+          "markers_registered": 11,
           "spawn_events": [],
           "llm_seam_calls": [],
           "findings": [
@@ -111,7 +112,7 @@
             },
             {
               "id": "FW-DEPUTY-CREDIT",
-              "title": "No ownership check on resize: the proration credit lands in the CALLER's balance \u2014 downgrade any leaked tenant's object for profit",
+              "title": "No ownership check on resize: the credit lands in the CALLER's balance \u2014 monetize any leaked tenant's object ",
               "severity": "critical",
               "invariant": "I3",
               "status": "verified",
@@ -171,9 +172,9 @@
                 ],
                 "path": "FW-AUDIT-LEAK --(grants preconditions)--> FW-DEPUTY-CREDIT",
                 "severity": "critical",
-                "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's paid period into your own balance."
+                "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance."
               },
-              "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's paid period into your own balance.",
+              "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance.",
               "severity": "critical"
             }
           ],
@@ -206,6 +207,7 @@
             "exploit": {
               "name": "exploit",
               "techniques": {
+                "h_open_vocab": 0.5,
                 "h_hidden_verbs": 0.5,
                 "h_state_guard": 0.5,
                 "h_mass_assign": 0.5,
@@ -276,6 +278,7 @@
             "exploit": {
               "name": "exploit",
               "techniques": {
+                "h_open_vocab": 0.364,
                 "h_hidden_verbs": 0.556,
                 "h_state_guard": 0.556,
                 "h_mass_assign": 0.364,
@@ -288,7 +291,7 @@
                 "h_idor": 0.364
               },
               "insights": 1,
-              "trials": 10
+              "trials": 11
             },
             "verify": {
               "name": "verify",
@@ -331,21 +334,21 @@
             "blackboard": "/home/z/my-project/ra-work/prototypes/swarm-specialists/m0-results/meridian/run1/blackboard.json",
             "traffic": "/home/z/my-project/ra-work/prototypes/swarm-specialists/m0-results/meridian/run1/traffic.jsonl"
           },
-          "wall_s": 3.7
+          "wall_s": 2.9
         },
         "run2": {
           "ok": true,
-          "requests": 374,
+          "requests": 360,
           "statefuzz_sub_budget_requests": null,
           "rounds": 40,
-          "elapsed_s": 6.2,
+          "elapsed_s": 5.5,
           "ledger": {
             "facts": 49,
             "by_kind": {
-              "CONTROL": 14,
+              "CONTROL": 13,
               "OBSERVATION": 12,
               "SURFACE": 1,
-              "HYPOTHESIS": 10,
+              "HYPOTHESIS": 11,
               "FINDING": 11,
               "ESCALATION": 1
             },
@@ -353,9 +356,9 @@
               "orchestrator": 1,
               "recon": 5,
               "surface_mapper": 3,
-              "hypothesis": 10,
+              "hypothesis": 11,
               "exploit": 10,
-              "verify": 11,
+              "verify": 10,
               "access": 1,
               "router": 1,
               "window_driver": 7
@@ -373,10 +376,10 @@
           ],
           "hypothesis_ledger": {
             "stats": {
-              "total": 16,
+              "total": 17,
               "by_status": {
                 "confirmed": 9,
-                "refuted": 3,
+                "refuted": 4,
                 "inconclusive": 2,
                 "tested": 1,
                 "confirmed-by-transcript": 1
@@ -384,13 +387,14 @@
               "by_source": {
                 "window-driver/scan": 4,
                 "window-driver/fresh": 1,
-                "swarm-board/305b07": 10,
-                "deferred-window/305b07": 1
+                "swarm-board/5894f8": 11,
+                "deferred-window/5894f8": 1
               },
               "by_tag": {
                 "marker": 5,
                 "h_idor": 1,
                 "h_fsm": 1,
+                "h_open_vocab": 1,
                 "h_hidden_verbs": 1,
                 "h_state_guard": 1,
                 "h_mass_assign": 1,
@@ -402,7 +406,7 @@
                 "deferred-window": 1
               }
             },
-            "score": 12.75
+            "score": 13.75
           },
           "markers_registered": 5,
           "spawn_events": [],
@@ -440,7 +444,7 @@
             },
             {
               "id": "FW-DEPUTY-CREDIT",
-              "title": "No ownership check on resize: the proration credit lands in the CALLER's balance \u2014 downgrade any leaked tenant's object for profit",
+              "title": "No ownership check on resize: the credit lands in the CALLER's balance \u2014 monetize any leaked tenant's object ",
               "severity": "critical",
               "invariant": "I3",
               "status": "verified",
@@ -500,9 +504,9 @@
                 ],
                 "path": "FW-AUDIT-LEAK --(grants preconditions)--> FW-DEPUTY-CREDIT",
                 "severity": "critical",
-                "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's paid period into your own balance."
+                "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance."
               },
-              "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's paid period into your own balance.",
+              "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance.",
               "severity": "critical"
             }
           ],
@@ -539,6 +543,7 @@
             "exploit": {
               "name": "exploit",
               "techniques": {
+                "h_open_vocab": 0.364,
                 "h_hidden_verbs": 0.556,
                 "h_state_guard": 0.556,
                 "h_mass_assign": 0.364,
@@ -551,7 +556,7 @@
                 "h_idor": 0.364
               },
               "insights": 1,
-              "trials": 10
+              "trials": 11
             },
             "verify": {
               "name": "verify",
@@ -622,6 +627,7 @@
             "exploit": {
               "name": "exploit",
               "techniques": {
+                "h_open_vocab": 0.364,
                 "h_hidden_verbs": 0.6,
                 "h_state_guard": 0.6,
                 "h_mass_assign": 0.364,
@@ -634,7 +640,7 @@
                 "h_idor": 0.286
               },
               "insights": 1,
-              "trials": 19
+              "trials": 20
             },
             "verify": {
               "name": "verify",
@@ -677,7 +683,7 @@
             "blackboard": "/home/z/my-project/ra-work/prototypes/swarm-specialists/m0-results/meridian/run2/blackboard.json",
             "traffic": "/home/z/my-project/ra-work/prototypes/swarm-specialists/m0-results/meridian/run2/traffic.jsonl"
           },
-          "wall_s": 6.2
+          "wall_s": 5.5
         }
       },
       "scoring": {
@@ -740,7 +746,7 @@
             {
               "run": "run1",
               "finding_id": "FW-DEPUTY-CREDIT",
-              "title": "No ownership check on resize: the proration credit lands in the CALLER's balance \u2014 downgrade any leaked tenant's object for profit",
+              "title": "No ownership check on resize: the credit lands in the CALLER's balance \u2014 monetize any leaked tenant's object ",
               "status": "verified",
               "severity": "critical",
               "provenance": [
@@ -760,7 +766,7 @@
             {
               "run": "run2",
               "finding_id": "FW-DEPUTY-CREDIT",
-              "title": "No ownership check on resize: the proration credit lands in the CALLER's balance \u2014 downgrade any leaked tenant's object for profit",
+              "title": "No ownership check on resize: the credit lands in the CALLER's balance \u2014 monetize any leaked tenant's object ",
               "status": "verified",
               "severity": "critical",
               "provenance": [
@@ -878,17 +884,17 @@
       "summaries": {
         "run1": {
           "ok": true,
-          "requests": 214,
+          "requests": 255,
           "statefuzz_sub_budget_requests": 87,
           "rounds": 40,
-          "elapsed_s": 2.4,
+          "elapsed_s": 2.5,
           "ledger": {
-            "facts": 46,
+            "facts": 47,
             "by_kind": {
               "CONTROL": 16,
               "OBSERVATION": 3,
               "SURFACE": 1,
-              "HYPOTHESIS": 9,
+              "HYPOTHESIS": 10,
               "FINDING": 14,
               "ESCALATION": 3
             },
@@ -896,7 +902,7 @@
               "orchestrator": 1,
               "recon": 2,
               "surface_mapper": 2,
-              "hypothesis": 9,
+              "hypothesis": 10,
               "exploit": 7,
               "verify": 14,
               "exploit/statefuzz_spec": 8,
@@ -915,15 +921,15 @@
           ],
           "hypothesis_ledger": {
             "stats": {
-              "total": 19,
+              "total": 20,
               "by_status": {
                 "confirmed-by-transcript": 1,
                 "confirmed": 15,
-                "refuted": 3
+                "refuted": 4
               },
               "by_source": {
-                "swarm-board/6e06ce": 9,
-                "deferred-window/6e06ce": 1,
+                "swarm-board/8eca31": 10,
+                "deferred-window/8eca31": 1,
                 "statefuzz/swarm-embedded": 9
               },
               "by_tag": {
@@ -933,6 +939,7 @@
                 "h_refund": 1,
                 "h_coupon": 1,
                 "h_fsm": 1,
+                "h_open_vocab": 1,
                 "h_mass_assign": 1,
                 "h_arith_cycle": 1,
                 "h_quota_race": 1,
@@ -948,7 +955,7 @@
                 "SF-ASYNC-DBL": 1
               }
             },
-            "score": 18.5
+            "score": 19.5
           },
           "markers_registered": 0,
           "spawn_events": [
@@ -1129,6 +1136,7 @@
             "exploit": {
               "name": "exploit",
               "techniques": {
+                "h_open_vocab": 0.5,
                 "h_mass_assign": 0.5,
                 "h_arith_cycle": 0.5,
                 "h_quota_race": 0.5
@@ -1194,6 +1202,7 @@
             "exploit": {
               "name": "exploit",
               "techniques": {
+                "h_open_vocab": 0.364,
                 "h_mass_assign": 0.364,
                 "h_arith_cycle": 0.364,
                 "h_quota_race": 0.364,
@@ -1205,7 +1214,7 @@
                 "h_refund": 0.556
               },
               "insights": 1,
-              "trials": 9
+              "trials": 10
             },
             "verify": {
               "name": "verify",
@@ -1254,7 +1263,7 @@
             "blackboard": "/home/z/my-project/ra-work/prototypes/swarm-specialists/m0-results/dvlba/run1/blackboard.json",
             "traffic": "/home/z/my-project/ra-work/prototypes/swarm-specialists/m0-results/dvlba/run1/traffic.jsonl"
           },
-          "wall_s": 2.4
+          "wall_s": 2.5
         },
         "run2": {
           "ok": true,
@@ -1263,12 +1272,12 @@
           "rounds": 40,
           "elapsed_s": 2.4,
           "ledger": {
-            "facts": 46,
+            "facts": 47,
             "by_kind": {
               "CONTROL": 16,
               "OBSERVATION": 3,
               "SURFACE": 1,
-              "HYPOTHESIS": 9,
+              "HYPOTHESIS": 10,
               "FINDING": 14,
               "ESCALATION": 3
             },
@@ -1276,7 +1285,7 @@
               "orchestrator": 1,
               "recon": 2,
               "surface_mapper": 2,
-              "hypothesis": 9,
+              "hypothesis": 10,
               "exploit": 7,
               "verify": 14,
               "exploit/statefuzz_spec": 8,
@@ -1295,15 +1304,15 @@
           ],
           "hypothesis_ledger": {
             "stats": {
-              "total": 19,
+              "total": 20,
               "by_status": {
                 "confirmed-by-transcript": 1,
                 "confirmed": 15,
-                "refuted": 3
+                "refuted": 4
               },
               "by_source": {
-                "swarm-board/799439": 9,
-                "deferred-window/799439": 1,
+                "swarm-board/ea3e50": 10,
+                "deferred-window/ea3e50": 1,
                 "statefuzz/swarm-embedded": 9
               },
               "by_tag": {
@@ -1313,6 +1322,7 @@
                 "h_refund": 1,
                 "h_coupon": 1,
                 "h_fsm": 1,
+                "h_open_vocab": 1,
                 "h_mass_assign": 1,
                 "h_arith_cycle": 1,
                 "h_quota_race": 1,
@@ -1328,7 +1338,7 @@
                 "SF-ASYNC-DBL": 1
               }
             },
-            "score": 18.5
+            "score": 19.5
           },
           "markers_registered": 0,
           "spawn_events": [
@@ -1513,6 +1523,7 @@
             "exploit": {
               "name": "exploit",
               "techniques": {
+                "h_open_vocab": 0.364,
                 "h_mass_assign": 0.364,
                 "h_arith_cycle": 0.364,
                 "h_quota_race": 0.364,
@@ -1524,7 +1535,7 @@
                 "h_refund": 0.556
               },
               "insights": 1,
-              "trials": 9
+              "trials": 10
             },
             "verify": {
               "name": "verify",
@@ -1601,6 +1612,7 @@
             "exploit": {
               "name": "exploit",
               "techniques": {
+                "h_open_vocab": 0.364,
                 "h_mass_assign": 0.364,
                 "h_arith_cycle": 0.364,
                 "h_quota_race": 0.364,
@@ -1612,7 +1624,7 @@
                 "h_refund": 0.6
               },
               "insights": 1,
-              "trials": 15
+              "trials": 16
             },
             "verify": {
               "name": "verify",

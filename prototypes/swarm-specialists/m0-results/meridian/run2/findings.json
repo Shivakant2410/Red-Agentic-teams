@@ -1,9 +1,9 @@
 {
   "tool": "swarm",
-  "version": "0.4.0-m1",
-  "generated": "2026-11-06T15:23:36+0000",
-  "elapsed_s": 6.2,
-  "requests": 374,
+  "version": "0.5.0-m2",
+  "generated": "2026-11-07T02:55:51+0000",
+  "elapsed_s": 5.5,
+  "requests": 360,
   "statefuzz_sub_budget_requests": null,
   "rounds": 40,
   "roster": [
@@ -22,10 +22,10 @@
   "ledger": {
     "facts": 49,
     "by_kind": {
-      "CONTROL": 14,
+      "CONTROL": 13,
       "OBSERVATION": 12,
       "SURFACE": 1,
-      "HYPOTHESIS": 10,
+      "HYPOTHESIS": 11,
       "FINDING": 11,
       "ESCALATION": 1
     },
@@ -33,9 +33,9 @@
       "orchestrator": 1,
       "recon": 5,
       "surface_mapper": 3,
-      "hypothesis": 10,
+      "hypothesis": 11,
       "exploit": 10,
-      "verify": 11,
+      "verify": 10,
       "access": 1,
       "router": 1,
       "window_driver": 7
@@ -43,10 +43,10 @@
   },
   "hypothesis_ledger": {
     "stats": {
-      "total": 16,
+      "total": 17,
       "by_status": {
         "confirmed": 9,
-        "refuted": 3,
+        "refuted": 4,
         "inconclusive": 2,
         "tested": 1,
         "confirmed-by-transcript": 1
@@ -54,13 +54,14 @@
       "by_source": {
         "window-driver/scan": 4,
         "window-driver/fresh": 1,
-        "swarm-board/305b07": 10,
-        "deferred-window/305b07": 1
+        "swarm-board/5894f8": 11,
+        "deferred-window/5894f8": 1
       },
       "by_tag": {
         "marker": 5,
         "h_idor": 1,
         "h_fsm": 1,
+        "h_open_vocab": 1,
         "h_hidden_verbs": 1,
         "h_state_guard": 1,
         "h_mass_assign": 1,
@@ -72,7 +73,7 @@
         "deferred-window": 1
       }
     },
-    "score": 12.75
+    "score": 13.75
   },
   "memory_before": {
     "recon": {
@@ -107,6 +108,7 @@
     "exploit": {
       "name": "exploit",
       "techniques": {
+        "h_open_vocab": 0.364,
         "h_hidden_verbs": 0.556,
         "h_state_guard": 0.556,
         "h_mass_assign": 0.364,
@@ -119,7 +121,7 @@
         "h_idor": 0.364
       },
       "insights": 1,
-      "trials": 10
+      "trials": 11
     },
     "verify": {
       "name": "verify",
@@ -190,6 +192,7 @@
     "exploit": {
       "name": "exploit",
       "techniques": {
+        "h_open_vocab": 0.364,
         "h_hidden_verbs": 0.6,
         "h_state_guard": 0.6,
         "h_mass_assign": 0.364,
@@ -202,7 +205,7 @@
         "h_idor": 0.286
       },
       "insights": 1,
-      "trials": 19
+      "trials": 20
     },
     "verify": {
       "name": "verify",
@@ -285,7 +288,7 @@
         "h_state_guard"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0074"
+        "SF-EXPLOIT-0078"
       ]
     },
     {
@@ -300,7 +303,7 @@
         "endpoint": "POST /api/vaults/{vault_id}/resize (terminal-state)",
         "evidence": [
           {
-            "canceled_object": "VLT-67bb261d52",
+            "canceled_object": "VLT-710037175a",
             "verb": "resize",
             "status": 200,
             "credit_after_terminal": 100,
@@ -330,7 +333,7 @@
         "h_state_guard"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0075"
+        "SF-EXPLOIT-0079"
       ]
     },
     {
@@ -345,8 +348,8 @@
         "endpoint": "GET /api/audit",
         "evidence": [
           {
-            "victim": "xtv-95-610103",
-            "leaked_id": "VLT-e8b46e396c",
+            "victim": "xtv-95-145783",
+            "leaked_id": "VLT-158276c1cc",
             "leak_path": "/api/audit"
           }
         ],
@@ -372,13 +375,13 @@
         "h_cross_tenant"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0078"
+        "SF-EXPLOIT-0082"
       ]
     },
     {
       "finding": {
         "id": "FW-DEPUTY-CREDIT",
-        "title": "No ownership check on resize: the proration credit lands in the CALLER's balance \u2014 downgrade any leaked tenant's object for profit",
+        "title": "No ownership check on resize: the credit lands in the CALLER's balance \u2014 monetize any leaked tenant's object ",
         "severity": "critical",
         "invariant": "I3",
         "operators": [
@@ -387,10 +390,15 @@
         "endpoint": "POST /api/vaults/{vault_id}/resize (cross-tenant)",
         "evidence": [
           {
-            "victim": "xtv-95-610103",
-            "attacker": "xta-98-610108",
-            "object": "VLT-e8b46e396c",
+            "victim": "xtv-95-145783",
+            "attacker": "xta-98-145788",
+            "object": "VLT-158276c1cc",
             "attacker_gain": 99,
+            "verb": "resize",
+            "body": {
+              "target_cents": 1
+            },
+            "discovered_verb": false,
             "obtained_via": "/api/audit"
           }
         ],
@@ -398,7 +406,7 @@
           "knowledge of any vault identifier"
         ],
         "grants": [
-          "drain any tenant's paid period into your own balance"
+          "drain any tenant's object value into your own balance"
         ],
         "reproduction": [],
         "confidence": "high"
@@ -416,7 +424,7 @@
         "h_cross_tenant"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0079"
+        "SF-EXPLOIT-0083"
       ]
     },
     {
@@ -435,7 +443,7 @@
             "drained_during_window": 250000,
             "settled_amount": 125000,
             "final_balance": -125000,
-            "event": "/api/events/EV-23ebcc1f79bf"
+            "event": "/api/events/EV-a13af65cec92"
           }
         ],
         "preconditions": [
@@ -461,7 +469,7 @@
         "h_async_toctou"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0082"
+        "SF-EXPLOIT-0086"
       ]
     },
     {
@@ -476,7 +484,7 @@
         "endpoint": "POST /api/payouts/{payout_id}/cancel",
         "evidence": [
           {
-            "payout": "PAY-a4c7086b3b",
+            "payout": "PAY-adf16b13b8",
             "amount": 83333,
             "settled_debit": 83333,
             "cancel_credit": 83333,
@@ -497,7 +505,7 @@
       "status": "verified",
       "verification": {
         "by": "verify",
-        "method": "fresh replay: cancel after settle refunded 83333",
+        "method": "fresh replay: cancel after settle refunded 125000",
         "independent_principals": []
       },
       "provenance": [
@@ -509,10 +517,10 @@
         "h_window_driver"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0084",
-        "SF-WINDOW_DRIVER-0096",
-        "SF-WINDOW_DRIVER-0097",
-        "SF-WINDOW_DRIVER-0098"
+        "SF-EXPLOIT-0088",
+        "SF-WINDOW_DRIVER-0100",
+        "SF-WINDOW_DRIVER-0101",
+        "SF-WINDOW_DRIVER-0102"
       ]
     },
     {
@@ -556,7 +564,7 @@
         "h_arith_cycle"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0086"
+        "SF-EXPLOIT-0090"
       ]
     },
     {
@@ -576,14 +584,14 @@
             "successful_claims": 8,
             "advertised_quota": 3,
             "winning_principals": [
-              "qrc0-246-612478",
-              "qrc1-248-612481",
-              "qrc2-250-612484",
-              "qrc3-252-612487",
-              "qrc4-254-612491",
-              "qrc5-256-612494",
-              "qrc6-258-612497",
-              "qrc7-260-612501"
+              "qrc0-244-147923",
+              "qrc1-246-147926",
+              "qrc2-248-147929",
+              "qrc3-250-147932",
+              "qrc4-252-147935",
+              "qrc5-254-147938",
+              "qrc6-256-147941",
+              "qrc7-258-147952"
             ],
             "last_byte_sync": true
           }
@@ -611,7 +619,7 @@
         "h_quota_race"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0088"
+        "SF-EXPLOIT-0092"
       ]
     }
   ],
@@ -625,9 +633,9 @@
         ],
         "path": "FW-AUDIT-LEAK --(grants preconditions)--> FW-DEPUTY-CREDIT",
         "severity": "critical",
-        "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's paid period into your own balance."
+        "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance."
       },
-      "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's paid period into your own balance.",
+      "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance.",
       "severity": "critical"
     }
   ]

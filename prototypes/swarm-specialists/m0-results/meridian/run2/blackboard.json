@@ -3,7 +3,7 @@
     "id": "F-003",
     "kind": "CONTROL",
     "source": "orchestrator",
-    "ts": 1793978609.9428592,
+    "ts": 1794020145.6374369,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -13,10 +13,10 @@
     "derived_from": []
   },
   {
-    "id": "SF-RECON-0055",
+    "id": "SF-RECON-0058",
     "kind": "OBSERVATION",
     "source": "recon",
-    "ts": 1793978609.9451945,
+    "ts": 1794020145.6393545,
     "confidence": 1.0,
     "tags": [
       "route-index"
@@ -122,10 +122,10 @@
     ]
   },
   {
-    "id": "SF-RECON-0056",
+    "id": "SF-RECON-0059",
     "kind": "OBSERVATION",
     "source": "recon",
-    "ts": 1793978609.947072,
+    "ts": 1794020145.6409235,
     "confidence": 1.0,
     "tags": [
       "index"
@@ -142,10 +142,10 @@
     ]
   },
   {
-    "id": "SF-RECON-0057",
+    "id": "SF-RECON-0060",
     "kind": "OBSERVATION",
     "source": "recon",
-    "ts": 1793978609.9487517,
+    "ts": 1794020145.6424928,
     "confidence": 1.0,
     "tags": [
       "robots"
@@ -160,10 +160,10 @@
     ]
   },
   {
-    "id": "SF-RECON-0058",
+    "id": "SF-RECON-0061",
     "kind": "OBSERVATION",
     "source": "recon",
-    "ts": 1793978609.950363,
+    "ts": 1794020145.6439881,
     "confidence": 1.0,
     "tags": [
       "fingerprint"
@@ -177,10 +177,10 @@
     ]
   },
   {
-    "id": "SF-RECON-0059",
+    "id": "SF-RECON-0062",
     "kind": "OBSERVATION",
     "source": "recon",
-    "ts": 1793978609.9608588,
+    "ts": 1794020145.653055,
     "confidence": 1.0,
     "tags": [
       "paths"
@@ -196,10 +196,10 @@
     ]
   },
   {
-    "id": "SF-SURFACE_MAPPER-0060",
+    "id": "SF-SURFACE_MAPPER-0063",
     "kind": "SURFACE",
     "source": "surface_mapper",
-    "ts": 1793978609.962626,
+    "ts": 1794020145.6545894,
     "confidence": 1.0,
     "tags": [
       "surface"
@@ -367,14 +367,14 @@
       "source": "route-index"
     },
     "derived_from": [
-      "SF-RECON-0055"
+      "SF-RECON-0058"
     ]
   },
   {
-    "id": "SF-SURFACE_MAPPER-0061",
+    "id": "SF-SURFACE_MAPPER-0064",
     "kind": "OBSERVATION",
     "source": "surface_mapper",
-    "ts": 1793978609.962632,
+    "ts": 1794020145.6545956,
     "confidence": 1.0,
     "tags": [
       "auth-boundary"
@@ -384,14 +384,14 @@
       "evidence": "anon GET /api/audit -> 401"
     },
     "derived_from": [
-      "SF-RECON-0055"
+      "SF-RECON-0058"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0062",
+    "id": "SF-HYPOTHESIS-0065",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978609.9627287,
+    "ts": 1794020145.6547022,
     "confidence": 0.6,
     "tags": [
       "h_idor"
@@ -405,14 +405,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0063",
+    "id": "SF-HYPOTHESIS-0066",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978609.9627318,
+    "ts": 1794020145.6547055,
     "confidence": 0.7,
     "tags": [
       "h_fsm"
@@ -426,14 +426,35 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0064",
+    "id": "SF-HYPOTHESIS-0067",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978609.9627337,
+    "ts": 1794020145.6547077,
+    "confidence": 0.55,
+    "tags": [
+      "h_open_vocab"
+    ],
+    "payload": {
+      "tag": "h_open_vocab",
+      "title": "The live surface may hold value resources, verbs and read-backs the stale document never mentioned",
+      "prior": 0.55,
+      "test_plan": "probe the open noun/verb/subpath vocabularies against the live target; fold every fact into a revised surface",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0063"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0068",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794020145.65471,
     "confidence": 0.4,
     "tags": [
       "h_hidden_verbs"
@@ -447,14 +468,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0065",
+    "id": "SF-HYPOTHESIS-0069",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978609.962736,
+    "ts": 1794020145.6547117,
     "confidence": 0.55,
     "tags": [
       "h_state_guard"
@@ -468,14 +489,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0066",
+    "id": "SF-HYPOTHESIS-0070",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978609.9627373,
+    "ts": 1794020145.654714,
     "confidence": 0.5,
     "tags": [
       "h_mass_assign"
@@ -489,14 +510,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0067",
+    "id": "SF-HYPOTHESIS-0071",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978609.9627395,
+    "ts": 1794020145.654716,
     "confidence": 0.5,
     "tags": [
       "h_cross_tenant"
@@ -510,14 +531,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0068",
+    "id": "SF-HYPOTHESIS-0072",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978609.9627411,
+    "ts": 1794020145.6547177,
     "confidence": 0.55,
     "tags": [
       "h_async_toctou"
@@ -531,14 +552,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0069",
+    "id": "SF-HYPOTHESIS-0073",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978609.962743,
+    "ts": 1794020145.6547196,
     "confidence": 0.5,
     "tags": [
       "h_terminal_credit"
@@ -552,14 +573,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0070",
+    "id": "SF-HYPOTHESIS-0074",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978609.9627452,
+    "ts": 1794020145.6547215,
     "confidence": 0.45,
     "tags": [
       "h_arith_cycle"
@@ -573,14 +594,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0071",
+    "id": "SF-HYPOTHESIS-0075",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978609.962747,
+    "ts": 1794020145.655042,
     "confidence": 0.5,
     "tags": [
       "h_quota_race"
@@ -594,14 +615,14 @@
       "status": "open"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0072",
+    "id": "SF-EXPLOIT-0076",
     "kind": "CONTROL",
     "source": "exploit",
-    "ts": 1793978609.975695,
+    "ts": 1794020145.6661248,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -609,14 +630,14 @@
       "reason": "surface has no checkout lifecycle; statefuzz_run probes are dvlba-shaped (generalization gap)"
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0063"
+      "SF-HYPOTHESIS-0066"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0073",
+    "id": "SF-EXPLOIT-0077",
     "kind": "OBSERVATION",
     "source": "exploit",
-    "ts": 1793978610.0286796,
+    "ts": 1794020145.7140605,
     "confidence": 1.0,
     "tags": [
       "h_hidden_verbs"
@@ -636,14 +657,14 @@
       ]
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0064"
+      "SF-HYPOTHESIS-0068"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0074",
+    "id": "SF-EXPLOIT-0078",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978610.0560277,
+    "ts": 1794020145.7393851,
     "confidence": 0.9,
     "tags": [
       "h_state_guard",
@@ -689,14 +710,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0065"
+      "SF-HYPOTHESIS-0069"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0075",
+    "id": "SF-EXPLOIT-0079",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978610.0560322,
+    "ts": 1794020145.7393897,
     "confidence": 0.9,
     "tags": [
       "h_state_guard",
@@ -714,7 +735,7 @@
         "endpoint": "POST /api/vaults/{vault_id}/resize (terminal-state)",
         "evidence": [
           {
-            "canceled_object": "VLT-67bb261d52",
+            "canceled_object": "VLT-710037175a",
             "verb": "resize",
             "status": 200,
             "credit_after_terminal": 100,
@@ -740,14 +761,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0065"
+      "SF-HYPOTHESIS-0069"
     ]
   },
   {
-    "id": "SF-VERIFY-0076",
+    "id": "SF-VERIFY-0080",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978610.0799093,
+    "ts": 1794020145.7617948,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -757,14 +778,14 @@
       "technique": "h_state_guard"
     },
     "derived_from": [
-      "SF-EXPLOIT-0074"
+      "SF-EXPLOIT-0078"
     ]
   },
   {
-    "id": "SF-VERIFY-0077",
+    "id": "SF-VERIFY-0081",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978610.1036,
+    "ts": 1794020145.783697,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -774,14 +795,14 @@
       "technique": "h_state_guard"
     },
     "derived_from": [
-      "SF-EXPLOIT-0075"
+      "SF-EXPLOIT-0079"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0078",
+    "id": "SF-EXPLOIT-0082",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978610.1222892,
+    "ts": 1794020145.8010304,
     "confidence": 0.9,
     "tags": [
       "h_cross_tenant",
@@ -799,8 +820,8 @@
         "endpoint": "GET /api/audit",
         "evidence": [
           {
-            "victim": "xtv-95-610103",
-            "leaked_id": "VLT-e8b46e396c",
+            "victim": "xtv-95-145783",
+            "leaked_id": "VLT-158276c1cc",
             "leak_path": "/api/audit"
           }
         ],
@@ -822,14 +843,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0067"
+      "SF-HYPOTHESIS-0071"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0079",
+    "id": "SF-EXPLOIT-0083",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978610.1222942,
+    "ts": 1794020145.801035,
     "confidence": 0.9,
     "tags": [
       "h_cross_tenant",
@@ -838,7 +859,7 @@
     "payload": {
       "finding": {
         "id": "FW-DEPUTY-CREDIT",
-        "title": "No ownership check on resize: the proration credit lands in the CALLER's balance \u2014 downgrade any leaked tenant's object for profit",
+        "title": "No ownership check on resize: the credit lands in the CALLER's balance \u2014 monetize any leaked tenant's object ",
         "severity": "critical",
         "invariant": "I3",
         "operators": [
@@ -847,10 +868,15 @@
         "endpoint": "POST /api/vaults/{vault_id}/resize (cross-tenant)",
         "evidence": [
           {
-            "victim": "xtv-95-610103",
-            "attacker": "xta-98-610108",
-            "object": "VLT-e8b46e396c",
+            "victim": "xtv-95-145783",
+            "attacker": "xta-98-145788",
+            "object": "VLT-158276c1cc",
             "attacker_gain": 99,
+            "verb": "resize",
+            "body": {
+              "target_cents": 1
+            },
+            "discovered_verb": false,
             "obtained_via": "/api/audit"
           }
         ],
@@ -858,7 +884,7 @@
           "knowledge of any vault identifier"
         ],
         "grants": [
-          "drain any tenant's paid period into your own balance"
+          "drain any tenant's object value into your own balance"
         ],
         "reproduction": [],
         "confidence": "high"
@@ -872,14 +898,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0067"
+      "SF-HYPOTHESIS-0071"
     ]
   },
   {
-    "id": "SF-VERIFY-0080",
+    "id": "SF-VERIFY-0084",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978610.140135,
+    "ts": 1794020145.817637,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -889,14 +915,14 @@
       "technique": "h_cross_tenant"
     },
     "derived_from": [
-      "SF-EXPLOIT-0078"
+      "SF-EXPLOIT-0082"
     ]
   },
   {
-    "id": "SF-VERIFY-0081",
+    "id": "SF-VERIFY-0085",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978610.15847,
+    "ts": 1794020145.8342953,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -906,14 +932,14 @@
       "technique": "h_cross_tenant"
     },
     "derived_from": [
-      "SF-EXPLOIT-0079"
+      "SF-EXPLOIT-0083"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0082",
+    "id": "SF-EXPLOIT-0086",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978611.1073117,
+    "ts": 1794020146.3670068,
     "confidence": 0.9,
     "tags": [
       "h_async_toctou",
@@ -935,7 +961,7 @@
             "drained_during_window": 250000,
             "settled_amount": 125000,
             "final_balance": -125000,
-            "event": "/api/events/EV-23ebcc1f79bf"
+            "event": "/api/events/EV-a13af65cec92"
           }
         ],
         "preconditions": [
@@ -957,14 +983,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0068"
+      "SF-HYPOTHESIS-0072"
     ]
   },
   {
-    "id": "SF-VERIFY-0083",
+    "id": "SF-VERIFY-0087",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978611.6456182,
+    "ts": 1794020147.2046745,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -974,14 +1000,14 @@
       "technique": "h_async_toctou"
     },
     "derived_from": [
-      "SF-EXPLOIT-0082"
+      "SF-EXPLOIT-0086"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0084",
+    "id": "SF-EXPLOIT-0088",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978611.6670802,
+    "ts": 1794020147.2241824,
     "confidence": 0.9,
     "tags": [
       "h_terminal_credit",
@@ -999,7 +1025,7 @@
         "endpoint": "POST /api/payouts/{payout_id}/cancel",
         "evidence": [
           {
-            "payout": "PAY-a4c7086b3b",
+            "payout": "PAY-adf16b13b8",
             "amount": 83333,
             "settled_debit": 83333,
             "cancel_credit": 83333,
@@ -1026,14 +1052,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0069"
+      "SF-HYPOTHESIS-0073"
     ]
   },
   {
-    "id": "SF-VERIFY-0085",
+    "id": "SF-VERIFY-0089",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978612.4055781,
+    "ts": 1794020147.854085,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -1043,14 +1069,14 @@
       "technique": "h_terminal_credit"
     },
     "derived_from": [
-      "SF-EXPLOIT-0084"
+      "SF-EXPLOIT-0088"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0086",
+    "id": "SF-EXPLOIT-0090",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978612.4421332,
+    "ts": 1794020147.8872774,
     "confidence": 0.9,
     "tags": [
       "h_arith_cycle",
@@ -1093,14 +1119,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0070"
+      "SF-HYPOTHESIS-0074"
     ]
   },
   {
-    "id": "SF-VERIFY-0087",
+    "id": "SF-VERIFY-0091",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978612.4780645,
+    "ts": 1794020147.9229424,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -1110,14 +1136,14 @@
       "technique": "h_arith_cycle"
     },
     "derived_from": [
-      "SF-EXPLOIT-0086"
+      "SF-EXPLOIT-0090"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0088",
+    "id": "SF-EXPLOIT-0092",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978612.528738,
+    "ts": 1794020147.9774766,
     "confidence": 0.9,
     "tags": [
       "h_quota_race",
@@ -1140,14 +1166,14 @@
             "successful_claims": 8,
             "advertised_quota": 3,
             "winning_principals": [
-              "qrc0-246-612478",
-              "qrc1-248-612481",
-              "qrc2-250-612484",
-              "qrc3-252-612487",
-              "qrc4-254-612491",
-              "qrc5-256-612494",
-              "qrc6-258-612497",
-              "qrc7-260-612501"
+              "qrc0-244-147923",
+              "qrc1-246-147926",
+              "qrc2-248-147929",
+              "qrc3-250-147932",
+              "qrc4-252-147935",
+              "qrc5-254-147938",
+              "qrc6-256-147941",
+              "qrc7-258-147952"
             ],
             "last_byte_sync": true
           }
@@ -1171,14 +1197,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0071"
+      "SF-HYPOTHESIS-0075"
     ]
   },
   {
-    "id": "SF-VERIFY-0089",
+    "id": "SF-VERIFY-0093",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978612.5707283,
+    "ts": 1794020148.016311,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -1188,14 +1214,14 @@
       "technique": "h_quota_race"
     },
     "derived_from": [
-      "SF-EXPLOIT-0088"
+      "SF-EXPLOIT-0092"
     ]
   },
   {
-    "id": "SF-ACCESS-0090",
+    "id": "SF-ACCESS-0094",
     "kind": "ESCALATION",
     "source": "access",
-    "ts": 1793978612.5708709,
+    "ts": 1794020148.0164363,
     "confidence": 1.0,
     "tags": [
       "chain",
@@ -1210,9 +1236,9 @@
         ],
         "path": "FW-AUDIT-LEAK --(grants preconditions)--> FW-DEPUTY-CREDIT",
         "severity": "critical",
-        "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's paid period into your own balance."
+        "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance."
       },
-      "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's paid period into your own balance.",
+      "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance.",
       "severity": "critical",
       "members": [
         "FW-AUDIT-LEAK",
@@ -1220,15 +1246,15 @@
       ]
     },
     "derived_from": [
-      "SF-EXPLOIT-0078",
-      "SF-EXPLOIT-0079"
+      "SF-EXPLOIT-0082",
+      "SF-EXPLOIT-0083"
     ]
   },
   {
-    "id": "SF-SURFACE_MAPPER-0091",
+    "id": "SF-SURFACE_MAPPER-0095",
     "kind": "OBSERVATION",
     "source": "surface_mapper",
-    "ts": 1793978612.5712998,
+    "ts": 1794020148.0168602,
     "confidence": 1.0,
     "tags": [
       "robots-parsed"
@@ -1237,27 +1263,27 @@
       "note": "robots parsed; no new scope"
     },
     "derived_from": [
-      "SF-RECON-0057"
+      "SF-RECON-0060"
     ]
   },
   {
     "id": "F-004",
     "kind": "CONTROL",
     "source": "router",
-    "ts": 1793978612.571319,
+    "ts": 1794020148.0168784,
     "confidence": 1.0,
     "tags": [],
     "payload": {
       "event": "stall-escalate",
-      "round": 31
+      "round": 32
     },
     "derived_from": []
   },
   {
-    "id": "SF-WINDOW_DRIVER-0092",
+    "id": "SF-WINDOW_DRIVER-0096",
     "kind": "OBSERVATION",
     "source": "window_driver",
-    "ts": 1793978612.5732448,
+    "ts": 1794020148.0187232,
     "confidence": 1.0,
     "tags": [
       "async-opened",
@@ -1265,25 +1291,25 @@
     ],
     "payload": {
       "async_opened": {
-        "event_path": "/api/events/EV-ec4e8d3e304d",
+        "event_path": "/api/events/EV-f076ae912929",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-045d2653fb",
+        "object_id": "PAY-f8a616f5c6",
         "amount": 500,
         "amount_field": "amount_cents",
-        "principal": "hdv-18-609975"
+        "principal": "hdv-18-145666"
       },
       "evidence": "auto-registered from traffic scan (202/event shape)"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-WINDOW_DRIVER-0093",
+    "id": "SF-WINDOW_DRIVER-0097",
     "kind": "OBSERVATION",
     "source": "window_driver",
-    "ts": 1793978612.5732596,
+    "ts": 1794020148.0187376,
     "confidence": 1.0,
     "tags": [
       "async-opened",
@@ -1291,25 +1317,25 @@
     ],
     "payload": {
       "async_opened": {
-        "event_path": "/api/events/EV-23ebcc1f79bf",
+        "event_path": "/api/events/EV-a13af65cec92",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-8dddff297d",
+        "object_id": "PAY-b6e70eb17a",
         "amount": 125000,
         "amount_field": "amount_cents",
-        "principal": "toc-131-610163"
+        "principal": "toc-131-145838"
       },
       "evidence": "auto-registered from traffic scan (202/event shape)"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-WINDOW_DRIVER-0094",
+    "id": "SF-WINDOW_DRIVER-0098",
     "kind": "OBSERVATION",
     "source": "window_driver",
-    "ts": 1793978612.5732675,
+    "ts": 1794020148.0187454,
     "confidence": 1.0,
     "tags": [
       "async-opened",
@@ -1317,25 +1343,25 @@
     ],
     "payload": {
       "async_opened": {
-        "event_path": "/api/events/EV-49fa63d24df2",
+        "event_path": "/api/events/EV-495dbedf6b0f",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-a4c7086b3b",
+        "object_id": "PAY-adf16b13b8",
         "amount": 83333,
         "amount_field": "amount_cents",
-        "principal": "tcm-171-611645"
+        "principal": "tcm-170-147204"
       },
       "evidence": "auto-registered from traffic scan (202/event shape)"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-WINDOW_DRIVER-0095",
+    "id": "SF-WINDOW_DRIVER-0099",
     "kind": "OBSERVATION",
     "source": "window_driver",
-    "ts": 1793978612.5732732,
+    "ts": 1794020148.018751,
     "confidence": 1.0,
     "tags": [
       "async-opened",
@@ -1343,25 +1369,25 @@
     ],
     "payload": {
       "async_opened": {
-        "event_path": "/api/events/EV-82757d8be06b",
+        "event_path": "/api/events/EV-b48b6b367554",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-d514e74dbd",
+        "object_id": "PAY-0dd76559dc",
         "amount": 100,
         "amount_field": "amount_cents",
-        "principal": "cyc-202-612405"
+        "principal": "cyc-200-147854"
       },
       "evidence": "auto-registered from traffic scan (202/event shape)"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-WINDOW_DRIVER-0096",
+    "id": "SF-WINDOW_DRIVER-0100",
     "kind": "FINDING",
     "source": "window_driver",
-    "ts": 1793978613.4347243,
+    "ts": 1794020149.0747266,
     "confidence": 0.9,
     "tags": [
       "h_window_driver",
@@ -1379,12 +1405,12 @@
         "endpoint": "POST /api/payouts/{id}/cancel",
         "evidence": [
           {
-            "payout": "PAY-045d2653fb",
+            "payout": "PAY-f8a616f5c6",
             "amount": 500,
             "settled_status": null,
             "post_settle_wallet": 249500,
             "cancel_credit": 500,
-            "event": "/api/events/EV-ec4e8d3e304d",
+            "event": "/api/events/EV-f076ae912929",
             "resource": "payouts",
             "create_path": "/api/payouts",
             "amount_field": "amount_cents"
@@ -1409,14 +1435,14 @@
       }
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-WINDOW_DRIVER-0097",
+    "id": "SF-WINDOW_DRIVER-0101",
     "kind": "FINDING",
     "source": "window_driver",
-    "ts": 1793978613.4347317,
+    "ts": 1794020149.0747316,
     "confidence": 0.9,
     "tags": [
       "h_window_driver",
@@ -1434,12 +1460,12 @@
         "endpoint": "POST /api/payouts/{id}/cancel",
         "evidence": [
           {
-            "payout": "PAY-8dddff297d",
+            "payout": "PAY-b6e70eb17a",
             "amount": 125000,
             "settled_status": null,
             "post_settle_wallet": -125000,
             "cancel_credit": 125000,
-            "event": "/api/events/EV-23ebcc1f79bf",
+            "event": "/api/events/EV-a13af65cec92",
             "resource": "payouts",
             "create_path": "/api/payouts",
             "amount_field": "amount_cents"
@@ -1464,14 +1490,14 @@
       }
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-WINDOW_DRIVER-0098",
+    "id": "SF-WINDOW_DRIVER-0102",
     "kind": "FINDING",
     "source": "window_driver",
-    "ts": 1793978613.4347336,
+    "ts": 1794020149.0747335,
     "confidence": 0.9,
     "tags": [
       "h_window_driver",
@@ -1489,12 +1515,12 @@
         "endpoint": "POST /api/payouts/{id}/cancel",
         "evidence": [
           {
-            "payout": "PAY-a4c7086b3b",
+            "payout": "PAY-adf16b13b8",
             "amount": 83333,
             "settled_status": null,
             "post_settle_wallet": 250000,
             "cancel_credit": 83333,
-            "event": "/api/events/EV-49fa63d24df2",
+            "event": "/api/events/EV-495dbedf6b0f",
             "resource": "payouts",
             "create_path": "/api/payouts",
             "amount_field": "amount_cents"
@@ -1510,23 +1536,18 @@
         "reproduction": [],
         "confidence": "high"
       },
-      "status": "verified",
-      "technique": "h_window_driver",
-      "verification": {
-        "by": "verify",
-        "method": "fresh replay: cancel after settle refunded 83333",
-        "independent_principals": []
-      }
+      "status": "candidate",
+      "technique": "h_window_driver"
     },
     "derived_from": [
-      "SF-SURFACE_MAPPER-0060"
+      "SF-SURFACE_MAPPER-0063"
     ]
   },
   {
-    "id": "SF-VERIFY-0099",
+    "id": "SF-VERIFY-0103",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978614.2718265,
+    "ts": 1794020150.1098435,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -1536,14 +1557,14 @@
       "technique": "h_window_driver"
     },
     "derived_from": [
-      "SF-WINDOW_DRIVER-0096"
+      "SF-WINDOW_DRIVER-0100"
     ]
   },
   {
-    "id": "SF-VERIFY-0100",
+    "id": "SF-VERIFY-0104",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978615.1010604,
+    "ts": 1794020151.136293,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -1553,24 +1574,7 @@
       "technique": "h_window_driver"
     },
     "derived_from": [
-      "SF-WINDOW_DRIVER-0097"
-    ]
-  },
-  {
-    "id": "SF-VERIFY-0101",
-    "kind": "CONTROL",
-    "source": "verify",
-    "ts": 1793978616.1321359,
-    "confidence": 1.0,
-    "tags": [],
-    "payload": {
-      "event": "finding_verified",
-      "finding_id": "FW-SETTLED-CANCEL",
-      "status": "verified",
-      "technique": "h_window_driver"
-    },
-    "derived_from": [
-      "SF-WINDOW_DRIVER-0098"
+      "SF-WINDOW_DRIVER-0101"
     ]
   }
 ]

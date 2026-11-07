@@ -1,9 +1,9 @@
 {
   "tool": "swarm",
-  "version": "0.4.0-m1",
-  "generated": "2026-11-06T15:23:38+0000",
-  "elapsed_s": 2.4,
-  "requests": 214,
+  "version": "0.5.0-m2",
+  "generated": "2026-11-07T02:55:54+0000",
+  "elapsed_s": 2.5,
+  "requests": 255,
   "statefuzz_sub_budget_requests": 87,
   "rounds": 40,
   "roster": [
@@ -26,12 +26,12 @@
   "llm_seam_calls": [],
   "markers_registered": 0,
   "ledger": {
-    "facts": 46,
+    "facts": 47,
     "by_kind": {
       "CONTROL": 16,
       "OBSERVATION": 3,
       "SURFACE": 1,
-      "HYPOTHESIS": 9,
+      "HYPOTHESIS": 10,
       "FINDING": 14,
       "ESCALATION": 3
     },
@@ -39,7 +39,7 @@
       "orchestrator": 1,
       "recon": 2,
       "surface_mapper": 2,
-      "hypothesis": 9,
+      "hypothesis": 10,
       "exploit": 7,
       "verify": 14,
       "exploit/statefuzz_spec": 8,
@@ -48,15 +48,15 @@
   },
   "hypothesis_ledger": {
     "stats": {
-      "total": 19,
+      "total": 20,
       "by_status": {
         "confirmed-by-transcript": 1,
         "confirmed": 15,
-        "refuted": 3
+        "refuted": 4
       },
       "by_source": {
-        "swarm-board/6e06ce": 9,
-        "deferred-window/6e06ce": 1,
+        "swarm-board/8eca31": 10,
+        "deferred-window/8eca31": 1,
         "statefuzz/swarm-embedded": 9
       },
       "by_tag": {
@@ -66,6 +66,7 @@
         "h_refund": 1,
         "h_coupon": 1,
         "h_fsm": 1,
+        "h_open_vocab": 1,
         "h_mass_assign": 1,
         "h_arith_cycle": 1,
         "h_quota_race": 1,
@@ -81,7 +82,7 @@
         "SF-ASYNC-DBL": 1
       }
     },
-    "score": 18.5
+    "score": 19.5
   },
   "memory_before": {
     "recon": {
@@ -112,6 +113,7 @@
     "exploit": {
       "name": "exploit",
       "techniques": {
+        "h_open_vocab": 0.5,
         "h_mass_assign": 0.5,
         "h_arith_cycle": 0.5,
         "h_quota_race": 0.5
@@ -177,6 +179,7 @@
     "exploit": {
       "name": "exploit",
       "techniques": {
+        "h_open_vocab": 0.364,
         "h_mass_assign": 0.364,
         "h_arith_cycle": 0.364,
         "h_quota_race": 0.364,
@@ -188,7 +191,7 @@
         "h_refund": 0.556
       },
       "insights": 1,
-      "trials": 9
+      "trials": 10
     },
     "verify": {
       "name": "verify",
@@ -332,7 +335,7 @@
         "h_race"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0115"
+        "SF-EXPLOIT-0119"
       ]
     },
     {
@@ -352,7 +355,7 @@
             "wallet_after": 1129900,
             "order_total": 129900,
             "callback": {
-              "marker": "ee87939bbdb0",
+              "marker": "0b7fecd397f7",
               "refund_cents": 129900,
               "status": "done"
             },
@@ -378,8 +381,8 @@
         "by": "verify",
         "method": "double refund credited twice",
         "independent_principals": [
-          "verify-6e06ce-15",
-          "verify-6e06ce-16"
+          "verify-8eca31-15",
+          "verify-8eca31-16"
         ]
       },
       "provenance": [
@@ -391,8 +394,8 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0117",
-        "SF-EXPLOIT-STATEF-0134"
+        "SF-EXPLOIT-0121",
+        "SF-EXPLOIT-STATEF-0138"
       ]
     },
     {
@@ -408,18 +411,18 @@
         "evidence": [
           {
             "method": "GET",
-            "path": "/api/orders/ORD-53f7c62f",
-            "principal": "atk-6e06ce-3",
+            "path": "/api/orders/ORD-e71deda8",
+            "principal": "atk-8eca31-3",
             "status": 200,
-            "owner": "own-6e06ce-2",
+            "owner": "own-8eca31-2",
             "violation": {
               "invariant": "I3",
               "assertion": "caller == object.owner",
               "observed": {
-                "caller": "atk-6e06ce-3",
-                "owner": "own-6e06ce-2"
+                "caller": "atk-8eca31-3",
+                "owner": "own-8eca31-2"
               },
-              "detail": "atk-6e06ce-3 accessed order owned by own-6e06ce-2"
+              "detail": "atk-8eca31-3 accessed order owned by own-8eca31-2"
             }
           }
         ],
@@ -439,8 +442,8 @@
         "by": "verify",
         "method": "fresh cross-user read succeeded",
         "independent_principals": [
-          "verify-6e06ce-11",
-          "verify-6e06ce-12"
+          "verify-8eca31-11",
+          "verify-8eca31-12"
         ]
       },
       "provenance": [
@@ -452,8 +455,8 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0119",
-        "SF-EXPLOIT-STATEF-0131"
+        "SF-EXPLOIT-0123",
+        "SF-EXPLOIT-STATEF-0135"
       ]
     },
     {
@@ -469,8 +472,8 @@
         "evidence": [
           {
             "wallet_delta": 259800,
-            "owner": "rowner-6e06ce-4",
-            "caller": "ratk-6e06ce-5"
+            "owner": "rowner-8eca31-4",
+            "caller": "ratk-8eca31-5"
           }
         ],
         "reproduction": [],
@@ -489,8 +492,8 @@
         "by": "verify",
         "method": "fresh cross-user refund credited caller",
         "independent_principals": [
-          "verify-6e06ce-13",
-          "verify-6e06ce-14"
+          "verify-8eca31-13",
+          "verify-8eca31-14"
         ]
       },
       "provenance": [
@@ -502,8 +505,8 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0121",
-        "SF-EXPLOIT-STATEF-0132"
+        "SF-EXPLOIT-0125",
+        "SF-EXPLOIT-STATEF-0136"
       ]
     },
     {
@@ -533,7 +536,7 @@
                 ],
                 "overcredit": 129900
               },
-              "detail": "refunded ratk-6e06ce-5 over price by 129900 cents"
+              "detail": "refunded ratk-8eca31-5 over price by 129900 cents"
             }
           }
         ],
@@ -553,8 +556,8 @@
         "by": "verify",
         "method": "double refund credited twice",
         "independent_principals": [
-          "verify-6e06ce-14",
-          "verify-6e06ce-15"
+          "verify-8eca31-14",
+          "verify-8eca31-15"
         ]
       },
       "provenance": [
@@ -566,8 +569,8 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0122",
-        "SF-EXPLOIT-STATEF-0133"
+        "SF-EXPLOIT-0126",
+        "SF-EXPLOIT-STATEF-0137"
       ]
     },
     {
@@ -589,7 +592,7 @@
               },
               "subtotal_cents": 129900,
               "total_cents": -25980,
-              "user": "cpn-6e06ce-6"
+              "user": "cpn-8eca31-6"
             },
             "violation": {
               "invariant": "I4",
@@ -617,8 +620,8 @@
         "by": "verify",
         "method": "stacked discount exceeded subtotal",
         "independent_principals": [
-          "verify-6e06ce-7",
-          "verify-6e06ce-8"
+          "verify-8eca31-7",
+          "verify-8eca31-8"
         ]
       },
       "provenance": [
@@ -630,8 +633,8 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-0125",
-        "SF-EXPLOIT-STATEF-0128"
+        "SF-EXPLOIT-0129",
+        "SF-EXPLOIT-STATEF-0132"
       ]
     },
     {
@@ -674,7 +677,7 @@
             "req_body": null,
             "status": 201,
             "resp_body": {
-              "order_id": "ORD-c3023d78",
+              "order_id": "ORD-13582b95",
               "status": "initiated",
               "total_cents": -2700
             }
@@ -683,12 +686,12 @@
             "method": "POST",
             "path": "/api/checkout/confirm",
             "req_body": {
-              "order_id": "ORD-c3023d78"
+              "order_id": "ORD-13582b95"
             },
             "status": 200,
             "resp_body": {
               "charged_cents": -2700,
-              "order_id": "ORD-c3023d78",
+              "order_id": "ORD-13582b95",
               "status": "paid"
             }
           },
@@ -721,8 +724,8 @@
         "by": "verify",
         "method": "negative-qty checkout credited wallet",
         "independent_principals": [
-          "verify-6e06ce-6",
-          "verify-6e06ce-7"
+          "verify-8eca31-6",
+          "verify-8eca31-7"
         ]
       },
       "provenance": [
@@ -732,7 +735,7 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-STATEF-0127"
+        "SF-EXPLOIT-STATEF-0131"
       ]
     },
     {
@@ -759,7 +762,7 @@
             "req_body": null,
             "status": 201,
             "resp_body": {
-              "order_id": "ORD-828d6e12",
+              "order_id": "ORD-e375a89f",
               "status": "initiated",
               "total_cents": 1800
             }
@@ -770,23 +773,23 @@
             "req_body": null,
             "status": 201,
             "resp_body": {
-              "order_id": "ORD-bb974ca6",
+              "order_id": "ORD-b63bb310",
               "status": "initiated",
               "total_cents": 1800
             }
           },
           {
             "order_ids": [
-              "ORD-828d6e12",
-              "ORD-bb974ca6"
+              "ORD-e375a89f",
+              "ORD-b63bb310"
             ],
             "violation": {
               "invariant": "I2",
               "assertion": "cart snapshot: 1 -> <=1 order",
               "observed": {
                 "order_ids": [
-                  "ORD-828d6e12",
-                  "ORD-bb974ca6"
+                  "ORD-e375a89f",
+                  "ORD-b63bb310"
                 ]
               },
               "detail": "checkout/init replayed from the same cart produced 2 orders with identical item sets"
@@ -805,8 +808,8 @@
         "by": "verify",
         "method": "one cart yielded two orders",
         "independent_principals": [
-          "verify-6e06ce-8",
-          "verify-6e06ce-9"
+          "verify-8eca31-8",
+          "verify-8eca31-9"
         ]
       },
       "provenance": [
@@ -816,7 +819,7 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-STATEF-0129"
+        "SF-EXPLOIT-STATEF-0133"
       ]
     },
     {
@@ -844,23 +847,23 @@
             "req_body": null,
             "status": 201,
             "resp_body": {
-              "order_id": "ORD-81524509",
+              "order_id": "ORD-5e6c49b0",
               "status": "initiated",
               "total_cents": 129900
             }
           },
           {
             "method": "POST",
-            "path": "/api/orders/ORD-81524509/ship",
+            "path": "/api/orders/ORD-5e6c49b0/ship",
             "req_body": null,
             "status": 200,
             "resp_body": {
-              "order_id": "ORD-81524509",
+              "order_id": "ORD-5e6c49b0",
               "status": "shipped"
             }
           },
           {
-            "order_id": "ORD-81524509",
+            "order_id": "ORD-5e6c49b0",
             "violation": {
               "invariant": "I2",
               "assertion": "action in delta(alpha(s))",
@@ -889,8 +892,8 @@
         "by": "verify",
         "method": "unpaid order shipped",
         "independent_principals": [
-          "verify-6e06ce-9",
-          "verify-6e06ce-10"
+          "verify-8eca31-9",
+          "verify-8eca31-10"
         ]
       },
       "provenance": [
@@ -900,7 +903,7 @@
         "h_fsm"
       ],
       "fact_ids": [
-        "SF-EXPLOIT-STATEF-0130"
+        "SF-EXPLOIT-STATEF-0134"
       ]
     }
   ],

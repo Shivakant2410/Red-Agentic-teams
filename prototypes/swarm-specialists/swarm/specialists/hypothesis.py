@@ -28,7 +28,15 @@ RULES = [
 # graph matches the shape. Order == expected cost (cheap probes first) so a
 # tight budget starves the expensive ones last. Gated on graph shapes, never
 # on target-specific names.
+# M2 ordering invariant: h_open_vocab is FIRST — the router consumes
+# pending dispatches priority-first with deterministic-first tie-break
+# (swarm/llm.py), so publication order == dispatch order, and discovery
+# runs before every consumer of its facts.
 GENERIC_RULES = [
+    ("h_open_vocab", "The live surface may hold value resources, verbs and "
+     "read-backs the stale document never mentioned", 0.55,
+     "probe the open noun/verb/subpath vocabularies against the live "
+     "target; fold every fact into a revised surface"),
     ("h_hidden_verbs", "Parameterised money resources may expose undocumented "
      "ops verbs", 0.40, "verb wordlist probe on param paths"),
     ("h_state_guard", "Cancel-terminated resources may leave sibling write "
@@ -51,6 +59,12 @@ GENERIC_RULES = [
      "hide one (deferred-effect lifecycle with unguarded settle/cancel)",
      0.45, "noun-probe resource creates; learn the field from the error "
            "contract; open one seam; window driver takes it from there"),
+    ("h_value_replay", "A discovered credit verb may be repeatable per "
+     "object (the consumed/released state never commits)", 0.55,
+     "open-vocab verb facts -> replay credited verb x2 on a fresh object"),
+    ("h_credit_race", "A discovered credit verb without a single-use guard "
+     "may lose the check-then-act race", 0.55,
+     "open-vocab verb facts -> last-byte race x8 on a fresh object"),
 ]
 
 
@@ -99,6 +113,20 @@ def _generic_gate(tag, surface):
                         for w in ("async", "callback", "/events"))
         return bool(surface.get("readback")) and not async_doc and \
             any(g.get("create") for g in graph.values())
+    if tag == "h_open_vocab":
+        # any mapped surface is probeable; the technique stays honest when
+        # nothing is found (empty discovery => no facts published)
+        return bool(graph) or bool(surface.get("readback"))
+    if tag == "h_value_replay":
+        disc = surface.get("discoveries") or {}
+        return any(f.get("credited") for f in disc.get("verb_facts", []))
+    if tag == "h_credit_race":
+        disc = surface.get("discoveries") or {}
+        su = {(s.get("resource"), s.get("verb")) for s in
+              disc.get("single_use", []) if s.get("single_use")}
+        return any(f.get("credited") and
+                   (f.get("resource"), f.get("verb")) not in su
+                   for f in disc.get("verb_facts", []))
     return False
 
 

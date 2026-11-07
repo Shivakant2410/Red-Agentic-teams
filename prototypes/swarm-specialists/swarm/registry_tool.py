@@ -327,7 +327,7 @@ def _assemble(board, router, ex, started, out_dir, memory_dir,
     if os.path.exists(sf_doc_path):
         sf_requests = json.load(open(sf_doc_path)).get("requests")
 
-    doc = {"tool": "swarm", "version": "0.4.0-m1",
+    doc = {"tool": "swarm", "version": "0.5.0-m2",
            "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
            "elapsed_s": round(time.time() - started, 1),
            "requests": ex.count,

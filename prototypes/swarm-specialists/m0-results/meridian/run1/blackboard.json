@@ -3,7 +3,7 @@
     "id": "F-001",
     "kind": "CONTROL",
     "source": "orchestrator",
-    "ts": 1793978605.8561585,
+    "ts": 1794020142.2953348,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -16,7 +16,7 @@
     "id": "SF-RECON-0001",
     "kind": "OBSERVATION",
     "source": "recon",
-    "ts": 1793978605.8587408,
+    "ts": 1794020142.2975662,
     "confidence": 1.0,
     "tags": [
       "index"
@@ -36,7 +36,7 @@
     "id": "SF-RECON-0002",
     "kind": "OBSERVATION",
     "source": "recon",
-    "ts": 1793978605.8629034,
+    "ts": 1794020142.301418,
     "confidence": 1.0,
     "tags": [
       "robots"
@@ -54,7 +54,7 @@
     "id": "SF-RECON-0003",
     "kind": "OBSERVATION",
     "source": "recon",
-    "ts": 1793978605.8647447,
+    "ts": 1794020142.3031874,
     "confidence": 1.0,
     "tags": [
       "route-index"
@@ -163,7 +163,7 @@
     "id": "SF-RECON-0004",
     "kind": "OBSERVATION",
     "source": "recon",
-    "ts": 1793978605.866387,
+    "ts": 1794020142.304873,
     "confidence": 1.0,
     "tags": [
       "fingerprint"
@@ -180,7 +180,7 @@
     "id": "SF-RECON-0005",
     "kind": "OBSERVATION",
     "source": "recon",
-    "ts": 1793978605.8767233,
+    "ts": 1794020142.3149672,
     "confidence": 1.0,
     "tags": [
       "paths"
@@ -199,7 +199,7 @@
     "id": "SF-SURFACE_MAPPER-0006",
     "kind": "SURFACE",
     "source": "surface_mapper",
-    "ts": 1793978605.8785248,
+    "ts": 1794020142.3166964,
     "confidence": 1.0,
     "tags": [
       "surface"
@@ -374,7 +374,7 @@
     "id": "SF-SURFACE_MAPPER-0007",
     "kind": "OBSERVATION",
     "source": "surface_mapper",
-    "ts": 1793978605.8785305,
+    "ts": 1794020142.3167017,
     "confidence": 1.0,
     "tags": [
       "auth-boundary"
@@ -391,7 +391,7 @@
     "id": "SF-HYPOTHESIS-0008",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978605.8786514,
+    "ts": 1794020142.3168588,
     "confidence": 0.6,
     "tags": [
       "h_idor"
@@ -412,7 +412,7 @@
     "id": "SF-HYPOTHESIS-0009",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978605.878655,
+    "ts": 1794020142.316863,
     "confidence": 0.7,
     "tags": [
       "h_fsm"
@@ -433,7 +433,28 @@
     "id": "SF-HYPOTHESIS-0010",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978605.8786576,
+    "ts": 1794020142.3168662,
+    "confidence": 0.55,
+    "tags": [
+      "h_open_vocab"
+    ],
+    "payload": {
+      "tag": "h_open_vocab",
+      "title": "The live surface may hold value resources, verbs and read-backs the stale document never mentioned",
+      "prior": 0.55,
+      "test_plan": "probe the open noun/verb/subpath vocabularies against the live target; fold every fact into a revised surface",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0011",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794020142.3168678,
     "confidence": 0.4,
     "tags": [
       "h_hidden_verbs"
@@ -451,10 +472,10 @@
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0011",
+    "id": "SF-HYPOTHESIS-0012",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978605.8786592,
+    "ts": 1794020142.3168702,
     "confidence": 0.55,
     "tags": [
       "h_state_guard"
@@ -472,10 +493,10 @@
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0012",
+    "id": "SF-HYPOTHESIS-0013",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978605.8786614,
+    "ts": 1794020142.3168721,
     "confidence": 0.5,
     "tags": [
       "h_mass_assign"
@@ -493,10 +514,10 @@
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0013",
+    "id": "SF-HYPOTHESIS-0014",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978605.8786635,
+    "ts": 1794020142.316874,
     "confidence": 0.5,
     "tags": [
       "h_cross_tenant"
@@ -514,10 +535,10 @@
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0014",
+    "id": "SF-HYPOTHESIS-0015",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978605.8786654,
+    "ts": 1794020142.3168757,
     "confidence": 0.55,
     "tags": [
       "h_async_toctou"
@@ -535,10 +556,10 @@
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0015",
+    "id": "SF-HYPOTHESIS-0016",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978605.8786676,
+    "ts": 1794020142.3168774,
     "confidence": 0.5,
     "tags": [
       "h_terminal_credit"
@@ -556,10 +577,10 @@
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0016",
+    "id": "SF-HYPOTHESIS-0017",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978605.8786693,
+    "ts": 1794020142.3168793,
     "confidence": 0.45,
     "tags": [
       "h_arith_cycle"
@@ -577,10 +598,10 @@
     ]
   },
   {
-    "id": "SF-HYPOTHESIS-0017",
+    "id": "SF-HYPOTHESIS-0018",
     "kind": "HYPOTHESIS",
     "source": "hypothesis",
-    "ts": 1793978605.8786714,
+    "ts": 1794020142.3168812,
     "confidence": 0.5,
     "tags": [
       "h_quota_race"
@@ -598,10 +619,10 @@
     ]
   },
   {
-    "id": "SF-EXPLOIT-0018",
+    "id": "SF-EXPLOIT-0019",
     "kind": "CONTROL",
     "source": "exploit",
-    "ts": 1793978605.890827,
+    "ts": 1794020142.328703,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -613,10 +634,10 @@
     ]
   },
   {
-    "id": "SF-EXPLOIT-0019",
+    "id": "SF-EXPLOIT-0020",
     "kind": "OBSERVATION",
     "source": "exploit",
-    "ts": 1793978605.9427714,
+    "ts": 1794020142.487461,
     "confidence": 1.0,
     "tags": [
       "h_hidden_verbs"
@@ -636,14 +657,14 @@
       ]
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0010"
+      "SF-HYPOTHESIS-0011"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0020",
+    "id": "SF-EXPLOIT-0021",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978605.9705434,
+    "ts": 1794020142.5140939,
     "confidence": 0.9,
     "tags": [
       "h_state_guard",
@@ -689,14 +710,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0011"
+      "SF-HYPOTHESIS-0012"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0021",
+    "id": "SF-EXPLOIT-0022",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978605.9705484,
+    "ts": 1794020142.5140996,
     "confidence": 0.9,
     "tags": [
       "h_state_guard",
@@ -714,7 +735,7 @@
         "endpoint": "POST /api/vaults/{vault_id}/resize (terminal-state)",
         "evidence": [
           {
-            "canceled_object": "VLT-0f5d8f0823",
+            "canceled_object": "VLT-6a9fe7b1ee",
             "verb": "resize",
             "status": 200,
             "credit_after_terminal": 100,
@@ -740,14 +761,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0011"
+      "SF-HYPOTHESIS-0012"
     ]
   },
   {
-    "id": "SF-VERIFY-0022",
+    "id": "SF-VERIFY-0023",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978605.9937894,
+    "ts": 1794020142.5374823,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -757,14 +778,14 @@
       "technique": "h_state_guard"
     },
     "derived_from": [
-      "SF-EXPLOIT-0020"
+      "SF-EXPLOIT-0021"
     ]
   },
   {
-    "id": "SF-VERIFY-0023",
+    "id": "SF-VERIFY-0024",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978606.0181231,
+    "ts": 1794020142.5609872,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -774,14 +795,14 @@
       "technique": "h_state_guard"
     },
     "derived_from": [
-      "SF-EXPLOIT-0021"
+      "SF-EXPLOIT-0022"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0024",
+    "id": "SF-EXPLOIT-0025",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978606.0479693,
+    "ts": 1794020142.590465,
     "confidence": 0.9,
     "tags": [
       "h_cross_tenant",
@@ -799,8 +820,8 @@
         "endpoint": "GET /api/audit",
         "evidence": [
           {
-            "victim": "xtv-103-606030",
-            "leaked_id": "VLT-431a6d5bf1",
+            "victim": "xtv-167-142572",
+            "leaked_id": "VLT-6eee03515a",
             "leak_path": "/api/audit"
           }
         ],
@@ -822,14 +843,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0013"
+      "SF-HYPOTHESIS-0014"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0025",
+    "id": "SF-EXPLOIT-0026",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978606.0479746,
+    "ts": 1794020142.5904696,
     "confidence": 0.9,
     "tags": [
       "h_cross_tenant",
@@ -838,7 +859,7 @@
     "payload": {
       "finding": {
         "id": "FW-DEPUTY-CREDIT",
-        "title": "No ownership check on resize: the proration credit lands in the CALLER's balance \u2014 downgrade any leaked tenant's object for profit",
+        "title": "No ownership check on resize: the credit lands in the CALLER's balance \u2014 monetize any leaked tenant's object ",
         "severity": "critical",
         "invariant": "I3",
         "operators": [
@@ -847,10 +868,15 @@
         "endpoint": "POST /api/vaults/{vault_id}/resize (cross-tenant)",
         "evidence": [
           {
-            "victim": "xtv-103-606030",
-            "attacker": "xta-106-606035",
-            "object": "VLT-431a6d5bf1",
+            "victim": "xtv-167-142572",
+            "attacker": "xta-170-142577",
+            "object": "VLT-6eee03515a",
             "attacker_gain": 99,
+            "verb": "resize",
+            "body": {
+              "target_cents": 1
+            },
+            "discovered_verb": false,
             "obtained_via": "/api/audit"
           }
         ],
@@ -858,7 +884,7 @@
           "knowledge of any vault identifier"
         ],
         "grants": [
-          "drain any tenant's paid period into your own balance"
+          "drain any tenant's object value into your own balance"
         ],
         "reproduction": [],
         "confidence": "high"
@@ -872,14 +898,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0013"
+      "SF-HYPOTHESIS-0014"
     ]
   },
   {
-    "id": "SF-VERIFY-0026",
+    "id": "SF-VERIFY-0027",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978606.0649736,
+    "ts": 1794020142.6082616,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -889,14 +915,14 @@
       "technique": "h_cross_tenant"
     },
     "derived_from": [
-      "SF-EXPLOIT-0024"
+      "SF-EXPLOIT-0025"
     ]
   },
   {
-    "id": "SF-VERIFY-0027",
+    "id": "SF-VERIFY-0028",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978606.0818274,
+    "ts": 1794020142.6253476,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -906,14 +932,14 @@
       "technique": "h_cross_tenant"
     },
     "derived_from": [
-      "SF-EXPLOIT-0025"
+      "SF-EXPLOIT-0026"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0028",
+    "id": "SF-EXPLOIT-0029",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978606.9251857,
+    "ts": 1794020143.2624948,
     "confidence": 0.9,
     "tags": [
       "h_async_toctou",
@@ -935,7 +961,7 @@
             "drained_during_window": 250000,
             "settled_amount": 125000,
             "final_balance": -125000,
-            "event": "/api/events/EV-06200aa1fd6b"
+            "event": "/api/events/EV-47b7514e85f5"
           }
         ],
         "preconditions": [
@@ -957,14 +983,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0014"
+      "SF-HYPOTHESIS-0015"
     ]
   },
   {
-    "id": "SF-VERIFY-0029",
+    "id": "SF-VERIFY-0030",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978607.8737743,
+    "ts": 1794020143.694692,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -974,14 +1000,14 @@
       "technique": "h_async_toctou"
     },
     "derived_from": [
-      "SF-EXPLOIT-0028"
+      "SF-EXPLOIT-0029"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0030",
+    "id": "SF-EXPLOIT-0031",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978607.8941631,
+    "ts": 1794020143.7133727,
     "confidence": 0.9,
     "tags": [
       "h_terminal_credit",
@@ -999,7 +1025,7 @@
         "endpoint": "POST /api/payouts/{payout_id}/cancel",
         "evidence": [
           {
-            "payout": "PAY-125f67a881",
+            "payout": "PAY-3865e018d5",
             "amount": 83333,
             "settled_debit": 83333,
             "cancel_credit": 83333,
@@ -1026,14 +1052,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0015"
+      "SF-HYPOTHESIS-0016"
     ]
   },
   {
-    "id": "SF-VERIFY-0031",
+    "id": "SF-VERIFY-0032",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978608.633513,
+    "ts": 1794020144.3431149,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -1043,14 +1069,14 @@
       "technique": "h_terminal_credit"
     },
     "derived_from": [
-      "SF-EXPLOIT-0030"
+      "SF-EXPLOIT-0031"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0032",
+    "id": "SF-EXPLOIT-0033",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978608.6716363,
+    "ts": 1794020144.384536,
     "confidence": 0.9,
     "tags": [
       "h_arith_cycle",
@@ -1093,14 +1119,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0016"
+      "SF-HYPOTHESIS-0017"
     ]
   },
   {
-    "id": "SF-VERIFY-0033",
+    "id": "SF-VERIFY-0034",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978608.7075896,
+    "ts": 1794020144.4187458,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -1110,14 +1136,14 @@
       "technique": "h_arith_cycle"
     },
     "derived_from": [
-      "SF-EXPLOIT-0032"
+      "SF-EXPLOIT-0033"
     ]
   },
   {
-    "id": "SF-EXPLOIT-0034",
+    "id": "SF-EXPLOIT-0035",
     "kind": "FINDING",
     "source": "exploit",
-    "ts": 1793978608.7566144,
+    "ts": 1794020144.4652362,
     "confidence": 0.9,
     "tags": [
       "h_quota_race",
@@ -1140,14 +1166,14 @@
             "successful_claims": 8,
             "advertised_quota": 3,
             "winning_principals": [
-              "qrc0-257-608707",
-              "qrc1-259-608710",
-              "qrc2-261-608714",
-              "qrc3-263-608717",
-              "qrc4-265-608721",
-              "qrc5-267-608724",
-              "qrc6-269-608727",
-              "qrc7-271-608730"
+              "qrc0-313-144418",
+              "qrc1-315-144421",
+              "qrc2-317-144424",
+              "qrc3-319-144428",
+              "qrc4-321-144431",
+              "qrc5-323-144434",
+              "qrc6-325-144437",
+              "qrc7-327-144440"
             ],
             "last_byte_sync": true
           }
@@ -1171,14 +1197,14 @@
       }
     },
     "derived_from": [
-      "SF-HYPOTHESIS-0017"
+      "SF-HYPOTHESIS-0018"
     ]
   },
   {
-    "id": "SF-VERIFY-0035",
+    "id": "SF-VERIFY-0036",
     "kind": "CONTROL",
     "source": "verify",
-    "ts": 1793978608.7988272,
+    "ts": 1794020144.5041692,
     "confidence": 1.0,
     "tags": [],
     "payload": {
@@ -1188,14 +1214,14 @@
       "technique": "h_quota_race"
     },
     "derived_from": [
-      "SF-EXPLOIT-0034"
+      "SF-EXPLOIT-0035"
     ]
   },
   {
-    "id": "SF-ACCESS-0036",
+    "id": "SF-ACCESS-0037",
     "kind": "ESCALATION",
     "source": "access",
-    "ts": 1793978608.7989762,
+    "ts": 1794020144.5042906,
     "confidence": 1.0,
     "tags": [
       "chain",
@@ -1210,9 +1236,9 @@
         ],
         "path": "FW-AUDIT-LEAK --(grants preconditions)--> FW-DEPUTY-CREDIT",
         "severity": "critical",
-        "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's paid period into your own balance."
+        "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance."
       },
-      "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's paid period into your own balance.",
+      "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance.",
       "severity": "critical",
       "members": [
         "FW-AUDIT-LEAK",
@@ -1220,15 +1246,15 @@
       ]
     },
     "derived_from": [
-      "SF-EXPLOIT-0024",
-      "SF-EXPLOIT-0025"
+      "SF-EXPLOIT-0025",
+      "SF-EXPLOIT-0026"
     ]
   },
   {
-    "id": "SF-SURFACE_MAPPER-0037",
+    "id": "SF-SURFACE_MAPPER-0038",
     "kind": "OBSERVATION",
     "source": "surface_mapper",
-    "ts": 1793978608.7994015,
+    "ts": 1794020144.5047016,
     "confidence": 1.0,
     "tags": [
       "robots-parsed"
@@ -1244,46 +1270,20 @@
     "id": "F-002",
     "kind": "CONTROL",
     "source": "router",
-    "ts": 1793978608.7994225,
+    "ts": 1794020144.50472,
     "confidence": 1.0,
     "tags": [],
     "payload": {
       "event": "stall-escalate",
-      "round": 31
+      "round": 32
     },
     "derived_from": []
-  },
-  {
-    "id": "SF-WINDOW_DRIVER-0038",
-    "kind": "OBSERVATION",
-    "source": "window_driver",
-    "ts": 1793978608.806193,
-    "confidence": 1.0,
-    "tags": [
-      "async-opened",
-      "traffic-scan"
-    ],
-    "payload": {
-      "async_opened": {
-        "event_path": "/api/events/EV-6e325c6003f5",
-        "create_path": "/api/payouts",
-        "resource": "payouts",
-        "object_id": "PAY-b3961d7c23",
-        "amount": 500,
-        "amount_field": "amount_cents",
-        "principal": "hdv-19-605890"
-      },
-      "evidence": "auto-registered from traffic scan (202/event shape)"
-    },
-    "derived_from": [
-      "SF-SURFACE_MAPPER-0006"
-    ]
   },
   {
     "id": "SF-WINDOW_DRIVER-0039",
     "kind": "OBSERVATION",
     "source": "window_driver",
-    "ts": 1793978608.8062155,
+    "ts": 1794020144.5115597,
     "confidence": 1.0,
     "tags": [
       "async-opened",
@@ -1291,13 +1291,13 @@
     ],
     "payload": {
       "async_opened": {
-        "event_path": "/api/events/EV-57d9a83b68e3",
+        "event_path": "/api/events/EV-bd47a3d9ffca",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-2bad41a4dc",
-        "amount": 100,
+        "object_id": "PAY-213f621848",
+        "amount": 500,
         "amount_field": "amount_cents",
-        "principal": "mas-96-606018"
+        "principal": "ov-19-142331"
       },
       "evidence": "auto-registered from traffic scan (202/event shape)"
     },
@@ -1309,7 +1309,7 @@
     "id": "SF-WINDOW_DRIVER-0040",
     "kind": "OBSERVATION",
     "source": "window_driver",
-    "ts": 1793978608.8062272,
+    "ts": 1794020144.5115802,
     "confidence": 1.0,
     "tags": [
       "async-opened",
@@ -1317,13 +1317,13 @@
     ],
     "payload": {
       "async_opened": {
-        "event_path": "/api/events/EV-5fbd86ba56e4",
+        "event_path": "/api/events/EV-8305c9420c32",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-d33262a930",
+        "object_id": "PAY-a4f9425954",
         "amount": 100,
         "amount_field": "amount_cents",
-        "principal": "mas-96-606018"
+        "principal": "hdv-87-142443"
       },
       "evidence": "auto-registered from traffic scan (202/event shape)"
     },
@@ -1335,7 +1335,7 @@
     "id": "SF-WINDOW_DRIVER-0041",
     "kind": "OBSERVATION",
     "source": "window_driver",
-    "ts": 1793978608.8062353,
+    "ts": 1794020144.5115924,
     "confidence": 1.0,
     "tags": [
       "async-opened",
@@ -1343,13 +1343,13 @@
     ],
     "payload": {
       "async_opened": {
-        "event_path": "/api/events/EV-312e1a3bb9e8",
+        "event_path": "/api/events/EV-198d134ce38f",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-d33c0ee3f1",
+        "object_id": "PAY-a9911391bc",
         "amount": 100,
         "amount_field": "amount_cents",
-        "principal": "mas-96-606018"
+        "principal": "mas-160-142561"
       },
       "evidence": "auto-registered from traffic scan (202/event shape)"
     },
@@ -1361,7 +1361,7 @@
     "id": "SF-WINDOW_DRIVER-0042",
     "kind": "OBSERVATION",
     "source": "window_driver",
-    "ts": 1793978608.8062413,
+    "ts": 1794020144.511601,
     "confidence": 1.0,
     "tags": [
       "async-opened",
@@ -1369,13 +1369,13 @@
     ],
     "payload": {
       "async_opened": {
-        "event_path": "/api/events/EV-a7c3803ffd78",
+        "event_path": "/api/events/EV-9bc0b1bcd676",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-7c6d64a9a7",
+        "object_id": "PAY-d2f921c759",
         "amount": 100,
         "amount_field": "amount_cents",
-        "principal": "mas-96-606018"
+        "principal": "mas-160-142561"
       },
       "evidence": "auto-registered from traffic scan (202/event shape)"
     },
@@ -1387,7 +1387,7 @@
     "id": "SF-WINDOW_DRIVER-0043",
     "kind": "OBSERVATION",
     "source": "window_driver",
-    "ts": 1793978608.8062472,
+    "ts": 1794020144.5116074,
     "confidence": 1.0,
     "tags": [
       "async-opened",
@@ -1395,13 +1395,13 @@
     ],
     "payload": {
       "async_opened": {
-        "event_path": "/api/events/EV-0b3c9e5b96e3",
+        "event_path": "/api/events/EV-453cd934e969",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-cce8b8a6b4",
+        "object_id": "PAY-5ba7860b9d",
         "amount": 100,
         "amount_field": "amount_cents",
-        "principal": "mas-96-606018"
+        "principal": "mas-160-142561"
       },
       "evidence": "auto-registered from traffic scan (202/event shape)"
     },
@@ -1413,7 +1413,7 @@
     "id": "SF-WINDOW_DRIVER-0044",
     "kind": "OBSERVATION",
     "source": "window_driver",
-    "ts": 1793978608.8062527,
+    "ts": 1794020144.511613,
     "confidence": 1.0,
     "tags": [
       "async-opened",
@@ -1421,13 +1421,13 @@
     ],
     "payload": {
       "async_opened": {
-        "event_path": "/api/events/EV-06200aa1fd6b",
+        "event_path": "/api/events/EV-14fb5947343b",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-f624cab236",
-        "amount": 125000,
+        "object_id": "PAY-e4ca2f3b34",
+        "amount": 100,
         "amount_field": "amount_cents",
-        "principal": "toc-139-606086"
+        "principal": "mas-160-142561"
       },
       "evidence": "auto-registered from traffic scan (202/event shape)"
     },
@@ -1439,7 +1439,7 @@
     "id": "SF-WINDOW_DRIVER-0045",
     "kind": "OBSERVATION",
     "source": "window_driver",
-    "ts": 1793978608.8062587,
+    "ts": 1794020144.5116184,
     "confidence": 1.0,
     "tags": [
       "async-opened",
@@ -1447,13 +1447,13 @@
     ],
     "payload": {
       "async_opened": {
-        "event_path": "/api/events/EV-8ede396746d1",
+        "event_path": "/api/events/EV-02a72af9d9ec",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-125f67a881",
-        "amount": 83333,
+        "object_id": "PAY-0fecb9017c",
+        "amount": 100,
         "amount_field": "amount_cents",
-        "principal": "tcm-182-607873"
+        "principal": "mas-160-142561"
       },
       "evidence": "auto-registered from traffic scan (202/event shape)"
     },
@@ -1465,7 +1465,7 @@
     "id": "SF-WINDOW_DRIVER-0046",
     "kind": "OBSERVATION",
     "source": "window_driver",
-    "ts": 1793978608.8062644,
+    "ts": 1794020144.5116236,
     "confidence": 1.0,
     "tags": [
       "async-opened",
@@ -1473,13 +1473,13 @@
     ],
     "payload": {
       "async_opened": {
-        "event_path": "/api/events/EV-19e92094b4f8",
+        "event_path": "/api/events/EV-47b7514e85f5",
         "create_path": "/api/payouts",
         "resource": "payouts",
-        "object_id": "PAY-7df8fa5dda",
-        "amount": 100,
+        "object_id": "PAY-fb1511cebe",
+        "amount": 125000,
         "amount_field": "amount_cents",
-        "principal": "cyc-213-608633"
+        "principal": "toc-203-142630"
       },
       "evidence": "auto-registered from traffic scan (202/event shape)"
     },
@@ -1489,49 +1489,25 @@
   },
   {
     "id": "SF-WINDOW_DRIVER-0047",
-    "kind": "FINDING",
+    "kind": "OBSERVATION",
     "source": "window_driver",
-    "ts": 1793978609.4632962,
-    "confidence": 0.9,
+    "ts": 1794020144.5116296,
+    "confidence": 1.0,
     "tags": [
-      "h_window_driver",
-      "I1"
+      "async-opened",
+      "traffic-scan"
     ],
     "payload": {
-      "finding": {
-        "id": "FW-SETTLED-CANCEL",
-        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
-        "severity": "critical",
-        "invariant": "I1",
-        "operators": [
-          "SKIP"
-        ],
-        "endpoint": "POST /api/payouts/{id}/cancel",
-        "evidence": [
-          {
-            "payout": "PAY-b3961d7c23",
-            "amount": 500,
-            "settled_status": null,
-            "post_settle_wallet": 249500,
-            "cancel_credit": 500,
-            "event": "/api/events/EV-6e325c6003f5",
-            "resource": "payouts",
-            "create_path": "/api/payouts",
-            "amount_field": "amount_cents"
-          }
-        ],
-        "preconditions": [
-          "any account",
-          "own settled payout"
-        ],
-        "grants": [
-          "receive the external payout AND keep the balance"
-        ],
-        "reproduction": [],
-        "confidence": "high"
+      "async_opened": {
+        "event_path": "/api/events/EV-ab122f78ed05",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-3865e018d5",
+        "amount": 83333,
+        "amount_field": "amount_cents",
+        "principal": "tcm-239-143694"
       },
-      "status": "candidate",
-      "technique": "h_window_driver"
+      "evidence": "auto-registered from traffic scan (202/event shape)"
     },
     "derived_from": [
       "SF-SURFACE_MAPPER-0006"
@@ -1539,49 +1515,25 @@
   },
   {
     "id": "SF-WINDOW_DRIVER-0048",
-    "kind": "FINDING",
+    "kind": "OBSERVATION",
     "source": "window_driver",
-    "ts": 1793978609.4633029,
-    "confidence": 0.9,
+    "ts": 1794020144.5116358,
+    "confidence": 1.0,
     "tags": [
-      "h_window_driver",
-      "I1"
+      "async-opened",
+      "traffic-scan"
     ],
     "payload": {
-      "finding": {
-        "id": "FW-SETTLED-CANCEL",
-        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
-        "severity": "critical",
-        "invariant": "I1",
-        "operators": [
-          "SKIP"
-        ],
-        "endpoint": "POST /api/payouts/{id}/cancel",
-        "evidence": [
-          {
-            "payout": "PAY-2bad41a4dc",
-            "amount": 100,
-            "settled_status": null,
-            "post_settle_wallet": 249500,
-            "cancel_credit": 100,
-            "event": "/api/events/EV-57d9a83b68e3",
-            "resource": "payouts",
-            "create_path": "/api/payouts",
-            "amount_field": "amount_cents"
-          }
-        ],
-        "preconditions": [
-          "any account",
-          "own settled payout"
-        ],
-        "grants": [
-          "receive the external payout AND keep the balance"
-        ],
-        "reproduction": [],
-        "confidence": "high"
+      "async_opened": {
+        "event_path": "/api/events/EV-ece4197273da",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-786d25f05b",
+        "amount": 100,
+        "amount_field": "amount_cents",
+        "principal": "cyc-269-144343"
       },
-      "status": "candidate",
-      "technique": "h_window_driver"
+      "evidence": "auto-registered from traffic scan (202/event shape)"
     },
     "derived_from": [
       "SF-SURFACE_MAPPER-0006"
@@ -1591,7 +1543,7 @@
     "id": "SF-WINDOW_DRIVER-0049",
     "kind": "FINDING",
     "source": "window_driver",
-    "ts": 1793978609.4633052,
+    "ts": 1794020145.1630373,
     "confidence": 0.9,
     "tags": [
       "h_window_driver",
@@ -1609,12 +1561,12 @@
         "endpoint": "POST /api/payouts/{id}/cancel",
         "evidence": [
           {
-            "payout": "PAY-d33262a930",
-            "amount": 100,
+            "payout": "PAY-213f621848",
+            "amount": 500,
             "settled_status": null,
-            "post_settle_wallet": 249600,
-            "cancel_credit": 100,
-            "event": "/api/events/EV-5fbd86ba56e4",
+            "post_settle_wallet": 249000,
+            "cancel_credit": 500,
+            "event": "/api/events/EV-bd47a3d9ffca",
             "resource": "payouts",
             "create_path": "/api/payouts",
             "amount_field": "amount_cents"
@@ -1641,7 +1593,7 @@
     "id": "SF-WINDOW_DRIVER-0050",
     "kind": "FINDING",
     "source": "window_driver",
-    "ts": 1793978609.463307,
+    "ts": 1794020145.1630435,
     "confidence": 0.9,
     "tags": [
       "h_window_driver",
@@ -1659,12 +1611,12 @@
         "endpoint": "POST /api/payouts/{id}/cancel",
         "evidence": [
           {
-            "payout": "PAY-d33c0ee3f1",
+            "payout": "PAY-a4f9425954",
             "amount": 100,
             "settled_status": null,
-            "post_settle_wallet": 249700,
+            "post_settle_wallet": 249900,
             "cancel_credit": 100,
-            "event": "/api/events/EV-312e1a3bb9e8",
+            "event": "/api/events/EV-8305c9420c32",
             "resource": "payouts",
             "create_path": "/api/payouts",
             "amount_field": "amount_cents"
@@ -1691,7 +1643,7 @@
     "id": "SF-WINDOW_DRIVER-0051",
     "kind": "FINDING",
     "source": "window_driver",
-    "ts": 1793978609.4962537,
+    "ts": 1794020145.163046,
     "confidence": 0.9,
     "tags": [
       "h_window_driver",
@@ -1709,12 +1661,12 @@
         "endpoint": "POST /api/payouts/{id}/cancel",
         "evidence": [
           {
-            "payout": "PAY-7c6d64a9a7",
+            "payout": "PAY-a9911391bc",
             "amount": 100,
             "settled_status": null,
-            "post_settle_wallet": 249800,
+            "post_settle_wallet": 249500,
             "cancel_credit": 100,
-            "event": "/api/events/EV-a7c3803ffd78",
+            "event": "/api/events/EV-198d134ce38f",
             "resource": "payouts",
             "create_path": "/api/payouts",
             "amount_field": "amount_cents"
@@ -1734,14 +1686,14 @@
       "technique": "h_window_driver"
     },
     "derived_from": [
-      "SF-WINDOW_DRIVER-0038"
+      "SF-SURFACE_MAPPER-0006"
     ]
   },
   {
     "id": "SF-WINDOW_DRIVER-0052",
     "kind": "FINDING",
     "source": "window_driver",
-    "ts": 1793978609.4962604,
+    "ts": 1794020145.163048,
     "confidence": 0.9,
     "tags": [
       "h_window_driver",
@@ -1759,12 +1711,12 @@
         "endpoint": "POST /api/payouts/{id}/cancel",
         "evidence": [
           {
-            "payout": "PAY-cce8b8a6b4",
+            "payout": "PAY-d2f921c759",
             "amount": 100,
             "settled_status": null,
-            "post_settle_wallet": 249900,
+            "post_settle_wallet": 249600,
             "cancel_credit": 100,
-            "event": "/api/events/EV-0b3c9e5b96e3",
+            "event": "/api/events/EV-9bc0b1bcd676",
             "resource": "payouts",
             "create_path": "/api/payouts",
             "amount_field": "amount_cents"
@@ -1784,14 +1736,14 @@
       "technique": "h_window_driver"
     },
     "derived_from": [
-      "SF-WINDOW_DRIVER-0038"
+      "SF-SURFACE_MAPPER-0006"
     ]
   },
   {
     "id": "SF-WINDOW_DRIVER-0053",
     "kind": "FINDING",
     "source": "window_driver",
-    "ts": 1793978609.496263,
+    "ts": 1794020145.1930833,
     "confidence": 0.9,
     "tags": [
       "h_window_driver",
@@ -1809,12 +1761,12 @@
         "endpoint": "POST /api/payouts/{id}/cancel",
         "evidence": [
           {
-            "payout": "PAY-f624cab236",
-            "amount": 125000,
+            "payout": "PAY-5ba7860b9d",
+            "amount": 100,
             "settled_status": null,
-            "post_settle_wallet": -125000,
-            "cancel_credit": 125000,
-            "event": "/api/events/EV-06200aa1fd6b",
+            "post_settle_wallet": 249700,
+            "cancel_credit": 100,
+            "event": "/api/events/EV-453cd934e969",
             "resource": "payouts",
             "create_path": "/api/payouts",
             "amount_field": "amount_cents"
@@ -1834,14 +1786,14 @@
       "technique": "h_window_driver"
     },
     "derived_from": [
-      "SF-WINDOW_DRIVER-0038"
+      "SF-WINDOW_DRIVER-0039"
     ]
   },
   {
     "id": "SF-WINDOW_DRIVER-0054",
     "kind": "FINDING",
     "source": "window_driver",
-    "ts": 1793978609.4962652,
+    "ts": 1794020145.193088,
     "confidence": 0.9,
     "tags": [
       "h_window_driver",
@@ -1859,12 +1811,12 @@
         "endpoint": "POST /api/payouts/{id}/cancel",
         "evidence": [
           {
-            "payout": "PAY-125f67a881",
-            "amount": 83333,
+            "payout": "PAY-e4ca2f3b34",
+            "amount": 100,
             "settled_status": null,
-            "post_settle_wallet": 250000,
-            "cancel_credit": 83333,
-            "event": "/api/events/EV-8ede396746d1",
+            "post_settle_wallet": 249800,
+            "cancel_credit": 100,
+            "event": "/api/events/EV-14fb5947343b",
             "resource": "payouts",
             "create_path": "/api/payouts",
             "amount_field": "amount_cents"
@@ -1884,7 +1836,157 @@
       "technique": "h_window_driver"
     },
     "derived_from": [
-      "SF-WINDOW_DRIVER-0038"
+      "SF-WINDOW_DRIVER-0039"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0055",
+    "kind": "FINDING",
+    "source": "window_driver",
+    "ts": 1794020145.1930897,
+    "confidence": 0.9,
+    "tags": [
+      "h_window_driver",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-0fecb9017c",
+            "amount": 100,
+            "settled_status": null,
+            "post_settle_wallet": 249900,
+            "cancel_credit": 100,
+            "event": "/api/events/EV-02a72af9d9ec",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own settled payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "candidate",
+      "technique": "h_window_driver"
+    },
+    "derived_from": [
+      "SF-WINDOW_DRIVER-0039"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0056",
+    "kind": "FINDING",
+    "source": "window_driver",
+    "ts": 1794020145.1930914,
+    "confidence": 0.9,
+    "tags": [
+      "h_window_driver",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-fb1511cebe",
+            "amount": 125000,
+            "settled_status": null,
+            "post_settle_wallet": -125000,
+            "cancel_credit": 125000,
+            "event": "/api/events/EV-47b7514e85f5",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own settled payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "candidate",
+      "technique": "h_window_driver"
+    },
+    "derived_from": [
+      "SF-WINDOW_DRIVER-0039"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0057",
+    "kind": "FINDING",
+    "source": "window_driver",
+    "ts": 1794020145.2107415,
+    "confidence": 0.9,
+    "tags": [
+      "h_window_driver",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-3865e018d5",
+            "amount": 83333,
+            "settled_status": null,
+            "post_settle_wallet": 250000,
+            "cancel_credit": 83333,
+            "event": "/api/events/EV-ab122f78ed05",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own settled payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "candidate",
+      "technique": "h_window_driver"
+    },
+    "derived_from": [
+      "SF-WINDOW_DRIVER-0040"
     ]
   }
 ]
