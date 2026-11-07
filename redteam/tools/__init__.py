@@ -68,6 +68,7 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     from .browser import (BrowserClickTool, BrowserContentTool, BrowserFillTool,
                           BrowserNavigateTool, BrowserScreenshotTool)
     from .confirm import ConfirmFindingTool
+    from .discovery import ContentDiscoveryTool
     from .independent_verify import VerifyFindingIndependentlyTool
     from .jwt import JwtInspectTool
     from .kali import KaliExecTool
@@ -102,8 +103,11 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # produces leads that must survive the proof pipeline; surface_scan fills the asset
     # inventory from the RoE allowlist itself (never widens scope); spa_recon walks a
     # login-gated SPA with bootstrap mocks (ARTEX api-recon port) to reveal the runtime
-    # API surface. None record findings.
-    tools += [JwtInspectTool(), NucleiScanTool(), SurfaceScanTool(), SpaReconTool()]
+    # API surface. content_discovery = the ACTIVE recon layer (offense-arsenal §2):
+    # prior-ordered path probing with the STADS stop rule, same leads-only discipline.
+    # None record findings.
+    tools += [JwtInspectTool(), NucleiScanTool(), SurfaceScanTool(), SpaReconTool(),
+              ContentDiscoveryTool()]
     # search_peer_traces = the swarm's read side (ARTEX worker-trace exchange port):
     # keyword-search sibling specialists' raw process traces for observations that
     # never became findings. Read-only over this run's event log, costs no budget.

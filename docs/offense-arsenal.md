@@ -294,7 +294,7 @@ They are not cancelled; they are behind the skills in the build order.
 
 | Week | Build | Closes gap | Evidence anchor |
 |---|---|---|---|
-| 1 | Frequency priors in content discovery + missing-mass stopping rule (`recon/discovery.py`) | §2.1, §2.2 | Nmap top-1000; STADS 2018; Liyanage 2024 |
+| 1 | **SHIPPED** — frequency-prior content discovery + missing-mass stopping rule: `recon/discovery.py` (BucketModel Beta posteriors, SpeciesTracker U(n)=f1/n, Soft404Baseline, recursion into confirmed dirs), `tools/discovery.py` (`content_discovery` tool, leads-only), `recon/wordlists/common-paths.tsv` (143 seeded paths, 9 buckets), `tests/test_recon_discovery.py` (14 tests) | §2.1, §2.2 | Nmap top-1000; STADS 2018; Liyanage 2024 |
 | 2 | Asset graph with typed edges (Amass OAM-style); stage-machine planner | §2.3, §5.4 | Amass v5; PentestGPT; PentestEval 31% |
 | 3 | AttackGraph cheapest-path + betweenness; bandit-armed template/payload scheduling; BOLA tool | §3.1, §4.1, §4.5 | BloodHound; PMapper; EcoFuzz; OWASP API1 |
 | 4 | TAP loop; MAP-Elites archive; postex validation + recovery loop (+ GCG only if open-weight target) | §4.2, §4.3, §5.1, §5.3 | TAP NeurIPS'24; Rainbow Teaming NeurIPS'24; TruffleHog; Caldera E2E |
