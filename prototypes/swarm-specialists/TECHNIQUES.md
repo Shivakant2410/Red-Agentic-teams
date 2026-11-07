@@ -2,8 +2,9 @@
 
 What we actually use, where it lives, and where each idea comes from.
 Every "where" is a file in this tree; every claim is checkable against the
-artifacts (`M0/M1/M2/M3-PROOF.md`, `GAP-PROOF.md`). Research anchors were
-visited 2026-11; links at §B. Companion research doc: `RESEARCH-M3.md`.
+artifacts (`M0/M1/M2/M3/M4-PROOF.md`, `GAP-PROOF.md`). Research anchors were
+visited 2026-11; links at §B. Companion research docs: `RESEARCH-M3.md`,
+`RESEARCH-M4.md`.
 
 ## A. Inventory
 
@@ -91,6 +92,15 @@ Last-byte-synchronized race (`Executor.race`, 8 workers; `t_credit_race`, `t_quo
 | 38 | Honest resolution vocabulary | confirmed / confirmed-by-transcript / refuted / inconclusive — refutations score as information (weight 1.0) | `engine/ledger.py` |
 | 39 | Pre-registered predictions | every milestone predicts before it runs; scorecards published with misses (M3: P2 count, P5 band) | `RESEARCH-M3.md` §4, `M3-PROOF.md` §5 |
 
+### A10. Orchestration governance (M4's core)
+
+| # | Technique | Mechanism | Where | Lineage |
+|---|---|---|---|---|
+| 40 | Policy object at the wire chokepoint | PolicyGuard with TWO checks — target admission (fail-closed loopback/TEST-NET-1) + per-action approval gate on write mutants (approvals=lab auto-approve+audit / none deny); denial = status-0 exchange, no socket, no budget, always audited to policy_audit.jsonl | `swarm/policy.py`, `statefuzz/executor.py` `_gate` | **M4**; CaMeL's tool-call-boundary policies (arXiv:2503.18813); XBOW "every agent action is checked before execution"; the charter's deterministic-enforcement rule |
+| 41 | One verdict vocabulary + downgrade pass | verified / verified-by-transcript / not_reproducible / refuted; unproven claims downgrade post-loop, severity-capped to informational, train the bandit as mild failure — never success | `swarm/verify_pipeline.py` | **M4**; MAST task-verification category (arXiv:2503.13657); EnIGMA "soliloquizing" (arXiv:2409.16165); platform redteam/verify.py k-of-n semantics |
+| 42 | ExperienceStore protocol | per-specialist namespaces behind an injectable protocol: FileExperienceStore (labs) / InMemoryExperienceStore (embed) — the platform's semantic backend (HelixDB) implements the same shape | `swarm/experience.py` | **M4**; AWM (arXiv:2409.07429): induced workflows + selective provisioning (+24.6/51.1% success, fewer steps); measured here: dvlba run-2 181 req vs run-1 270 (−33%) |
+| 43 | Governance shell around a proven loop | Orchestrator owns pre-flight → gate → Router loop (UNTOUCHED) → verify pass → curation → projections → artifacts; registry path delegates to it, so both paths are one code object; refusal mode (approvals=none) is a shipped negative control: 33 audited denials, 0 findings, engagement dies at 15 requests | `swarm/orchestrator.py`, `run_m4.py` | **M4**; Magentic-One ledger loop; CALDERA planning-inside-acting; MAST category-1 fixes; HackSynth module split |
+
 ## B. Research bibliography (visited 2026-11)
 
 1. Yue et al., **EcoFuzz** (USENIX Security 2020) — fuzz scheduling as an adversarial MAB. https://www.usenix.org/conference/usenixsecurity20/presentation/yue
@@ -105,12 +115,19 @@ Last-byte-synchronized race (`Executor.race`, 8 workers; `t_credit_race`, `t_quo
 10. Barr et al., **The Oracle Problem in Software Testing: A Survey** (IEEE TSE 2015) — metamorphic relations where no direct oracle exists.
 11. OWASP **Attack Surface Analysis Cheat Sheet** — map what is exposed before testing it. https://cheatsheetseries.owasp.org/
 12. Nakano et al. (arXiv:2509.07939) + **TAP** (arXiv:2312.02119) — cited by the mainline `redteam/attack_tree.py` for structure-constrained agents (−56% queries) and propose→evaluate→prune.
+13. Debenedetti et al., **CaMeL: Defeating Prompt Injections by Design** (arXiv:2503.18813, Google/ETH 2025) — security policies enforced at tool-call boundaries from a system layer; AgentDojo 77% with provable security vs 84% undefended.
+14. Cemri et al., **Why Do Multi-Agent LLM Systems Fail? / MAST** (arXiv:2503.13657, NeurIPS 2025 spotlight) — 14 failure modes, 3 categories incl. task verification (κ=0.88); the verify pipeline and machine-checked specs are our category-1/3 answers.
+15. Wang et al., **Agent Workflow Memory** (arXiv:2409.07429) — induce reusable workflows, selective provisioning; +24.6%/+51.1% success AND fewer steps; the published shape of our M5 efficiency exit.
+16. Abramovich et al., **EnIGMA** (arXiv:2409.16165) — SOTA CTF agent (NYU CTF 13.5%); documents "soliloquizing" (hallucinated observations) — the failure the verify pipeline exists to block.
+17. Sarraute et al., **Penetration Testing == POMDP Solving?** (arXiv:1306.4714); Schwartz & Vassileva, **POMDP + Information-Decay** (ICAPS 2020) — the engagement is a POMDP, but the solver acts INSIDE a policy-defined action set: planning chooses among allowed actions, policy defines allowed.
 
-**What we adopt**: adversarial-MAB scheduling (as the mainline bandit's design), Beta-Bernoulli posteriors with verified-only rewards, attack-graph-guided planning (as a RUNTIME induced graph, not a static template), operation-dependency stateful testing (as live FSM induction), metamorphic wallet oracles (I1/I4/I5 + ambient).
-**What we reject, with evidence**: LLM-supplied technique knowledge as ground truth (PentestGPT's staleness class — our stale-doc lab exists to prove the failure mode); self-reported confidence as routing signal (E6); insights promoted without falsification (GAP-PROOF §3.3).
+**What we adopt**: adversarial-MAB scheduling (as the mainline bandit's design), Beta-Bernoulli posteriors with verified-only rewards, attack-graph-guided planning (as a RUNTIME induced graph, not a static template), operation-dependency stateful testing (as live FSM induction), metamorphic wallet oracles (I1/I4/I5 + ambient); M4 adds: policy-at-the-chokepoint (CaMeL), downgrade-capable verification (MAST/EnIGMA), protocol-bounded experience (AWM), deterministic governance shell (Magentic-One/CALDERA/XBOW's own description).
+**What we reject, with evidence**: LLM-supplied technique knowledge as ground truth (PentestGPT's staleness class — our stale-doc lab exists to prove the failure mode); self-reported confidence as routing signal (E6); insights promoted without falsification (GAP-PROOF §3.3); LLM-as-orchestrator (MAST inter-agent misalignment; the commercial leader's coordination layer is deterministic); ungoverned write mutants (the refusal-mode control exists precisely to show the alternative); memory that can influence policy (the gate reads nothing from the store).
 
-## C. Status after M3 (one line each)
+## C. Status after M4 (one line each)
 
 - Found autonomously + verified: **all 8 Freightlane covert classes (GV-1…GV-8)** + meridian S1–S7 + dvlba B1–B8 — three labs, one tree, zero decoy FPs, zero LLM calls.
 - The band-D leak class is closed mechanically: discovery that moves money now *cannot* pass unobserved (ambient oracle) and feeds guidance (graph) automatically.
-- Open by design: efficiency (M5), LLM seam + GEPA (M5), third-domain transfer study (M6), pinned-probe-library deletion (M5, after coverage parity).
+- **M4: the seams are real interfaces** — policy gate (596 audited decisions in a lab run, 0 denials), verify pipeline (downgrade pass, 0 on green labs), ExperienceStore protocol, one Orchestrator serving the registry contract on BOTH paths (freightlane 8/8 through each); the refusal control (approvals=none) ships as an artifact: 33 audited denials, 0 findings, engagement dead at 15 requests — the charter's owed refusal case.
+- Memory non-regression measured: freightlane run-2 607 vs 616 (−1.5%); dvlba run-2 181 vs 270 (−33%) — the ≥ +20% efficiency claim is M5's to formalize.
+- Open by design: LLM seam + GEPA (M5), pinned-probe-library deletion (M5, after coverage parity), third-domain transfer study (M6).

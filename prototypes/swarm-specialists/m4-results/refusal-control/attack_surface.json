@@ -1,0 +1,81 @@
+{
+  "generated": "2026-11-07T04:04:42+0000",
+  "tool": "attack-graph",
+  "version": "1.0.0-m3",
+  "surface_map": {
+    "nodes": [
+      {
+        "id": "res:credits",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:shipments",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": "/api/shipments"
+      },
+      {
+        "id": "res:wallet",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "read:/api/wallet",
+        "kind": "readback",
+        "layer": "documented"
+      }
+    ],
+    "edges": [
+      {
+        "from": "res:credits",
+        "verb": "claim",
+        "path": "/api/credits/claim",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "documented"
+      },
+      {
+        "from": "res:shipments",
+        "verb": "read",
+        "path": "/api/shipments/{shipment_id}",
+        "method": "GET",
+        "layer": "documented",
+        "evidence": "documented"
+      },
+      {
+        "from": "res:shipments",
+        "verb": "rerate",
+        "path": "/api/shipments/{shipment_id}/rerate",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "documented"
+      }
+    ],
+    "doc_suspect": {}
+  },
+  "attack_graph": {
+    "source": "acct:any",
+    "goal": "goal:wallet-credit",
+    "nodes": [
+      {
+        "id": "acct:any",
+        "kind": "capability",
+        "label": "any registered account"
+      },
+      {
+        "id": "goal:wallet-credit",
+        "kind": "goal",
+        "label": "wallet credit (attacker-controlled value)"
+      }
+    ],
+    "edges": []
+  },
+  "money_paths": [],
+  "next_actions": []
+}

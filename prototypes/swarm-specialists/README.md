@@ -43,6 +43,31 @@ Every module below cites its research basis (M1–M8, E1–E6).
 - Full numbers: `M3-PROOF.md` · research: `RESEARCH-M3.md` · method
   inventory with literature lineage: `TECHNIQUES.md`.
 
+## M4 layer (orchestrator governance — the seams are real)
+
+- **Policy gate** (`swarm/policy.py` + the executor chokepoint): target
+  admission fail-closed + per-action approval gate on write mutants
+  (`approvals=lab` auto-approve + audit / `none` deny); every decision —
+  allow or deny — lands in `policy_audit.jsonl`; a denial opens no socket
+  and consumes no budget.
+- **Verify pipeline** (`swarm/verify_pipeline.py`): one verdict vocabulary;
+  an unproven claim downgrades to `not_reproducible`, is severity-capped to
+  informational, and trains the bandit as a mild failure — never success.
+- **ExperienceStore** (`swarm/experience.py`): per-specialist memory behind
+  an injectable protocol (file store for labs, in-memory for embedding; the
+  platform's semantic backend implements the same shape).
+- **Orchestrator** (`swarm/orchestrator.py`): governance shell owning
+  pre-flight → gate → the UNTOUCHED Router loop → verify pass → curation →
+  projections → artifacts. `registry_tool.run()` delegates to it — the
+  registry path and the orchestrator path are one code object.
+- **Refusal control** (`run_m4.py`, `m4-results/refusal-control/`):
+  `approvals=none` run shipped as an artifact — 33 audited denials, zero
+  findings, engagement dead at 15 counted requests (the charter's owed
+  refusal case).
+- Full numbers: `M4-PROOF.md` · research: `RESEARCH-M4.md` (web + papers
+  visited BEFORE code: CaMeL, MAST, AWM, EnIGMA, Sarraute POMDP, XBOW's own
+  architecture notes) · lineage: `TECHNIQUES.md` §A10.
+
 ## Quickstart
 
 ```bash

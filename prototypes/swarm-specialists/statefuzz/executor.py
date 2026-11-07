@@ -38,7 +38,8 @@ class Exchange(dict):
 
 
 class Executor:
-    def __init__(self, base_url, traffic_path, stop_file=None, budget=400):
+    def __init__(self, base_url, traffic_path, stop_file=None, budget=400,
+                 policy=None):
         self.base = base_url.rstrip("/")
         p = urllib.parse.urlparse(self.base)
         self.host, self.port = p.hostname, p.port or 80
@@ -46,6 +47,7 @@ class Executor:
         self.stop_file = stop_file or os.path.join(os.getcwd(), "STOP")
         self.budget = budget
         self.count = 0
+        self.policy = policy       # M4: PolicyGuard at the wire chokepoint
         self._seq = 0
         self._tlock = threading.Lock()
         self.principals = {}          # name -> Principal (filled by the model)
@@ -60,6 +62,28 @@ class Executor:
         if self.count >= self.budget:
             raise StopFuzz("request budget exhausted (%d)" % self.budget)
 
+    def _gate(self, principal, method, path):
+        """M4 policy chokepoint: every wire action passes the policy gate
+        BEFORE any socket is opened. A denial is non-fatal — one refusal
+        must never kill an engagement — but it is recorded to traffic and
+        audited, and it does NOT consume budget (nothing touched the
+        target). Returns the synthetic denied Exchange, or None to allow."""
+        if self.policy is None:
+            return None
+        pname = principal if isinstance(principal, str) else principal.name
+        d = self.policy.check_action(pname, method, path)
+        if d.allow:
+            return None
+        ex = Exchange(principal=pname, method=method, path=path,
+                      req_body=None, status=0,
+                      resp_body={"policy_denied": True,
+                                 "rule": d.get("rule"),
+                                 "reason": d.get("reason")},
+                      policy_denied=True, ts=time.time(), phase="",
+                      tag="POLICY", elapsed_ms=0.0)
+        self._record(ex)
+        return ex
+
     def _record(self, ex):
         with self._tlock:
             self._seq += 1
@@ -71,6 +95,9 @@ class Executor:
                 phase="", tag=""):
         """One ordinary HTTP exchange. Returns an Exchange dict."""
         self.check_stop()
+        denied = self._gate(principal, method, path)
+        if denied is not None:
+            return denied
         self.count += 1
         url = self.base + path
         h = dict(principal.auth_headers)
@@ -99,6 +126,9 @@ class Executor:
         a barrier, so all N requests enter the server within ~microseconds.
         Returns the N parsed responses (and records them under one tag)."""
         self.check_stop()
+        denied = self._gate(principal, method, path)
+        if denied is not None:
+            return []               # no socket opened, no budget consumed
         self.count += n
         payload = json.dumps(body).encode()
         head = ("%s %s HTTP/1.1\r\nHost: %s:%d\r\n%sContent-Type: "
@@ -156,6 +186,10 @@ class Executor:
         racer onto its own identity. Additive; behaviour of race() unchanged."""
         n = len(principals)
         self.check_stop()
+        denied = self._gate(",".join(p.name for p in principals),
+                            method, path)
+        if denied is not None:
+            return []               # no socket opened, no budget consumed
         self.count += n
         payload = json.dumps(body).encode()
         first, last = [], payload[-1:]

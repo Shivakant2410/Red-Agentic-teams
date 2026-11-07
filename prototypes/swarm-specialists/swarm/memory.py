@@ -17,9 +17,12 @@ import os
 
 
 class MemoryNamespace:
-    def __init__(self, name, memory_dir):
+    def __init__(self, name, memory_dir, persist=True):
+        # M4: persist=False gives the diskless twin used by
+        # InMemoryExperienceStore (same bandit semantics, no file I/O).
         self.name = name
-        self.path = os.path.join(memory_dir, "%s.json" % name)
+        self.path = (os.path.join(memory_dir, "%s.json" % name)
+                     if (persist and memory_dir) else None)
         self.bandit = {}
         self.insights = []
         self.history = []
@@ -83,7 +86,7 @@ class MemoryNamespace:
 
     # -------------------------------------------------------------- io ------
     def _load(self):
-        if os.path.exists(self.path):
+        if self.path and os.path.exists(self.path):
             with open(self.path) as fh:
                 doc = json.load(fh)
             self.bandit = doc.get("bandit", {})
@@ -91,6 +94,8 @@ class MemoryNamespace:
             self.history = doc.get("history", [])
 
     def _save(self):
+        if self.path is None:
+            return
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         with open(self.path, "w") as fh:
             json.dump({"bandit": self.bandit, "insights": self.insights,

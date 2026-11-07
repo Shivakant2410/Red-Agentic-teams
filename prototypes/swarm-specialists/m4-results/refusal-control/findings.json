@@ -1,0 +1,224 @@
+{
+  "tool": "swarm",
+  "version": "0.7.0-m4",
+  "generated": "2026-11-07T04:04:42+0000",
+  "elapsed_s": 0.0,
+  "requests": 15,
+  "statefuzz_sub_budget_requests": null,
+  "rounds": 40,
+  "roster": [
+    "recon",
+    "surface_mapper",
+    "hypothesis",
+    "exploit",
+    "verify",
+    "access",
+    "statefuzz_spec",
+    "window_driver",
+    "attack_graph"
+  ],
+  "spawn_events": [],
+  "llm_seam_calls": [],
+  "markers_registered": 0,
+  "attack_graph": {
+    "surface_nodes": 4,
+    "surface_edges": 3,
+    "money_paths": 0,
+    "next_actions": []
+  },
+  "ambient_watch": {
+    "events": 0,
+    "unexplained": 0,
+    "deltas": []
+  },
+  "ledger": {
+    "facts": 28,
+    "by_kind": {
+      "CONTROL": 9,
+      "OBSERVATION": 10,
+      "SURFACE": 1,
+      "HYPOTHESIS": 8
+    },
+    "by_source": {
+      "orchestrator": 1,
+      "recon": 2,
+      "surface_mapper": 2,
+      "hypothesis": 8,
+      "exploit": 1,
+      "router": 7,
+      "attack_graph": 7
+    }
+  },
+  "hypothesis_ledger": {
+    "stats": {
+      "total": 8,
+      "by_status": {
+        "inconclusive": 1,
+        "refuted": 7
+      },
+      "by_source": {
+        "swarm-board/bfcccb": 8
+      },
+      "by_tag": {
+        "h_fsm": 1,
+        "h_open_vocab": 1,
+        "h_hidden_verbs": 1,
+        "h_mass_assign": 1,
+        "h_cross_tenant": 1,
+        "h_arith_cycle": 1,
+        "h_quota_race": 1,
+        "h_async_seam": 1
+      }
+    },
+    "score": 7.0
+  },
+  "memory_before": {
+    "recon": {
+      "name": "recon",
+      "techniques": {
+        "fetch_robots": 0.5,
+        "fetch_index": 0.5,
+        "fetch_route_index": 0.5,
+        "fetch_openapi": 0.5,
+        "probe_common_paths": 0.5,
+        "fingerprint_server": 0.5
+      },
+      "insights": 0,
+      "trials": 0
+    },
+    "surface_mapper": {
+      "name": "surface_mapper",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "hypothesis": {
+      "name": "hypothesis",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "exploit": {
+      "name": "exploit",
+      "techniques": {
+        "h_open_vocab": 0.5,
+        "h_hidden_verbs": 0.5,
+        "h_mass_assign": 0.5,
+        "h_cross_tenant": 0.5,
+        "h_arith_cycle": 0.5,
+        "h_quota_race": 0.5,
+        "h_async_seam": 0.5
+      },
+      "insights": 0,
+      "trials": 0
+    },
+    "verify": {
+      "name": "verify",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "access": {
+      "name": "access",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "statefuzz_spec": {
+      "name": "statefuzz_spec",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "window_driver": {
+      "name": "window_driver",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "attack_graph": {
+      "name": "attack_graph",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    }
+  },
+  "memory_after": {
+    "recon": {
+      "name": "recon",
+      "techniques": {
+        "fetch_robots": 0.364,
+        "fetch_index": 0.364,
+        "fetch_route_index": 0.364,
+        "fetch_openapi": 0.444,
+        "probe_common_paths": 0.364,
+        "fingerprint_server": 0.444
+      },
+      "insights": 1,
+      "trials": 6
+    },
+    "surface_mapper": {
+      "name": "surface_mapper",
+      "techniques": {
+        "map_surface": 0.444
+      },
+      "insights": 0,
+      "trials": 1
+    },
+    "hypothesis": {
+      "name": "hypothesis",
+      "techniques": {
+        "generate": 0.444
+      },
+      "insights": 1,
+      "trials": 1
+    },
+    "exploit": {
+      "name": "exploit",
+      "techniques": {
+        "h_open_vocab": 0.364,
+        "h_hidden_verbs": 0.364,
+        "h_mass_assign": 0.364,
+        "h_cross_tenant": 0.364,
+        "h_arith_cycle": 0.364,
+        "h_quota_race": 0.364,
+        "h_async_seam": 0.364,
+        "h_fsm": 0.444
+      },
+      "insights": 1,
+      "trials": 8
+    },
+    "verify": {
+      "name": "verify",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "access": {
+      "name": "access",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "statefuzz_spec": {
+      "name": "statefuzz_spec",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "window_driver": {
+      "name": "window_driver",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "attack_graph": {
+      "name": "attack_graph",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    }
+  },
+  "findings": [],
+  "escalations": []
+}
