@@ -37,6 +37,11 @@ Rules:
 - Base every claim ONLY on the digest. Do not invent findings or access that is not listed.
 - prioritize/deprioritize are nudges applied to a fixed safety-checked attack tree — they \
 cannot create or authorize anything, only reorder already-in-scope technique/target pairs.
+- The digest includes the ACTIVE STRATEGY STATE: the directives from your previous \
+rounds and the per-technique evidence ledger. You are AMENDING a living strategy, not \
+restarting: repeat a directive only if you still stand behind it, change it when the \
+evidence moved, and remember a directive you do not repeat still expires on its own \
+ttl (press 2 rounds, avoid 3) or is released the moment the technique confirms.
 - Be decisive: if a technique produced nothing across rounds, say to deprioritize it; if a \
 foothold is confirmed but unpressed, say to prioritize the chain follow-ups.
 - Respond with STRICT JSON only (no markdown fences, no prose): \
@@ -47,7 +52,8 @@ Keep it tight: assessment <= 5 sentences, each list <= 5 items."""
 
 def build_digest(*, objective_text: str, round_no: int, objective=None, findings=None,
                  attack_tree=None, killchain=None, audit_tail: list[dict] | None = None,
-                 notes_so_far: list[str] | None = None) -> str:
+                 notes_so_far: list[str] | None = None,
+                 strategy_brief: str | None = None) -> str:
     """Deterministic, factual digest of the engagement state for the strategist."""
     findings = findings or []
     lines: list[str] = [f"OBJECTIVE: {objective_text}", f"ROUND JUST COMPLETED: {round_no}"]
@@ -85,6 +91,13 @@ def build_digest(*, objective_text: str, round_no: int, objective=None, findings
 
     if notes_so_far:
         lines.append("PREVIOUS REFLECTIONS (latest last): " + " | ".join(notes_so_far[-3:]))
+
+    if strategy_brief:
+        # Phase B5: the living strategy state (directives + evidence ledger, built
+        # deterministically in strategy.py). The strategist amends this — it does
+        # not restart from zero every round.
+        lines.append("ACTIVE STRATEGY STATE (amend, don't restart):")
+        lines.append(strategy_brief)
 
     if audit_tail:
         # Compact signal extraction: only failure-shaped audit events, nothing else.
@@ -167,13 +180,14 @@ def coach_note(reflection: dict) -> str:
 
 def reflect(client, *, objective_text: str, round_no: int, objective=None, findings=None,
             attack_tree=None, killchain=None, audit_tail: list[dict] | None = None,
-            notes_so_far: list[str] | None = None, on_text=None) -> dict | None:
+            notes_so_far: list[str] | None = None, on_text=None,
+            strategy_brief: str | None = None) -> dict | None:
     """One strategist call over the round digest. Returns the validated reflection dict,
     or None on ANY failure (the run never depends on this)."""
     digest = build_digest(objective_text=objective_text, round_no=round_no,
                           objective=objective, findings=findings, attack_tree=attack_tree,
                           killchain=killchain, audit_tail=audit_tail,
-                          notes_so_far=notes_so_far)
+                          notes_so_far=notes_so_far, strategy_brief=strategy_brief)
     messages = [
         {"role": "system", "content": REFLECTION_SYSTEM},
         {"role": "user", "content": digest + "\n\nReturn the strict JSON reflection now."},
