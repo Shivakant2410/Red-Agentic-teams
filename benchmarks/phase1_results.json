@@ -1,0 +1,83 @@
+{
+  "generated": "2026-11-09T17:18:43.973767+00:00",
+  "seed": 20260101,
+  "workload_size": 210,
+  "configs": [
+    {
+      "mode": "A",
+      "total_task_deliveries": 210,
+      "real_investigations": 210,
+      "duplicate_investigation_rate": 0.6667,
+      "unique_confirmed_findings": 22,
+      "confirmed_true_positives": 22,
+      "verification_precision": 1.0,
+      "evidence_provenance_completeness": null,
+      "observation_reuse_rate": 0.0,
+      "avg_rounds_to_confirmation": 16.47,
+      "tokens_per_confirmed_finding": 8590.9,
+      "noise_cost_per_confirmed_finding": 9.55,
+      "false_relationship_rate": null,
+      "auto_merges": 0,
+      "stale_ownership_rejections": null
+    },
+    {
+      "mode": "B",
+      "total_task_deliveries": 210,
+      "real_investigations": 171,
+      "duplicate_investigation_rate": 0.0,
+      "unique_confirmed_findings": 22,
+      "confirmed_true_positives": 22,
+      "verification_precision": 1.0,
+      "evidence_provenance_completeness": 1.0,
+      "observation_reuse_rate": 1.0,
+      "avg_rounds_to_confirmation": 16,
+      "tokens_per_confirmed_finding": 7759.1,
+      "noise_cost_per_confirmed_finding": 7.77,
+      "false_relationship_rate": null,
+      "auto_merges": 0,
+      "stale_ownership_rejections": null
+    },
+    {
+      "mode": "C",
+      "total_task_deliveries": 210,
+      "real_investigations": 174,
+      "duplicate_investigation_rate": 0.0,
+      "unique_confirmed_findings": 22,
+      "confirmed_true_positives": 22,
+      "verification_precision": 1.0,
+      "evidence_provenance_completeness": 1.0,
+      "observation_reuse_rate": 1.0,
+      "avg_rounds_to_confirmation": 16,
+      "tokens_per_confirmed_finding": 7881.8,
+      "noise_cost_per_confirmed_finding": 7.91,
+      "false_relationship_rate": null,
+      "auto_merges": 0,
+      "stale_ownership_rejections": "1/1"
+    },
+    {
+      "mode": "D",
+      "total_task_deliveries": 210,
+      "real_investigations": 173,
+      "duplicate_investigation_rate": 0.0,
+      "unique_confirmed_findings": 22,
+      "confirmed_true_positives": 22,
+      "verification_precision": 1.0,
+      "evidence_provenance_completeness": 1.0,
+      "observation_reuse_rate": 1.0,
+      "avg_rounds_to_confirmation": 16,
+      "tokens_per_confirmed_finding": 8318.2,
+      "noise_cost_per_confirmed_finding": 7.86,
+      "false_relationship_rate": 0.0,
+      "auto_merges": 0,
+      "stale_ownership_rejections": "1/1"
+    }
+  ],
+  "remaining_experiments": [
+    "Live-fire A/B on the lab target (lab/): baseline swarm vs forum-enabled swarm, 2 seeds each, real token accounting from BudgetTracker.",
+    "Live-fire C on the same target with the Phase C1 orchestrator integration (research_dir wired) vs a research_dir=None control run.",
+    "Cross-engagement reuse: run C twice against a mutated copy of the lab app and measure counter-evidence reuse (stale-branch suppression) from the replayed journal.",
+    "Semantic-assist (D) with a real embedding backend behind the SemanticMatcher protocol, scored against human-labeled duplicate pairs from a live run.",
+    "Verification-precision impact at scale: >=100-finding engagements to tighten the Wilson intervals on confirmed/falsified splits."
+  ],
+  "caveat": "SYNTHETIC simulation — not live-fire numbers"
+}
