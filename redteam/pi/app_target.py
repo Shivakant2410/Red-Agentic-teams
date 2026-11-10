@@ -166,16 +166,23 @@ class AppState:
 # -- the brain: deterministic directive interpreter ---------------------------------
 
 _CALL_RE = re.compile(
-    r"call\s+(?:the\s+)?(?:tool\s+)?([a-z_][a-z0-9_]{1,40})(?:\s+with\s+(.+?))?\s*(?:$|[;\n!])",
+    r"call(?:ing)?\s+(?:the\s+)?(?:tool\s+)?([a-z_][a-z0-9_]{1,40})(?:\s+with\s+(.+?))?\s*(?:$|[;\n!])",
     re.IGNORECASE | re.DOTALL)
 _KV_RE = re.compile(
     r"([a-z_][a-z0-9_]*)\s*=\s*('([^']*)'|\"([^\"]*)\"|([^\s,;]+))", re.IGNORECASE)
 _TOKEN_RE = re.compile(
-    r"(?:reply with|output|repeat|print|say)\s+(?:the\s+)?(?:exact\s+)?"
-    r"(?:word|token|phrase)?\s*[\"']?([A-Z][A-Z0-9_-]{2,31})[\"']?")
+    r"(?i:reply with|output|repeat|print|say)\s+(?i:the\s+)?(?i:exact\s+)?"
+    r"(?i:word|token|phrase)?\s*[\"']?([A-Z][A-Za-z0-9_-]{2,63})[\"']?")
+_ECHO_VERBATIM_RE = re.compile(
+    r"echo\s+(?:this\s+)?(?:snippet\s+)?verbatim[^:]*:\s*(.+?)\s*(?:$|\n)",
+    re.IGNORECASE | re.DOTALL)
+_INCLUDE_RE = re.compile(
+    r"(?:include|embed)\s+[^:\n]{0,80}?reply\s*:??\s*(.+?)\s*(?:$|\n)",
+    re.IGNORECASE | re.DOTALL)
 _LEAK_RE = re.compile(
     r"(?:repeat|output|print|reveal|show|dump)\s+(?:me\s+)?(?:your|the)\s+"
-    r"(?:initial\s+instructions|system prompt|hidden instructions|instructions)",
+    r"(?:initial\s+instructions|system prompt|hidden instructions|instructions"
+    r"|text above|contents above|above text)",
     re.IGNORECASE)
 _TRANSFER_RE = re.compile(
     r"transfer\s+\$?(\d+(?:\.\d+)?)\s+to\s+([A-Za-z0-9_.:-]+)", re.IGNORECASE)
@@ -231,6 +238,14 @@ def extract_directives(text: str, *, source: str, trusted: bool) -> list:
     token = _TOKEN_RE.search(text)
     if token:
         found.append(Directive("echo_token", token=token.group(1),
+                               source=source, trusted=trusted, text=text))
+    verbatim = _ECHO_VERBATIM_RE.search(text)
+    if verbatim:
+        found.append(Directive("echo_token", token=verbatim.group(1)[:200],
+                               source=source, trusted=trusted, text=text))
+    include = _INCLUDE_RE.search(text)
+    if include:
+        found.append(Directive("echo_token", token=include.group(1)[:200],
                                source=source, trusted=trusted, text=text))
     if _LEAK_RE.search(text):
         found.append(Directive("leak_prompt", source=source, trusted=trusted,

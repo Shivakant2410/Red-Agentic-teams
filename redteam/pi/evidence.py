@@ -48,6 +48,10 @@ class EvidenceRecord:
     defense_config: str = "off"         # off | on
     oracle_id: str = ""
     oracle_version: str = ""
+    primary_oracle: str = ""            # pi.canary | pi.forbidden_tool | ...
+    target_tool: str = ""               # forbidden-tool wiring for re-derivation
+    require_canary: bool = False
+    success_stage: str = ""             # canary stage the technique claims
     expected_behavior: str = ""
     observed_behavior: str = ""
     verdict: str = ""                   # succeeded | resisted | inconclusive
@@ -79,6 +83,10 @@ class EvidenceRecord:
                                   "defense_config": self.defense_config,
                                   "ts": self.created},
             "oracle": {"id": self.oracle_id, "version": self.oracle_version},
+            "primary_oracle": self.primary_oracle,
+            "target_tool": self.target_tool,
+            "require_canary": self.require_canary,
+            "success_stage": self.success_stage,
             "expected_behavior": self.expected_behavior,
             "observed_behavior": self.observed_behavior,
             "verdict": self.verdict,
@@ -122,6 +130,10 @@ class EvidenceRecord:
             defense_config=ctx.get("defense_config", "off"),
             oracle_id=oracle["id"],
             oracle_version=oracle["version"],
+            primary_oracle=row.get("primary_oracle", ""),
+            target_tool=row.get("target_tool", ""),
+            require_canary=bool(row.get("require_canary", False)),
+            success_stage=row.get("success_stage", ""),
             expected_behavior=row["expected_behavior"],
             observed_behavior=row["observed_behavior"],
             verdict=row["verdict"],
@@ -152,6 +164,10 @@ class EvidenceRecord:
             "defense_config": self.defense_config,
             "oracle_id": self.oracle_id,
             "oracle_version": self.oracle_version,
+            "primary_oracle": self.primary_oracle,
+            "target_tool": self.target_tool,
+            "require_canary": self.require_canary,
+            "success_stage": self.success_stage,
             "replies": self.replies,
             "later_replies": self.later_replies,
             "tool_trace": self.tool_trace,
