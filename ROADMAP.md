@@ -53,8 +53,29 @@ This project's differentiators, built in Gen-1 and preserved in Gen-2, remain ra
   Wilson CIs, FP rate only from real verification, defense differential), findings
   bridged as `pending_verification` with a `pi_oracle` check the existing independent
   verifier re-derives from raw evidence, and a reproducible offline bench
-  (`python -m redteam.pi`): 16/18 techniques confirm on the undefended fixture app,
-  0 on the defended one, benign utility 1.0 throughout.
+  (`python -m redteam.pi`).
+
+- **PI 2026 gap closure (G1-G10, `PI_GAP_RESEARCH.md` + `PI_INTEGRATION_CATALOG.md`)** —
+  the registry grew to 21 techniques / 25 payloads / 9 delivery channels with three new
+  surfaces the 2026 field shows matter most: cross-session memory persistence (PI.B6,
+  AgentPoison/XSPI protocol port — the PERSISTED canary stage is live, and
+  `IOPolicy.memory_write_approval` models the OWASP-2026 privileged-memory-write
+  prevention), MCP tool-metadata poisoning + rug pull (PI.B7/PI.B8 with
+  `tool_desc_pinning`), and unicode smuggling (PI.A5 v1.1: unicode-tags + zero-width,
+  with detection seeing through every encoding it attacks with). Two OUR-tools
+  additions change what the numbers MEAN: the legit-instruction control (G5) turns the
+  2026 contextual-integrity impossibility result into a runnable gate — a blanket
+  defense that drops legitimate in-data instructions is INCONCLUSIVE (over-blocking),
+  never credited as resistance, so the defended ASR is honestly UNDECIDABLE rather than
+  a laundered 0.0 — and the adaptive phase (G2, `--adaptive-rounds`,
+  `--defense-spec-visible`) re-attacks every non-succeeded cell with deterministic
+  GPTFuzzer/TurboFuzzLLM-style mutations (mutants marked, never bridged to findings).
+  Bench output now ships a honesty block (fixture-only, public-payload saturation →
+  ASR is an upper bound, RAS-Eval live-execution caveat) and `python -m redteam.pi
+  --audit` prints the coverage audit (known-uncovered surfaces named, PIAtlas classes
+  deliberately not guessed) plus dual-pinned OWASP 2025+2026 / ATLAS-2026.07 anchors.
+  One cell = one payload now: A1/A2 (2 payloads each) and A5 (3) run per-payload with
+  `payload_ref` attribution carried into findings titles.
 
 - **Multi-provider LLM gateway** — role-routed, cross-provider round-robin failover with
   429 cooldowns; Anthropic native; OpenAI-compatible endpoints (OpenAI/Z.ai/Groq/
