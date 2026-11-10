@@ -683,3 +683,96 @@ PI_TREE_COSTS: dict = {
 
 
 
+
+
+# -- standards anchors and coverage audit (G8/G9, our tools) ---------------------------
+
+# Per-technique OWASP LLM01:2026 scenario/prevention mapping for techniques
+# born from the 2026 research; family-level defaults live in standards_anchors.
+OWASP_2026_SCENARIOS: dict = {
+    "PI.B6": "2026 scenario #4 (memory/RAG corpus poisoning) + prevention "
+             "'treat agent memory writes as privileged operations'",
+    "PI.B7": "2026 scenario #9 (trusted-backend indirect injection through "
+             "MCP) + prevention 'pin, sign, and audit tool descriptions'",
+    "PI.B8": "2026 prevention 'pin, sign, and audit tool descriptions' "
+             "(rug-pull detection)",
+    "PI.A5": "2026 prevention note: multilingual/encoded payload evasion "
+             "class (unicode-tags, zero-width)",
+    "PI.D1": "2026 scenario #6 (multimodal and steganographic injection)",
+    "PI.E2": "2026 scenario #7 (zero-click document-borne agentic "
+             "exfiltration)",
+}
+
+
+def standards_anchors() -> dict:
+    """The versioned standards metadata (G8): dual-pins OWASP 2025+2026 and
+    records the ATLAS data release the anchors were verified against. The
+    2026 edition is a SUPERSET delta — LLM01:2026 adds agentic scenarios
+    (#6-#9), the Rule of Two, memory-write privilege, and the adaptive-
+    attacker testing requirement; nothing in the 2025 anchors was retracted."""
+    return {
+        "owasp": ["LLM01:2025", "LLM01:2026"],
+        "atlas": {
+            "technique": "AML.T0051 LLM Prompt Injection",
+            "sub_techniques": ["T0051.000 Direct", "T0051.001 Indirect",
+                               "T0051.002 Triggered (inferred)"],
+            "verified_against": "atlas-data release 2026.07 (no sub-technique "
+                                "drift since the 2025 anchoring)",
+        },
+        "llm01_2026_family_map": {
+            "A": "direct-user scenarios (+ encoded-payload evasion class)",
+            "B": "scenarios #4 memory poisoning, #7 exfiltration, #9 MCP "
+                 "trusted-backend",
+            "C": "scenario #8 (agentic destructive command execution, "
+                 "plan-time)",
+            "D": "scenario #6 (multimodal/steganographic)",
+            "E": "scenario #7 (zero-click document-borne exfiltration)",
+        },
+        "per_technique_2026": dict(OWASP_2026_SCENARIOS),
+        "rule_of_two": ("the hardened fixture's IOPolicy flags implement the "
+                        "2026 Rule-of-Two framing: untrusted input + "
+                        "sensitive data + state change must not co-occur "
+                        " ungated"),
+        "ai_testing_guide": "OWASP AITG-APP-01 (Testing for Prompt "
+                            "Injection) cross-walked by the coverage audit",
+    }
+
+
+def coverage_audit() -> dict:
+    """G9 (our tool): the registry's own coverage map — per family, per
+    delivery channel, per canary stage target, and the surfaces the field
+    shows matter that this registry does NOT cover. The audit that would
+    have surfaced the dead-PERSISTED stage (G1) mechanically."""
+    families = {f: len(techniques_for_family(f)) for f in FAMILIES}
+    deliveries: dict = {}
+    for t in TECHNIQUES:
+        for ch in t.delivery:
+            deliveries.setdefault(ch, []).append(t.id)
+    stage_targets: dict = {}
+    for t in TECHNIQUES:
+        stage_targets[t.success_stage.value] = \
+            stage_targets.get(t.success_stage.value, 0) + 1
+    return {
+        "techniques": len(TECHNIQUES),
+        "payloads": sum(len(t.payloads) for t in TECHNIQUES),
+        "channels": sorted(DELIVERY_CHANNELS),
+        "by_family": families,
+        "by_delivery": {k: sorted(v) for k, v in sorted(deliveries.items())},
+        "by_success_stage": dict(sorted(stage_targets.items())),
+        "known_uncovered": {
+            "multilingual_payloads": ("no low-resource-language/code-mixed "
+                                      "wrapper yet (OWASP 2026 evasion class)"),
+            "multimodal_executed": ("family D is capability-gated skip offline; "
+                                    "live lane via OpenAIToolLoop/PyRIT"),
+            "fine_tuning_gradient_oracle": ("'fun-tuning' vector: registry "
+                                            "anchor only, no fixture surface"),
+            "typed_exfil_channels": ("RELAYED evidence is not yet typed per "
+                                     "channel (echo vs outbound request)"),
+            "whitebox_suffix_search": ("PI.A6 template requires operator "
+                                       "supplies; no GCG loop offline"),
+        },
+        "piatlas_mapping": ("families are delivery-organized; construction-"
+                            "mechanism classes await the PIAtlas/PICorpus "
+                            "release (arXiv 2610.24999) — do NOT guess the "
+                            "class names"),
+    }

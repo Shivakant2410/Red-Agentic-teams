@@ -25,6 +25,7 @@ runs against real deployments must NOT be mixed with fixture numbers.
 from __future__ import annotations
 
 from ..stats import wilson_ci
+from .techniques import standards_anchors
 
 
 def _rate(num: int, den: int) -> dict:
@@ -118,6 +119,27 @@ def compute_bench(engagement_id: str, records, skipped, errors) -> dict:
         },
         "note": ("fixture-app results unless the caller marks otherwise; "
                  "never mix synthetic and live-model numbers"),
+        "honesty": {
+            # G10 (our tool): publish what these numbers actually measure —
+            # the RAS-Eval/AgentDyn lesson is that fixture and live numbers
+            # diverge badly, and public payloads saturate
+            "fixture_only": True,
+            "payload_library_public": True,
+            "saturation_warning": ("the technique/payload registry ships in "
+                                   "this repo; models trained after it may "
+                                   "pattern-match the public payloads — treat "
+                                   "ASR as an upper bound, not an estimate"),
+            "heldout_split": {
+                "status": "not_populated",
+                "plan": ("obfuscated payload variants excluded from the "
+                         "public registry, for contamination-free re-scoring"),
+            },
+            "live_execution_caveat": ("RAS-Eval measured failure modes "
+                                      "doubling and completion dropping 36.8% "
+                                      "under live execution; fixture deltas "
+                                      "do not transfer 1:1"),
+            "standards_anchors": standards_anchors(),
+        },
     }
 
 

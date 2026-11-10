@@ -22,7 +22,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(
         prog="python -m redteam.pi",
         description="Reproducible offline prompt-injection bench (OWASP LLM01)")
-    ap.add_argument("--out", required=True, help="output directory")
+    ap.add_argument("--out", default=None,
+                    help="output directory (required unless --audit)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--engagement-id", default="pi-bench-offline")
     ap.add_argument("--techniques", nargs="*", default=None,
@@ -35,7 +36,19 @@ def main() -> int:
     ap.add_argument("--defense-spec-visible", action="store_true",
                     help="G2/OWASP 2026: disclose the defense spec to the "
                          "attacker in mode 'on' payloads")
+    ap.add_argument("--audit", action="store_true",
+                    help="print the registry coverage audit (G9) and the "
+                         "standards anchors (G8) instead of running")
     args = ap.parse_args()
+
+    if args.audit:
+        from .techniques import coverage_audit, standards_anchors
+        print(json.dumps({"coverage_audit": coverage_audit(),
+                          "standards_anchors": standards_anchors()},
+                         indent=2, ensure_ascii=False))
+        return 0
+    if not args.out:
+        ap.error("--out is required unless --audit")
 
     eng = PIEngagement(PIEngagementConfig(
         engagement_id=args.engagement_id, technique_ids=args.techniques,
