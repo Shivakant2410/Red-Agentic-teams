@@ -1,0 +1,28 @@
+id: web-content-discovery
+name: Content and parameter discovery chain (katana -> ffuf -> arjun)
+kill_chain: enum
+surfaces: [web, api]
+tech_tags: [discovery, fuzzing, params]
+risk_class: 1
+tools: [content_discovery, crawl, param_discovery, http_probe]
+prerequisites:
+  - "at least one live in-scope base URL from the surface phase"
+detection_risk: unmeasured
+technique: |
+  1. crawl on the base URL first (JS-aware, domain-scoped -fs rdn so it cannot wander):
+     cheap, broad, folds endpoints into the graph.
+  2. content_discovery with the 'common' wordlist on the base URL; escalate to
+     'api-endpoints' only on API-looking roots. Watch the lead cap; do not re-run
+     a wordlist the graph already covers.
+  3. http_probe the most promising leads (admin, api/docs, swagger, backup, .git) —
+     cheap session-aware looking, never the finding pipeline.
+  4. param_discovery on interactive endpoints (forms, search, export) — the hidden
+     parameters feed verify hints for exploit-phase playbooks (exploit-idor-authz-matrix,
+     exploit-ssrf-oob).
+  5. Budget discipline: discovery builds the to-do list. Stop when new leads per
+     request fall off; do not enumerate for its own sake.
+verify_hint: |
+  Every discovered URL/param is a lead with origin: agent. A 200 on /admin is not a
+  finding; it is an input to an exploit-phase playbook.
+references:
+  - "redteam/tools/webdiscover.py"

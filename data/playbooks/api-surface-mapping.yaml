@@ -1,0 +1,25 @@
+id: api-surface-mapping
+name: API surface mapping and route seeding (whitebox + runtime)
+kill_chain: enum
+surfaces: [api]
+tech_tags: [openapi, spa, routes]
+risk_class: 1
+tools: [spa_recon, crawl, param_discovery, jwt_inspect]
+prerequisites:
+  - "operator handoff: OpenAPI/Postman export if the client provides one (data_source: operator)"
+detection_risk: unmeasured
+technique: |
+  1. If the client supplies an OpenAPI/Postman export, ingest it through the importers
+     as whitebox route-seeding material (INTERSECTION with RoE as always).
+  2. spa_recon login-gated SPAs to capture the runtime API surface (XHR the app only
+     makes after login).
+  3. crawl + param_discovery on discovered API roots; record method + path + params
+     as separate graph attributes so the authz matrix has object identity later.
+  4. jwt_inspect any token the app presents: alg, kid, jku, expiry, PII — leads only.
+  5. If a GraphQL endpoint appears, switch to exploit-graphql-authz once the schema
+     shape is known.
+verify_hint: |
+  Output is an endpoint->method->param matrix in the graph. Authorization findings
+  come from the differential playbooks, not from mapping itself.
+references:
+  - "docs/tool-integration-plan.md §W2 graphql_inspect"

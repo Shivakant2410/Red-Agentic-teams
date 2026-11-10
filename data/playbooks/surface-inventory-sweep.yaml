@@ -1,0 +1,26 @@
+id: surface-inventory-sweep
+name: Allowed-surface inventory and login-gated SPA exposure
+kill_chain: surface
+surfaces: [web, api]
+tech_tags: [inventory, spa, recon]
+risk_class: 1
+tools: [surface_scan, spa_recon, http_probe]
+prerequisites:
+  - "RoE allowlist configured (surface_scan only ever knocks on allowed host x port)"
+detection_risk: unmeasured
+technique: |
+  1. surface_scan once per run: it knocks once on every allowed host x port pair,
+     records live services into the asset inventory, and never records findings.
+     Read its dead-pair and budget-exhaustion report honestly.
+  2. For each live web service, http_probe the root and common entry pages; record
+     tech headers into the knowledge graph.
+  3. If the app is a login-gated SPA, run spa_recon: it renders the authenticated
+     shell with bootstrap mocks (source=mock vs source=live is logged) and reveals
+     the runtime API surface that static recon misses.
+  4. Diff the revealed endpoints against what knowledge.py already holds; new
+     endpoints become enum targets (see web-content-discovery).
+verify_hint: |
+  Surface playbooks produce endpoints and inventory rows, not findings. The output
+  of this playbook feeds every later phase; keep provenance (source=mock|live) intact.
+references:
+  - "README ARTEX port section"

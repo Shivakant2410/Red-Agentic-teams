@@ -114,6 +114,10 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # parameters ride lead payloads into verify hints. None record findings.
     from .webdiscover import ContentDiscoveryTool, CrawlTool, ParamDiscoveryTool
     tools += [ContentDiscoveryTool(), CrawlTool(), ParamDiscoveryTool()]
+    # First-party technique playbooks (data/playbooks/, ships in-repo): the offline
+    # research layer — agents look techniques up here BEFORE inventing or searching.
+    from .playbooks import FindTechniquesTool
+    tools.append(FindTechniquesTool())
     # search_peer_traces = the swarm's read side (ARTEX worker-trace exchange port):
     # keyword-search sibling specialists' raw process traces for observations that
     # never became findings. Read-only over this run's event log, costs no budget.

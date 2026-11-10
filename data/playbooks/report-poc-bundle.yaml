@@ -1,0 +1,26 @@
+id: report-poc-bundle
+name: Deterministic PoC and retest bundle per confirmed finding
+kill_chain: report
+surfaces: [web, api, ad, cloud, host]
+tech_tags: [report, poc, retest]
+risk_class: 0
+tools: [request_approval]
+prerequisites:
+  - "at least one confirmed finding with replayable check steps"
+detection_risk: none
+technique: |
+  1. For each confirmed finding, generate the standalone PoC bundle: the exact check
+     steps (request/response transcripts), the negative control, and the k-of-n
+     verdict — deterministic, no LLM in the loop, no live firing needed to re-verify.
+  2. Retest mode (retest.py): replay the bundle against a patched target to confirm
+     remediation; the bundle is the contract between this engagement and the fix team.
+  3. Attach provenance: which playbook/tool chain produced the finding, which
+     hypothesis registry entries correspond, and the detection-cost numbers where
+     the B4 harness measured them.
+  4. Mask every credential/PII string through the redactor before the bundle leaves
+     the platform — the report must be safe to email.
+verify_hint: |
+  Nothing to verify — the bundle is the verification's artifact. Its quality bar:
+  a third party can reproduce the finding from the bundle alone.
+references:
+  - "redteam/retest.py"

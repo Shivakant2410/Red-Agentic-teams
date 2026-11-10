@@ -23,7 +23,11 @@ __pycache__/
 venv/
 *.egg-info/
 .pytest_cache/
-data/
+# Downloaded/cloned corpora live here (nuclei templates etc.) and stay untracked —
+# EXCEPT the first-party technique playbooks, which ship in-repo by design
+# (offline research layer, see docs/tool-integration-plan.md §5).
+data/*
+!data/playbooks/
 
 # Runtime state (catalog, usage sqlite) — local to this machine
 .state/

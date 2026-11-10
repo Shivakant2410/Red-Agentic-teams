@@ -74,7 +74,8 @@ redteam/
   tools/             kali_exec, browser_*, record_finding, request_approval,
                      verify_vulnerability, verify_finding_independently, jwt_inspect,
                      nuclei_scan (leads only), content_discovery / crawl /
-                     param_discovery (W1 lead generators), template/skill tools,
+                     param_discovery (W1 lead generators), find_techniques (offline
+                     playbook library in data/playbooks/), template/skill tools,
                      postex, ... — the capability ladder lives in
                      docs/tool-integration-plan.md
 dashboard/           Next.js mission-control UI (static export, served by server.py)

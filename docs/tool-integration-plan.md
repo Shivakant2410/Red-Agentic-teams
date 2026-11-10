@@ -64,6 +64,51 @@ throttle; the B4 harness validates the tag against the simulated defender, and
 live-fire results update it. A tag that was never measured is marked `unmeasured`
 — tags may be optimistic, measurements may not.
 
+## 4. Kill-chain tool matrix — specific tools, recon → postex
+
+Operator direction: name the actual tools per phase, not categories. `OWN` = the
+platform's first-party tool (exists or ships in this plan); `R1`/`W2`/`W3` = planned
+in this document; runs-in tells you where the binary lives (sandbox = the Kali
+container under the egress firewall; host = the operator's machine; operator =
+third-party source, delivered by hand — the sandbox cannot and should not reach it).
+
+| Phase | Specific tools | Runs in | Class | First-party integration |
+|---|---|---|---|---|
+| **Recon** (passive) | crt.sh CT logs, wayback via gau/waymore, passive DNS (amass passive), leak-corpus lookups (dehashed/HIBP via operator) | operator | 0 | exports → `importers/assets.py` INTERSECTION; `http_probe`/`surface_scan` on what survives |
+| **Surface** | `surface_scan` (OWN), httpx (`-tech-detect`), naabu, `spa_recon` (OWN, ARTEX port) | sandbox | 1 | inventory + knowledge graph; spa runtime surface |
+| **Enum / discovery** | katana (`-fs rdn`), ffuf, feroxbuster, arjun, swagger/openapi hunting via `http_probe` (OWN), gau (in-scope historical only), kerbrute, nxc `--shares`/ldap enum, ldapdomaindump, GitDorker + gitleaks (client-supplied repos) | sandbox | 1 | `content_discovery`/`crawl`/`param_discovery` (OWN, W1 ✓); AD wrappers R1 |
+| **Vuln detection (leads)** | nuclei (OWN), `jwt_inspect` (OWN), Certipy `find`, nxc coerce/zerosafety modules (check-only), smuggler, graphw00f, dalfox (candidate XSS), semgrep (client code, operator import) | sandbox | 0–1 | every match = lead + verify_hint; nothing records |
+| **Exploitation (gated)** | the verify pipeline (OWN): `verify_vulnerability`, `verify_workflow_abuse`, `verify_finding_independently`; sqlmap (fixed flags), jwt_tool, ysoserial/phpggc (proof payloads only), Certipy `auth` (canary SAN), impacket psexec/wmiexec (post-approval), evil-winrm (held creds) | sandbox | 2–3 | proofs only ever written by `verify_finding_independently`; canary objects mandatory |
+| **Credential access** | impacket `GetUserSPNs` (kerberoast), `GetNPUsers` (AS-REP), `secretsdump` (class 3), lsassy via nxc module (class 3), hashcat + john (host, offline), `set_session` for operator tokens, Responder/mitm6 (**class 4 — excluded, never an agent tool**) | sandbox + host | 2–3 | secrets redactor masks at capture; cracking NEVER in-sandbox |
+| **Post-exploitation** | `extract_secrets`/`prove_privilege` (OWN), the creditor (OWN), BloodHound CE + Cypher pathfinding (R2), chisel/ligolo-ng tunneling (operator infra), `record_access` + kill chain (OWN) | sandbox + compose | 2–3 | canary discipline; access graph is the state of record |
+| **Lateral movement** | nxc sweeps (auth-only modules), impacket PTH, RDP/WinRM with held creds, AzureHound + GraphRunner (Entra) | sandbox | 2 | per-batch approval; every hop proven via creditor before credit |
+| **Reporting** | `report.py`, `retest.py` (OWN), deterministic PoC bundles, B4 detection appendix | host | 0 | retest bundle = the remediation contract |
+
+## 5. The techniques layer — agents look it up, they don't search
+
+`redteam/tools/playbooks.py` + `data/playbooks/*.yaml` (ships **in the repo**,
+offline by construction): first-party technique playbooks indexed by kill-chain
+phase, surface, and tech tags. `find_techniques(kill_chain, surface, query)` returns
+the FULL body: concrete steps naming the platform's tools, a `verify_hint` that
+feeds the proof pipeline, the playbook's risk class, prerequisites, and an honest
+`detection_risk` tag (default `unmeasured` until B4 measures it). When nothing
+matches, it returns the corpus index and an explicit "design your own probe via
+verify_vulnerability; do not search the web from the sandbox" — the egress firewall
+would refuse third-party sources anyway, and the playbook says who fetches what
+(`data_source: operator`).
+
+Layered with what exists, the research stack is now:
+
+1. `find_techniques` — how do I attack this CLASS of thing? (first-party, offline ✓)
+2. `find_attack_templates` — what's known about this exact PRODUCT? (cloned nuclei corpus)
+3. `apply_skill` — what already worked HERE? (earned skills, promoted only on proof)
+4. the swarm forum — what did my siblings just learn? (C1)
+
+Corpus discipline: `load_playbooks()` doubles as the CI linter (schema, ids,
+kill-chain/surface enums, ≥80-char technique bodies, tool names valid). A playbook
+stub can never ship. Proven approaches graduate: playbook → verified on target →
+earned skill — the corpus stays curated, the skill DB stays earned.
+
 ---
 
 ## Track W — Web, basic → advanced

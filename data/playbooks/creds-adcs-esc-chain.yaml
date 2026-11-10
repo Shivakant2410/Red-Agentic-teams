@@ -1,0 +1,29 @@
+id: creds-adcs-esc-chain
+name: ADCS misconfiguration chain (Certipy ESC checklist, canary discipline)
+kill_chain: creds
+surfaces: [ad]
+tech_tags: [adcs, certificates, ad]
+risk_class: 2
+tools: [find_techniques]
+prerequisites:
+  - "R1 tools composed: adcs_inspect (certipy wrapper)"
+  - "domain identity on the access graph; canary objects seeded in the lab/engagement"
+detection_risk: unmeasured
+technique: |
+  1. adcs_inspect (deterministic, offline analysis of LDAP-enumerated templates):
+     ESC1 (ENROLLEE_SUPPLIES_SUBJECT), ESC2/ESC3 (enrollment agent), ESC4 (template
+     ACL), ESC8 (HTTP enrollment + NTLM relay surface), up to current ESC classes.
+     Output: leads with per-ESC verify hints, class 0-1.
+  2. ESC1 proof (class 2, per-action approval): request a certificate with a
+     SAN of a CANARY account created for this test — never a real admin — and use it
+     to authenticate AS THE CANARY. The canary's identity in the access graph is the
+     proof object; nothing touches real principals.
+  3. ESC4 proof: template ACL modification is done on a cloned canary template, or
+     reverted immediately with before/after evidence; ask the operator which the
+     engagement allows.
+verify_hint: |
+  Confirmed = canary identity authenticated via the misconfigured template, k-of-n
+  (the verifier's repetition applies to the auth event), with the template
+  misconfig attributes as evidence. Certipy's severity guess is a lead, not a finding.
+references:
+  - "docs/tool-integration-plan.md §R1 adcs_inspect"

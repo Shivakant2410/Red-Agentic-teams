@@ -120,6 +120,10 @@ tools/
                          content_discovery (ffuf), crawl (katana, domain-scoped),
                          param_discovery (arjun) — rate-capped LEAD generators;
                          endpoints fold into the graph, parameters feed verify hints
+  playbooks.py           find_techniques — first-party offline technique library
+                         (data/playbooks/): kill-chain-indexed playbooks with concrete
+                         steps + verify hints; agents look up tradecraft, never search
+                         the web (egress would refuse third-party sources anyway)
   independent_verify.py  verify_finding_independently — the ONLY tool that may promote
                          a finding to confirmed
   access.py / access_tools.py   Access-control testing helpers
