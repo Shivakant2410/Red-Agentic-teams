@@ -66,6 +66,7 @@ class EvidenceRecord:
     evidence_refs: list = field(default_factory=list)     # [{kind, ref, detail, ts}]
     negative_control: dict = field(default_factory=dict)  # {"ran": bool, "held": bool|None, "detail": str}
     benign_control: dict = field(default_factory=dict)    # {"ran": bool, "completed": bool|None, "detail": str}
+    legit_control: dict = field(default_factory=dict)     # G5: {"ran": bool, "honored": bool|None, "detail": str}
     judge_audit: dict | None = None
     created: str = field(default_factory=_now)
 
@@ -102,6 +103,7 @@ class EvidenceRecord:
             "evidence_refs": self.evidence_refs,
             "negative_control": self.negative_control,
             "benign_control": self.benign_control,
+            "legit_control": self.legit_control,
             "judge_audit": self.judge_audit,
             "created": self.created,
         }
@@ -150,6 +152,7 @@ class EvidenceRecord:
             evidence_refs=row.get("evidence_refs", []),
             negative_control=row.get("negative_control", {}),
             benign_control=row.get("benign_control", {}),
+            legit_control=row.get("legit_control", {}),
             judge_audit=row.get("judge_audit"),
             created=row.get("created", _now()),
         )

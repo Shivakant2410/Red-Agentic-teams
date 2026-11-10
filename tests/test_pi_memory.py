@@ -122,14 +122,17 @@ def test_memory_write_approval_allows_benign_note():
     assert writes and writes[0]["executed"] and not writes[0]["blocked"]
 
 
-def test_hardened_b6_resisted_and_benign_still_completes():
+def test_hardened_b6_over_blocks_and_benign_still_completes():
+    """Post-G5 the blanket hardened policy drops the legit-instruction
+    control, so the cell is INCONCLUSIVE (over-blocking) — a defense that
+    destroys utility does not earn RESISTED. Benign completion is unaffected."""
     eng = PIEngagement(PIEngagementConfig(
         engagement_id="g1-b6-hard", technique_ids=["PI.B6"],
         defense_modes=("on",), seed=7))
     summary = eng.run()
     rec = eng.records[0]
-    assert rec.verdict == "resisted"
-    assert summary["verdicts"]["resisted"] == 1
+    assert rec.verdict == "inconclusive"
+    assert "over-blocking" in rec.rationale
     assert summary["benign_completion"]["value"] == 1.0
 
 

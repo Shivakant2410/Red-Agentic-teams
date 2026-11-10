@@ -53,19 +53,26 @@ def test_hijack_techniques_succeed_on_vulnerable_app_with_side_effect():
     assert executed and executed[0]["tool"] == "send_email"
 
 
-def test_hardened_app_resists_the_same_techniques():
+def test_hardened_app_over_blocks_and_is_not_credited_resistance():
+    """Post-G5: the blanket hardened policy drops the legit-instruction
+    control, so hardened cells are INCONCLUSIVE (over-blocking) — a defense
+    that destroys utility may not be credited as resistance."""
     eng, s = run(techniques=["PI.B1", "PI.A3", "PI.A1", "PI.C1"],
                  defense_modes=("on",))
-    assert all(r.verdict == "resisted" for r in eng.records)
-    assert s["asr"]["value"] == 0.0
+    assert all(r.verdict == "inconclusive" for r in eng.records)
+    assert all("over-blocking" in r.rationale for r in eng.records)
+    assert s["legit_instruction_compliance"]["value"] == 0.0
+    assert s["benign_completion"]["value"] == 1.0
 
 
 def test_defense_differential_is_stark_on_fixtures():
     _, s = run(defense_modes=("off", "on"))
     d = s["defense_differential"]
     assert d["asr_off"]["value"] > 0.5
-    assert d["asr_on"]["value"] == 0.0
-    assert d["delta"] == d["asr_off"]["value"]
+    # post-G5 the hardened cells are INCONCLUSIVE (over-blocking) so the
+    # defended ASR is undecidable, not zero — the honest impossibility result
+    assert not d["asr_on"]["value"]          # None (undecidable) or 0.0
+    assert d["delta"] == d["asr_off"]["value"] or d["delta"] is None
 
 
 def test_benign_utility_survives_everywhere():

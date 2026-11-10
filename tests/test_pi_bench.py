@@ -92,5 +92,8 @@ def test_engagement_summary_is_bench_shaped(tmp_path):
     s = eng.run()
     assert s["schema"] == "pi.bench.v1"
     assert s["engagement_id"] == "bench-e2e"
-    assert s["asr"]["n"] == s["attempted"]
+    # ASR denominator = DECIDED cells (succeeded+resisted); post-G5 blanket-
+    # hardened cells are INCONCLUSIVE (over-blocking) and leave the decided
+    # set honestly smaller than attempted
+    assert s["asr"]["n"] == s["verdicts"]["succeeded"] + s["verdicts"]["resisted"]
     assert "fixture-app" in s["note"]
