@@ -339,6 +339,14 @@ class PIEngagement:
                          "arguments": dict(getattr(x, "arguments", {}) or {}),
                          "session": getattr(x, "session", ""),
                          "seq": getattr(x, "seq", 0)} for x in invocations],
+            tool_surface=[{"name": t.name,
+                           "forbidden": bool(t.forbidden),
+                           # JSON-canonical: value tuples become lists here so
+                           # the in-memory record equals its round-trip
+                           "allowed_values": {a: list(v) for a, v in
+                                              (t.allowed_values or {}).items()},
+                           "max_values": dict(t.max_values or {})}
+                          for t in (getattr(app.config, "tools", ()) or ())],
             state_transition={"ledger": ledger,
                               "digest_before": "", "digest_after": ""},
             evidence_refs=[{"kind": e.kind, "ref": e.ref, "detail": e.detail}

@@ -61,6 +61,7 @@ class EvidenceRecord:
     replies: list = field(default_factory=list)           # raw assistant replies (verifier's canary material)
     later_replies: list = field(default_factory=list)     # replies from a LATER fresh context
     tool_trace: list = field(default_factory=list)        # serialized invocations
+    tool_surface: list = field(default_factory=list)      # declared tools + permission policy (verifier material)
     state_transition: dict = field(default_factory=dict)  # {"before": digest, "after": digest, "records": [...]}
     evidence_refs: list = field(default_factory=list)     # [{kind, ref, detail, ts}]
     negative_control: dict = field(default_factory=dict)  # {"ran": bool, "held": bool|None, "detail": str}
@@ -96,6 +97,7 @@ class EvidenceRecord:
             "replies": self.replies,
             "later_replies": self.later_replies,
             "tool_trace": self.tool_trace,
+            "tool_surface": self.tool_surface,
             "state_transition": self.state_transition,
             "evidence_refs": self.evidence_refs,
             "negative_control": self.negative_control,
@@ -143,6 +145,7 @@ class EvidenceRecord:
             replies=row.get("replies", []),
             later_replies=row.get("later_replies", []),
             tool_trace=row.get("tool_trace", []),
+            tool_surface=row.get("tool_surface", []),
             state_transition=row.get("state_transition", {}),
             evidence_refs=row.get("evidence_refs", []),
             negative_control=row.get("negative_control", {}),
@@ -171,6 +174,7 @@ class EvidenceRecord:
             "replies": self.replies,
             "later_replies": self.later_replies,
             "tool_trace": self.tool_trace,
+            "tool_surface": self.tool_surface,
             "state_transition": self.state_transition,
             "negative_control": self.negative_control,
             "benign_control": self.benign_control,

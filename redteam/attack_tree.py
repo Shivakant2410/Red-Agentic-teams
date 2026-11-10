@@ -84,6 +84,38 @@ TECHNIQUES: dict[str, Technique] = {t.id: t for t in [
               "Show the XSS can capture a session token.", priority=75, chained=True),
     Technique("internal.access", "Internal resource access via SSRF", "discovery",
               "Reach an in-scope internal service through the SSRF.", priority=72, chained=True),
+
+    # -- LLM prompt-injection arm (OWASP LLM01; redteam/pi) -------------------
+    # Additive, and every entry is chained=True: PI techniques NEVER seed on
+    # web endpoints (entry techniques are seeded per discovered endpoint);
+    # they enter play only when a PI engagement claims them, and once
+    # confirmed they unlock follow-ons in the SAME vocabulary as the web side
+    # (data.exfil), so the kill chain and coverage accounting stay unified.
+    # The fine-grained technique registry lives in redteam/pi/techniques.py;
+    # these are the coarse swarm-visible stages.
+    Technique("pi.direct", "Direct prompt injection (LLM01)", "llm-injection",
+              "Direct injection families: instruction override, system-prompt "
+              "extraction, goal replacement, payload splitting, encoded "
+              "payloads — proven by canary stage or forbidden-tool oracles on "
+              "a real tool trace.",
+              unlocks=("pi.indirect", "pi.tool.hijack"), priority=65, chained=True),
+    Technique("pi.indirect", "Indirect prompt injection (LLM01)", "llm-injection",
+              "Indirect families: poisoned RAG documents, web pages, emails, "
+              "tool outputs, search results, image-borne instructions — the "
+              "app ingests the attacker content itself.",
+              unlocks=("pi.tool.hijack", "pi.planflip"), priority=68, chained=True),
+    Technique("pi.planflip", "Plan-time injection / PlanFlip (LLM01)", "llm-injection",
+              "Plan-time families: goal substitution, priority inversion, "
+              "context pollution, role confusion at PLANNING time.",
+              unlocks=("pi.tool.hijack",), priority=62, chained=True),
+    Technique("pi.tool.hijack", "Injected tool invocation (LLM01)", "llm-injection",
+              "The detonation stage: a forbidden/unauthorized tool invocation "
+              "on the real trace with a confirmed side effect.",
+              unlocks=("data.exfil",), priority=72, chained=True),
+    Technique("pi.exfil", "Injection-borne data exfiltration (LLM01)", "llm-injection",
+              "Hybrid families: canary relayed through markup/markdown "
+              "channels — the exfil half of the injection chain.",
+              unlocks=("data.exfil",), priority=66, chained=True),
 ]}
 
 ENTRY_TECHNIQUES = tuple(t.id for t in TECHNIQUES.values() if not t.chained)
@@ -101,6 +133,10 @@ TECHNIQUE_COST: dict[str, float] = {
     "injection.sqli": 3.0, "auth.bypass": 3.0,
     "injection.cmd": 4.0, "privesc.admin": 4.0,
     "data.exfil": 5.0,
+    # PI arm: direct probes are quiet (single-turn), indirect delivery costs
+    # more (fixture + retrieval), plan-time and hijack/exfil stages the most.
+    "pi.direct": 2.0, "pi.indirect": 3.0, "pi.planflip": 3.0,
+    "pi.tool.hijack": 4.0, "pi.exfil": 4.0,
 }
 _DEFAULT_TECHNIQUE_COST = 1.0
 
