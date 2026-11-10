@@ -109,14 +109,54 @@ def test_get_unknown_raises_and_list_filters(tmp_path, clock):
     assert len(reg.list(status=PROPOSED)) == 3
 
 
-def test_registration_reuses_equivalent_non_terminal_hypothesis(tmp_path, clock):
-    """find-or-register: a second registration of the same (asset, weakness) returns
-    the SAME record — duplication is prevented at the source, never deleted."""
+def test_registration_reuses_only_full_identity_matches(tmp_path, clock):
+    """find-or-register (review fix 1): an identical re-registration returns the SAME
+    record; a same-(asset, weakness) suspicion with ANY differing identity attribute
+    (claim, preconditions, expected behavior, boundary, principal, action) is a
+    DISTINCT hypothesis that gets its own record — silent dedup on asset+weakness
+    alone would have suppressed genuinely different investigations."""
     reg = make_registry(tmp_path, clock)
     a = make_hyp(reg)
-    b = make_hyp(reg, claim="worded completely differently but same target and class")
+    # byte-identical identity (normalization: case/whitespace/scheme only) -> reuse
+    b = make_hyp(reg, claim="Admin panel reachable without authentication")
     assert a.hypothesis_id == b.hypothesis_id
     assert len(reg.list()) == 1
+    # every differing attribute makes a distinct hypothesis
+    c = make_hyp(reg, claim="worded completely differently but same target and class")
+    assert c.hypothesis_id != a.hypothesis_id
+    d = make_hyp(reg, preconditions=("no session required", "valid account exists"))
+    assert d.hypothesis_id not in {a.hypothesis_id, c.hypothesis_id}
+    e = make_hyp(reg, expected_behavior="403 with admin marker")
+    f = make_hyp(reg, security_boundary="edge WAF")
+    g = make_hyp(reg, principal="unauthenticated user")
+    h = make_hyp(reg, action="GET /admin")
+    ids = {a.hypothesis_id, c.hypothesis_id, d.hypothesis_id, e.hypothesis_id,
+           f.hypothesis_id, g.hypothesis_id, h.hypothesis_id}
+    assert len(ids) == 7 and len(reg.list()) == 7
+    # terminal hypotheses never satisfy a new investigation either
+    reg.claim(a.hypothesis_id, "w0")
+    reg.attach_evidence(a.hypothesis_id,
+                        ev(eid="ev-f", kind="finding", artifact="F-9"), "w0")
+    reg.set_status(a.hypothesis_id, AWAITING_VERIFICATION, "w0", finding_id="F-9")
+    reg.record_verification_outcome(a.hypothesis_id, verdict="confirmed", finding_id="F-9")
+    again = make_hyp(reg)
+    assert again.hypothesis_id != a.hypothesis_id
+
+
+def test_identity_key_normalization_is_explicit(tmp_path, clock):
+    """identity_key() is the contract: only case/whitespace/scheme normalization —
+    NOT fuzzy matching. A differently-worded suspicion of the same flaw is a
+    different hypothesis; the relationship layer (not registration) suggests it."""
+    from redteam.swarm.hypotheses import identity_key
+    base = dict(asset_ref="HTTPS://Api.Example.COM/admin/",
+                weakness_class="Access Control", claim="Admin panel reachable",
+                preconditions=("no session",), expected_behavior="200 returned",
+                security_boundary="WAF", principal="anon", action="GET")
+    twin = dict(base, asset_ref="https://api.example.com/admin",
+                weakness_class="access-control", claim="admin  panel   reachable")
+    assert identity_key(**base) == identity_key(**twin)
+    assert identity_key(**base) != identity_key(**{**base, "claim": "verbose errors suggest"})
+    assert identity_key(**base) != identity_key(**{**base, "preconditions": ("valid session",)})
 
 
 def test_weakness_map_is_per_technique(tmp_path):

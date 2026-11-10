@@ -28,8 +28,12 @@ hyp = registry.register(
     security_boundary="authorization", principal="standard-user", action="read",
     created_by="exploit-w0",
 )
-# register() is find-or-reuse: an equivalent non-terminal (asset, weakness)
-# hypothesis is returned untouched instead of duplicated.
+# register() is find-or-reuse by FULL identity (asset, weakness, claim,
+# preconditions, expected behavior, boundary, principal, action): an identical
+# re-registration returns the existing record untouched; a same-asset
+# same-weakness suspicion with any differing attribute is a DISTINCT hypothesis
+# (the relationship layer suggests DUPLICATE_OF/RELATED_TO candidates — nothing
+# is ever merged silently).
 ```
 
 ## 2. Publish an observation
@@ -135,6 +139,21 @@ assert [h.to_dict() for h in registry2.list()] == \
 resumed_journal = EventJournal("eng-2026-01", "runs/my-run/research_journal.jsonl")
 registry3, _ = replay_into("runs/my-run/research_journal.jsonl", resumed_journal)
 # registry3 carries the resumed file-backed journal; new writes continue the history.
+```
+
+## 8. Restart recovery (automatic)
+
+```python
+from redteam.swarm import ResearchBundle
+
+bundle = ResearchBundle.for_run("eng-2026-01", run_dir="runs/my-run")
+# The journal is replayed into the registry BEFORE the bundle is handed out:
+# hypotheses, statuses, evidence, links, challenges, ownership, and lease
+# expiries are restored verbatim (still-live leases keep protecting their
+# owner; expired ones are reclaimable through the normal claim path).
+print(bundle.recovery.summary())     # ReplayReport — recovery is observable
+print(bundle.forum.stats())          # load_report (rows loaded/skipped and why),
+                                     # persist_failures, last_persist_error
 ```
 
 In a real run you rarely call any of this by hand: `Orchestrator(..., research_dir=...)`

@@ -167,8 +167,11 @@ Two-stage matching (`relationships.py`), candidates only, never authoritative:
 - `projections.replay()` rebuilds a registry from a journal file: dedupes by `event_id`
   (replay twice ⇒ identical state), skips torn/invalid/foreign-engagement events with a
   `ReplayReport` (never raises), and preserves ordering by journal sequence.
-- Restart recovery: open a fresh registry against the same file and replay — the test
-  suite exercises this with real files, not mocks.
+- Restart recovery is AUTOMATIC and observable (§5.2): `ResearchBundle.for_run()` with a
+  run dir replays the journal into the registry before the bundle is handed out and
+  exposes the `ReplayReport` as `bundle.recovery`; the forum restores its own side with
+  the same validation discipline (§5.3). The test suite exercises this with real files,
+  not mocks.
 - No Kafka/Redis: a per-run JSONL file and an in-process lock demonstrably satisfy the
   concurrency (one process, thread-level parallelism — same as AttackTree/FindingStore)
   and durability needs. A broker would add a failure mode without adding a guarantee the
@@ -209,10 +212,12 @@ infection — says message handling, not model alignment, is the risk).
   `ResearchBundle` (registry + forum + journal) per run. Legacy callers construct
   nothing: `research_dir=None` keeps everything in-memory.
 - The swarm claim loop registers-or-reuses the hypothesis for each claimed
-  (technique, target), claims it atomically, injects a **bounded** research note into the
-  specialist briefing (active siblings on the asset, prior attempts, recent forum
-  observations), attaches finding/counter evidence when the attempt lands or fails, and
-  releases the lease.
+  (technique, target) by FULL identity (see §5.1), claims it atomically, injects a
+  **bounded, evidence-rich** research note into the specialist briefing (prior tests
+  and their results with artifact refs, preconditions, expected behavior, negative
+  results, peer observations, challenges/open questions, siblings, advisory
+  relationship candidates), attaches finding/counter evidence when the attempt lands
+  or fails, and releases the lease.
 - After each `run_verify_pass`, verdicts are mirrored onto hypotheses (the only
   `CONFIRMED`/`REFUTED` path). `run_verify_pass`, the tree, and worker count are
   untouched.
@@ -226,3 +231,87 @@ infection — says message handling, not model alignment, is the risk).
 - Registry failures degrade to audit records (`research.error`), never run failures.
 - Phase C2+ (contrarian agents, dissent budgets, specialist teams) can build on the
   registry/forum without further orchestrator surgery.
+
+## 5. Review-hardening amendments (post-review, same scope)
+
+A code review of the Phase C1 branch identified six gaps; all are fixed on the same
+branch and pinned by regression tests (`tests/test_swarm_recovery.py` plus rewritten
+registration tests in `tests/test_swarm_hypotheses.py` / `tests/test_swarm_concurrency.py`).
+
+### 5.1 Registration identity is the FULL suspicion, not (asset, weakness)
+
+The original `has_equivalent(asset, weakness)` collapsed genuinely distinct suspicions
+of the same endpoint into one record and silently suppressed the second investigation.
+Registration identity is now the full tuple — asset, weakness class, claim,
+preconditions, expected behavior, security boundary, principal, action — normalized
+(casefold, whitespace collapse, scheme/query stripping; `identity_key()` is the
+contract). Consequences, all deliberate:
+
+- A same-asset/same-weakness suspicion with any differing attribute is a DISTINCT
+  hypothesis and gets its own record — registration never silently dedups.
+- Duplication is expressed as RELATIONSHIPS, never as merges: near-duplicates surface
+  as advisory `DUPLICATE_OF` / `RELATED_TO` / `CONTRADICTS` candidates
+  (`relationships.py`), and only an explicit, attributed `link()` (with a mandatory
+  reason for `SUPERSEDES`) records anything authoritative. `auto_merges` is
+  structurally 0.
+- Terminal hypotheses never satisfy a new investigation.
+
+### 5.2 Restart recovery restores the research state
+
+`ResearchBundle.for_run(..., run_dir=...)` replays the persisted journal through the
+registry's own `apply_event()` path before the bundle is handed out — hypotheses,
+statuses, evidence, links, challenges, ownership, and lease expiries are restored
+verbatim (a still-live lease keeps protecting its owner; an expired one is reclaimable
+through the normal `claim()` path). New events append to the same journal (gapless seq
+across the restart). The `ReplayReport` is exposed as `bundle.recovery` — recovery is
+observable, never silent, and a corrupt/foreign event never blocks it.
+
+### 5.3 The persisted forum file is untrusted input
+
+`ResearchForum._load()` re-validates every row before it may re-enter worker context:
+JSON parse → mapping with event_id → engagement scope (foreign rows skipped, never
+loaded) → known event type → supported schema version → required payload keys →
+re-sanitize + re-redact with the publish-time caps → re-screen for directive-shaped
+content (a hand-edited file cannot bypass quarantine by carrying the pre-approved
+flag). Every skip is counted in `forum.load_report`; `forum.stats()` additionally
+reports `persist_failures` and `last_persist_error`, so a dead sink is observable
+while the swarm keeps working.
+
+### 5.4 Worker briefings are evidence-rich
+
+`worker_note()` now carries what a worker needs to AVOID repeating work: preconditions,
+expected behavior, the proposed test, supporting evidence and negative results WITH
+artifact refs (pull the full material via `search_peer_traces`), attributable peer
+observations with forum refs, challenges as open questions, an explicit
+AWAITING-VERIFICATION notice (do not re-prove or self-confirm), siblings (including
+registered-but-unclaimed ones — consider a link, not a re-registration), and advisory
+relationship candidates. Sections degrade independently (one failing source costs its
+own lines, not the whole briefing); the note stays bounded.
+
+### 5.5 Benchmark methodology hardened
+
+`benchmarks/phase1_collective.py` was rewritten: capabilities (observations-only forum,
+registry ownership, evidence-rich briefings, relationship matching) are independent,
+individually measured configurations; attempt outcomes are PAIRED across configs
+(derived only from seed+key+ordinal, so deltas are the layer, not luck); every config
+gets the SAME token allowance; registry errors are counted (`claim_failures`,
+`registry_write_failures`) and degrade to unresearched attempts — never swallowed;
+suppressed deliveries are deferred and retried, so recall is never silently traded;
+metrics now include unique independently confirmed findings, false positives,
+duplicate investigations, tokens per confirmed finding, candidate precision/
+actionability, and per-run runtime; every result row and the JSON carry explicit
+SYNTHETIC labels; aggregates run over repeated seeds (default 3).
+
+### 5.6 Remaining limitations (honest, unfixed)
+
+- The benchmark is a simulation: attempt outcomes and the verification pipeline are
+  deterministic mocks; the mock never confirms a non-vulnerable key, so
+  `false_positive_findings` is structurally 0 in-sim and only live fire can measure
+  it. The informed-attempt discount (0.6) is a modeling choice, not a measurement.
+- Recovery is per-run JSONL replay: no snapshot/compaction — a very long engagement
+  replays a long journal (acceptable at C1 scale; revisit if journals exceed tens of
+  MB).
+- Relationship matching stage 2 is still deterministic-only (lexical overlap); a real
+  semantic matcher remains future work behind the `SemanticMatcher` protocol.
+- Live-fire validation of every number above is still pending — see the benchmark's
+  `remaining_experiments` list.

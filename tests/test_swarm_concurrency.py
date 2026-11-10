@@ -134,22 +134,37 @@ def test_concurrent_updates_and_version_conflicts(tmp_path):
                        reason="x", expected_version=1)
 
 
-def test_concurrent_register_is_deduplicated(tmp_path):
-    """N workers find-or-register the same (asset, weakness) concurrently: exactly
-    one hypothesis exists at the end."""
+def test_concurrent_register_same_identity_deduplicated_different_identity_distinct(tmp_path):
+    """Concurrent registration (review fix 1 + fix 6 regression): N workers posting
+    the SAME full identity get exactly one hypothesis; N workers posting the same
+    asset+weakness with different claims get DISTINCT hypotheses — no silent
+    suppression. Near-duplicates surface as advisory DUPLICATE_OF candidates only."""
     clock = FakeClock()
     reg = make_registry(tmp_path, clock, persist=False)
 
-    def register(i):
+    def register_same(i):
         return reg.register(asset_ref="https://x.example.com/admin",
+                            weakness_class="access-control",
+                            claim="admin panel reachable without authentication",
+                            created_by=f"exploit-w{i}")
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        hyps = list(pool.map(register_same, range(8)))
+    assert len({h.hypothesis_id for h in hyps}) == 1
+    assert len(reg.list()) == 1
+
+    def register_worded(i):
+        return reg.register(asset_ref="https://y.example.com/admin",
                             weakness_class="access-control",
                             claim=f"worker {i}'s wording of the same suspicion",
                             created_by=f"exploit-w{i}")
 
     with ThreadPoolExecutor(max_workers=8) as pool:
-        hyps = list(pool.map(register, range(8)))
-    assert len({h.hypothesis_id for h in hyps}) == 1
-    assert len(reg.list()) == 1
+        hyps2 = list(pool.map(register_worded, range(8)))
+    assert len({h.hypothesis_id for h in hyps2}) == 8
+    assert len(reg.list()) == 9
+    cands = reg.candidate_relationships(hyps2[0].hypothesis_id)
+    assert len(cands) == 7 and all(c.kind == "DUPLICATE_OF" for c in cands)
 
 
 def test_journal_seq_is_gapless_under_concurrent_writes(tmp_path):

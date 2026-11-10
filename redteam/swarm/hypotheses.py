@@ -298,19 +298,36 @@ class HypothesisRegistry:
                                          f"engagement {self.engagement_id!r}")
         return hyp
 
-    def has_equivalent(self, asset_ref: str, weakness_class: str,
-                       include_terminal: bool = False) -> Hypothesis | None:
-        """The first non-terminal hypothesis with the same (asset, weakness) signature,
-        or None. The swarm's find-or-register hook and the benchmark's dedupe metric
-        both key on this; terminal hypotheses never satisfy a new investigation."""
-        key = (normalize_asset(asset_ref), normalize_weakness(weakness_class))
+    def has_equivalent(self, asset_ref: str, weakness_class: str, *, claim: str,
+                       preconditions=(), expected_behavior: str = "",
+                       security_boundary: str = "", principal: str = "",
+                       action: str = "", include_terminal: bool = False) -> Hypothesis | None:
+        """The first hypothesis with the SAME FULL IDENTITY, or None.
+
+        Identity is NOT (asset, weakness) alone — that collapsed genuinely distinct
+        suspicions (different claims, preconditions, boundaries, principals, or
+        expected behavior on the same endpoint) into one record and silently
+        suppressed the second investigation. Registration identity requires ALL of:
+        asset, weakness class, claim, preconditions, expected behavior, security
+        boundary, principal, and action to agree after normalization. Anything less
+        is a DISTINCT hypothesis — the relationship layer (relationships.py) is what
+        surfaces it as a DUPLICATE_OF / RELATED_TO / CONTRADICTS candidate, never
+        this method. Terminal hypotheses never satisfy a new investigation."""
+        key = identity_key(asset_ref=asset_ref, weakness_class=weakness_class,
+                           claim=claim, preconditions=preconditions,
+                           expected_behavior=expected_behavior,
+                           security_boundary=security_boundary,
+                           principal=principal, action=action)
         with self._lock:
             for h in sorted(self._hyps.values(), key=lambda x: x.created_at):
-                if (normalize_asset(h.asset_ref), normalize_weakness(h.weakness_class)) != key:
-                    continue
                 if not include_terminal and h.status in TERMINAL:
                     continue
-                return h
+                if identity_key(asset_ref=h.asset_ref, weakness_class=h.weakness_class,
+                                claim=h.claim, preconditions=h.preconditions,
+                                expected_behavior=h.expected_behavior,
+                                security_boundary=h.security_boundary,
+                                principal=h.principal, action=h.action) == key:
+                    return h
         return None
 
     def list(self, *, status: str | None = None, asset_ref: str | None = None,
@@ -352,9 +369,13 @@ class HypothesisRegistry:
                  created_by: str, preconditions=(), expected_behavior: str = "",
                  proposed_test: str = "", security_boundary: str = "",
                  principal: str = "", action: str = "") -> Hypothesis:
-        """Register a new hypothesis (status PROPOSED). Registration never overwrites
-        an existing hypothesis — an equivalent non-terminal one already on record is
-        returned untouched, so the caller claims THAT instead of duplicating."""
+        """Register a hypothesis (status PROPOSED). Registration never overwrites an
+        existing hypothesis: an existing non-terminal hypothesis is returned untouched
+        ONLY when the FULL identity matches (asset, weakness, claim, preconditions,
+        expected behavior, boundary, principal, action). A same-asset/same-weakness
+        suspicion with any differing attribute is a DISTINCT hypothesis and gets its
+        own record — the relationship layer, not registration, decides what is a
+        duplicate."""
         if not created_by or not str(created_by).strip():
             raise ValidationError("created_by (source agent) is required")
         payload = {
@@ -369,7 +390,12 @@ class HypothesisRegistry:
             "action": _clip_optional(action, 100),
         }
         with self._lock:
-            existing = self.has_equivalent(payload["asset_ref"], payload["weakness_class"])
+            existing = self.has_equivalent(
+                payload["asset_ref"], payload["weakness_class"],
+                claim=payload["claim"], preconditions=payload["preconditions"],
+                expected_behavior=payload["expected_behavior"],
+                security_boundary=payload["security_boundary"],
+                principal=payload["principal"], action=payload["action"])
             if existing is not None:
                 return existing
             event = self._new_event(EVENT_REGISTERED, hypothesis_id=f"hyp-{uuid.uuid4().hex[:12]}",
@@ -820,6 +846,37 @@ def normalize_asset(asset_ref: str) -> str:
 
 def normalize_weakness(weakness_class: str) -> str:
     return (weakness_class or "").strip().lower().replace(" ", "-")
+
+
+def normalize_text(value: str) -> str:
+    """Comparison form for claim/expected-behavior prose: whitespace-collapsed,
+    casefolded. Deliberately NOT fuzzy — a differently-worded suspicion of the same
+    flaw is a DISTINCT hypothesis (the relationship layer suggests, never merges)."""
+    return " ".join(str(value or "").split()).casefold()
+
+
+_IDENTITY_TEXT_LIMIT = MAX_CLAIM_LEN * 4      # bounded input before comparison
+
+
+def identity_key(*, asset_ref: str, weakness_class: str, claim: str,
+                 preconditions=(), expected_behavior: str = "",
+                 security_boundary: str = "", principal: str = "",
+                 action: str = "") -> tuple:
+    """The FULL registration-identity key (review fix 1): asset, weakness class,
+    claim, preconditions, expected behavior, security boundary, principal, and
+    action — all normalized. Two suspicions are the same hypothesis ONLY when this
+    tuple is equal; same asset+weakness with any differing element is a distinct
+    hypothesis and must be registered separately (candidates, not silent dedup)."""
+    return (
+        normalize_asset(str(asset_ref or "")[:_IDENTITY_TEXT_LIMIT]),
+        normalize_weakness(str(weakness_class or "")[:_IDENTITY_TEXT_LIMIT]),
+        normalize_text(str(claim or "")[:_IDENTITY_TEXT_LIMIT]),
+        tuple(_norm_preconditions(preconditions)),
+        normalize_text(str(expected_behavior or "")[:_IDENTITY_TEXT_LIMIT]),
+        normalize_text(str(security_boundary or "")[:100]),
+        normalize_text(str(principal or "")[:100]),
+        normalize_text(str(action or "")[:100]),
+    )
 
 
 def _require_agent(agent: str) -> str:

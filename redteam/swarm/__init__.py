@@ -73,7 +73,12 @@ class ResearchBundle:
 
     - run_dir=None  → in-memory only (legacy callers, tests): zero file I/O.
     - run_dir given → research_journal.jsonl + research_forum.jsonl in the run dir,
-      so a killed run's hypothesis state replays deterministically.
+      AND a killed run's state is RESTORED before the bundle is handed out (review
+      fix 2): the journal is replayed through the registry's own apply path, so
+      hypotheses, statuses, evidence, relationships, ownership, and still-live
+      leases survive a restart. `recovery` carries the ReplayReport (events
+      applied / skipped and why) — recovery is observable, never silent. The
+      forum restores its own side independently (see ResearchForum._load).
     - bus           → every non-quarantined forum message is also emitted as a
       `research.<type>` event (best-effort; the dashboard sees the swarm think).
     """
@@ -81,6 +86,7 @@ class ResearchBundle:
     registry: HypothesisRegistry
     forum: ResearchForum
     journal: EventJournal
+    recovery: ReplayReport | None = None   # None for in-memory bundles: nothing to replay
 
     @classmethod
     def for_run(cls, engagement_id: str, *, run_dir: str | Path | None = None,
@@ -89,15 +95,27 @@ class ResearchBundle:
         if run_dir is None:
             journal = EventJournal(engagement_id)
             forum = ResearchForum(engagement_id, bus=bus)
-        else:
-            run_dir = Path(run_dir)
-            journal = EventJournal(engagement_id, run_dir / "research_journal.jsonl")
-            forum = ResearchForum(engagement_id, run_dir / "research_forum.jsonl",
-                                  bus=bus)
-        registry = HypothesisRegistry(engagement_id, journal=journal,
-                                      lease_seconds=lease_seconds
-                                      or DEFAULT_LEASE_SECONDS)
-        return cls(registry=registry, forum=forum, journal=journal)
+            registry = HypothesisRegistry(engagement_id, journal=journal,
+                                          lease_seconds=lease_seconds
+                                          or DEFAULT_LEASE_SECONDS)
+            return cls(registry=registry, forum=forum, journal=journal)
+        run_dir = Path(run_dir)
+        journal = EventJournal(engagement_id, run_dir / "research_journal.jsonl")
+        forum = ResearchForum(engagement_id, run_dir / "research_forum.jsonl",
+                              bus=bus)
+        # RESTART RECOVERY (fix 2): replay the persisted journal INTO the live,
+        # file-backed journal — the registry continues appending after the replayed
+        # prefix (new events get seq after it), and any corrupt/foreign/invalid
+        # event is skipped and REPORTED, never fatal. Ownership and lease expiry are
+        # restored verbatim: a lease still inside its expiry stays owned (stealing
+        # it raises AlreadyClaimedError exactly as pre-restart); an expired lease is
+        # reclaimable through the normal claim path. Replay uses the SAME
+        # apply_event() the live writes used, so recovered state cannot diverge
+        # from what the pre-restart run actually recorded.
+        registry, recovery = replay_into(journal, journal=journal,
+                                         lease_seconds=lease_seconds
+                                         or DEFAULT_LEASE_SECONDS)
+        return cls(registry=registry, forum=forum, journal=journal, recovery=recovery)
 
     # -- convenience used by the orchestrator's claim loop --------------------
 
@@ -105,14 +123,17 @@ class ResearchBundle:
                           agent: str, technique: str = "",
                           expected_behavior: str = "", proposed_test: str = "",
                           lease_seconds: float | None = None):
-        """Find-or-register the (asset, weakness) hypothesis, then atomically claim it.
+        """Find-or-register + atomically claim one hypothesis.
 
-        Returns (hypothesis, [registered_event, claimed_event]) or (None, ()) when
-        the claim was lost to a concurrent worker (AlreadyClaimedError) — the caller
-        treats that exactly like a lost AttackTree.claim() race. Registration reuses
-        an equivalent non-terminal hypothesis instead of duplicating it; a reused
-        hypothesis still publishes its claim event (the swarm must see who works it
-        now)."""
+        Identity is the registry's FULL identity (asset, weakness, claim,
+        preconditions, expected behavior, boundary, principal, action — review fix
+        1): an identical re-registration returns the SAME record; a same-asset
+        same-weakness suspicion with any differing attribute is a DISTINCT record
+        (the relationship layer suggests what looks like a duplicate, registration
+        never silently merges). Returns (hypothesis, [registered_event,
+        claimed_event]) or (None, ()) when the claim was lost to a concurrent
+        worker (AlreadyClaimedError) — the caller treats that exactly like a lost
+        AttackTree.claim() race."""
         agent = str(agent)
         hyp = self.registry.register(
             asset_ref=asset_ref, weakness_class=weakness_class, claim=claim,
@@ -152,35 +173,114 @@ class ResearchBundle:
         except Exception:
             return None
 
-    def worker_note(self, hyp, *, related_ids=(), limit: int = 8) -> str:
-        """The bounded research note injected into a specialist's briefing: sibling
-        hypotheses on the same asset, prior attempts (counter-evidence), challenges.
-        Quarantined forum content is excluded upstream (relevant_context). Never
-        raises; empty string when there is nothing to say."""
+    def worker_note(self, hyp, *, related_ids=(), limit: int = 12) -> str:
+        """The EVIDENCE-RICH research note injected into a specialist's briefing
+        (review fix 4): what the hypothesis claims and requires, what was already
+        tried and what it produced (negative results WITH their summaries), what
+        evidence/counter-evidence exists (with artifact refs so the worker can pull
+        the full material via search_peer_traces), what peers observed (forum
+        observations with attribution), challenges and open questions, sibling
+        hypotheses, and advisory relationship candidates (DUPLICATE_OF/RELATED_TO/
+        CONTRADICTS — suggestions only, never auto-applied). Every line is bounded;
+        the whole note is bounded; quarantined forum content is excluded upstream
+        (relevant_context). Never raises; empty string when there is nothing to say."""
         try:
-            siblings = [h for h in self.registry.active_for_asset(hyp.asset_ref)
+            lines: list[str] = []
+
+            def section(build) -> None:
+                """Per-section resilience (review fix 4): one failing source
+                (e.g. a broken matcher) degrades ITS lines only — the rest of
+                the briefing still reaches the worker."""
+                try:
+                    lines.extend(build())
+                except Exception:
+                    return
+
+            # The claim's own shape: what is suspected, what must already hold,
+            # what behavior is expected — the worker tests THIS, not a paraphrase.
+            section(lambda: (["PRECONDITIONS to satisfy first: "
+                              + "; ".join(hyp.preconditions[:5])]
+                             if hyp.preconditions else []))
+            section(lambda: ([f"EXPECTED BEHAVIOR if real: {hyp.expected_behavior[:200]}"]
+                             if hyp.expected_behavior else []))
+            section(lambda: ([f"PROPOSED TEST on record: {hyp.proposed_test[:200]}"]
+                             if hyp.proposed_test else []))
+            # Positive evidence: what already supports the suspicion.
+            section(lambda: self._evidence_lines(hyp.evidence_refs,
+                                                 "SUPPORTING EVIDENCE", 4))
+            # Negative results: prior attempts that produced NO proof, with their
+            # actual summaries — the worker must not repeat the same requests.
+            section(lambda: self._evidence_lines(
+                hyp.counter_evidence_refs,
+                "NEGATIVE RESULTS (prior attempts, no proof)", 4))
+            # Peer observations from the forum: attributable, bounded, newest first.
+            def _peer() -> list[str]:
+                msgs = self.forum.relevant_context(hyp.hypothesis_id,
+                                                   related_ids=related_ids,
+                                                   asset=hyp.asset_ref, limit=limit)
+                if not msgs:
+                    return []
+                notes = "; ".join(
+                    f"[{m.source_agent}] {str(m.payload.get('summary', ''))[:140]}"
+                    f" (ref {m.event_id[:8]})"
+                    for m in msgs[:5])
+                return [f"PEER OBSERVATIONS: {notes}"]
+            section(_peer)
+            # Open questions: challenges are recorded dissent the worker must
+            # address; AWAITING_VERIFICATION says a finding is in the pipeline.
+            def _open_questions() -> list[str]:
+                out = []
+                if hyp.challenged_by:
+                    reasons = "; ".join(
+                        h.get("detail", "")[:100] for h in reversed(hyp.history)
+                        if h.get("event") == "CHALLENGED")[:300]
+                    out.append(f"OPEN QUESTION — challenged by "
+                               f"{', '.join(hyp.challenged_by[:3])}: "
+                               f"{reasons or 'reasons on record'}")
+                if hyp.status == AWAITING_VERIFICATION:
+                    out.append("AWAITING VERIFICATION: a finding from this hypothesis "
+                               "is in the independent verification pipeline — do NOT "
+                               "re-prove or self-confirm it.")
+                return out
+            section(_open_questions)
+            # Siblings: every OTHER non-terminal hypothesis on this asset —
+            # including registered-but-unclaimed ones, because knowing about a
+            # distinct sibling record is the whole point of full-identity
+            # registration (review fix 1): consider a relationship link, not a
+            # re-registration.
+            def _siblings() -> list[str]:
+                sibs = [h for h in self.registry.list(asset_ref=hyp.asset_ref,
+                                                      include_terminal=False)
                         if h.hypothesis_id != hyp.hypothesis_id]
-            lines = []
-            attempts = len(hyp.counter_evidence_refs)
-            if attempts:
-                lines.append(f"PRIOR ATTEMPTS on this hypothesis: {attempts} earlier "
-                             f"try/tries produced no proof (see counter-evidence) — "
-                             f"read them before repeating the same requests.")
-            if siblings:
+                if not sibs:
+                    return []
                 names = "; ".join(f"{h.weakness_class} [{h.status}]"
-                                  for h in siblings[:5])
-                lines.append(f"SIBLING HYPOTHESES on {hyp.asset_ref}: {names} — "
-                             f"do not re-run what another worker already covers.")
-            msgs = self.forum.relevant_context(hyp.hypothesis_id,
-                                               related_ids=related_ids,
-                                               asset=hyp.asset_ref, limit=limit)
-            if msgs:
-                notes = "; ".join(f"{m.source_agent}: {str(m.payload.get('summary', ''))[:120]}"
-                                  for m in msgs[:5])
-                lines.append(f"RESEARCH CONTEXT: {notes}")
-            if hyp.challenged_by:
-                lines.append(f"CHALLENGED BY: {', '.join(hyp.challenged_by[:3])} — "
-                             f"address the recorded reasons.")
-            return "\n".join(lines)
+                                  + (f" owned by {h.owner}" if h.owner else "")
+                                  for h in sibs[:5])
+                return [f"SIBLING HYPOTHESES on {hyp.asset_ref}: {names} — "
+                        f"do not re-run what another worker already covers."]
+            section(_siblings)
+            # Advisory relationships: what the deterministic matcher thinks about
+            # duplication — candidates only, never auto-applied.
+            def _candidates() -> list[str]:
+                cands = self.registry.candidate_relationships(hyp.hypothesis_id)
+                if not cands:
+                    return []
+                shown = "; ".join(f"{c.kind} -> {c.other_id} ({c.reason[:80]})"
+                                  for c in cands[:4])
+                return [f"RELATIONSHIP CANDIDATES (advisory — verify before "
+                        f"acting): {shown}"]
+            section(_candidates)
+            return "\n".join(lines[:16])
         except Exception:
             return ""
+
+    @staticmethod
+    def _evidence_lines(refs: list, header: str, cap: int) -> list[str]:
+        """Bounded 'HEADER: summary (ref) [...]' lines for one evidence slot."""
+        if not refs:
+            return []
+        shown = "; ".join(
+            f"{r.get('summary', '')[:120]} (ref {r.get('artifact_ref', '')})"
+            for r in refs[-cap:])
+        return [f"{header}: {shown}"]

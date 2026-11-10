@@ -184,6 +184,9 @@ class ResearchForum:
         self._lock = threading.Lock()
         self._messages: list[ForumMessage] = []
         self._seen: set[str] = set()
+        self.load_report: dict = {}          # observable recovery outcome (fix 3)
+        self.persist_failures = 0            # best-effort writes that failed
+        self.last_persist_error = ""
         if self._path is not None and self._path.exists():
             self._load()
 
@@ -335,8 +338,14 @@ class ResearchForum:
             for m in self._messages:
                 by_type[m.event_type] = by_type.get(m.event_type, 0) + 1
                 quarantined += 1 if m.quarantined else 0
-            return {"engagement_id": self.engagement_id, "total": len(self._messages),
-                    "by_type": by_type, "quarantined": quarantined}
+            out = {"engagement_id": self.engagement_id, "total": len(self._messages),
+                   "by_type": by_type, "quarantined": quarantined,
+                   "persist_failures": self.persist_failures}
+            if self.last_persist_error:
+                out["last_persist_error"] = self.last_persist_error
+            if self.load_report:
+                out["load_report"] = dict(self.load_report)
+            return out
 
     # -- persistence -------------------------------------------------------------
 
@@ -349,16 +358,34 @@ class ResearchForum:
                 fh.write(json.dumps(msg.to_dict(), ensure_ascii=False,
                                     sort_keys=True) + "\n")
                 fh.flush()
-        except OSError:
+        except OSError as exc:
             # Communication is best-effort (EventBus's own policy): a dead sink must
-            # not break the swarm. In-memory fan-out still worked; forensics lose
-            # this one line.
-            pass
+            # not break the swarm. In-memory fan-out still worked — but the failure
+            # is now OBSERVABLE (fix 3): counters land in stats(), so "the forum
+            # silently lost rows" can never happen unnoticed again.
+            self.persist_failures += 1
+            self.last_persist_error = f"{type(exc).__name__}: {exc}"
 
     def _load(self) -> None:
+        """HARDENED RECOVERY (fix 3). A persisted forum file is UNTRUSTED INPUT, same
+        as any other replay source: every row must re-pass the publish-time contract
+        before it is allowed back into worker context.
+
+        Per row, in order: JSON parse → mapping with event_id → engagement scope
+        (foreign rows are skipped, never loaded) → known event type → supported
+        schema version → required payload keys → re-sanitize + re-redact strings →
+        RE-SCREEN directive-shaped content (a hand-edited or hostile file cannot
+        bypass quarantine by carrying the pre-approved flag). Every skip is counted
+        in self.load_report — recovery failures are observable, not silent."""
+        report = {"loaded": 0, "skipped_malformed": 0, "skipped_foreign_engagement": 0,
+                  "skipped_unknown_type": 0, "skipped_unsupported_schema": 0,
+                  "skipped_schema_violation": 0, "requarantined_at_load": 0,
+                  "redacted_at_load": 0}
         try:
             text = self._path.read_text(encoding="utf-8")
-        except OSError:
+        except OSError as exc:
+            report["load_error"] = f"{type(exc).__name__}: {exc}"
+            self.load_report = report
             return
         for line in text.splitlines():
             line = line.strip()
@@ -367,8 +394,82 @@ class ResearchForum:
             try:
                 row = json.loads(line)
             except json.JSONDecodeError:
+                report["skipped_malformed"] += 1
                 continue
-            if isinstance(row, dict) and row.get("event_id"):
+            if not isinstance(row, dict) or not row.get("event_id"):
+                report["skipped_malformed"] += 1
+                continue
+            if row.get("engagement_id") != self.engagement_id:
+                report["skipped_foreign_engagement"] += 1
+                continue
+            if row.get("event_type") not in EVENT_TYPES:
+                report["skipped_unknown_type"] += 1
+                continue
+            try:
+                if int(row.get("schema_version", 0)) > SCHEMA_VERSION:
+                    report["skipped_unsupported_schema"] += 1
+                    continue
+            except (TypeError, ValueError):
+                report["skipped_malformed"] += 1
+                continue
+            required = EVENT_TYPES[row["event_type"]]
+            payload = row.get("payload")
+            if not isinstance(payload, dict) or any(
+                    not payload.get(k) for k in required):
+                report["skipped_schema_violation"] += 1
+                continue
+            if not str(row.get("source_agent") or "").strip():
+                report["skipped_schema_violation"] += 1
+                continue
+            try:
                 msg = ForumMessage.from_dict(row)
+            except Exception:
+                report["skipped_malformed"] += 1
+                continue
+            # Re-sanitize + re-redact with the SAME per-key caps the publish path
+            # uses: a file that carries longer/unredacted text was not written by
+            # the publish path, and recovery must not upgrade it into valid memory.
+            changed = False
+            clean_payload: dict = {}
+            for key, value in (msg.payload or {}).items():
+                if isinstance(value, str):
+                    cap = MAX_SUMMARY if key in ("summary", "reason", "claim") else 300
+                    fixed = redact_secrets(sanitize_text(value, cap, key))
+                    if fixed != value:
+                        changed = True
+                    clean_payload[str(key)[:64]] = fixed
+                elif isinstance(value, (list, tuple)):
+                    clean_payload[str(key)[:64]] = [str(v)[:120] for v in list(value)[:20]]
+                elif isinstance(value, dict):
+                    clean_payload[str(key)[:64]] = {str(k)[:64]: str(v)[:200]
+                                                    for k, v in list(value.items())[:20]}
+                elif isinstance(value, bool) or isinstance(value, (int, float)):
+                    clean_payload[str(key)[:64]] = value
+                else:
+                    report["skipped_schema_violation"] += 1
+                    break
+            else:
+                if len(json.dumps(clean_payload, ensure_ascii=False)) > MAX_PAYLOAD_JSON:
+                    report["skipped_schema_violation"] += 1
+                    continue
+                msg.payload = clean_payload
+                if changed:
+                    report["redacted_at_load"] += 1
+                if msg.event_type in (EVENT_OBSERVATION_CREATED, EVENT_ARTIFACT_PUBLISHED) \
+                        and msg.payload.get("origin") not in ORIGINS:
+                    report["skipped_schema_violation"] += 1
+                    continue
+                # Re-screen for directive-shaped content — quarantine survives restart,
+                # and content that arrives pre-flagged clean gets screened anyway.
+                screened = " \n".join(v for v in msg.payload.values()
+                                      if isinstance(v, str))
+                sc = screen_composed(screened)
+                if sc.verdict != "allow":
+                    if not msg.quarantined:
+                        report["requarantined_at_load"] += 1
+                    msg.quarantined = True
+                    msg.flags = tuple(sc.flags)
                 self._messages.append(msg)
                 self._seen.add(msg.event_id)
+                report["loaded"] += 1
+        self.load_report = report
