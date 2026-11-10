@@ -67,6 +67,7 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     from .authsession import AuthenticateTool, SetSessionTool
     from .browser import (BrowserClickTool, BrowserContentTool, BrowserFillTool,
                           BrowserNavigateTool, BrowserScreenshotTool)
+    from .asset_radar import AssetRadarTool
     from .confirm import ConfirmFindingTool
     from .discovery import ContentDiscoveryTool
     from .independent_verify import VerifyFindingIndependentlyTool
@@ -105,9 +106,11 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # login-gated SPA with bootstrap mocks (ARTEX api-recon port) to reveal the runtime
     # API surface. content_discovery = the ACTIVE recon layer (offense-arsenal §2):
     # prior-ordered path probing with the STADS stop rule, same leads-only discipline.
+    # asset_radar = the competitive-intel layer (§2.3): what is the org building that
+    # it has not announced (CT freshness, codename triangulation, version-ahead-of-live).
     # None record findings.
     tools += [JwtInspectTool(), NucleiScanTool(), SurfaceScanTool(), SpaReconTool(),
-              ContentDiscoveryTool()]
+              ContentDiscoveryTool(), AssetRadarTool()]
     # search_peer_traces = the swarm's read side (ARTEX worker-trace exchange port):
     # keyword-search sibling specialists' raw process traces for observations that
     # never became findings. Read-only over this run's event log, costs no budget.

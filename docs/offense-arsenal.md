@@ -91,18 +91,54 @@ Two structural lessons from the evidence:
   `missing_mass()`; stop rule `missing_mass < ε` or budget. Emit it into findings so the
   report can say "surface explored to 98% (est.)". ~120 lines, zero new deps.
 
-### 2.3 Asset graph, not asset list (Amass Open Asset Model) — **required, Week 2**
+### 2.3 Asset graph as competitive-intel radar — "what are they secretly building?" — **required, Week 1**
 
-- **Who uses it:** OWASP Amass v5 stores every discovered asset in a graph-backed asset
-  database (Open Asset Model: DNS names, IPs, netblocks, ASNs as nodes, relationships as
-  edges) so runs compose and can be diffed over time. This is Amass's defining feature —
-  "more than a subdomain enumeration tool".
-- **Why it matters to us:** `inventory.py` accumulates objects without relationships; the
-  planner cannot ask "which asset sits on the path to the auth endpoints". Chains are the
-  product of a red team; chains live in graphs.
-- **Conversion:** AssetInventory gains typed edges: `resolves_to`, `serves`, `references`,
-  `authenticates_with`, `leaks`. Populate from our existing data (OpenAPI refs already
-  parsed in `recon/passive.py`; template hits in `tools/template_search.py`). ~1 day.
+The graph is not an inventory with prettier shapes. It exists to answer the question a
+competitor — or an attacker, which is the SAME question — asks first: **what is this org
+building right now that it has not announced?** Every edge type below carries one
+specific answer to that question.
+
+- **Who uses it:** typed asset graphs are the norm in mature recon — Amass v5's Open
+  Asset Model stores DNS names/IPs/ASNs as nodes with relationship edges, which is what
+  makes runs diffable over time ("more than a subdomain enumeration tool"). CT-monitoring
+  products (SSLMate Cert Spotter; Facebook's CT scanner) treat certificate-log freshness
+  as a launch-prediction signal: a cert for `apollo-api.stg.corp.com` issued LAST WEEK is
+  a product in flight, weeks before any announcement. altdns (2.4k★) proved
+  permutation-scanning value but seeds from generic wordlists.
+- **Why it matters to us:** `inventory.py` is a list of objects; it cannot answer "which
+  hosts belong to the SAME unreleased project". Chains are the product of a red team;
+  chains live in graphs. And the intel techniques are signal-mining WE implement — each
+  source is one HTTP GET or one regex family, no SDK, no new dependency:
+
+  1. **CT freshness diffing** — parse the crt.sh JSON shape ourselves; hostnames whose
+     newest cert is younger than a window (default 45d) and which appear nowhere in our
+     inventory are ACTIVE-BUILD signals. Evidence: host attr `ct_issued`; edge
+     `cert --announces--> host`.
+  2. **Codename extraction + triangulation** — distinctive labels (against an
+     infrastructure stoplist) from hostnames, CT names, JS flag keys. One source =
+     noise; N independent sources = a project. Verdict by independent-source count:
+     ≥3 strong, 2 likely, 1 watchlist. This lifts knowledge.py's per-node
+     "corroborated" upgrade to the project level — our math, not a tool feature.
+  3. **Codename-seeded permutation** — for each candidate codename, project the
+     environment fanout (`apollo-dev / apollo-stg / apollo-uat / apollo-admin`) and
+     DNS-verify. altdns seeds from a wordlist; we seed from names the target itself
+     leaked — smaller sets, denser hits. Edges: `codename --projects--> host
+     --resolves_to--> ip`.
+  4. **Version-ahead-of-live** — bundle references `/api/v3` while only `/api/v1` is
+     live ⇒ `v1 --precedes--> v3`. The not-yet-live version IS the roadmap;
+     existence (401/403) confirms without content.
+  5. **Feature-flag leak mining** — flag-SDK markers (statsig/launchdarkly/unleash/…)
+     and `beta_*`/`experiment_*` keys in JS name unreleased features before launch.
+     Edge: `flag --references--> codename`.
+  6. **Staging-mirror inference** — same codename on a prod host and an env-marked
+     host ⇒ `staging --mirrors--> prod`. Staging is where the secret build runs first.
+
+- **Conversion:** `recon/assetgraph.py` — typed nodes (host/ip/cert/codename/flag/
+  provider) + edges (announces/projects/resolves_to/references/precedes/mirrors),
+  persisted JSON like inventory; `secret_builds()` ranked report; `tools/asset_radar.py`
+  wires it (operator-side crt.sh fetch, scope-anchored DNS permutations, scope-guarded
+  JS fetch). Feeders already in hand: OpenAPI refs in `recon/passive.py`, endpoint keys
+  in the knowledge graph, page/JS bodies via `tools/http.py`. ~1 day.
 
 ---
 
@@ -295,7 +331,7 @@ They are not cancelled; they are behind the skills in the build order.
 | Week | Build | Closes gap | Evidence anchor |
 |---|---|---|---|
 | 1 | **SHIPPED** — frequency-prior content discovery + missing-mass stopping rule: `recon/discovery.py` (BucketModel Beta posteriors, SpeciesTracker U(n)=f1/n, Soft404Baseline, recursion into confirmed dirs), `tools/discovery.py` (`content_discovery` tool, leads-only), `recon/wordlists/common-paths.tsv` (143 seeded paths, 9 buckets), `tests/test_recon_discovery.py` (14 tests) | §2.1, §2.2 | Nmap top-1000; STADS 2018; Liyanage 2024 |
-| 2 | Asset graph with typed edges (Amass OAM-style); stage-machine planner | §2.3, §5.4 | Amass v5; PentestGPT; PentestEval 31% |
+| 2 | Stage-machine planner (§5.4); asset-graph consumers: cheapest-path over the radar's typed edges | §5.4, §3.1 | PentestGPT; PentestEval 31% |
 | 3 | AttackGraph cheapest-path + betweenness; bandit-armed template/payload scheduling; BOLA tool | §3.1, §4.1, §4.5 | BloodHound; PMapper; EcoFuzz; OWASP API1 |
 | 4 | TAP loop; MAP-Elites archive; postex validation + recovery loop (+ GCG only if open-weight target) | §4.2, §4.3, §5.1, §5.3 | TAP NeurIPS'24; Rainbow Teaming NeurIPS'24; TruffleHog; Caldera E2E |
 
