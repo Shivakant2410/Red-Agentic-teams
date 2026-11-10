@@ -116,6 +116,10 @@ tools/
   workflow.py            record_finding, request_approval
   jwt.py                 jwt_inspect — deterministic JWT checklist (offline, leads only)
   nuclei.py              nuclei_scan — sandbox-first scanner; matches are LEADS only
+  webdiscover.py         Phase W1 discovery (docs/tool-integration-plan.md):
+                         content_discovery (ffuf), crawl (katana, domain-scoped),
+                         param_discovery (arjun) — rate-capped LEAD generators;
+                         endpoints fold into the graph, parameters feed verify hints
   independent_verify.py  verify_finding_independently — the ONLY tool that may promote
                          a finding to confirmed
   access.py / access_tools.py   Access-control testing helpers

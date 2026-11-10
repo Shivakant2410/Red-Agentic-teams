@@ -73,7 +73,10 @@ redteam/
   sandbox/           Kali container: egress firewall, self-test, lifecycle
   tools/             kali_exec, browser_*, record_finding, request_approval,
                      verify_vulnerability, verify_finding_independently, jwt_inspect,
-                     nuclei_scan (leads only), template/skill tools, postex, ...
+                     nuclei_scan (leads only), content_discovery / crawl /
+                     param_discovery (W1 lead generators), template/skill tools,
+                     postex, ... — the capability ladder lives in
+                     docs/tool-integration-plan.md
 dashboard/           Next.js mission-control UI (static export, served by server.py)
 config/engagement.example.yaml
 GEN2-ARCHITECTURE.md Gen-2 design doc — how the pieces fit and which invariants hold

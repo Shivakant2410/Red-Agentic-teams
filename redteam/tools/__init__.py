@@ -109,6 +109,11 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # login-gated SPA with bootstrap mocks (ARTEX api-recon port) to reveal the runtime
     # API surface. None record findings.
     tools += [JwtInspectTool(), NucleiScanTool(), SurfaceScanTool(), SpaReconTool()]
+    # Phase W1 discovery (docs/tool-integration-plan.md): ffuf/katana/arjun as
+    # structured, rate-capped LEAD generators — endpoints fold into the graph,
+    # parameters ride lead payloads into verify hints. None record findings.
+    from .webdiscover import ContentDiscoveryTool, CrawlTool, ParamDiscoveryTool
+    tools += [ContentDiscoveryTool(), CrawlTool(), ParamDiscoveryTool()]
     # search_peer_traces = the swarm's read side (ARTEX worker-trace exchange port):
     # keyword-search sibling specialists' raw process traces for observations that
     # never became findings. Read-only over this run's event log, costs no budget.
