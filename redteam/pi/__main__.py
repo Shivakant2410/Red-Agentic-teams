@@ -29,11 +29,19 @@ def main() -> int:
                     help="technique ids (default: the full registry)")
     ap.add_argument("--defense-modes", nargs="*", default=("off", "on"),
                     choices=("off", "on"))
+    ap.add_argument("--adaptive-rounds", type=int, default=0,
+                    help="G2 adaptive phase: mutate non-succeeded payloads "
+                         "for N rounds (deterministic)")
+    ap.add_argument("--defense-spec-visible", action="store_true",
+                    help="G2/OWASP 2026: disclose the defense spec to the "
+                         "attacker in mode 'on' payloads")
     args = ap.parse_args()
 
     eng = PIEngagement(PIEngagementConfig(
         engagement_id=args.engagement_id, technique_ids=args.techniques,
         defense_modes=tuple(args.defense_modes), seed=args.seed,
+        adaptive_rounds=args.adaptive_rounds,
+        defense_spec_visible=args.defense_spec_visible,
         out_dir=Path(args.out)))
     summary = eng.run()
     print(json.dumps({
@@ -41,7 +49,11 @@ def main() -> int:
         "errors": summary["errors"], "verdicts": summary["verdicts"],
         "asr": summary["asr"], "unique_coverage": summary["unique_coverage"],
         "defense_differential": summary["defense_differential"],
-        "benign_completion": summary["benign_completion"]}, indent=2))
+        "benign_completion": summary["benign_completion"],
+        "legit_instruction_compliance":
+            summary["legit_instruction_compliance"],
+        **({"adaptive": summary["adaptive"]}
+           if "adaptive" in summary else {})}, indent=2))
     return 0
 
 
