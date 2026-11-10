@@ -26,8 +26,35 @@ This project's differentiators, built in Gen-1 and preserved in Gen-2, remain ra
    failure. Nothing new is load-bearing.
 5. **Auditability.** Append-only hash-chained audit log, per-run event stream, reproducible
    reports. An operator can reconstruct every action and every decision.
+6. **Prompt-injection oracles with earned resistance (LLM01, `redteam/pi`).** Prompt
+   injection is judged by four deterministic oracle primitives — canary stage tracking
+   (EXPOSED→PERSISTED→RELAYED→EXECUTED; exposure is never success), forbidden-tool
+   detection on the real invocation trace (a reply that *says* it calls a tool proves
+   nothing), ground-truth state predicates, and schema/authorization validation — with
+   three verdicts where RESISTED must be EARNED (benign control completed + negative
+   control held): an always-refusing app is INCONCLUSIVE, never "safe". The LLM judge may
+   annotate INCONCLUSIVE results and can never override. SUCCEEDED evidence flows into
+   the same pending_verification → independent-verify pipeline as web findings
+   (check_type `pi_oracle` re-derives the verdict from raw evidence, controls mandated).
+   Every competitor we surveyed reports ASR counts; none re-derives its verdicts
+   independently.
 
 ## Gen-2: what this release added (shipped)
+
+- **Prompt-injection capability (`redteam/pi`, OWASP LLM01)** — proof-first PI testing
+  inside the existing architecture: 18 versioned techniques across direct / indirect /
+  PlanFlip plan-time / multimodal / hybrid families (every payload canary-attributable,
+  provenance + ATLAS anchors honest about verified vs inferred), a controlled llm_app
+  victim target plugging into the existing AgenticLoopTarget (declared tool surface +
+  permission policy, RAG corpus, defense I/O policy for differential runs, app-state
+  ledger of every side effect), four deterministic oracle primitives with earned-
+  RESISTED verdicts, an engagement runner whose benign and negative controls run on
+  separate app instances, spec-conformant evidence records, bench metrics (ASR with
+  Wilson CIs, FP rate only from real verification, defense differential), findings
+  bridged as `pending_verification` with a `pi_oracle` check the existing independent
+  verifier re-derives from raw evidence, and a reproducible offline bench
+  (`python -m redteam.pi`): 16/18 techniques confirm on the undefended fixture app,
+  0 on the defended one, benign utility 1.0 throughout.
 
 - **Multi-provider LLM gateway** — role-routed, cross-provider round-robin failover with
   429 cooldowns; Anthropic native; OpenAI-compatible endpoints (OpenAI/Z.ai/Groq/
