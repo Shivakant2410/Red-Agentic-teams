@@ -111,7 +111,7 @@ def test_capability_missing_is_skip_record_not_verdict():
     assert "PI.A6" in skipped_families          # operator_input unmet too
     assert "PI.B6" in skipped_families          # memory_store capability unmet
     assert s["skipped"] == 7
-    assert s["attempted"] == 12          # 19 techniques - 7 skipped = 12
+    assert s["attempted"] == 14          # 21 techniques - 7 skipped = 14
 
 
 def test_operator_input_missing_is_skip_never_fake_attempt():

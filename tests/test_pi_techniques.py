@@ -24,8 +24,8 @@ from redteam.pi.oracles import CanaryStage
 
 def test_registry_covers_all_five_families():
     counts = {f: len(techniques_for_family(f)) for f in FAMILIES}
-    assert counts == {"A": 6, "B": 6, "C": 4, "D": 1, "E": 2}
-    assert len(TECHNIQUES) == 19
+    assert counts == {"A": 6, "B": 8, "C": 4, "D": 1, "E": 2}
+    assert len(TECHNIQUES) == 21
 
 
 def test_unique_ids_and_required_metadata():
@@ -113,7 +113,7 @@ def test_no_dataset_text_is_copied_provenance_explains_adaptation():
 
 
 def test_select_techniques_full_and_unknown():
-    assert len(select_techniques(None)) == 19
+    assert len(select_techniques(None)) == 21
     with pytest.raises(ValueError, match="unknown technique"):
         select_techniques(["PI.A1", "PI.Z9"])
     picked = select_techniques(["PI.A1", "PI.B4"])

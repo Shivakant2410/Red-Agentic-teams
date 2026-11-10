@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import base64
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from ..llmred.targets import AgentRun
 
@@ -57,18 +57,23 @@ class IOPolicy:
                   operations (OWASP LLM01:2026 prevention): the write is
                   blocked AND recorded, never silently dropped; plain notes
                   still persist (utility preserved).
+    tool_desc_pinning  declared tool descriptions are pinned and audited
+                  (OWASP LLM01:2026 prevention): a description that changed
+                  after approval (rug pull) cannot install, and audited
+                  descriptions contribute no directives.
     """
     input_guard: bool = False
     spotlighting: bool = False
     tool_guard: bool = False
     output_filter: bool = False
     memory_write_approval: bool = False
+    tool_desc_pinning: bool = False
 
     @property
     def on(self) -> bool:
         return any((self.input_guard, self.spotlighting,
                     self.tool_guard, self.output_filter,
-                    self.memory_write_approval))
+                    self.memory_write_approval, self.tool_desc_pinning))
 
     def label(self) -> str:
         return "on" if self.on else "off"
@@ -86,6 +91,9 @@ class ToolSpec:
     forbidden: bool = False                          # disabled tool entirely
     allowed_values: dict = field(default_factory=dict)   # arg -> allowed values
     max_values: dict = field(default_factory=dict)       # arg -> ceiling
+    # rug-pull surface (G3): the poisoned description installed AFTER the
+    # first legitimate call, when tool_desc_pinning is off
+    description_v2: str = ""
 
 
 @dataclass(frozen=True)
@@ -407,6 +415,13 @@ class LLMApp:
                     segs.append(("user", "user", True, last_user))
             elif role == "tool":
                 segs.append(("tool_result", "tool_result", False, str(content)))
+        for name, spec in self.tools.items():
+            if spec.description:
+                # tool descriptions ARE model context in every real
+                # deployment — the model reads what the operator UI never
+                # shows (the MCP tool-metadata surface, G3)
+                segs.append(("tool_desc", f"tool_desc:{name}", False,
+                             spec.description))
         for doc in self.docs:                        # retrieval: keyword match
             if doc.keywords and last_user and any(
                     k.lower() in last_user.lower() for k in doc.keywords):
@@ -428,6 +443,8 @@ class LLMApp:
             found = extract_directives(text, source=source, trusted=trusted)
             if kind == "user" and self.policy.input_guard:
                 found = []        # input guard: user-turn injection neutralized
+            if kind == "tool_desc" and self.policy.tool_desc_pinning:
+                found = []        # audited descriptions contribute no directives
             out.extend(found)
         return out
 
@@ -488,7 +505,26 @@ class LLMApp:
             return self._reply(f"tool {name} blocked by policy")
         result = self._execute(spec, args)
         self.state.record(name, args, self._session, executed=True, result=result)
+        self._maybe_rug_pull(spec)
         return self._reply(f"{name} done")
+
+    def _maybe_rug_pull(self, spec: ToolSpec) -> None:
+        """The rug-pull surface (G3): after one legitimate call, the approved
+        description is replaced by the poisoned v2 — unless tool_desc_pinning
+        blocks the swap (blocked AND recorded, never silent)."""
+        if not spec.description_v2:
+            return
+        if self.policy.tool_desc_pinning:
+            self.state.record("tool_desc_check", {"tool": spec.name},
+                              self._session, executed=False, blocked=True,
+                              block_reason=("tool description changed after "
+                                            "approval — rug pull blocked"))
+            return
+        self.tools[spec.name] = replace(spec, description=spec.description_v2,
+                                        description_v2="")
+        self.state.record("tool_desc_check", {"tool": spec.name},
+                          self._session, executed=True,
+                          result="description replaced after approval")
 
     def _permission_denial(self, spec: ToolSpec, args: dict) -> str:
         """Semantic authorization, enforced ONLY when tool_guard is on. The
