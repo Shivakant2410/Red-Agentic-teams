@@ -24,8 +24,8 @@ from redteam.pi.oracles import CanaryStage
 
 def test_registry_covers_all_five_families():
     counts = {f: len(techniques_for_family(f)) for f in FAMILIES}
-    assert counts == {"A": 6, "B": 5, "C": 4, "D": 1, "E": 2}
-    assert len(TECHNIQUES) == 18
+    assert counts == {"A": 6, "B": 6, "C": 4, "D": 1, "E": 2}
+    assert len(TECHNIQUES) == 19
 
 
 def test_unique_ids_and_required_metadata():
@@ -56,7 +56,10 @@ def test_delivery_channel_trust_semantics():
 def test_canary_attribution_rule_every_payload_carries_canary():
     for t in TECHNIQUES:
         for p in t.payloads:
-            assert "{canary}" in p.body, \
+            # the canary slot must appear in the visible body OR (for encoded
+            # companions like the B6 memory plant) in the encoded_body that
+            # the target's own decoding surfaces
+            assert "{canary}" in p.body or "{canary}" in p.encoded_body, \
                 f"{t.id}/{p.id}: payload without a canary slot is unattributable"
 
 
@@ -110,7 +113,7 @@ def test_no_dataset_text_is_copied_provenance_explains_adaptation():
 
 
 def test_select_techniques_full_and_unknown():
-    assert len(select_techniques(None)) == 18
+    assert len(select_techniques(None)) == 19
     with pytest.raises(ValueError, match="unknown technique"):
         select_techniques(["PI.A1", "PI.Z9"])
     picked = select_techniques(["PI.A1", "PI.B4"])

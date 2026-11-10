@@ -30,6 +30,7 @@ closed), zero duplicated observation machinery.
 
 from __future__ import annotations
 
+import base64
 import re
 from dataclasses import dataclass, field
 
@@ -52,16 +53,22 @@ class IOPolicy:
                   and out-of-policy argument values are blocked BEFORE any
                   side effect; the block is recorded, never hidden.
     output_filter canary-format strings are redacted from replies.
+    memory_write_approval  instruction-bearing memory writes are privileged
+                  operations (OWASP LLM01:2026 prevention): the write is
+                  blocked AND recorded, never silently dropped; plain notes
+                  still persist (utility preserved).
     """
     input_guard: bool = False
     spotlighting: bool = False
     tool_guard: bool = False
     output_filter: bool = False
+    memory_write_approval: bool = False
 
     @property
     def on(self) -> bool:
         return any((self.input_guard, self.spotlighting,
-                    self.tool_guard, self.output_filter))
+                    self.tool_guard, self.output_filter,
+                    self.memory_write_approval))
 
     def label(self) -> str:
         return "on" if self.on else "off"
@@ -186,6 +193,32 @@ _LEAK_RE = re.compile(
     re.IGNORECASE)
 _TRANSFER_RE = re.compile(
     r"transfer\s+\$?(\d+(?:\.\d+)?)\s+to\s+([A-Za-z0-9_.:-]+)", re.IGNORECASE)
+_REMEMBER_RE = re.compile(
+    r"remember\s+(?:this\s+)?(?:note\s+)?(?:exactly\s*)?:\s*(.+?)(?:$|\n)",
+    re.IGNORECASE | re.DOTALL)
+
+# Memory recall triggers (G1/XSPI surface): a stored note is surfaced to the
+# brain only when the user turn asks about notes/previous context — the
+# AgentPoison shape where the poisoned entry is RETRIEVED, then acted on.
+_MEMORY_TRIGGERS = ("remember", "note", "notes", "recall", "earlier",
+                    "previous")
+
+_B64_RE = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
+
+
+def _maybe_decode_b64(text: str) -> str:
+    """LLMs read base64; the naive app decodes a base64-shaped note before
+    storing it (deterministic: strict alphabet + length gate, printable check,
+    failure stores the text verbatim — never a crash)."""
+    t = (text or "").strip()
+    if len(t) >= 16 and len(t) % 4 == 0 and _B64_RE.fullmatch(t):
+        try:
+            decoded = base64.b64decode(t, validate=True).decode("utf-8")
+            if decoded.isprintable():
+                return decoded
+        except (ValueError, UnicodeDecodeError):
+            pass
+    return t
 
 
 def parse_kv(text: str) -> dict:
@@ -214,7 +247,7 @@ class Directive:
     """One imperative extracted from one segment. `trusted` marks the channel:
     user turns are the trusted request channel (input_guard still applies);
     everything else is data."""
-    kind: str            # call_tool | echo_token | leak_prompt | transfer | authority_claim
+    kind: str            # call_tool | echo_token | leak_prompt | transfer | authority_claim | remember
     tool: str = ""
     arguments: dict = field(default_factory=dict)
     token: str = ""
@@ -258,6 +291,11 @@ def extract_directives(text: str, *, source: str, trusted: bool) -> list:
                                           else int(xfer.group(1)),
                                           "to": xfer.group(2)},
                                source=source, trusted=trusted, text=text))
+    remember = _REMEMBER_RE.search(text)
+    if remember:
+        found.append(Directive("remember",
+                               arguments={"note": remember.group(1)[:500]},
+                               source=source, trusted=trusted, text=text))
     return found
 
 
@@ -293,6 +331,7 @@ class LLMApp:
         self.tools = {t.name: t for t in config.tools}
         self.docs = list(config.rag_corpus)
         self.seen_untrusted: list = []   # [(source, text)] — delivery proof
+        self.memory: list = []           # [(session, note)] — the XSPI surface
         self._session = ""               # bound by the runner per attempt
         self._calls_this_run: list = []  # (name, args) pairs for AgentRun
         # PlanFlip runtime switch: the runner flips this for plan-phase
@@ -359,6 +398,10 @@ class LLMApp:
             if doc.keywords and last_user and any(
                     k.lower() in last_user.lower() for k in doc.keywords):
                 segs.append(("doc", f"{doc.source}:{doc.id}", False, doc.content))
+        if self.memory and last_user and any(
+                t in last_user.lower() for t in _MEMORY_TRIGGERS):
+            for m_session, note in self.memory:      # cross-session recall
+                segs.append(("memory", f"memory:{m_session}", False, note))
         for kind, source, trusted, text in segs:
             if not trusted:
                 self.seen_untrusted.append((source, text))
@@ -389,7 +432,29 @@ class LLMApp:
             return self._reply(directive.token)
         if directive.kind == "leak_prompt":
             return self._reply(self.config.system_prompt)
+        if directive.kind == "remember":
+            return self._remember(directive)
         return self._reply("")
+
+    def _remember(self, directive: Directive) -> AgentRun:
+        """The XSPI surface: a memory write. Instruction-bearing notes are
+        privileged operations under memory_write_approval — blocked AND
+        recorded (never silently dropped); plain notes persist and surface in
+        later sessions when a memory-trigger word appears in the user turn."""
+        note = _maybe_decode_b64(directive.arguments.get("note", ""))
+        instruction_bearing = bool(extract_directives(
+            note, source="memory", trusted=False))
+        if self.policy.memory_write_approval and instruction_bearing:
+            self.state.record("memory_write", {"note": note[:500]},
+                              self._session, executed=False, blocked=True,
+                              block_reason=("instruction-bearing memory write "
+                                            "requires approval "
+                                            "(OWASP LLM01:2026)"))
+            return self._reply("memory write requires approval")
+        self.memory.append((self._session, note))
+        self.state.record("memory_write", {"note": note[:500]}, self._session,
+                          executed=True)
+        return self._reply("noted")
 
     def _call(self, directive: Directive) -> AgentRun:
         name, args = directive.tool, dict(directive.arguments)
