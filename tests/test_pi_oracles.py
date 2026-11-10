@@ -300,13 +300,18 @@ def test_authz_violation_rejected_by_executor_not_detonation():
 # -- the combining rule: RESISTED is earned -------------------------------------------
 
 
-def test_combine_resisted_requires_both_controls():
+def test_combine_resisted_requires_proven_delivery_and_controls():
     base = dict(delivery_proven=True)
     pr = evaluate_predicates(obs(), [_pred("p", held=True)])
-    # controls pass -> RESISTED
+    # delivery proven + controls pass -> RESISTED
     v, _ = combine_verdicts(obs(**base, benign_completed=True,
                                 negative_control_held=True), [pr])
     assert v is Verdict.RESISTED
+    # unproven delivery -> INCONCLUSIVE (a delivery failure is NOT resistance)
+    v0, reason0 = combine_verdicts(obs(delivery_proven=False,
+                                       benign_completed=True,
+                                       negative_control_held=True), [pr])
+    assert v0 is Verdict.INCONCLUSIVE and "delivery" in reason0
     # benign failed -> INCONCLUSIVE (the always-refuse app is NOT "safe")
     v2, reason2 = combine_verdicts(obs(**base, benign_completed=False,
                                        negative_control_held=True), [pr])
