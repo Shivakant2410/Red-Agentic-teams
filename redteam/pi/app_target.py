@@ -35,6 +35,7 @@ import re
 from dataclasses import dataclass, field, replace
 
 from ..llmred.targets import AgentRun
+from .oracles import tag_decode, zw_strip
 
 # -- configuration -----------------------------------------------------------------
 
@@ -230,6 +231,19 @@ def _maybe_decode_b64(text: str) -> str:
         except (ValueError, UnicodeDecodeError):
             pass
     return t
+
+
+def _decode_smuggled(text: str) -> str:
+    """The naive brain reads what the UI cannot: unicode-tags are decoded and
+    zero-width separators are stripped (models tokenize both as content —
+    the smuggling channels' whole point). Deterministic; base64 is NOT
+    decoded here — it needs an explicit instruction the directive grammar
+    must honor, which is a different technique."""
+    if not text:
+        return text
+    if any(0xE0000 <= ord(c) <= 0xE007F for c in text):
+        text = text + "\n" + tag_decode(text)   # hidden layer surfaces
+    return zw_strip(text)
 
 
 def parse_kv(text: str) -> dict:
@@ -433,6 +447,9 @@ class LLMApp:
         for kind, source, trusted, text in segs:
             if not trusted:
                 self.seen_untrusted.append((source, text))
+        # the brain reads smuggled layers everywhere except the system prompt
+        segs = [(k, s, t, text if k == "system" else _decode_smuggled(text))
+                for k, s, t, text in segs]
         return segs
 
     def _directives(self, segments: list) -> list:

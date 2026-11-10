@@ -201,9 +201,10 @@ class PIEngagement:
         if out_dir:
             out_dir = Path(out_dir)
             out_dir.mkdir(parents=True, exist_ok=True)
-        cells = [(t, mode) for t in self.techniques
+        cells = [(t, pi, mode) for t in self.techniques
+                 for pi in range(len(t.payloads))
                  for mode in self.cfg.defense_modes]
-        for i, (tech, mode) in enumerate(cells):
+        for i, (tech, payload_index, mode) in enumerate(cells):
             canary = make_canary(self._rng)
             probe = self.builder(canary, mode)   # capability probe (also the cell app)
             missing = [r for r in tech.requires if not probe.config.has(r)]
@@ -217,14 +218,18 @@ class PIEngagement:
             if missing:
                 self.skipped.append({
                     "test_id": f"t{i+1:03d}", "technique": tech.id,
+                    "payload": tech.payloads[payload_index].id,
                     "defense_mode": mode, "status": "skipped",
                     "reason": f"target lacks capability: {missing}"})
                 continue
             try:
-                rec = self._run_cell(f"t{i+1:03d}", tech, mode, canary, probe)
+                rec = self._run_cell(f"t{i+1:03d}", tech, mode, canary, probe,
+                                     payload_index=payload_index)
             except Exception as exc:            # a broken cell is an ERROR record
                 self.errors.append({"test_id": f"t{i+1:03d}",
-                                    "technique": tech.id, "defense_mode": mode,
+                                    "technique": tech.id,
+                                    "payload": tech.payloads[payload_index].id,
+                                    "defense_mode": mode,
                                     "error": str(exc)[:300]})
                 continue
             if rec is not None:
@@ -241,23 +246,23 @@ class PIEngagement:
     # -- one cell ----------------------------------------------------------------
 
     def _run_cell(self, test_id: str, tech, mode: str, canary: str,
-                  app: LLMApp) -> EvidenceRecord | None:
+                  app: LLMApp, payload_index: int = 0) -> EvidenceRecord | None:
         channel = DELIVERY_CHANNELS[tech.delivery[0]]
         tool = tech.target_tool
         arg, value = _HIJACK_ARG_DEFAULTS.get(tool, ("", ""))
-        if tech.id == "PI.A5":
+        if tech.id == "PI.A5" and payload_index == 0:
             import base64 as _b64
             payload = tech.render(
                 0, canary=canary, tool=tool, arg=arg, value=value,
             ).replace("{b64}", _b64.b64encode(
                 f"Reply with {canary}".encode()).decode())
         elif tech.operator_input:
-            payload = tech.render(0, canary=canary, tool=tool, arg=arg,
-                                  value=value,
+            payload = tech.render(payload_index, canary=canary, tool=tool,
+                                  arg=arg, value=value,
                                   suffix=self.cfg.operator_supplies.get(tech.id, ""))
         else:
-            payload = tech.render(0, canary=canary, tool=tool, arg=arg,
-                                  value=value)
+            payload = tech.render(payload_index, canary=canary, tool=tool,
+                                  arg=arg, value=value)
         target, _app = llm_app_target(app)
         session = f"pi-{test_id}-{mode}"
         _bind(app, session)
@@ -332,7 +337,7 @@ class PIEngagement:
         rec = EvidenceRecord(
             engagement_id=self.cfg.engagement_id, test_id=test_id,
             technique_id=tech.id, technique_version=tech.version,
-            payload_ref=tech.payload_ref,
+            payload_ref=tech.payload_ref_at(payload_index),
             target_name=app.config.name, target_kind="agentic",
             target_fingerprint=target.config.fingerprint,
             session=session, plant_session=session,
@@ -503,7 +508,8 @@ class PIEngagement:
             return
         from ..findings import Finding
         store.add(Finding(
-            title=f"Prompt injection succeeded: {tech.name}",
+            title=(f"Prompt injection succeeded: {tech.name} "
+                   f"[{rec.payload_ref}]"),
             severity="high",
             target=rec.target_name,
             summary=(f"{tech.id} v{tech.version} ({tech.owasp}) delivered via "

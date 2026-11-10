@@ -39,6 +39,10 @@ from .oracles import (  # noqa: F401
     evaluate_schema_authz_on,
     is_canary_shaped,
     make_canary,
+    tag_decode,
+    tag_encode,
+    zw_embed,
+    zw_strip,
 )
 from .evidence import EvidenceRecord, validate_record  # noqa: F401
 from .techniques import (  # noqa: F401
@@ -72,4 +76,5 @@ __all__ = [
     "techniques_for_family", "IOPolicy", "LLMApp", "LLMAppConfig",
     "hardened_app", "llm_app_target", "vulnerable_app", "PIEngagement",
     "PIEngagementConfig", "bench_with_verification", "compute_bench",
+    "tag_decode", "tag_encode", "zw_embed", "zw_strip",
 ]
