@@ -126,6 +126,13 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # findings; markers are benign (mapping, not payload blasting).
     from .webinspect import GraphqlInspectTool, XssReflectProbeTool
     tools += [XssReflectProbeTool(), GraphqlInspectTool()]
+    # crosscheck_lead — the "never believe a tool's direct output" rule made
+    # operational: every lead class carries a SECOND-METHOD entry (first-party HTTP /
+    # raw socket vs a sandbox binary; fresh markers vs the inspector's own), verdicts
+    # corroborated/contradicted/unverifiable, still leads-only. Unknown (tool, claim)
+    # pairs fail closed.
+    from .crosscheck import CrossCheckTool
+    tools.append(CrossCheckTool())
     # First-party technique playbooks (data/playbooks/, ships in-repo): the offline
     # research layer — agents look techniques up here BEFORE inventing or searching.
     from .playbooks import FindTechniquesTool

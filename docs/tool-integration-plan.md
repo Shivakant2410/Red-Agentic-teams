@@ -77,7 +77,7 @@ third-party source, delivered by hand — the sandbox cannot and should not reac
 | **Recon** (passive) | crt.sh CT logs, wayback via gau/waymore, passive DNS (amass passive), leak-corpus lookups (dehashed/HIBP via operator) | operator | 0 | exports → `importers/assets.py` INTERSECTION; `http_probe`/`surface_scan` on what survives |
 | **Surface** | `surface_scan` (OWN), httpx (`-tech-detect`), naabu, `spa_recon` (OWN, ARTEX port) | sandbox | 1 | inventory + knowledge graph; spa runtime surface |
 | **Enum / discovery** | katana (`-fs rdn`), ffuf, feroxbuster, arjun, swagger/openapi hunting via `http_probe` (OWN), gau (in-scope historical only), kerbrute, nxc `--shares`/ldap enum, ldapdomaindump, GitDorker + gitleaks (client-supplied repos) | sandbox | 1 | `content_discovery`/`crawl`/`param_discovery` (OWN, W1 ✓); AD wrappers R1 |
-| **Vuln detection (leads)** | nuclei (OWN), `jwt_inspect` (OWN), Certipy `find`, nxc coerce/zerosafety modules (check-only), smuggler, graphw00f, dalfox (candidate XSS), semgrep (client code, operator import) | sandbox | 0–1 | every match = lead + verify_hint; nothing records |
+| **Vuln detection (leads)** | nuclei (OWN), `jwt_inspect` (OWN), Certipy `find`, nxc coerce/zerosafety modules (check-only), smuggler, graphw00f, dalfox (candidate XSS), semgrep (client code, operator import) | sandbox | 0–1 | every match = lead + verify_hint; nothing records; every lead second-methoded via `crosscheck_lead` (§5b) |
 | **Exploitation (gated)** | the verify pipeline (OWN): `verify_vulnerability`, `verify_workflow_abuse`, `verify_finding_independently`; sqlmap (fixed flags), jwt_tool, ysoserial/phpggc (proof payloads only), Certipy `auth` (canary SAN), impacket psexec/wmiexec (post-approval), evil-winrm (held creds) | sandbox | 2–3 | proofs only ever written by `verify_finding_independently`; canary objects mandatory |
 | **Credential access** | impacket `GetUserSPNs` (kerberoast), `GetNPUsers` (AS-REP), `secretsdump` (class 3), lsassy via nxc module (class 3), hashcat + john (host, offline), `set_session` for operator tokens, Responder/mitm6 (**class 4 — excluded, never an agent tool**) | sandbox + host | 2–3 | secrets redactor masks at capture; cracking NEVER in-sandbox |
 | **Post-exploitation** | `extract_secrets`/`prove_privilege` (OWN), the creditor (OWN), BloodHound CE + Cypher pathfinding (R2), chisel/ligolo-ng tunneling (operator infra), `record_access` + kill chain (OWN) | sandbox + compose | 2–3 | canary discipline; access graph is the state of record |
@@ -108,6 +108,23 @@ Corpus discipline: `load_playbooks()` doubles as the CI linter (schema, ids,
 kill-chain/surface enums, ≥80-char technique bodies, tool names valid). A playbook
 stub can never ship. Proven approaches graduate: playbook → verified on target →
 earned skill — the corpus stays curated, the skill DB stays earned.
+
+### 5b. Cross-verification — never believe a tool's direct output (`tools/crosscheck.py`)
+
+Operator rule, made operational: **a tool's direct output is never believed on its
+own.** `crosscheck_lead(tool, claim, url/param/host/port, marker)` re-derives any
+lead by a *structurally different* second method — sandbox-binary claims (ffuf,
+katana, arjun, nuclei, httpx, nmap) get first-party checks (plain HTTP through the
+shared fetch path, a WITH/without param differential, a raw TCP socket); first-party
+inspector claims (xss_reflect_probe) get FRESH inputs (a marker the probe never
+generated). Verdicts: `corroborated` (still a lead — it has earned proof budget, not
+confidence), `contradicted` (drop it), `unverifiable` (no cheap second method or thin
+inputs — never believed by default; the proof pipeline decides). The trust matrix is
+introspectable (`python -m redteam.tools.crosscheck --matrix`), unknown `(tool,
+claim)` pairs fail closed, exempt classes are documented rather than silent
+(`surface_scan` = RoE ground truth; `jwt_inspect` = offline deterministic parse), and
+nothing here touches the finding pipeline — promotion still runs the full ladder
+(`docs/tool-inventory.md`, "The trust ladder").
 
 ---
 
