@@ -47,6 +47,9 @@ def main() -> int:
     ap.add_argument("--plan", action="store_true",
                     help="print the attack-graph deployment plan (reachability "
                          "audit; our tool) instead of running")
+    ap.add_argument("--atlas", action="store_true",
+                    help="print the ATLAS-side catalog, two-way map and "
+                         "coverage audit instead of running")
     ap.add_argument("--capabilities", nargs="*", default=None,
                     help="override deployment capability labels for --plan "
                          "(default: the offline fixture's native set)")
@@ -57,6 +60,10 @@ def main() -> int:
         print(json.dumps({"coverage_audit": coverage_audit(),
                           "standards_anchors": standards_anchors()},
                          indent=2, ensure_ascii=False))
+        return 0
+    if args.atlas:
+        from .atlas import atlas_audit
+        print(json.dumps(atlas_audit(), indent=2, ensure_ascii=False))
         return 0
     if args.plan:
         from .planner import FIXTURE_CAPABILITIES, deployment_plan
@@ -71,7 +78,7 @@ def main() -> int:
                          indent=2, ensure_ascii=False))
         return 0
     if not args.out:
-        ap.error("--out is required unless --audit or --plan")
+        ap.error("--out is required unless --audit, --plan or --atlas")
 
     eng = PIEngagement(PIEngagementConfig(
         engagement_id=args.engagement_id, technique_ids=args.techniques,
