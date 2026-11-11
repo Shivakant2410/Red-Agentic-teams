@@ -67,6 +67,8 @@ class EvidenceRecord:
     negative_control: dict = field(default_factory=dict)  # {"ran": bool, "held": bool|None, "detail": str}
     benign_control: dict = field(default_factory=dict)    # {"ran": bool, "completed": bool|None, "detail": str}
     legit_control: dict = field(default_factory=dict)     # G5: {"ran": bool, "honored": bool|None, "detail": str}
+    pre_replies: list = field(default_factory=list)       # G11: assistant texts from thread pre-turns
+                                                          # (same session, BEFORE the attack turn)
     judge_audit: dict | None = None
     created: str = field(default_factory=_now)
 
@@ -97,6 +99,7 @@ class EvidenceRecord:
             "stage": self.stage,
             "replies": self.replies,
             "later_replies": self.later_replies,
+            "pre_replies": self.pre_replies,
             "tool_trace": self.tool_trace,
             "tool_surface": self.tool_surface,
             "state_transition": self.state_transition,
@@ -146,6 +149,7 @@ class EvidenceRecord:
             stage=row.get("stage", ""),
             replies=row.get("replies", []),
             later_replies=row.get("later_replies", []),
+            pre_replies=row.get("pre_replies", []),
             tool_trace=row.get("tool_trace", []),
             tool_surface=row.get("tool_surface", []),
             state_transition=row.get("state_transition", {}),
@@ -176,6 +180,7 @@ class EvidenceRecord:
             "success_stage": self.success_stage,
             "replies": self.replies,
             "later_replies": self.later_replies,
+            "pre_replies": self.pre_replies,
             "tool_trace": self.tool_trace,
             "tool_surface": self.tool_surface,
             "state_transition": self.state_transition,

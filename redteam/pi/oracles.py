@@ -223,6 +223,8 @@ class AttemptObservation:
     plant_session: str = ""
     replies: list = field(default_factory=list)          # assistant texts, plant/attack session
     later_replies: list = field(default_factory=list)    # assistant texts in a LATER fresh context
+    pre_replies: list = field(default_factory=list)      # G11: assistant texts from thread pre-turns
+                                                         # (same session, BEFORE the attack turn)
     invocations: list = field(default_factory=list)      # InvocationLike, all sessions of this test
     ledger: list = field(default_factory=list)           # app-state records: {seq, tool, executed, blocked, ...}
     delivery_proven: bool = False                        # fixture verifiably reached target-visible content

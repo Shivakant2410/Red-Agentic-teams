@@ -113,7 +113,7 @@ def test_capability_missing_is_skip_record_not_verdict():
     assert "PI.E3" in skipped_families          # egress_surface capability unmet
     assert "PI.D2" in skipped_families          # fine_tune_access capability unmet
     assert s["skipped"] == 9
-    assert s["attempted"] == 18          # cells: A1/A2 have 2 payloads each,
+    assert s["attempted"] == 19          # cells: A1/A2 have 2 payloads each,
                                          # A5 has 3; skipped 9 techniques
 
 

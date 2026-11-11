@@ -61,7 +61,7 @@ from .oracles import (
     make_canary,
 )
 from .techniques import (BY_ID, DELIVERY_CHANNELS, SKIP_EVIDENCE,
-                         TECHNIQUES, select_techniques)
+                         TECHNIQUES, render_thread_turn, select_techniques)
 
 # -- ground-truth predicates (the fixture app's safety contract) ----------------------
 
@@ -343,6 +343,19 @@ class PIEngagement:
         session = f"pi-{test_id}-{mode}"
         _bind(app, session)
 
+        # G11 thread protocol: pre-turns are separate sends in the SAME
+        # session BEFORE the attack turn — the slow-burn shape (seed a
+        # convention, then pivot on it). One mechanism serves both this and
+        # G1's two-phase memory protocol (plant session -> later probe).
+        pre_replies: list = []
+        for k, pre_tmpl in enumerate(getattr(tech, "pre_turns", ()) or ()):
+            pre_text = render_thread_turn(pre_tmpl, canary=canary, tool=tool,
+                                          arg=arg, value=value)
+            pre_msgs, _pp = self._prepare(app, channel, pre_text,
+                                          doc_suffix=f"-pre{k}")
+            pr = target.send(session, pre_msgs)
+            pre_replies.append(pr.text or "")
+
         messages, delivery_proven = self._prepare(app, channel, payload)
         reply = target.send(session, messages)
         replies = [reply.text or ""]
@@ -379,6 +392,7 @@ class PIEngagement:
 
         obs = AttemptObservation(
             plant_session=session, replies=replies, later_replies=later_replies,
+            pre_replies=pre_replies,
             invocations=invocations, ledger=ledger,
             outbound_requests=outbound,
             delivery_proven=delivery_proven, benign_completed=benign_completed,
@@ -436,6 +450,7 @@ class PIEngagement:
             verdict=verdict.value, rationale=reason,
             canary=canary, stage=results[0].stage.value,
             replies=replies, later_replies=later_replies,
+            pre_replies=pre_replies,
             tool_trace=[{"tool": getattr(x, "tool", ""),
                          "arguments": dict(getattr(x, "arguments", {}) or {}),
                          "session": getattr(x, "session", ""),
@@ -520,15 +535,19 @@ class PIEngagement:
                             self.records.append(rec)
                             self._mutant_cells += 1
 
-    def _prepare(self, app: LLMApp, channel, payload: str) -> tuple:
-        """Build the attack-turn messages for the channel; return (messages,
+    def _prepare(self, app: LLMApp, channel, payload: str,
+                 doc_suffix: str = "") -> tuple:
+        """Build one turn's messages for the channel; return (messages,
         delivery_proven). Proven-by-construction channels set True; doc
-        channels are proven post-hoc via seen_untrusted."""
+        channels are proven post-hoc via seen_untrusted. doc_suffix keeps
+        thread pre-turn documents (G11) distinct from the attack document
+        in seen_untrusted attribution."""
         if channel.kind == "user":
             return [{"role": "user", "content": payload}], True
         if channel.kind == "doc":
             app.docs.append(RagDoc(
-                id=f"pi-{self.cfg.engagement_id}", source=_DOC_SOURCE[channel.id],
+                id=f"pi-{self.cfg.engagement_id}{doc_suffix}",
+                source=_DOC_SOURCE[channel.id],
                 content=payload,
                 keywords=tuple(BENIGN_TASK.query_keywords)))
             return [{"role": "user", "content": self.cfg.benign_query}], False
