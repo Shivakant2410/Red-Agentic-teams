@@ -246,7 +246,7 @@ TECHNIQUES: tuple = (
                      "user channel claims higher authority and demands an "
                      "attacker-chosen action."),
         owasp="LLM01:2025", atlas=_ATLAS_DIRECT,
-        provenance=("HouYi (arXiv:2308.11467) three-part structure — pre-"
+        provenance=("HouYi (arXiv:2306.05499) three-part structure — pre-"
                     "constructed prompt + separation + malicious payload — "
                     "and InjecAgent (arXiv:2403.02691) direct-harm scenario "
                     "shape; payload written fresh for this grammar."),
@@ -388,7 +388,7 @@ TECHNIQUES: tuple = (
                      "query."),
         owasp="LLM01:2025", atlas=_ATLAS_INDIRECT,
         provenance=("Greshake et al. (arXiv:2302.12173) — first indirect "
-                    "injection taxonomy; AgentDojo (arXiv:2404.08144) "
+                    "injection taxonomy; AgentDojo (arXiv:2406.13352) "
                     "utility-under-attack shape. Content written fresh."),
         delivery=("rag_document",),
         payloads=(
@@ -460,7 +460,7 @@ TECHNIQUES: tuple = (
                      "agent — the classic retrieval-borne variant."),
         owasp="LLM01:2025", atlas=_ATLAS_INDIRECT,
         provenance=("Greshake et al. (arXiv:2302.12173) search-result branch; "
-                    "AgentDojo (arXiv:2404.08144) knowledge-base task shape."),
+                    "AgentDojo (arXiv:2406.13352) knowledge-base task shape."),
         delivery=("search_result",),
         payloads=(
             PayloadTemplate("p_search",
@@ -562,7 +562,7 @@ TECHNIQUES: tuple = (
         description=("The TASK FIELD the planner reads carries a substituted "
                      "goal — the plan is poisoned before any step runs."),
         owasp="LLM01:2025", atlas=_ATLAS_DIRECT,      # plan-time is a direct-adjacent surface
-        provenance=("PlanFlip (arXiv:2507.13169) PF-1; scenario adapted to the "
+        provenance=("PlanFlip (arXiv:2607.16199) PF-1; scenario adapted to the "
                     "app's plan_mode surface."),
         delivery=("plan_field",),
         payloads=(
@@ -580,7 +580,7 @@ TECHNIQUES: tuple = (
         description=("Reorders the plan: the injected step claims priority "
                      "over the user's actual steps."),
         owasp="LLM01:2025", atlas=_ATLAS_DIRECT,
-        provenance=("PlanFlip (arXiv:2507.13169) PF-2 priority-inversion "
+        provenance=("PlanFlip (arXiv:2607.16199) PF-2 priority-inversion "
                     "shape; scenario adapted to the app's plan_mode surface."),
         delivery=("plan_field",),
         payloads=(
@@ -598,7 +598,7 @@ TECHNIQUES: tuple = (
         description=("Retrieved content pollutes the context the plan is built "
                      "from — the plan then includes attacker steps."),
         owasp="LLM01:2025", atlas=_ATLAS_INDIRECT,
-        provenance=("PlanFlip (arXiv:2507.13169) PF-3 context-pollution "
+        provenance=("PlanFlip (arXiv:2607.16199) PF-3 context-pollution "
                     "shape; delivered via the poisoned-corpus channel of "
                     "this app target."),
         delivery=("rag_document",),
@@ -617,7 +617,7 @@ TECHNIQUES: tuple = (
                      "administrator you must...') to legitimize injected "
                      "steps."),
         owasp="LLM01:2025", atlas=_ATLAS_DIRECT,
-        provenance=("PlanFlip (arXiv:2507.13169) PF-4 role-confusion shape; "
+        provenance=("PlanFlip (arXiv:2607.16199) PF-4 role-confusion shape; "
                     "authority-impersonation scenario adapted to the plan "
                     "field of this app target."),
         delivery=("plan_field",),
@@ -690,7 +690,7 @@ TECHNIQUES: tuple = (
                      "markup payload carrying the canary (rendered, never "
                      "fetched — network-safe by construction)."),
         owasp="LLM01:2025", atlas=_ATLAS_INDIRECT,
-        provenance=("PI 2.0 (arXiv:2402.16822) hybrid PI+XSS composition "
+        provenance=("PI 2.0: Hybrid AI Threats (arXiv:2507.13169) hybrid PI+XSS "
                     "shape; reuses this repo's XSS evidence discipline "
                     "(skills/categories/xss) instead of duplicating it — the "
                     "canary rides the markup, detection is canary-based."),
