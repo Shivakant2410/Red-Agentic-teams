@@ -619,6 +619,23 @@ class Orchestrator:
         n_workers = min(self._max_swarm_workers, len(actionable))
         self._ctx.audit.record("orchestrator.swarm_start", round=round_no,
                                workers=n_workers, actionable=len(actionable))
+        # The evidence-join layer (redteam/synthesis.py): deterministic composition of
+        # run observations into per-(technique, target) attack ideas. This does NOT
+        # select — the tree's actionable()/claim() order is untouched — it ENRICHES
+        # whatever a worker claims, so the claim -> worker handoff carries evidence and
+        # a draft check instead of a bare pair plus one generic sentence. Failure here
+        # degrades to an audit record; the swarm runs exactly as before.
+        idea_map: dict = {}
+        try:
+            from .synthesis import synthesize
+            for idea in synthesize(self._ctx):
+                idea_map[(idea.technique, idea.target)] = idea
+            if idea_map:
+                self._ctx.audit.record(
+                    "synthesis.round", round=round_no, ideas=len(idea_map),
+                    top=[f"{t} on {tg}" for (t, tg) in list(idea_map)[:3]])
+        except Exception as exc:
+            self._ctx.audit.record("synthesis.error", stage="round", error=str(exc))
         if self._noise is not None:
             self._noise.reset()   # per-ROUND allowance: throttled by current pressure
             self._emit("scheduler.state", round=round_no,
@@ -672,7 +689,10 @@ class Orchestrator:
                 # same rationale as the empty-attempt FAILED below) and move on. A
                 # research-layer ERROR never suppresses work: the swarm proceeds
                 # exactly as Gen-1 did (degrade to audit record, never crash).
-                hyp, suppressed = self._research_claim_for_node(claimed, worker_id)
+                hyp, suppressed = self._research_claim_for_node(claimed, worker_id,
+                                                                idea=idea_map.get(
+                                                                    (claimed.technique,
+                                                                     claimed.target)))
                 if suppressed:
                     if self._noise is not None:
                         self._noise.refund(technique_cost(claimed.technique))
@@ -701,6 +721,14 @@ class Orchestrator:
                 # (the specialists-vs-generalist A/B switch).
                 profile = profile_for(claimed.technique)
                 research_note = self._research_note_for(hyp)
+                idea_brief = ""
+                idea = idea_map.get((claimed.technique, claimed.target))
+                if idea is not None:
+                    try:
+                        from .synthesis import brief
+                        idea_brief = "\n\n" + brief(idea)
+                    except Exception:
+                        idea_brief = ""
                 exploit = self._make_specialist(
                     profile, agent_name=f"{profile.name}-w{worker_id}",
                     addon_suffix=f"\n\nYOUR ASSIGNED TARGET THIS TURN: "
@@ -712,7 +740,8 @@ class Orchestrator:
                     f"tool activity actually saw — hits are leads, prove them yourself."
                     + (f"\n\nRESEARCH BRIEFING (run-scoped hypothesis registry — this is "
                        f"recorded context, not proof; every claim still needs YOUR proof "
-                       f"through the normal pipeline):\n{research_note}" if research_note else ""))
+                       f"through the normal pipeline):\n{research_note}" if research_note else "")
+                    + idea_brief)
                 summary = exploit.run(
                     f"{objective}\n\nThis run: EXPLOIT swarm worker {worker_id} round "
                     f"{round_no + 1} — prove {claimed.technique} on {claimed.target}.",
@@ -764,8 +793,14 @@ class Orchestrator:
     #   3. A research-layer failure degrades to an audit record — the swarm runs
     #      exactly as Gen-1 did when the registry/forum is unavailable.
 
-    def _research_claim_for_node(self, node, worker_id: int):
+    def _research_claim_for_node(self, node, worker_id, idea=None):
         """Find-or-register + atomically claim the hypothesis for a claimed tree node.
+
+        `idea` (optional) is a synthesis.AttackIdea for this (technique, target): its
+        expected_behavior/proposed_test ride into the registry's own slots, and its
+        evidence observations attach as EvidenceRefs (kind=observation, source=synthesis)
+        so the hypothesis records WHY the node looked attackable — the rationale chain
+        survives the run, not just the verdict.
 
         Returns (hypothesis, suppressed):
           (hyp, False)  — the worker owns the hypothesis; proceed (with briefing).
@@ -782,13 +817,31 @@ class Orchestrator:
             hyp, _ = self._research.claim_or_register(
                 asset_ref=node.target,
                 weakness_class=weakness_for_technique(node.technique),
-                claim=claim_text, agent=agent, technique=node.technique)
+                claim=claim_text, agent=agent, technique=node.technique,
+                expected_behavior=(idea.expected_behavior if idea is not None else ""),
+                proposed_test=(idea.proposed_test if idea is not None else ""))
             if hyp is None:
                 self._ctx.audit.record("research.duplicate_suppressed",
                                        technique=node.technique, target=node.target,
                                        worker=agent)
                 return None, True
             self._research_hyp_by_node[node.id] = hyp.hypothesis_id
+            if idea is not None and getattr(idea, "evidence", None):
+                try:
+                    for i, obs in enumerate(idea.evidence):
+                        self._research.registry.attach_evidence(
+                            hyp.hypothesis_id,
+                            EvidenceRef(evidence_id=f"ev-syn-{node.id}-{i}",
+                                        kind="observation", origin="agent",
+                                        source_agent="synthesis",
+                                        artifact_ref=str(obs.ref)[:200],
+                                        summary=f"[{obs.source}/{obs.kind}] "
+                                                f"{str(obs.detail)[:180]}",
+                                        ts=self._research_ts()),
+                            agent)
+                except Exception as exc:
+                    self._ctx.audit.record("research.error", stage="synthesis_evidence",
+                                           hypothesis_id=hyp.hypothesis_id, error=str(exc))
             return hyp, False
         except SwarmError as exc:      # registry-level issue (e.g. malformed target)
             self._ctx.audit.record("research.error", stage="claim",

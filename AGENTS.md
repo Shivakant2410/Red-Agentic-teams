@@ -47,6 +47,15 @@ planner.py            Objective -> plan of actions
 attack_tree.py         Attack tree modeling; optional BanditStore (bandit.py) learns
                        per-(technique, endpoint-shape) win rates across runs to nudge
                        the static priority table instead of overriding it
+synthesis.py           Evidence-join layer (docs/synthesis.md): deterministic rules
+                       (identity differential, unauth baseline, live reflection,
+                       credential reuse) turn run observations into per-node attack
+                       ideas with evidence + DRAFT checks, injected into the swarm's
+                       claim->worker handoff and the hypothesis registry
+                       (expected_behavior/proposed_test + EvidenceRefs). Honors the C1
+                       contract: never selects, never proves, evidence-or-silence,
+                       degrades to an audit record. Not a tool — the orchestrator
+                       owns it
 states.py              The lifecycle registry — EVERY state machine (run manifest,
                        approval, finding confidence, attack-tree node, kill-chain
                        stage, hypothesis) with vocabulary + transition tables +

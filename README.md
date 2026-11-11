@@ -90,6 +90,10 @@ states.py            Lifecycle registry — every state machine (run, approval, 
                      place: vocabulary, transition tables, writer matrix. Introspect via
                      `python -m redteam.states --json` or GET /api/state-machines;
                      rationale + inventory in docs/state-machines.md
+synthesis.py         Evidence-join layer (docs/synthesis.md): deterministic rules turn
+                     run observations (params, identities, findings) into evidence-
+                     carrying attack ideas with draft checks, injected into the swarm's
+                     claim->worker handoff. Never selects, never proves; no tool
 config/engagement.example.yaml
 GEN2-ARCHITECTURE.md Gen-2 design doc — how the pieces fit and which invariants hold
 ROADMAP.md           Gap analysis vs CAI / PentestGPT / Nebula + the path forward
