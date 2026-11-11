@@ -79,8 +79,11 @@ redteam/
                      graphql_inspect (W2 inspectors — reflection mapping and GraphQL
                      checklists that emit READY check_specs for verify_vulnerability),
                      find_techniques (offline playbook library in data/playbooks/),
+                     crosscheck_lead (never believe a tool's direct output — every lead
+                     re-verified by a second method),
                      template/skill tools, postex, ... — the capability ladder lives in
-                     docs/tool-integration-plan.md
+                     docs/tool-integration-plan.md, the phase inventory in
+                     docs/tool-inventory.md
 dashboard/           Next.js mission-control UI (static export, served by server.py)
 states.py            Lifecycle registry — every state machine (run, approval, finding
                      confidence, attack-tree node, kill-chain stage, hypothesis) in one

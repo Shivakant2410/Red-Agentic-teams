@@ -136,6 +136,14 @@ tools/
                          1:1; graphql_inspect = deterministic 4-request checklist
                          (introspection/GET/suggestions/batching). The inspect ->
                          spec -> prove chain — discovery output IS the proof input
+  crosscheck.py          crosscheck_lead — "never believe a tool's direct output"
+                         made operational: every lead class carries a registered
+                         SECOND method (first-party HTTP / raw socket vs a sandbox
+                         binary; fresh markers vs the inspector's own). Verdicts
+                         corroborated/contradicted/unverifiable; unknown pairs fail
+                         closed; exempt classes documented (surface_scan, jwt_inspect);
+                         python -m redteam.tools.crosscheck --matrix. Trust ladder
+                         lives in docs/tool-inventory.md
   playbooks.py           find_techniques — first-party offline technique library
                          (data/playbooks/): kill-chain-indexed playbooks with concrete
                          steps + verify hints; agents look up tradecraft, never search
