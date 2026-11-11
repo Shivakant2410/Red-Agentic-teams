@@ -79,6 +79,11 @@ redteam/
                      postex, ... — the capability ladder lives in
                      docs/tool-integration-plan.md
 dashboard/           Next.js mission-control UI (static export, served by server.py)
+states.py            Lifecycle registry — every state machine (run, approval, finding
+                     confidence, attack-tree node, kill-chain stage, hypothesis) in one
+                     place: vocabulary, transition tables, writer matrix. Introspect via
+                     `python -m redteam.states --json` or GET /api/state-machines;
+                     rationale + inventory in docs/state-machines.md
 config/engagement.example.yaml
 GEN2-ARCHITECTURE.md Gen-2 design doc — how the pieces fit and which invariants hold
 ROADMAP.md           Gap analysis vs CAI / PentestGPT / Nebula + the path forward

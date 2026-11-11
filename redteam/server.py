@@ -188,6 +188,17 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
     def health() -> dict:
         return {"status": "ok", "version": VERSION, "runs_root": str(runs_root)}
 
+    # -- API: lifecycle introspection --------------------------------------------
+    # Machine-readable spec of EVERY state machine the platform emits into
+    # events/artifacts/API payloads (states.py is the source of truth). Agents,
+    # the dashboard, and CI lint the vocabulary from here instead of parsing
+    # source — the AX/DX surface of docs/state-machines.md.
+
+    @app.get("/api/state-machines")
+    def state_machines() -> dict:
+        from .states import machines_json
+        return machines_json()
+
     # -- API: runs lifecycle ---------------------------------------------------
 
     @app.post("/api/runs", status_code=202)

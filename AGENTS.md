@@ -47,6 +47,13 @@ planner.py            Objective -> plan of actions
 attack_tree.py         Attack tree modeling; optional BanditStore (bandit.py) learns
                        per-(technique, endpoint-shape) win rates across runs to nudge
                        the static priority table instead of overriding it
+states.py              The lifecycle registry — EVERY state machine (run manifest,
+                       approval, finding confidence, attack-tree node, kill-chain
+                       stage, hypothesis) with vocabulary + transition tables +
+                       writer matrix; owner modules import their constants here.
+                       Introspect: `python -m redteam.states --json` or
+                       GET /api/state-machines. See docs/state-machines.md before
+                       adding/changing any status string
 bandit.py              Contextual multi-armed bandit (Thompson sampling) over
                        attack_tree.py's technique choices; persists to
                        memory/bandit.json, same cross-engagement pattern as memory.py

@@ -43,6 +43,7 @@ from .llm.gateway import build_llm_client
 from .ratelimit import RateLimiter
 from .report import build_html_report, build_report
 from .scope import ScopeGuard
+from .states import APPROVAL_PENDING, APPROVAL_RESOLVED
 from .tools import ToolContext, build_registry
 
 
@@ -57,6 +58,9 @@ def _now() -> str:
 # ---------------------------------------------------------------------------
 # approvals.json: the file contract between the engine thread (writer of pending
 # records) and the API (resolver). Same process, so a module lock is enough.
+# Lifecycle: states.py machine "approval" — pending -> resolved exactly once;
+# `approved` is a boolean dimension on the resolved record (the STOP kill file's
+# auto-deny is a resolution, not a third state).
 # ---------------------------------------------------------------------------
 
 _APPROVALS_LOCK = threading.Lock()
@@ -100,14 +104,14 @@ class HeadlessApprover:
         with _APPROVALS_LOCK:
             data = _load_approvals(self._path)
             data.append({"id": aid, "action": action, "details": details,
-                         "ts": _now(), "status": "pending", "approved": None,
+                         "ts": _now(), "status": APPROVAL_PENDING, "approved": None,
                          "resolved_ts": None})
             _save_approvals(self._path, data)
         safe_emit(self._bus, "approval.requested", id=aid, action=action, details=details)
         while True:
             with _APPROVALS_LOCK:
                 rec = next((r for r in _load_approvals(self._path) if r.get("id") == aid), None)
-            if rec and rec.get("status") == "resolved":
+            if rec and rec.get("status") == APPROVAL_RESOLVED:
                 approved = bool(rec.get("approved"))
                 safe_emit(self._bus, "approval.resolved", id=aid, approved=approved)
                 return approved
@@ -121,8 +125,8 @@ class HeadlessApprover:
     def _resolve_locked(self, aid: str, approved: bool, note: str = "") -> None:
         data = _load_approvals(self._path)
         for rec in data:
-            if rec.get("id") == aid and rec.get("status") == "pending":
-                rec["status"] = "resolved"
+            if rec.get("id") == aid and rec.get("status") == APPROVAL_PENDING:
+                rec["status"] = APPROVAL_RESOLVED
                 rec["approved"] = bool(approved)
                 rec["resolved_ts"] = _now()
                 if note:
@@ -138,9 +142,9 @@ def resolve_approval(out_dir: str | Path, approval_id: str, approved: bool) -> b
     with _APPROVALS_LOCK:
         data = _load_approvals(p)
         rec = next((r for r in data if r.get("id") == approval_id), None)
-        if rec is None or rec.get("status") != "pending":
+        if rec is None or rec.get("status") != APPROVAL_PENDING:
             return False
-        rec["status"] = "resolved"
+        rec["status"] = APPROVAL_RESOLVED
         rec["approved"] = bool(approved)
         rec["resolved_ts"] = _now()
         _save_approvals(p, data)

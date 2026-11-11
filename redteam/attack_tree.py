@@ -22,7 +22,13 @@ import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-TODO, IN_PROGRESS, COMPLETED, FAILED = "todo", "in_progress", "completed", "failed"
+# Node lifecycle vocabulary + transition table live in states.py (the platform's
+# ONE lifecycle registry — see docs/state-machines.md). Aliased here so the rest
+# of the module keeps its bare names; the strings are unchanged, so on-disk
+# artifacts, server bucket counts, and coverage derivation are byte-identical.
+from .states import (TREE_COMPLETED as COMPLETED, TREE_FAILED as FAILED,
+                     TREE_IN_PROGRESS as IN_PROGRESS, TREE_TODO as TODO,
+                     TREE_TRANSITIONS)
 
 
 @dataclass(frozen=True)
@@ -222,6 +228,11 @@ class AttackTree:
                     self.confirm(tid, target)
 
     # -- state transitions -----------------------------------------------------
+    #
+    # The legal edge set is states.TREE_TRANSITIONS; like everything in D1,
+    # mark() stays ACCEPT-permissive (an unknown status is stored verbatim so
+    # old callers and artifacts keep working) — the table is the contract new
+    # code must honor and reviewers diff against, not a runtime gate yet.
 
     def mark(self, technique: str, target: str, status: str, findings: str = "") -> None:
         with self._lock:

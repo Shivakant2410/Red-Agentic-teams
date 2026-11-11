@@ -17,6 +17,12 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .access import CREDENTIAL, HOST, PRINCIPAL
+# Stage vocabulary + the FORWARD transition table live in states.py (the one
+# lifecycle registry). mark() below stays operator-authoritative (it may revert
+# an over-claimed stage) — the table documents the forward flow reviewers and
+# agents can rely on; strings are unchanged from the previous inline literals.
+from .states import (STAGE_ACHIEVED as ACHIEVED, STAGE_IN_PROGRESS as IN_PROGRESS,
+                     STAGE_NOT_STARTED as NOT_STARTED, STAGE_TRANSITIONS)
 
 RECON = "reconnaissance"
 INITIAL_ACCESS = "initial-access"
@@ -29,8 +35,6 @@ COLLECTION = "collection"
 EXFILTRATION = "exfiltration"
 PERSISTENCE = "persistence"
 DEFENSE_EVASION = "defense-evasion"
-
-NOT_STARTED, IN_PROGRESS, ACHIEVED = "not_started", "in_progress", "achieved"
 
 # Ordered stages with what each is FOR, in objective terms.
 STAGES: dict[str, str] = {

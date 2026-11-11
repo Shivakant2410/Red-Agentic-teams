@@ -147,7 +147,7 @@ class RunManifest:
     engagement: str
     started: str = field(default_factory=lambda: _dt.datetime.now(_dt.timezone.utc).isoformat())
     updated: str = field(default_factory=lambda: _dt.datetime.now(_dt.timezone.utc).isoformat())
-    status: str = "running"           # running | completed | halted | error
+    status: str = "running"           # vocabulary: states.py machine "run" (RUN_STATES)
     steps: int = 0
     findings: int = 0
     tokens: int = 0
