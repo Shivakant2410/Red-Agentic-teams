@@ -33,6 +33,11 @@ def main() -> int:
     ap.add_argument("--adaptive-rounds", type=int, default=0,
                     help="G2 adaptive phase: mutate non-succeeded payloads "
                          "for N rounds (deterministic)")
+    ap.add_argument("--adaptive-budget", type=int, default=None,
+                    help="cap mutant cells per adaptive round; cells are "
+                         "chosen by coverage optimization (technique, "
+                         "family, stage, mode, operator labels). Default: "
+                         "no cap (full mutant grid)")
     ap.add_argument("--defense-spec-visible", action="store_true",
                     help="G2/OWASP 2026: disclose the defense spec to the "
                          "attacker in mode 'on' payloads")
@@ -72,6 +77,7 @@ def main() -> int:
         engagement_id=args.engagement_id, technique_ids=args.techniques,
         defense_modes=tuple(args.defense_modes), seed=args.seed,
         adaptive_rounds=args.adaptive_rounds,
+        adaptive_budget=args.adaptive_budget,
         defense_spec_visible=args.defense_spec_visible,
         out_dir=Path(args.out)))
     summary = eng.run()

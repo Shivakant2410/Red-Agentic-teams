@@ -146,6 +146,14 @@ class PIEngagementConfig:
     # prevention #5 shape (test against adaptive attackers). Deterministic:
     # fixed operator set, seeded order, so the bench stays reproducible.
     adaptive_rounds: int = 0
+    # Budget scheduling (our tool): when set, each adaptive round runs at
+    # most THIS many mutant cells, chosen by greedy max-coverage over
+    # (technique, family, stage, mode, operator) labels via the llmred-kernel
+    # coverage engine — the tightest budget buys the most diverse attack
+    # slice. None = the full grid (unchanged legacy behavior). The summary
+    # discloses the sample honestly: candidate count, left-unrun count,
+    # labels covered/uncovered.
+    adaptive_budget: int | None = None
     # G2/OWASP 2026: disclose the full defense specification to the attacker
     # (mode 'on' payloads carry the disclosed spec as a suffix).
     defense_spec_visible: bool = False
@@ -294,6 +302,24 @@ class PIEngagement:
                          "independent verifier re-derives from registry "
                          "payloads, not mutants"),
             }
+            if self.cfg.adaptive_budget is not None:
+                summary["adaptive"]["budget"] = {
+                    "per_round": self.cfg.adaptive_budget,
+                    "cells_selected": self._mutant_cells,
+                    "candidate_cells_seen": self._budget_candidates_total,
+                    "left_unrun": self._budget_candidates_total
+                                  - self._mutant_cells,
+                    "labels_covered": sorted(self._budget_labels_hit),
+                    "labels_uncovered": sorted(
+                        self._budget_labels_all - self._budget_labels_hit),
+                    "selection": ("greedy max-coverage over technique, "
+                                  "family, stage, mode and operator labels "
+                                  "(llmred-kernel optimize_coverage or the "
+                                  "identical Python reference)"),
+                    "note": ("budgeted rounds are a coverage-selected SAMPLE "
+                             "of the mutant space — never presented as the "
+                             "full grid"),
+                }
         if out_dir:
             self._persist(out_dir, summary)
         safe_emit(self.cfg.events, "pi.engagement.finished",
@@ -496,7 +522,13 @@ class PIEngagement:
         OWASP LLM01:2026 prevention #5 requirement made runnable. Mutant
         cells are recorded honestly (their verdicts enter the bench) but never
         bridge findings: the independent verifier re-derives from registry
-        payloads, not mutants."""
+        payloads, not mutants.
+
+        Budget mode (adaptive_budget): each round runs a coverage-SELECTED
+        sample — the kernel coverage engine picks the cells whose (technique,
+        family, stage, mode, operator) labels maximize distinct coverage, and
+        later rounds exclude cells already spent, so successive rounds spread
+        rather than repeat. The summary reports the sampling honestly."""
         import random
         rng = random.Random(self.cfg.seed + 9999)
         succeeded = {(r.technique_id, r.payload_ref, r.defense_config)
@@ -505,35 +537,87 @@ class PIEngagement:
         base_cells = [(t, pi) for t in self.techniques
                       for pi in range(len(t.payloads))]
         ops = list(_ADAPTIVE_OPERATORS)
+        budget = self.cfg.adaptive_budget
+        if budget is not None and budget < 1:
+            raise ValueError("adaptive_budget must be None or >= 1")
+        if budget is None:
+            for round_no in range(1, self.cfg.adaptive_rounds + 1):
+                rng.shuffle(ops)
+                for t, pi in base_cells:
+                    for mode in self.cfg.defense_modes:
+                        if (t.id, t.payload_ref_at(pi), mode) in succeeded:
+                            continue      # this cell already proven — nothing to adapt
+                        for op_name, op in ops:
+                            self._run_mutant_cell(
+                                round_no, t, pi, mode, op_name, op)
+            return
+
+        # -- budgeted rounds: coverage-selected scheduling -------------------
+        from ..kernel_bridge import optimize_coverage
+        self._budget_labels_all: set = set()
+        self._budget_labels_hit: set = set()
+        self._budget_candidates_total = 0
+        spent: set = set()
+        op_by_name = {name: op for name, op in ops}
+        t_by_id = {t.id: t for t in self.techniques}
         for round_no in range(1, self.cfg.adaptive_rounds + 1):
-            rng.shuffle(ops)
+            items: list = []
+            covers_by_id: dict = {}
             for t, pi in base_cells:
                 for mode in self.cfg.defense_modes:
                     if (t.id, t.payload_ref_at(pi), mode) in succeeded:
-                        continue      # this cell already proven — nothing to adapt
-                    for op_name, op in ops:
-                        canary = make_canary(self._rng)
-                        app = self.builder(canary, mode)
-                        test_id = (f"a{round_no:02d}-{t.id}-{pi}-{mode}"
-                                   f"-{op_name}")
-                        try:
-                            base = self._render_payload(t, pi, canary, mode)
-                            rec = self._run_cell(
-                                test_id, t, mode, canary,
-                                app, payload_index=pi,
-                                payload_override=op(base),
-                                mutant_op=op_name)
-                        except Exception as exc:
-                            self.errors.append({
-                                "test_id": test_id,
-                                "technique": t.id,
-                                "payload": t.payloads[pi].id,
-                                "defense_mode": mode,
-                                "error": str(exc)[:300]})
-                            continue
-                        if rec is not None:
-                            self.records.append(rec)
-                            self._mutant_cells += 1
+                        continue
+                    for op_name in op_by_name:
+                        key = (t.id, pi, mode, op_name)
+                        if key in spent:
+                            continue   # an earlier budgeted round paid for it
+                        covers = [t.id, f"family:{t.family}",
+                                  f"stage:{t.success_stage.name}",
+                                  f"mode:{mode}", f"op:{op_name}"]
+                        sid = f"{t.id}|{pi}|{mode}|{op_name}"
+                        items.append({"id": sid, "score": 1.0,
+                                      "covers": covers})
+                        covers_by_id[sid] = covers
+            self._budget_candidates_total += len(items)
+            for it in items:
+                self._budget_labels_all.update(it["covers"])
+            if not items:
+                break                  # every candidate cell already spent
+            for sid in optimize_coverage(items, budget)["selected"]:
+                t_id, pi_s, mode, op_name = sid.split("|")
+                spent.add((t_id, int(pi_s), mode, op_name))
+                self._budget_labels_hit.update(covers_by_id[sid])
+                self._run_mutant_cell(
+                    round_no, t_by_id[t_id], int(pi_s), mode, op_name,
+                    op_by_name[op_name])
+
+    def _run_mutant_cell(self, round_no: int, t, pi: int, mode: str,
+                         op_name: str, op) -> None:
+        """One adaptive mutant cell. Deterministic: canary from the
+        engagement RNG, rendered payload, one operator. Errors are ERROR
+        records; successes stay mutant-marked and never bridge findings."""
+        canary = make_canary(self._rng)
+        app = self.builder(canary, mode)
+        test_id = (f"a{round_no:02d}-{t.id}-{pi}-{mode}"
+                   f"-{op_name}")
+        try:
+            base = self._render_payload(t, pi, canary, mode)
+            rec = self._run_cell(
+                test_id, t, mode, canary,
+                app, payload_index=pi,
+                payload_override=op(base),
+                mutant_op=op_name)
+        except Exception as exc:
+            self.errors.append({
+                "test_id": test_id,
+                "technique": t.id,
+                "payload": t.payloads[pi].id,
+                "defense_mode": mode,
+                "error": str(exc)[:300]})
+            return
+        if rec is not None:
+            self.records.append(rec)
+            self._mutant_cells += 1
 
     def _prepare(self, app: LLMApp, channel, payload: str,
                  doc_suffix: str = "") -> tuple:
