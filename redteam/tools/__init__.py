@@ -52,6 +52,11 @@ class ToolContext:
     # the Gen-1 zero-overhead behavior; run.py wires both for every new run.
     traffic: Optional[object] = None   # TrafficRecorder | None
     inventory: Optional[object] = None # AssetInventory | None
+    # Phase B3: the run's detection BeliefFilter (sandbox/detection_belief.py) —
+    # fed by tools/http.py's observation hook at every response return point and
+    # read by the orchestrator's DriftPlusPenaltyScheduler to throttle the swarm.
+    # None keeps the zero-overhead behavior (single-agent mode, legacy paths).
+    detection: Optional[object] = None # BeliefFilter | None
 
 
 class Tool(Protocol):
