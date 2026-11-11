@@ -39,6 +39,12 @@ def main() -> int:
     ap.add_argument("--audit", action="store_true",
                     help="print the registry coverage audit (G9) and the "
                          "standards anchors (G8) instead of running")
+    ap.add_argument("--plan", action="store_true",
+                    help="print the attack-graph deployment plan (reachability "
+                         "audit; our tool) instead of running")
+    ap.add_argument("--capabilities", nargs="*", default=None,
+                    help="override deployment capability labels for --plan "
+                         "(default: the offline fixture's native set)")
     args = ap.parse_args()
 
     if args.audit:
@@ -47,8 +53,20 @@ def main() -> int:
                           "standards_anchors": standards_anchors()},
                          indent=2, ensure_ascii=False))
         return 0
+    if args.plan:
+        from .planner import FIXTURE_CAPABILITIES, deployment_plan
+        from .techniques import TECHNIQUES
+        registry = TECHNIQUES
+        if args.techniques:
+            wanted = set(args.techniques)
+            registry = tuple(t for t in TECHNIQUES if t.id in wanted)
+        caps = tuple(args.capabilities) if args.capabilities \
+            else FIXTURE_CAPABILITIES
+        print(json.dumps(deployment_plan(registry, caps),
+                         indent=2, ensure_ascii=False))
+        return 0
     if not args.out:
-        ap.error("--out is required unless --audit")
+        ap.error("--out is required unless --audit or --plan")
 
     eng = PIEngagement(PIEngagementConfig(
         engagement_id=args.engagement_id, technique_ids=args.techniques,
