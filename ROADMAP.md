@@ -138,6 +138,10 @@ below are what to build regardless of their current state.
 6. **Strategy memory upgrade.** Replace the flat reflection note with a per-engagement
    strategy object the orchestrator can carry across rounds (what to abandon, what to
    double, budget reallocation), still constrained to re-ranking.
+   *(Shipped in Phase B5 — `redteam/strategy.py`: directives with TTLs, released on
+   evidence or expiry, surviving reflection failures; see `docs/strategy-memory.md`.
+   Budget reallocation stays with the scheduler/operator — the ledger gives the
+   strategist the evidence, not the spending authority.)*
 
 ### Phase R3 — Breadth where it pays
 7. **Cloud/container posture checks** behind the same approval gates (read-only

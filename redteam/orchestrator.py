@@ -61,6 +61,7 @@ from .killchain import (CREDENTIAL_ACCESS, DISCOVERY, LATERAL_MOVEMENT,
 from .llm.openrouter import OpenRouterClient
 from .llm.routing import PARSE, PLAN
 from .reflection import coach_note, reflect
+from .strategy import EngagementStrategy, reset_tree_nudges
 from .tools import ToolContext, Tool
 
 
@@ -530,6 +531,17 @@ class Orchestrator:
                 belief=self._detection)
         self._budget = None
         self._manifest = None
+        # Reflection state defaults (re-created fresh per run() — a new engagement
+        # starts with clean reflections; these exist so direct method use never
+        # hits an attribute error).
+        self._reflections: list[dict] = []
+        self._reflection_notes: list[str] = []
+        # Phase B5 defaults (re-created fresh per run() — a new engagement starts
+        # with a clean strategy state; these exist so direct method use in tests
+        # never hits an attribute error).
+        self._strategy = EngagementStrategy()
+        self._round_claims: list[str] = []
+        self._confirmed_seen: set = set()   # tree node ids already fed to the ledger
 
     def with_runtime(self, budget=None, manifest=None, manifest_path=None):
         self._budget = budget
@@ -638,6 +650,10 @@ class Orchestrator:
                             break
                 if claimed is None:
                     break   # nothing left unclaimed/affordable — this worker is done
+                # Phase B5: the strategy ledger's claim evidence comes straight from
+                # the claim loop (list.append is atomic under the GIL — swarm workers
+                # race here, and a torn count is impossible).
+                self._round_claims.append(claimed.technique)
                 self._emit("swarm.claim", worker=worker_id, round=round_no,
                            technique=claimed.technique, target=claimed.target)
                 if self._budget is not None:
@@ -751,6 +767,12 @@ class Orchestrator:
         # the run directory (reflections.json) for the report/dashboard.
         self._reflections: list[dict] = []
         self._reflection_notes: list[str] = []
+        # Phase B5 — the cross-round strategy state (redteam/strategy.py): directives
+        # with TTLs, released on evidence or expiry, carried through reflection
+        # failures; the strategist amends it instead of restarting every round.
+        self._strategy = EngagementStrategy()
+        self._round_claims: list[str] = []   # this round's claimed techniques (evidence)
+        self._confirmed_seen: set = set()
 
         # Phase 0 — deterministic recon runs once, before either driver starts (see
         # cli.py's call to run_deterministic_recon) so single-agent and multi-agent runs
@@ -870,8 +892,10 @@ class Orchestrator:
         return summary
 
     def _reflect_on_round(self, objective: str, round_no: int) -> None:
-        """One strategist call per completed round; applies its tree nudges, stores the
-        reflection, and emits it to the dashboard. Never raises."""
+        """One strategist call per completed round; folds the round's evidence into
+        the cross-round strategy state (Phase B5, redteam/strategy.py), lets the
+        strategist AMEND that state instead of restarting, and re-applies exactly
+        the surviving directives to the tree. Never raises."""
         if not getattr(self._eng, "enable_reflection", True):
             return
         if self._budget is not None:
@@ -884,6 +908,23 @@ class Orchestrator:
             tail = self._ctx.audit.read_all()[-120:]
         except Exception:
             pass
+        # Phase B5 — evidence in, deterministic decay out: what the swarm claimed
+        # this round (its own claim loop) and what the tree confirmed (only NEWLY
+        # completed nodes — confirmed_chain() repeats, the ledger must not), then
+        # tick() expires TTLs and releases directives on evidence — whether or not
+        # the strategist answers (forgetting is never LLM-dependent).
+        confirmed: list[str] = []
+        if self._attack_tree is not None:
+            try:
+                for n in self._attack_tree.confirmed_chain():
+                    if n.id not in self._confirmed_seen:
+                        self._confirmed_seen.add(n.id)
+                        confirmed.append(n.technique)
+            except Exception:
+                confirmed = []
+        self._strategy.observe_round(round_no + 1, self._round_claims, confirmed)
+        self._round_claims = []
+        released = self._strategy.tick(round_no + 1)
         objective_obj = getattr(self._ctx, "objective", None)
         reflection = reflect(
             self._client,
@@ -895,26 +936,38 @@ class Orchestrator:
             killchain=getattr(self._ctx, "killchain", None),
             audit_tail=tail,
             notes_so_far=self._reflection_notes,
+            strategy_brief=self._strategy.brief() or None,
         )
+        amended = None
+        if reflection is not None:
+            amended = self._strategy.amend(reflection, round_no + 1)
+        applied = self._apply_strategy_state()
         if reflection is None:
+            # The amplifier failed. The state still decayed above and the surviving
+            # directives remain applied for the next round — the run continues
+            # exactly as Gen-1 did, with a strategy that still forgets on schedule.
+            if released:
+                self._ctx.audit.record("orchestrator.strategy_released",
+                                       round=round_no + 1, released=released)
+                self._emit("strategy.state", round=round_no + 1, released=released,
+                           **self._strategy.state())
             return
-        applied = 0
-        if self._attack_tree is not None:
-            try:
-                applied = self._attack_tree.apply_strategy(
-                    prioritize=reflection.get("prioritize"),
-                    deprioritize=reflection.get("deprioritize"))
-            except Exception:
-                applied = 0
         reflection["round"] = round_no + 1
         reflection["boosts_applied"] = applied
+        reflection["strategy_amended"] = amended
+        reflection["strategy_released"] = released
         self._reflections.append(reflection)
         self._reflection_notes.append(coach_note(reflection))
         self._ctx.audit.record("orchestrator.reflection", round=round_no + 1,
                                boosts=applied)
+        if released:
+            self._ctx.audit.record("orchestrator.strategy_released",
+                                   round=round_no + 1, released=released)
         self._emit("reflection", round=round_no + 1, boosts_applied=applied,
                    assessment=reflection["assessment"],
                    focus_next=reflection.get("focus_next") or [])
+        self._emit("strategy.state", round=round_no + 1, released=released,
+                   **self._strategy.state())
         # Persist for the report/dashboard even if the process dies mid-run.
         if self._manifest is not None:
             try:
@@ -923,5 +976,24 @@ class Orchestrator:
                 (out_dir / "reflections.json").write_text(
                     json.dumps(self._reflections, indent=2, ensure_ascii=False),
                     encoding="utf-8")
+                (out_dir / "strategy.json").write_text(
+                    json.dumps(self._strategy.to_dict(), indent=2,
+                               ensure_ascii=False), encoding="utf-8")
             except Exception:
                 pass
+
+    def _apply_strategy_state(self) -> int:
+        """Phase B5 — the strategy object is the ONLY writer of tree nudges: restore
+        the nudge layer to neutral, then apply exactly the live directives. A
+        released directive genuinely releases (the old apply-once-forever behavior
+        is gone), and a live directive survives a failed reflection. Returns how
+        many boosts landed on real nodes — the audit event's shape is unchanged."""
+        if self._attack_tree is None:
+            return 0
+        reset_tree_nudges(self._attack_tree)
+        press, avoid = self._strategy.directives_for_tree()
+        try:
+            return self._attack_tree.apply_strategy(prioritize=press,
+                                                    deprioritize=avoid)
+        except Exception:
+            return 0
