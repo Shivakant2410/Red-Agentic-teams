@@ -95,6 +95,10 @@ def compute_bench(engagement_id: str, records, skipped, errors) -> dict:
         "engagement_id": engagement_id,
         "attempted": attempted,
         "skipped": len(skipped),
+        # G7 (our tool): how many skips carry the external-evidence entry
+        # (vector, paper, reported ASR, why_fixture, live_lane) — a bare skip
+        # is an honesty debt; an evidence-linked skip is documented absence
+        "skips_evidence_linked": sum(1 for s in skipped if s.get("evidence")),
         "errors": len(errors),
         "verdicts": by_verdict,
         "asr": _rate(by_verdict["succeeded"], decided),

@@ -60,7 +60,8 @@ from .oracles import (
     evaluate_schema_authz_on,
     make_canary,
 )
-from .techniques import BY_ID, DELIVERY_CHANNELS, TECHNIQUES, select_techniques
+from .techniques import (BY_ID, DELIVERY_CHANNELS, SKIP_EVIDENCE,
+                         TECHNIQUES, select_techniques)
 
 # -- ground-truth predicates (the fixture app's safety contract) ----------------------
 
@@ -250,11 +251,20 @@ class PIEngagement:
                     and tech.id not in (self.cfg.operator_supplies or {}):
                 missing = [f"operator_input: {tech.operator_input}"]
             if missing:
-                self.skipped.append({
+                # G7 (our tool): capability-gated skips are honest, but a bare
+                # skip is not evidence either — attach the SKIP_EVIDENCE entry
+                # (vector, paper, reported ASR, why the fixture cannot represent
+                # it, live-lane pointer) for every gated capability that has one
+                evidence = {m: SKIP_EVIDENCE[m] for m in missing
+                            if m in SKIP_EVIDENCE}
+                skip = {
                     "test_id": f"t{i+1:03d}", "technique": tech.id,
                     "payload": tech.payloads[payload_index].id,
                     "defense_mode": mode, "status": "skipped",
-                    "reason": f"target lacks capability: {missing}"})
+                    "reason": f"target lacks capability: {missing}"}
+                if evidence:
+                    skip["evidence"] = evidence
+                self.skipped.append(skip)
                 continue
             try:
                 rec = self._run_cell(f"t{i+1:03d}", tech, mode, canary, probe,
