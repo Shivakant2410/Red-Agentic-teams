@@ -90,6 +90,13 @@ states.py            Lifecycle registry — every state machine (run, approval, 
                      place: vocabulary, transition tables, writer matrix. Introspect via
                      `python -m redteam.states --json` or GET /api/state-machines;
                      rationale + inventory in docs/state-machines.md
+hands.py             Agent hands and skills — every agent's tool set is a stated
+                     capability surface (purpose/cost/trust/obligation per hand,
+                     trust classes locked to the crosscheck matrix) plus declared
+                     skills (entry -> steps -> exit -> proof). Introspect via
+                     `python -m redteam.hands --json`; rendering in
+                     docs/hands-and-skills.md; operator tooling research in
+                     docs/operator-tooling-research.md
 synthesis.py         Evidence-join layer (docs/synthesis.md): deterministic rules turn
                      run observations (params, identities, findings) into evidence-
                      carrying attack ideas with draft checks, injected into the swarm's

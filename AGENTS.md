@@ -63,6 +63,14 @@ states.py              The lifecycle registry — EVERY state machine (run manif
                        Introspect: `python -m redteam.states --json` or
                        GET /api/state-machines. See docs/state-machines.md before
                        adding/changing any status string
+hands.py               Phase E1 — agent hands and skills: every profile's tool_names
+                       is a stated capability surface (Hand = purpose/cost/trust/
+                       obligation, trust classes locked to the crosscheck matrix)
+                       plus declared Skills (entry evidence -> tool-naming steps ->
+                       exit -> proof, validated against held hands). Introspect:
+                       `python -m redteam.hands --json`; rendering in
+                       docs/hands-and-skills.md. A new tool without a Hand bound
+                       to a named agent is shelfware — draft Hand+Skill+card triples
 bandit.py              Contextual multi-armed bandit (Thompson sampling) over
                        attack_tree.py's technique choices; persists to
                        memory/bandit.json, same cross-engagement pattern as memory.py
