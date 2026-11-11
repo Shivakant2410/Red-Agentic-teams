@@ -55,9 +55,9 @@ This project's differentiators, built in Gen-1 and preserved in Gen-2, remain ra
   verifier re-derives from raw evidence, and a reproducible offline bench
   (`python -m redteam.pi`).
 
-- **PI 2026 gap closure (G1-G10, `PI_GAP_RESEARCH.md` + `PI_INTEGRATION_CATALOG.md`)** —
-  the registry grew to 21 techniques / 25 payloads / 9 delivery channels with three new
-  surfaces the 2026 field shows matter most: cross-session memory persistence (PI.B6,
+- **PI 2026 gap closure (G1-G11, `PI_GAP_RESEARCH.md` + `PI_INTEGRATION_CATALOG.md`)** —
+  the registry grew to 24 techniques / 28 payloads / 10 delivery channels with the surfaces
+  the 2026 field shows matter most: cross-session memory persistence (PI.B6,
   AgentPoison/XSPI protocol port — the PERSISTED canary stage is live, and
   `IOPolicy.memory_write_approval` models the OWASP-2026 privileged-memory-write
   prevention), MCP tool-metadata poisoning + rug pull (PI.B7/PI.B8 with
@@ -75,7 +75,20 @@ This project's differentiators, built in Gen-1 and preserved in Gen-2, remain ra
   --audit` prints the coverage audit (known-uncovered surfaces named, PIAtlas classes
   deliberately not guessed) plus dual-pinned OWASP 2025+2026 / ATLAS-2026.07 anchors.
   One cell = one payload now: A1/A2 (2 payloads each) and A5 (3) run per-payload with
-  `payload_ref` attribution carried into findings titles.
+  `payload_ref` attribution carried into findings titles. The final three gaps close
+  the evidence honesty loop: typed RELAYED (G6) — relay evidence names the CHANNEL
+  (echo_reply / tool_args / outbound_request, pi.canary 1.1.0) and PI.E3 models
+  zero-click outbound-request exfil against a canary-tokened `.invalid` destination
+  with the `egress_allowlist` block defense and an `output_filter` egress-URL
+  sanitizer that preserves utility (the fetch completes, the secret never leaves —
+  the only E3 defense that earns RESISTED); evidence-linked skips (G7) — family D
+  capability skips carry the vector, paper, reported ASR, why-fixture and live-lane
+  pointer (SKIP_EVIDENCE), and PI.D2 registers the fun-tuning vector as a gated
+  skip with bench metric `skips_evidence_linked`; and the thread protocol (G11) —
+  `pre_turns` sends in the same session before the attack turn, with PI.E4 seeding
+  a benign formatting convention then pivoting on it (attack class 2, arXiv
+  2605.17634), `pre_replies` recorded end-to-end so blanket defenses cannot be
+  credited for dropping convention and utility together.
 
 - **Multi-provider LLM gateway** — role-routed, cross-provider round-robin failover with
   429 cooldowns; Anthropic native; OpenAI-compatible endpoints (OpenAI/Z.ai/Groq/
