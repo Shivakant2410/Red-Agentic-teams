@@ -62,6 +62,8 @@ from .llm.openrouter import OpenRouterClient
 from .llm.routing import PARSE, PLAN
 from .reflection import coach_note, reflect
 from .strategy import EngagementStrategy, reset_tree_nudges
+from .swarm import (AWAITING_VERIFICATION, CONFIRMED, REFUTED, EvidenceRef,
+                    ResearchBundle, SwarmError, weakness_for_technique)
 from .tools import ToolContext, Tool
 
 
@@ -480,7 +482,8 @@ class Orchestrator:
                  max_exploit_rounds: int = 12, max_access_rounds: int = 4,
                  max_swarm_workers: int = 3, noise_budget: float | None = None,
                  detection=None, noise_mu: float | None = None,
-                 noise_V: float | None = None):
+                 noise_V: float | None = None,
+                 research_dir: str | Path | None = None):
         self._eng = engagement
         self._tools = tools
         self._ctx = ctx
@@ -542,6 +545,17 @@ class Orchestrator:
         self._strategy = EngagementStrategy()
         self._round_claims: list[str] = []
         self._confirmed_seen: set = set()   # tree node ids already fed to the ledger
+        # Phase C1 — collective intelligence layer (redteam/swarm/, ADR-001): a
+        # run-scoped hypothesis registry + research forum. research_dir=None keeps
+        # it in-memory (zero file I/O — legacy callers and direct-construction tests
+        # are unchanged); run.py passes the run dir so a killed run replays.
+        # The bundle is per-Orchestrator (per engagement) — no global state.
+        self._research = ResearchBundle.for_run(
+            str(getattr(engagement, "name", "") or "engagement"),
+            run_dir=research_dir, bus=getattr(ctx, "events", None))
+        self._research_hyp_by_node: dict[str, str] = {}       # tree node id -> hypothesis id
+        self._research_finding_hyp: dict[str, str] = {}       # finding id -> hypothesis id
+        self._research_verdicts_seen: dict[str, str] = {}     # finding id -> last mirrored confidence
 
     def with_runtime(self, budget=None, manifest=None, manifest_path=None):
         self._budget = budget
@@ -650,6 +664,20 @@ class Orchestrator:
                             break
                 if claimed is None:
                     break   # nothing left unclaimed/affordable — this worker is done
+                # Phase C1 — the claimed (technique, target) becomes a registered,
+                # atomically-claimed research hypothesis (redteam/swarm). A lost
+                # registry claim means a live sibling owns the equivalent hypothesis:
+                # do not double-investigate — release the noise reservation, mark the
+                # tree node FAILED (unclaimable for THIS round, retryable next round,
+                # same rationale as the empty-attempt FAILED below) and move on. A
+                # research-layer ERROR never suppresses work: the swarm proceeds
+                # exactly as Gen-1 did (degrade to audit record, never crash).
+                hyp, suppressed = self._research_claim_for_node(claimed, worker_id)
+                if suppressed:
+                    if self._noise is not None:
+                        self._noise.refund(technique_cost(claimed.technique))
+                    self._attack_tree.mark(claimed.technique, claimed.target, FAILED)
+                    continue
                 # Phase B5: the strategy ledger's claim evidence comes straight from
                 # the claim loop (list.append is atomic under the GIL — swarm workers
                 # race here, and a torn count is impossible).
@@ -663,13 +691,16 @@ class Orchestrator:
                         break
                 technique = TECHNIQUES.get(claimed.technique)
                 desc = technique.description if technique else claimed.technique
-                findings_before = len(self._ctx.findings.all())
+                # Phase C1: track finding identity (not just count) so the swarm's
+                # own hypothesis gets the finding attached as evidence afterward.
+                findings_before_ids = {f.id for f in self._ctx.findings.all()}
                 # Gen-3 class routing: every claimed hypothesis goes to the OWASP class
                 # expert that owns the technique (see specialists.py) — claim/noise/
                 # verify machinery unchanged. Unowned techniques still run the generic
                 # EXPLOIT profile, and RED_CLASS_SPECIALISTS=0 disables routing outright
                 # (the specialists-vs-generalist A/B switch).
                 profile = profile_for(claimed.technique)
+                research_note = self._research_note_for(hyp)
                 exploit = self._make_specialist(
                     profile, agent_name=f"{profile.name}-w{worker_id}",
                     addon_suffix=f"\n\nYOUR ASSIGNED TARGET THIS TURN: "
@@ -678,7 +709,10 @@ class Orchestrator:
                     f"in parallel. You are {profile.name}-w{worker_id}: if you need context "
                     f"you don't have (an error body, a token shape, whether a sibling already "
                     f"looked here), search_peer_traces shows what the OTHER workers' raw "
-                    f"tool activity actually saw — hits are leads, prove them yourself.")
+                    f"tool activity actually saw — hits are leads, prove them yourself."
+                    + (f"\n\nRESEARCH BRIEFING (run-scoped hypothesis registry — this is "
+                       f"recorded context, not proof; every claim still needs YOUR proof "
+                       f"through the normal pipeline):\n{research_note}" if research_note else ""))
                 summary = exploit.run(
                     f"{objective}\n\nThis run: EXPLOIT swarm worker {worker_id} round "
                     f"{round_no + 1} — prove {claimed.technique} on {claimed.target}.",
@@ -697,7 +731,14 @@ class Orchestrator:
                 # reset stale FAILED nodes back to TODO via attack_tree.sync() picking up
                 # new graph/finding state, so a hypothesis that failed with a thin surface
                 # can still be retried once more context exists.
-                if len(self._ctx.findings.all()) == findings_before:
+                new_findings = [f for f in self._ctx.findings.all()
+                                if f.id not in findings_before_ids]
+                # Phase C1: the swarm's hypothesis gets the attempt's outcome attached —
+                # evidence + AWAITING_VERIFICATION on a landed finding, counter-evidence
+                # + lease release on an empty attempt (the next round's briefing then
+                # says "prior attempts exist", turning wasted work into reusable context).
+                self._research_after_attempt(claimed, worker_id, round_no, new_findings)
+                if not new_findings:
                     self._attack_tree.mark(claimed.technique, claimed.target, FAILED)
             return summary
 
@@ -710,6 +751,161 @@ class Orchestrator:
                 except Exception as exc:
                     self._ctx.audit.record("orchestrator.swarm_worker_error", error=str(exc))
         return summary
+
+    # -- Phase C1: collective-intelligence plumbing (redteam/swarm/, ADR-001) -----
+    #
+    # Three rules govern every helper below:
+    #   1. The registry records research; it never selects, authorizes, or widens
+    #      work — the attack tree remains the only selector (its deterministic
+    #      actionable()/claim() order is untouched).
+    #   2. The independent verification pipeline remains the ONLY authority over
+    #      confidence: CONFIRMED/REFUTED on a hypothesis is a mirror of
+    #      FindingStore verdicts, never a cause of them.
+    #   3. A research-layer failure degrades to an audit record — the swarm runs
+    #      exactly as Gen-1 did when the registry/forum is unavailable.
+
+    def _research_claim_for_node(self, node, worker_id: int):
+        """Find-or-register + atomically claim the hypothesis for a claimed tree node.
+
+        Returns (hypothesis, suppressed):
+          (hyp, False)  — the worker owns the hypothesis; proceed (with briefing).
+          (None, True)  — a live sibling owns the equivalent hypothesis; the caller
+                          suppresses this duplicate investigation.
+          (None, False) — research layer failed; the caller proceeds unresearched
+                          (degrade, never crash).
+        """
+        agent = f"exploit-w{worker_id}"
+        try:
+            technique = TECHNIQUES.get(node.technique)
+            claim_text = (f"{node.technique} on {node.target}"
+                          + (f": {technique.description}" if technique else ""))
+            hyp, _ = self._research.claim_or_register(
+                asset_ref=node.target,
+                weakness_class=weakness_for_technique(node.technique),
+                claim=claim_text, agent=agent, technique=node.technique)
+            if hyp is None:
+                self._ctx.audit.record("research.duplicate_suppressed",
+                                       technique=node.technique, target=node.target,
+                                       worker=agent)
+                return None, True
+            self._research_hyp_by_node[node.id] = hyp.hypothesis_id
+            return hyp, False
+        except SwarmError as exc:      # registry-level issue (e.g. malformed target)
+            self._ctx.audit.record("research.error", stage="claim",
+                                   technique=node.technique, error=str(exc))
+            return None, False
+        except Exception as exc:       # forum/journal trouble must never break a run
+            self._ctx.audit.record("research.error", stage="claim",
+                                   technique=node.technique, error=str(exc))
+            return None, False
+
+    def _research_note_for(self, hyp) -> str:
+        """Bounded research briefing for the specialist (prior attempts, sibling
+        hypotheses, forum observations). Empty string = nothing worth saying."""
+        if hyp is None:
+            return ""
+        return self._research.worker_note(hyp)
+
+    def _research_after_attempt(self, node, worker_id: int, round_no: int,
+                                new_findings: list) -> None:
+        """Attach the attempt's outcome to the node's hypothesis: landed findings
+        become evidence + AWAITING_VERIFICATION (the hypothesis is no longer being
+        worked — verification owns it now); an empty attempt becomes counter-evidence
+        and the lease is released so a later round can re-claim with full history."""
+        if node.id not in self._research_hyp_by_node:
+            return
+        hyp_id = self._research_hyp_by_node[node.id]
+        agent = f"exploit-w{worker_id}"
+        try:
+            if new_findings:
+                for f in new_findings:
+                    self._research.registry.attach_evidence(
+                        hyp_id,
+                        EvidenceRef(evidence_id=f"ev-finding-{f.id}", kind="finding",
+                                    origin="agent", source_agent=agent,
+                                    artifact_ref=f.id,
+                                    summary=f"{f.severity}: {f.title} @ {f.target}",
+                                    ts=self._research_ts()),
+                        agent)
+                    self._research.registry.set_status(
+                        hyp_id, AWAITING_VERIFICATION, agent, finding_id=f.id,
+                        reason=f"finding {f.id} landed; awaiting independent verification")
+                    self._research_finding_hyp[f.id] = hyp_id
+                    self._research.forum.publish(
+                        "observation.created", source_agent=agent,
+                        payload={"hypothesis_id": hyp_id, "summary": f"finding {f.id} "
+                                 f"({f.severity}): {f.title} @ {f.target}",
+                                 "origin": "agent"},
+                        agent_role="exploit", subject_hypothesis_id=hyp_id,
+                        asset_ref=node.target)
+            else:
+                self._research.registry.attach_counter_evidence(
+                    hyp_id,
+                    EvidenceRef(evidence_id=f"ev-attempt-{node.id}-r{round_no}",
+                                kind="attempt", origin="agent", source_agent=agent,
+                                artifact_ref=f"node:{node.id}",
+                                summary=f"round {round_no + 1} attempt produced no "
+                                        f"proof; hypothesis remains unconfirmed",
+                                ts=self._research_ts()),
+                    agent)
+                self._research.registry.release(
+                    hyp_id, agent, reason="attempt produced no proof")
+        except SwarmError as exc:
+            self._ctx.audit.record("research.error", stage="after_attempt",
+                                   hypothesis_id=hyp_id, error=str(exc))
+        except Exception as exc:
+            self._ctx.audit.record("research.error", stage="after_attempt",
+                                   hypothesis_id=hyp_id, error=str(exc))
+
+    def _research_ts(self) -> str:
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).isoformat()
+
+    def _mirror_verification_outcomes(self) -> int:
+        """Mirror the INDEPENDENT verification pipeline's verdicts onto the swarm's
+        hypotheses — the only path a hypothesis takes to CONFIRMED/REFUTED.
+
+        Direction matters: this runs AFTER run_verify_pass has already promoted or
+        falsified findings through FindingStore.promote(). It reflects verdicts, it
+        never causes them, and a pending finding leaves its hypothesis in
+        AWAITING_VERIFICATION (never CONFIRMED). Not-reproducible/rejected returns
+        the hypothesis to ACTIVE (unproven, re-attemptable), counter-evidence intact.
+        Returns how many verdicts were newly mirrored."""
+        mirrored = 0
+        try:
+            for f in self._ctx.findings.all():
+                current = getattr(f, "confidence", "")
+                if current not in ("confirmed", "falsified", "not_reproducible", "rejected"):
+                    continue
+                if self._research_verdicts_seen.get(f.id) == current:
+                    continue   # already mirrored at this confidence — sync() re-runs are free
+                hyp_id = self._research_finding_hyp.get(f.id)
+                if hyp_id is None:
+                    self._research_verdicts_seen[f.id] = current
+                    continue   # finding outside the swarm's hypothesis set
+                try:
+                    self._research.registry.record_verification_outcome(
+                        hyp_id, verdict=current, finding_id=f.id,
+                        by_agent="verify-pipeline")
+                    self._research_verdicts_seen[f.id] = current
+                    mirrored += 1
+                except SwarmError as exc:
+                    # An invalid mirror (e.g. a stale finding promoted after the
+                    # hypothesis moved on) is an audit note, not a run failure.
+                    self._ctx.audit.record("research.mirror_skipped",
+                                           hypothesis_id=hyp_id, finding_id=f.id,
+                                           error=str(exc))
+                    self._research_verdicts_seen[f.id] = current
+        except Exception as exc:
+            self._ctx.audit.record("research.error", stage="mirror", error=str(exc))
+        return mirrored
+
+    def _research_summary(self) -> dict:
+        try:
+            return {"registry": self._research.registry.stats(),
+                    "forum": self._research.forum.stats()}
+        except Exception:
+            return {}
 
     def _run_access_loop(self, objective: str, on_text=None) -> str:
         """Press a confirmed foothold as far as the kill chain says it goes.
@@ -747,6 +943,8 @@ class Orchestrator:
                                             objective, budget=self._budget, on_text=on_text)
             if still_pending:
                 self._ctx.audit.record("orchestrator.verify_incomplete", remaining=still_pending)
+            # Phase C1: the pipeline just spoke — mirror its verdicts onto hypotheses.
+            self._mirror_verification_outcomes()
 
             achieved_now = set(killchain.achieved())
             if achieved_now == last_achieved:
@@ -833,6 +1031,10 @@ class Orchestrator:
                                             objective, budget=self._budget, on_text=on_text)
             if still_pending:
                 self._ctx.audit.record("orchestrator.verify_incomplete", remaining=still_pending)
+            # Phase C1: mirror the verification pass's verdicts onto the swarm's
+            # hypotheses (CONFIRMED/REFUTED are reflections of the pipeline, never
+            # causes of finding confidence).
+            self._mirror_verification_outcomes()
             if self._attack_tree is not None:
                 # Promote nodes this pass just confirmed NOW: only worker agents sync
                 # (on their own turns), so a confirmation landing in the final verify
@@ -871,6 +1073,7 @@ class Orchestrator:
                                             objective, budget=self._budget, on_text=on_text)
             if still_pending:
                 self._ctx.audit.record("orchestrator.verify_incomplete", remaining=still_pending)
+            self._mirror_verification_outcomes()
             if self._attack_tree is not None:
                 self._attack_tree.sync(graph=self._graph, findings=self._ctx.findings.all())
 
@@ -887,6 +1090,12 @@ class Orchestrator:
         self._ctx.audit.record("orchestrator.finish",
                                findings=len(self._ctx.findings.all()),
                                confirmed=confirmed_count)
+        # Phase C1: the run's research record on the bus + audit trail (the journal
+        # itself remains replayable from disk when research_dir was given).
+        research = self._research_summary()
+        if research:
+            self._ctx.audit.record("research.summary", **research)
+            self._emit("run.research.summary", **research)
         self._emit("run.summary", findings=len(self._ctx.findings.all()),
                    confirmed=confirmed_count, reflections=len(self._reflections))
         return summary

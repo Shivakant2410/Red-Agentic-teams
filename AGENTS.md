@@ -131,6 +131,21 @@ memory_backend/
                          semantic memory (JSON file; on-device transformer when
                          installed, hashing n-gram fallback otherwise)
   helix_backend.py       HelixDB backend (Docker, opt-in via --helix-memory)
+swarm/                  Phase C1 collective-intelligence layer (docs/adr-001-*.md);
+                        usage examples in docs/swarm-usage.md:
+  journal.py             EventJournal — append-only engagement-scoped lifecycle
+                         history (JSONL; idempotent by event_id; write failures RAISE)
+  hypotheses.py          Hypothesis model + registry: thread-safe lifecycle, atomic
+                         claims + leases, optimistic versions, evidence provenance;
+                         record_verification_outcome() is the ONLY CONFIRMED path
+                         (a mirror of FindingStore verdicts, never a cause)
+  forum.py               ResearchForum — typed attributable messages; swarmguard
+                         quarantine + secret redaction at publish; bounded reads only
+  relationships.py       Deterministic + semantic duplicate/relationship matching —
+                         candidates only, never authoritative; SUPERSEDES is never
+                         machine-generated
+  projections.py         replay()/replay_into() — deterministic state rebuild from
+                         the journal; corrupt events are skipped and reported
 bench/
   runner.py / scoring.py / objective_scoring.py / targets.py   Benchmark harness
 importers/

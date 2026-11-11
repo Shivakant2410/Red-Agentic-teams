@@ -249,6 +249,46 @@ This is wired on by default (`cli.py` always attaches a `BanditStore` to `Attack
 needs no flag — with no evidence yet, it samples around neutral and leaves the static
 order effectively unchanged; it only pays off once there's a track record to learn from.
 
+## Collective intelligence: the hypothesis registry (Phase C1)
+
+The swarm now shares *research*, not just state. `redteam/swarm/` adds a run-scoped
+**hypothesis registry**, a typed **research forum**, two-stage **duplicate/relationship
+matching**, and **event-sourced replay** — governed by one principle:
+
+> an observation is not a hypothesis; a hypothesis is not a finding; a finding is not
+> confirmed until the independent verification pipeline confirms it.
+
+What each swarm worker gets, mediated by the orchestrator (no new agent tools, no new
+worker count, attack-tree selection untouched):
+
+- every claimed (technique, target) becomes a registered hypothesis with an **atomic
+  claim** and a lease (two workers can never hold the same hypothesis; an abandoned
+  lease is reclaimable; a stale holder's writes are rejected);
+- a **bounded research briefing** injected into the specialist prompt: prior attempts
+  (counter-evidence), sibling hypotheses on the same asset, forum observations — a
+  wasted attempt becomes reusable context for the next round;
+- landed findings attach as evidence and the hypothesis moves to
+  `AWAITING_VERIFICATION`; after the independent VERIFY pass, verdicts are **mirrored**
+  onto hypotheses (`CONFIRMED`/`REFUTED` are reflections of the pipeline, never causes
+  of finding confidence — `FindingStore.promote()` remains the only writer);
+- all research traffic is typed, attributed, **quarantined** (directive-shaped peer
+  content is held by the swarmguard screen, never re-enters a peer's context),
+  **redacted** (token-shaped secrets masked), and persisted as
+  `research_journal.jsonl` / `research_forum.jsonl` in the run dir — a killed run's
+  hypothesis state replays deterministically (`redteam.swarm.projections.replay`).
+
+Lifecycle: `PROPOSED → ACTIVE → AWAITING_VERIFICATION → CONFIRMED / REFUTED`, with
+reversible `BLOCKED` (waiting on a prerequisite) and `STALE` (target changed) states.
+Every mutation is one domain event — append-only, version-checked, auditable.
+
+Safety properties (tested): engagement isolation is structural (one registry/forum per
+engagement; cross-engagement queries fail closed), evidence provenance is mandatory
+(`origin: agent | target` decided at write time), no agent can self-confirm anything,
+candidate relationships never merge or delete (only an explicit, attributed `link()`
+does), and `SUPERSEDES` is never machine-generated. Full design rationale lives in
+`docs/adr-001-collective-intelligence-foundation.md`; a synthetic A/B/C/D benchmark
+harness (clearly labeled, not live-fire) is in `benchmarks/phase1_collective.py`.
+
 ## Tests
 
 ```bash

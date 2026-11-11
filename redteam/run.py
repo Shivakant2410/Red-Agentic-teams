@@ -501,7 +501,8 @@ def execute_run(opts: RunOptions) -> dict:
             driver = Orchestrator(engagement, tools, ctx, client, graph=graph,
                                   attack_tree=attack_tree, memory=memory,
                                   noise_budget=opts.round_noise_budget,
-                                  noise_mu=opts.noise_mu, noise_V=opts.noise_V)
+                                  noise_mu=opts.noise_mu, noise_V=opts.noise_V,
+                                  research_dir=out)   # Phase C1: persist the research journal
         else:
             driver = RedTeamAgent(engagement, tools, ctx, client, max_steps=opts.max_steps,
                                   graph=graph, attack_tree=attack_tree, memory=memory,
