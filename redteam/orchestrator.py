@@ -58,6 +58,7 @@ from .config import Engagement
 from .events import coerce_payload
 from .killchain import (CREDENTIAL_ACCESS, DISCOVERY, LATERAL_MOVEMENT,
                         PRIVILEGE_ESCALATION)
+from .hands import (OPTIONAL_TOOLS, hands_briefing, skills_briefing)
 from .llm.openrouter import OpenRouterClient
 from .llm.routing import PARSE, PLAN
 from .reflection import coach_note, reflect
@@ -118,15 +119,21 @@ RECON = SpecialistProfile(
            "set_session instead of inventing a login. START with surface_scan (one call, "
            "no arguments): it knocks on every host/port the RoE allows and fills the asset "
            "inventory, so you know which in-scope services are actually alive before you "
-           "spend a single step on a dead one. Use http_probe for raw API surfaces "
-           "the browser cannot reach (JSON endpoints, API roots, robots.txt, versioned "
-           "APIs) and for anything behind a session — it is a cheap fetch, not a proof. "
-           "Be broad and fast."),
-    tool_names=["browser_navigate", "browser_content", "browser_click", "kali_exec",
-                "authenticate", "set_session", "http_probe", "surface_scan",
-                "search_peer_traces"],
+           "spend a single step on a dead one. Then BROADEN with the discovery stack — "
+           "content_discovery (path wordlists), crawl (link/JS walk), spa_recon (SPA API "
+           "routes), param_discovery (hidden params), host_probe/port_scan (fingerprint, "
+           "ports) — and DISCIPLINE it with crosscheck_lead: every discovery lead is a "
+           "claim from a binary/crawler until a first-party method corroborates it; "
+           "corroborated leads go in the graph, contradicted ones are dropped. Use "
+           "http_probe for raw API surfaces the browser cannot reach (JSON endpoints, API "
+           "roots, robots.txt, versioned APIs) and for anything behind a session — it is a "
+           "cheap fetch, not a proof. Be broad and fast."),
+    tool_names=["surface_scan", "host_probe", "port_scan", "content_discovery", "crawl",
+                "param_discovery", "spa_recon", "crosscheck_lead", "http_probe",
+                "browser_navigate", "browser_content", "browser_click",
+                "authenticate", "set_session", "kali_exec", "search_peer_traces"],
     role=PARSE,          # breadth work -> cheaper model
-    max_steps=15,
+    max_steps=22,        # was 15: the discovery stack is the mapping job now, not an extra
 )
 
 EXPLOIT = SpecialistProfile(
@@ -143,7 +150,8 @@ EXPLOIT = SpecialistProfile(
            "confirming findings; do not re-map the surface. NOTE: your checks only reach "
            "pending_verification — a separate pass independently re-checks them before "
            "anything counts. That is by design; keep proving, don't try to self-promote."),
-    tool_names=["confirm_finding", "verify_vulnerability", "authenticate", "set_session",
+    tool_names=["find_techniques", "crosscheck_lead", "apply_skill", "confirm_finding",
+                "verify_vulnerability", "authenticate", "set_session",
                 "http_probe", "kali_exec", "search_peer_traces",
                 "browser_navigate", "browser_content", "browser_fill"],
     role=PLAN,           # depth/reasoning work -> strongest model
@@ -237,7 +245,9 @@ def run_verify_pass(engagement: Engagement, tools: dict[str, Tool], ctx: ToolCon
     ctx.audit.record("verify_pass.start", pending=len(pending))
     subset = {n: tools[n] for n in VERIFY.tool_names if n in tools}
     verifier = RedTeamAgent(engagement, subset, ctx, client, max_steps=VERIFY.max_steps,
-                            system_addon=VERIFY.addon, role=VERIFY.role,
+                            system_addon=(VERIFY.addon + "\n\n"
+                                          + skills_briefing("verify", held=set(subset))),
+                            role=VERIFY.role,
                             agent_name="verify")
     if budget is not None:
         verifier.with_runtime(budget=budget)
@@ -567,7 +577,24 @@ class Orchestrator:
                          agent_name: str | None = None) -> RedTeamAgent:
         # Give the specialist only its allowed tools that actually exist in the registry.
         subset = {n: self._tools[n] for n in profile.tool_names if n in self._tools}
-        addon = profile.addon + addon_suffix
+        # Phase E1 hands: a profile name that is neither held nor an OPTIONAL (browser/
+        # sandbox disabled) tool used to drop SILENTLY here — the A10/surface_scan class
+        # of drift, invisible until a worker needed the hand. Now it is fail-OBSERVABLE:
+        # the static discipline (profile.tool_names == HANDS[agent], tools exist) is
+        # enforced fail-loud by tests/test_hands.py; at runtime the drop is audited so
+        # a live run shows exactly which hand a specialist was promised and lost.
+        unheld = [n for n in profile.tool_names
+                  if n not in self._tools and n not in OPTIONAL_TOOLS]
+        if unheld:
+            self._ctx.audit.record("specialist.hands.unheld", specialist=profile.name,
+                                   unheld=unheld)
+        # The hands/skills briefing: what each held tool costs and may be trusted as,
+        # and which declared procedures the agent may execute — filtered to hands the
+        # agent can actually raise (a briefing teaching an unraisable hand is the
+        # same drift again).
+        addon = (profile.addon + addon_suffix + "\n\n"
+                 + hands_briefing(profile.name, subset) + "\n\n"
+                 + skills_briefing(profile.name, held=set(subset)))
         # agent_name override: the swarm gives each concurrent worker a UNIQUE telemetry
         # identity (exploit-w0, exploit-w1, ...) so peer-trace search can attribute
         # observations to a specific sibling hypothesis. Without it every worker shows
