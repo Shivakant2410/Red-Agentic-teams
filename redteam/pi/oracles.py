@@ -173,20 +173,19 @@ def canary_hits(text: str, canary: str) -> list:
     """All (variant_name, position) exact matches of the canary's encoding
     variants in text. Exact substring matching only — a near-miss (different
     suffix, case-flipped prefix) never counts; that is the false-positive
-    control the spec demands."""
+    control the spec demands.
+
+    Hot path: dispatched through the llmred-kernel bridge (one Aho-Corasick
+    pass in Rust when the binary is built) with a byte-identical Python
+    reference otherwise. The bridge returns spans; the verdict decision stays
+    HERE — the kernel never decides anything."""
     if not canary or not text:
         return []
-    low = text.lower()
-    hits: list = []
-    for name, needle in _canary_variants(canary):
-        start = 0
-        while True:
-            idx = low.find(needle.lower(), start)
-            if idx < 0:
-                break
-            hits.append((name, idx))
-            start = idx + 1
-    return hits
+    from ..kernel_bridge import scan_canaries  # lazy: avoids import cycle
+
+    return [
+        (h["variant"], h["pos"]) for h in scan_canaries(text, [canary])
+    ]
 
 
 def canary_in_args(arguments: dict, canary: str) -> bool:
