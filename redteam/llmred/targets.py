@@ -273,12 +273,19 @@ class ScriptedTarget:
     reply is fixed per trigger, a scripted target can simulate "leaks only under
     the base64 encoding" or "leaks only across sessions" exactly — which is how
     the campaign/bandit/regression logic is tested without a network.
+
+    latency_fn: optional (last_user_text, session_id) -> milliseconds. The B2
+    timing instruments measure TargetReply.latency_ms as their side-channel
+    observable, so offline proofs need a deterministic latency source; network
+    targets carry requests' own elapsed time. None (default) keeps the
+    historic 0 — no existing behavior changes.
     """
 
     def __init__(self, config: TargetConfig, rules: list[tuple[str, str]] | None = None,
                  default_reply: str = "I'm sorry, but I can't help with that.",
                  stateful: bool = False,
-                 fn_rules: list | None = None):
+                 fn_rules: list | None = None,
+                 latency_fn=None):
         if config.kind != "scripted":
             raise TargetAuthError("ScriptedTarget requires kind='scripted'")
         self.config = config
@@ -291,6 +298,7 @@ class ScriptedTarget:
         # knowing canaries in advance.
         self.fn_rules = list(fn_rules or [])
         self.default_reply = default_reply
+        self.latency_fn = latency_fn
         self.turns: list[dict] = []          # everything sent, for assertions
         self._sessions = 0
 
@@ -315,7 +323,10 @@ class ScriptedTarget:
                 if needle.lower() in low:
                     reply = r
                     break
-        return TargetReply(text=reply, status=200, latency_ms=0, session_id=session)
+        latency = (int(self.latency_fn(last_user, session))
+                   if self.latency_fn is not None else 0)
+        return TargetReply(text=reply, status=200, latency_ms=latency,
+                           session_id=session)
 
 
 # -- agentic targets (the B1 adapter) ------------------------------------------
@@ -394,6 +405,13 @@ class AgenticLoopTarget:
 
     def new_session(self) -> str:
         return uuid.uuid4().hex
+
+    @property
+    def harness(self):
+        """The wrapped agent under test (read access for the B2 dynamics
+        layer: propagation chains need the harness to drive additional hops).
+        The adapter still only ever OBSERVES it."""
+        return self._harness
 
     def send(self, session: str, messages: list[dict]) -> TargetReply:
         started = time.monotonic()

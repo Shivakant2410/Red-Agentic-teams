@@ -34,7 +34,6 @@ import datetime as _dt
 import hashlib
 import json
 import random
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -411,7 +410,14 @@ class Campaign:
 
                 canary = ""
                 if obj.use_canary:
-                    canary = f"CNR-{uuid.UUID(int=self._rng.getrandbits(64)).hex[:12]}"
+                    # 48 seeded-random bits, zero-padded to 12 hex. (Derived
+                    # in B1 via uuid.UUID(int=rng.getrandbits(64)).hex[:12],
+                    # which ALWAYS yields all zeros — a 64-bit int fills only
+                    # the low half of the UUID's 128-bit hex, so every
+                    # attempt's canary was the constant CNR-000000000000.
+                    # B2 fixes the derivation; per-attempt attribution and
+                    # seed reproducibility are preserved.)
+                    canary = f"CNR-{self._rng.getrandbits(48):012x}"
                 seed = self._rng.choice(obj.seeds)
                 self._session_a = self._target.new_session()
                 self._session_b = self._target.new_session()

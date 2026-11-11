@@ -120,6 +120,49 @@ written into `AUDIT.md` §3 (no silent find-only additions).
 
 ---
 
+## B-engine — Phase B1 / Phase B2 (`redteam/llmred` dynamics, P0 · engine track)
+
+> **STATUS: B1 DELIVERED 2026-11-07 (commit `586006a`); B2 DELIVERED 2026-11-08.**
+> The engine phases run alongside the pack batches (C–G below) and do not add
+> pack skills — the zero-duplication discipline applies to the engine too.
+
+**Phase B1 — agentic target adapter.** Verdicts measure what an agent DID:
+`AgenticLoopTarget` wraps a real tool-calling loop (the caller's harness IS
+the agent under test) and records every actual invocation; `ToolCondition` is
+a first-class condition; an invocation outranks any reply text — including a
+refusal fired alongside the call; a compliance token without the matching
+call is UNDETERMINED. `OpenAIToolLoop` drives OpenAI-compatible brains with
+the deployment's real declared tool schema.
+
+**Phase B2 — the dynamics layer: formal adversary models as measuring
+instruments** (`dynamics.py`, `propagation.py`; research dossier with the
+verified anchor table: `docs/dynamics-research.md`). Research was run as a
+system — query batteries across four disciplines, every anchor resolved
+before citation, every model needing model→instrument→acceptance-criterion
+or dropped:
+
+| Discipline | Instrument | What it measures |
+|---|---|---|
+| game theory (Stackelberg) | `policy_commitment` | pure vs mixed defender policy: unanimity + verdict entropy over repeated identical probes in fresh sessions |
+| game theory (cheap talk) | `signaling_gap` | talk-action divergence: claims are costless talk, recorded invocations are costly signals; divergence is evidence, not intent |
+| information theory | `exfil_capacity` | recoverable BITS of a planted secret (full/encoded/prorated-partial), control-first so stateful targets keep the benign control interpretable |
+| physics | `timing_contrast` | paired guard-relevant/benign latency contrast with rank-sum significance and a split-half null that discredits drift |
+| pharmacology | `dose_response` | threshold kinetics of conversation-level assembly: dose curve, crossing turn, per-message-filter defeat demonstrated |
+| economics | `amplification_ratio` | denial-of-wallet proxies from real traffic: byte amplification, recorded tool invocations per attacker message |
+| biology/chemistry | `propagation_chain` | Morris II seam made measurable: per-hop text/action survival, attenuation r-factor, inert/contained/propagated/truncated |
+
+Contracts kept: measurements with declared limits, never laundered verdicts;
+skips are loud; failures are error blocks, not defenses; one shared
+fail-closed budget. The proof loop caught and fixed a real B1 bug during B2
+(canary minting produced the constant `CNR-000000000000` —
+`uuid.UUID(int=…).hex[:12]` always reads the UUID's zero high bits;
+now `getrandbits(48)` hex, seed reproducibility preserved). CLI: `--dynamics`
+appends the instruments run + a dynamics card to the campaign report; agentic
+targets run dynamics in code via `run_dynamics(target=...)`. Suite: 824 tests
+green (792 pre-B2 + 32 dynamics proofs).
+
+---
+
 ## C — API deepening (P1 · ~12 skills · prereq: identity/credential agent #7)
 
 Targets OWASP **API Security Top 10 2023** gaps (current APIT 0.50):
