@@ -127,6 +127,15 @@ tools/
                          content_discovery (ffuf), crawl (katana, domain-scoped),
                          param_discovery (arjun) — rate-capped LEAD generators;
                          endpoints fold into the graph, parameters feed verify hints
+  hostprobe.py           Phase W1b deep probes: host_probe (httpx: status/title/tech
+                         -> ENDPOINT+TECHNOLOGY nodes), port_scan (nmap -sV, ONE
+                         allowed host, RoE-validated ports -> HOST+SERVICE nodes)
+  webinspect.py          Phase W2 inspectors (first-party HTTP via fetch_once):
+                         xss_reflect_probe maps marker reflections to sink contexts
+                         and emits a READY check_spec verify_vulnerability consumes
+                         1:1; graphql_inspect = deterministic 4-request checklist
+                         (introspection/GET/suggestions/batching). The inspect ->
+                         spec -> prove chain — discovery output IS the proof input
   playbooks.py           find_techniques — first-party offline technique library
                          (data/playbooks/): kill-chain-indexed playbooks with concrete
                          steps + verify hints; agents look up tradecraft, never search

@@ -74,9 +74,12 @@ redteam/
   tools/             kali_exec, browser_*, record_finding, request_approval,
                      verify_vulnerability, verify_finding_independently, jwt_inspect,
                      nuclei_scan (leads only), content_discovery / crawl /
-                     param_discovery (W1 lead generators), find_techniques (offline
-                     playbook library in data/playbooks/), template/skill tools,
-                     postex, ... — the capability ladder lives in
+                     param_discovery (W1 lead generators), host_probe / port_scan
+                     (W1b deep probes: httpx + nmap, RoE-fenced), xss_reflect_probe /
+                     graphql_inspect (W2 inspectors — reflection mapping and GraphQL
+                     checklists that emit READY check_specs for verify_vulnerability),
+                     find_techniques (offline playbook library in data/playbooks/),
+                     template/skill tools, postex, ... — the capability ladder lives in
                      docs/tool-integration-plan.md
 dashboard/           Next.js mission-control UI (static export, served by server.py)
 states.py            Lifecycle registry — every state machine (run, approval, finding

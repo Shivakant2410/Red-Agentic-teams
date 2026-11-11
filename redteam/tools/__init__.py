@@ -114,6 +114,18 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # parameters ride lead payloads into verify hints. None record findings.
     from .webdiscover import ContentDiscoveryTool, CrawlTool, ParamDiscoveryTool
     tools += [ContentDiscoveryTool(), CrawlTool(), ParamDiscoveryTool()]
+    # Phase W1b deep probes (httpx/nmap): content-level host probing and service
+    # fingerprinting of ONE allowed host each — HOST/SERVICE/TECHNOLOGY nodes the
+    # planner, bandit buckets, and priors already read. Leads, never findings.
+    from .hostprobe import HostProbeTool, PortScanTool
+    tools += [HostProbeTool(), PortScanTool()]
+    # Phase W2 first inspectors (the jwt_inspect pattern, first-party HTTP): the
+    # inspect -> spec -> prove chain. xss_reflect_probe maps marker reflections to
+    # sink contexts and emits a READY check_spec verify_vulnerability consumes 1:1;
+    # graphql_inspect runs the deterministic 4-request checklist. Leads, never
+    # findings; markers are benign (mapping, not payload blasting).
+    from .webinspect import GraphqlInspectTool, XssReflectProbeTool
+    tools += [XssReflectProbeTool(), GraphqlInspectTool()]
     # First-party technique playbooks (data/playbooks/, ships in-repo): the offline
     # research layer — agents look techniques up here BEFORE inventing or searching.
     from .playbooks import FindTechniquesTool

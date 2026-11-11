@@ -120,21 +120,32 @@ earned skill — the corpus stays curated, the skill DB stays earned.
 | `content_discovery` | ffuf (`-json`) | 1 | Wordlist from a fixed in-image allowlist (`/usr/share/seclists/...`); auto-calibrate on; leads = new URLs → ENDPOINT graph. **Implemented in `tools/webdiscover.py`.** |
 | `crawl` | katana (`-jsonl -fs rdn`) | 1 | JS-aware crawl, domain-field-scoped so it cannot wander off-target; endpoints + methods + status into the graph. **Implemented.** |
 | `param_discovery` | arjun (`-oJ`) | 1 | Hidden-parameter candidates; feeds verify hints (authz-matrix and reflection checks). **Implemented.** |
-| `host_probe` | httpx (projectdiscovery) | 1 | Title/status/tech JSON per live host; complements `surface_scan` (which knocks on allowed ports) with content-level probes of found HTTP services. Next slice. |
-| `port_scan` | nmap (`-oX/-oJ`) | 1 | Structured parse of what Kali already has; `surface_scan` stays the RoE-driven inventory, this is the agent-directed deep probe of ONE allowed host. Next slice. |
+| `host_probe` | httpx (projectdiscovery) | 1 | Title/status/tech JSON per live host; complements `surface_scan` (which knocks on allowed ports) with content-level probes of found HTTP services. **Implemented in `tools/hostprobe.py` — folds ENDPOINT + TECHNOLOGY nodes.** |
+| `port_scan` | nmap (`-oX -`) | 1 | Structured parse of what Kali already has; `surface_scan` stays the RoE-driven inventory, this is the agent-directed deep probe of ONE allowed host (`-sV --version-light -T3`, top-ports or an RoE-validated explicit list — fail closed like scope.check). **Implemented in `tools/hostprobe.py` — folds HOST + SERVICE nodes, web-ish services get an ENDPOINT stub.** |
 
 Exit criteria W1: three+ tools live with full contract, graph-visible surface
 growth on the lab target, B4 noise measurement recorded for each.
 
 ### W2 — Vulnerability classes as deterministic checklists (the `jwt_inspect` pattern)
 
+THE SMART WIRING that makes this track more than a checklist pile — the
+**inspect → spec → prove chain**: a W2 inspector does not stop at "might be
+vulnerable"; it answers the question a prover needs (WHERE did the marker land,
+did the specials survive) and, when the sink is live, emits the exact
+`requests`+`conditions` payload `verify_vulnerability` consumes 1:1 — k-of-n
+reproducibility and the negative-control discipline come free from the existing
+pipeline. Discovery output IS the proof input; the agent forwards, it does not
+redesign. Tests pin this semantically: the generated spec must PASS through
+`proof.eval_condition` against a live-sink response and FAIL against an
+entity-encoded one.
+
 | Tool | Class | Notes |
 |---|---|---|
 | `oauth_inspect` | 0–1 | Deterministic OAuth/OIDC checklist: state, PKCE, redirect_uri validation, token storage, implicit-flow use. Leads + verify hints. |
-| `graphql_inspect` | 1 | graphw00f fingerprint + introspection probe + clairvoyance-style schema reconstruction lead. Pairs with R2.4's GraphQL check types. |
+| `graphql_inspect` | 1 | graphw00f fingerprint + introspection probe + clairvoyance-style schema reconstruction lead. Pairs with R2.4's GraphQL check types. **Implemented in `tools/webinspect.py` (first-party HTTP, exactly 4 benign requests: introspection POST, query-over-GET, field-suggestion oracle, JSON-array batching; every check reports BOTH outcomes with a verify_hint naming the next first-party move).** |
 | `smuggle_probe` | 1 | HTTP request-smuggling detection probes (CL.TE/TE.CL variants with benign timing control); leads only, exploitation stays in verify. |
 | `header_inject_check` | 1 | Host-header injection, CRLF, cache-deception candidates — deterministic request variants via the existing proxy. |
-| `xss_reflect_probe` | 1 | Reflection mapping (parameter → sink context) so the verifier designs context-correct proofs; **no** payload blasting. |
+| `xss_reflect_probe` | 1 | Reflection mapping (parameter → sink context) so the verifier designs context-correct proofs; **no** payload blasting. **Implemented in `tools/webinspect.py` (unique benign marker per call; <=2 requests per param, <=5 params; context = html_body/attribute/tag_name/js/json/response_header; `specials_survive` leads carry a READY check_spec for verify_vulnerability; escaped reflections are documented so proof budget is not wasted).** |
 | `ssti_probe` | 1 | Benign math-marker template injection candidates per parameter; verify pipeline confirms with the standard k-of-n. |
 | `sqli_exploit` | 2 | sqlmap wrapper, **fixed flags** (`--batch --level<=2 --risk<=1 --threads=1`), one vector at a time, per-action approval; boolean/time-based only; results are leads. |
 
