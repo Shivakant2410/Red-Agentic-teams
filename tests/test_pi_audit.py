@@ -44,16 +44,17 @@ def test_standards_anchors_dual_pin_and_family_map():
 
 
 def test_owasp_2026_scenarios_cover_the_new_techniques():
-    for tid in ("PI.B6", "PI.B7", "PI.B8", "PI.A5", "PI.D1", "PI.E2"):
+    for tid in ("PI.B6", "PI.B7", "PI.B8", "PI.A5", "PI.D1", "PI.E2",
+                "PI.E3"):
         assert tid in OWASP_2026_SCENARIOS, tid
         assert "2026" in OWASP_2026_SCENARIOS[tid]
 
 
 def test_coverage_audit_counts_match_registry():
     c = coverage_audit()
-    assert c["techniques"] == len(TECHNIQUES) == 21
+    assert c["techniques"] == len(TECHNIQUES) == 22
     assert c["payloads"] == sum(len(t.payloads) for t in TECHNIQUES)
-    assert c["by_family"] == {"A": 6, "B": 8, "C": 4, "D": 1, "E": 2}
+    assert c["by_family"] == {"A": 6, "B": 8, "C": 4, "D": 1, "E": 3}
     for ch in ("tool_description", "tool_desc_swap", "plan_field"):
         assert ch in c["channels"], ch
         assert ch in DELIVERY_CHANNELS

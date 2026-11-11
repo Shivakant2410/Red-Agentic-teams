@@ -110,9 +110,10 @@ def test_capability_missing_is_skip_record_not_verdict():
     assert {"PI.C1", "PI.C2", "PI.C3", "PI.C4", "PI.D1"} <= skipped_families
     assert "PI.A6" in skipped_families          # operator_input unmet too
     assert "PI.B6" in skipped_families          # memory_store capability unmet
-    assert s["skipped"] == 7
+    assert "PI.E3" in skipped_families          # egress_surface capability unmet
+    assert s["skipped"] == 8
     assert s["attempted"] == 18          # cells: A1/A2 have 2 payloads each,
-                                         # A5 has 3; skipped 7 techniques
+                                         # A5 has 3; skipped 8 techniques
 
 
 def test_operator_input_missing_is_skip_never_fake_attempt():
