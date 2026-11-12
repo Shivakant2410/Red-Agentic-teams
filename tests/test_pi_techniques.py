@@ -24,8 +24,8 @@ from redteam.pi.oracles import CanaryStage
 
 def test_registry_covers_all_five_families():
     counts = {f: len(techniques_for_family(f)) for f in FAMILIES}
-    assert counts == {"A": 6, "B": 8, "C": 4, "D": 2, "E": 4}
-    assert len(TECHNIQUES) == 24
+    assert counts == {"A": 9, "B": 10, "C": 4, "D": 2, "E": 4}
+    assert len(TECHNIQUES) == 29
 
 
 def test_unique_ids_and_required_metadata():
@@ -103,7 +103,10 @@ def test_no_dataset_text_is_copied_provenance_explains_adaptation():
     reused, payload written fresh). This is the provenance contract."""
     for t in TECHNIQUES:
         low = t.provenance.lower()
-        assert "arxiv" in low or "owasp" in low or "echoleak" in low, t.id
+        # "anthropic.com" is an allowed source token for the one technique
+        # whose source publication carries no arXiv id (many-shot, Apr 2024)
+        assert "arxiv" in low or "owasp" in low or "echoleak" in low \
+            or "anthropic.com" in low, t.id
         assert any(w in low for w in ("shape", "structure", "taxonomy",
                                       "pattern", "branch", "adapted",
                                       "written fresh", "scenario", "class",
@@ -114,7 +117,7 @@ def test_no_dataset_text_is_copied_provenance_explains_adaptation():
 
 
 def test_select_techniques_full_and_unknown():
-    assert len(select_techniques(None)) == 24
+    assert len(select_techniques(None)) == 29
     with pytest.raises(ValueError, match="unknown technique"):
         select_techniques(["PI.A1", "PI.Z9"])
     picked = select_techniques(["PI.A1", "PI.B4"])

@@ -46,9 +46,11 @@ def test_by_atlas_membership_is_exact():
         "PI.A1", "PI.A2", "PI.A3", "PI.A4", "PI.C1", "PI.C2", "PI.C4"}
     assert subs["AML.T0051.001"] == {
         "PI.B1", "PI.B2", "PI.B3", "PI.B4", "PI.B5", "PI.B6", "PI.B7",
-        "PI.B8", "PI.C3", "PI.D1", "PI.E1", "PI.E2", "PI.E3", "PI.E4"}
+        "PI.B8", "PI.B9", "PI.B10", "PI.C3", "PI.D1", "PI.E1", "PI.E2",
+        "PI.E3", "PI.E4"}
     assert subs["AML.T0051.002"] == {"PI.A4", "PI.D2"}
-    assert subs["AML.T0054"] == {"PI.A2", "PI.A5", "PI.A6"}
+    assert subs["AML.T0054"] == {"PI.A2", "PI.A5", "PI.A6", "PI.A7",
+                                 "PI.A8", "PI.A9"}
 
 
 def test_two_way_map_is_inverse_consistent():
@@ -84,7 +86,7 @@ def test_coverage_names_the_unexercised_atlas_slice():
     assert ("PI.D2", "AML.T0020") in cand
     assert any("AML.T0053" == a for _, a in cand)
     assert cov["anchor_counts"] == {
-        "total": 26, "linkage_verified": 21, "linkage_inferred": 5}
+        "total": 31, "linkage_verified": 23, "linkage_inferred": 8}
 
 
 def test_two_honesty_axes_stay_distinct():
