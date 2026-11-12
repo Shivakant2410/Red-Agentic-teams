@@ -50,6 +50,10 @@ def main() -> int:
     ap.add_argument("--atlas", action="store_true",
                     help="print the ATLAS-side catalog, two-way map and "
                          "coverage audit instead of running")
+    ap.add_argument("--killchain", action="store_true",
+                    help="print the kill-chain projection (phases per "
+                         "technique, capability-conditioned chain breaks "
+                         "and reachable depth) instead of running")
     ap.add_argument("--capabilities", nargs="*", default=None,
                     help="override deployment capability labels for --plan "
                          "(default: the offline fixture's native set)")
@@ -65,6 +69,10 @@ def main() -> int:
         from .atlas import atlas_audit
         print(json.dumps(atlas_audit(), indent=2, ensure_ascii=False))
         return 0
+    if args.killchain:
+        from .killchain import kill_chain_audit
+        print(json.dumps(kill_chain_audit(), indent=2, ensure_ascii=False))
+        return 0
     if args.plan:
         from .planner import FIXTURE_CAPABILITIES, deployment_plan
         from .techniques import TECHNIQUES
@@ -78,7 +86,8 @@ def main() -> int:
                          indent=2, ensure_ascii=False))
         return 0
     if not args.out:
-        ap.error("--out is required unless --audit, --plan or --atlas")
+        ap.error("--out is required unless --audit, --plan, --atlas or "
+                 "--killchain")
 
     eng = PIEngagement(PIEngagementConfig(
         engagement_id=args.engagement_id, technique_ids=args.techniques,
