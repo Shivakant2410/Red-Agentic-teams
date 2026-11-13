@@ -117,6 +117,8 @@ class VerifyFindingIndependentlyTool:
                 verdict = self._recheck_privilege(ctx, f)
             elif f.check_type == "workflow":
                 verdict = self._recheck_workflow(ctx, f, fresh_attack_steps, fresh_control_steps)
+            elif f.check_type == "pi_oracle":
+                verdict = self._recheck_pi_oracle(f)
             else:
                 verdict = ("not_reproducible",
                            f"no replayable check_type ({f.check_type!r}) stored for this finding")
@@ -322,6 +324,17 @@ class VerifyFindingIndependentlyTool:
         if control_ok:
             return "falsified", "the honest control (fresh identifier) also violated the invariant: " + "; ".join(details)
         return "confirmed", "reproduced independently with a fresh identifier; control did not: " + "; ".join(details)
+
+    def _recheck_pi_oracle(self, f) -> tuple[str, str]:
+        """Prompt-injection findings (redteam/pi): re-derive the verdict from
+        the RAW evidence in check_spec — replies, tool trace, ledger,
+        controls — with no model in the loop. The controls are MANDATED
+        exactly as for every other check type: a missing or failed negative
+        or benign control blocks confirmation. Everything determinstic here
+        lives in redteam/pi/verify.py so the same re-derivation is testable
+        without a ToolContext."""
+        from ..pi.verify import rederive_pi_verdict
+        return rederive_pi_verdict(f.check_spec or {})
 
     # -- crediting on confirmation ------------------------------------------------
 
