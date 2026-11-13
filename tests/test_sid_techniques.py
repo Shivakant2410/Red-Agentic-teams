@@ -27,20 +27,22 @@ def test_registry_counts_and_shape():
     from redteam.sid.techniques import coverage_audit
 
     a = coverage_audit()
-    assert a["techniques"] == 5
-    assert a["payloads"] == 12
+    assert a["techniques"] == 6
+    assert a["payloads"] == 15
     assert a["channels"] == ["user_message"]
-    assert set(a["by_family"]) == {"R", "C", "P", "M"}
+    assert set(a["by_family"]) == {"R", "C", "P", "M", "X"}
 
 
 def test_technique_ids_families_and_owasp_label():
     from redteam.sid.techniques import BY_ID
 
-    assert set(BY_ID) == {"SID.R1", "SID.R2", "SID.C1", "SID.P1", "SID.M1"}
+    assert set(BY_ID) == {"SID.R1", "SID.R2", "SID.C1", "SID.P1", "SID.M1",
+                          "SID.X1"}
     assert BY_ID["SID.R1"].family == "R"
     assert BY_ID["SID.C1"].family == "C"
     assert BY_ID["SID.P1"].family == "P"
     assert BY_ID["SID.M1"].family == "M"
+    assert BY_ID["SID.X1"].family == "X"
     for t in BY_ID.values():
         assert t.owasp == "LLM02:2025"
         assert t.delivery == ("user_message",)

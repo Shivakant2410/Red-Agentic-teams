@@ -190,7 +190,7 @@ def test_record_shape_and_lane_separation():
     assert out["n_payloads"] == 2
     # lane separation: PI registry untouched, SID registry independent
     assert pi_audit()["techniques"] == 30
-    assert sid_audit()["techniques"] == 5
+    assert sid_audit()["techniques"] == 6
 
 
 def test_negative_control_detects_a_broken_detector():
