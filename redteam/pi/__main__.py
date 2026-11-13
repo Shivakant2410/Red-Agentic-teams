@@ -5,8 +5,10 @@ the same command always produces the same summary. This is the coverage and
 utility evidence the spec asks for: ASR with Wilson CIs, unique-technique
 coverage, benign completion, defense differential, honest skips.
 
-Live-model runs against real deployments are the OPERATOR's step (llmred's
-OpenAIToolLoop path) and are never mixed with these fixture numbers.
+Live-model probes exist as a SEPARATE, env-gated surface (--live-manyshot,
+see redteam/pi/live.py): explicit authorization required, key via env-var
+indirection, verdicts earned, and the numbers NEVER mix with these fixture
+numbers.
 """
 
 from __future__ import annotations
@@ -54,6 +56,17 @@ def main() -> int:
                     help="print the kill-chain projection (phases per "
                          "technique, capability-conditioned chain breaks "
                          "and reachable depth) instead of running")
+    ap.add_argument("--live-manyshot", action="store_true",
+                    help="run the PI.A8 many-shot probe against the env-"
+                         "configured live target (LLMRED_LIVE_*; requires "
+                         "explicit authorization). Never mixes with bench "
+                         "output")
+    ap.add_argument("--shots", type=int, default=None,
+                    help="--live-manyshot: shot count (default: 256, the "
+                         "paper's tested maximum)")
+    ap.add_argument("--budget-tokens", type=int, default=None,
+                    help="--live-manyshot: request token budget (shots drop "
+                         "from the head to fit)")
     ap.add_argument("--capabilities", nargs="*", default=None,
                     help="override deployment capability labels for --plan "
                          "(default: the offline fixture's native set)")
@@ -73,6 +86,24 @@ def main() -> int:
         from .killchain import kill_chain_audit
         print(json.dumps(kill_chain_audit(), indent=2, ensure_ascii=False))
         return 0
+    if args.live_manyshot:
+        from .live import (LiveLaneError, LiveTarget, NotAuthorized,
+                           manyshot_live_probe)
+        try:
+            target = LiveTarget.from_env()
+        except NotAuthorized as e:
+            print(json.dumps({"error": "not_authorized", "detail": str(e)}))
+            return 3
+        try:
+            record = manyshot_live_probe(
+                target,
+                n_shots=args.shots if args.shots else 256,
+                budget_tokens=args.budget_tokens)
+        except LiveLaneError as e:
+            print(json.dumps({"error": "live_lane_error", "detail": str(e)}))
+            return 4
+        print(json.dumps(record, indent=2, ensure_ascii=False))
+        return 0
     if args.plan:
         from .planner import FIXTURE_CAPABILITIES, deployment_plan
         from .techniques import TECHNIQUES
@@ -86,8 +117,8 @@ def main() -> int:
                          indent=2, ensure_ascii=False))
         return 0
     if not args.out:
-        ap.error("--out is required unless --audit, --plan, --atlas or "
-                 "--killchain")
+        ap.error("--out is required unless --audit, --plan, --atlas, "
+                 "--killchain or --live-manyshot")
 
     eng = PIEngagement(PIEngagementConfig(
         engagement_id=args.engagement_id, technique_ids=args.techniques,
