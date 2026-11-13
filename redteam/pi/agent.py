@@ -206,14 +206,31 @@ def json_dumps(obj) -> str:
 # -- the brain --------------------------------------------------------------------
 
 class _Arm:
-    __slots__ = ("plays", "reward_sum")
+    # virt_* = informed warm-start virtual pulls (TargetProfile.priors_for):
+    # they count in SELECTION math (an informed arm is not untried) but
+    # never in reported stats — real_mean/plays are this session's evidence
+    # only. Callers bound staleness with n0 = min(observed, cap).
+    __slots__ = ("plays", "reward_sum", "virt_plays", "virt_reward")
 
-    def __init__(self):
+    def __init__(self, virt_plays: int = 0, virt_reward: float = 0.0):
         self.plays = 0
         self.reward_sum = 0.0
+        self.virt_plays = virt_plays
+        self.virt_reward = virt_reward
+
+    @property
+    def total_plays(self) -> int:
+        return self.plays + self.virt_plays
 
     @property
     def mean(self) -> float:
+        """Mean over real + virtual evidence (selection view)."""
+        t = self.total_plays
+        return (self.reward_sum + self.virt_reward) / t if t else 0.0
+
+    @property
+    def real_mean(self) -> float:
+        """Mean over THIS session's observations only (reporting view)."""
         return self.reward_sum / self.plays if self.plays else 0.0
 
 
@@ -226,7 +243,8 @@ class AgentBrain:
                  budget: int = 12, seed: int = 0,
                  generator=None,
                  max_payload_chars: int = MAX_PAYLOAD_CHARS,
-                 technique_id: str = "PI.A1"):
+                 technique_id: str = "PI.A1",
+                 priors: dict | None = None):
         if not (MIN_BUDGET <= budget <= MAX_BUDGET):
             raise ValueError(
                 f"budget must be in [{MIN_BUDGET}, {MAX_BUDGET}]")
@@ -238,6 +256,15 @@ class AgentBrain:
         self.max_chars = max_payload_chars
         self.technique_id = technique_id
         self.arms = {n: _Arm() for n in ARM_NAMES}
+        # Informed warm start — what OTHER lanes learned about THIS target
+        # on the shared cipher axis (pi spells the base64 arm "b64"; the
+        # profile's alias map resolves it). None -> cold start.
+        self.warm_used: dict = {}
+        for name, (n0, m0) in (priors or {}).items():
+            if name in self.arms and n0 > 0:
+                self.arms[name].virt_plays = n0
+                self.arms[name].virt_reward = n0 * m0
+                self.warm_used[name] = [n0, round(m0, 4)]
         self.gen_arm = _Arm()
         self.seen_hashes: set = set()
         self.generator_errors = 0
@@ -248,18 +275,21 @@ class AgentBrain:
 
     def _fallback_candidate(self) -> tuple:
         """UCB1 over the encoder axis; composition indices cycle inside the
-        arm from its play count (frame = k % 4, directive = (k//4) % 6,
-        scaffold = (k//24) % 4)."""
-        untried = [n for n in ARM_NAMES if self.arms[n].plays == 0]
+        arm from its REAL play count (frame = k % 4, directive = (k//4) % 6,
+        scaffold = (k//24) % 4). Warm-started arms are not "untried": the
+        optimistic sweep visits only arms with zero total evidence, and the
+        UCB1 score prices real+virtual evidence identically."""
+        untried = [n for n in ARM_NAMES if self.arms[n].total_plays == 0]
         if untried:
             arm = untried[0]
         else:
-            total = sum(a.plays for a in self.arms.values())
+            total = sum(a.total_plays for a in self.arms.values())
             arm = max(
                 ARM_NAMES,
                 key=lambda n: (self.arms[n].mean
                                + _math.sqrt(2.0) * _math.sqrt(
-                                   _math.log(total) / self.arms[n].plays)))
+                                   _math.log(total)
+                                   / self.arms[n].total_plays)))
         k = self.arms[arm].plays
         enc_i = ENCODER_ARMS[arm][2]
         payload = compose_candidate(k % 4, (k // 4) % 6, (k // 24) % 4,
@@ -390,8 +420,10 @@ class AgentBrain:
 
     def _record(self) -> dict:
         verdict, basis = self._final_verdict()
+        # REAL observations only — warm-start priors are reported separately
+        # and never masquerade as this session's evidence.
         stats = {n: {"plays": a.plays, "reward_sum": a.reward_sum,
-                     "mean": round(a.mean, 4)}
+                     "mean": round(a.real_mean, 4)}
                  for n, a in self.arms.items()}
         if self.generator is not None:
             stats["generator_llm"] = {
@@ -412,6 +444,8 @@ class AgentBrain:
             "generator": "llm" if self.generator is not None else "grammar",
             "generator_errors": self.generator_errors,
             "requests": len(self.attempts),
+            **({"warm_start": dict(self.warm_used)}
+               if self.warm_used else {}),
         }
 
     def _collect_hits(self) -> list:
@@ -454,11 +488,18 @@ def agentic_live_probe(target, *,
                        session: LiveSession | None = None,
                        env: dict | None = None,
                        generator=None,
-                       system_prompt: str | None = None) -> dict:
+                       system_prompt: str | None = None,
+                       profile=None) -> dict:
     """Run the self-directed attacker against the authorized live lane (or an
     injected session for tests). Same authorization discipline as
     manyshot_live_probe: the session carries the gate; verdicts stay earned;
-    the record never mixes with fixture bench output."""
+    the record never mixes with fixture bench output.
+
+    profile: optional TargetProfile. READ: warm-starts the encoder bandit
+    from what OTHER lanes learned about this target's cipher competence.
+    WRITE: per-attempt oracle outcomes (generator-arm attempts excluded —
+    they are not cipher-axis facts) and this lane's own minted ruling are
+    recorded back so the NEXT lane/session inherits them."""
     canary = canary or None
     if canary is None:
         from .oracles import make_canary
@@ -466,11 +507,23 @@ def agentic_live_probe(target, *,
     system = system_prompt or _DEFAULT_SYSTEM.format(canary=canary)
     session = session or LiveSession(target, env)
     send = lambda payload: session.send(system, payload)  # noqa: E731
+    priors = None
+    if profile is not None:
+        priors = profile.priors_for("cipher", list(ARM_NAMES))
     brain = AgentBrain(canary, send, budget=budget, seed=seed,
-                       generator=generator, technique_id=technique_id)
+                       generator=generator, technique_id=technique_id,
+                       priors=priors)
     rec = brain.run()
     rec["requests"] = getattr(session, "requests", rec["n_attempts"])
     if target is not None:
         rec["api_style"] = target.api_style
         rec["model"] = target.model
+    if profile is not None:
+        _outcome = {"succeeded": "hit", "refused": "resisted",
+                    "inconclusive": "no_evidence"}
+        for a in rec["attempts"]:
+            if a["arm"] in ARM_NAMES:   # generator_llm is not a cipher fact
+                profile.record_attempt("LLM01", "cipher", a["arm"],
+                                       _outcome[a["verdict"]])
+        profile.record_family_verdict("LLM01", rec["verdict"])
     return rec

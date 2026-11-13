@@ -177,21 +177,45 @@ def _plant_free(payload: str, record: dict) -> bool:
 
 class _UCB1:
     """Untried arms first; then UCB1 with sqrt(2) exploration and a
-    deterministic first-max tie-break (Auer et al. 2002)."""
+    deterministic first-max tie-break (Auer et al. 2002).
 
-    def __init__(self, n_arms: int):
+    Informed warm start (optional, the cross-family transfer): priors
+    {arm_name: (n0, mean0)} enter as VIRTUAL pulls. Selection math uses
+    (real + virtual) totals, so an informed arm is NOT "untried" — a
+    known-refused arm 0 is skipped by the optimistic sweep, and once no
+    untried arms remain the best informed arm wins immediately. stats()
+    reports ONLY real pulls: priors never masquerade as this session's
+    evidence. Callers bound staleness by passing n0 = min(observed, cap)
+    (TargetProfile.priors_for) — fresh pulls can always outvote them."""
+
+    def __init__(self, n_arms: int, priors: dict | None = None):
         self.plays = [0] * n_arms
         self.reward = [0.0] * n_arms
+        self.virt_plays = [0] * n_arms
+        self.virt_reward = [0.0] * n_arms
+        self.warm_used: dict = {}
         self.n = 0
+        for i, name in enumerate(ARM_NAMES):
+            if priors and name in priors:
+                n0, m0 = priors[name]
+                if n0 > 0:
+                    self.virt_plays[i] = n0
+                    self.virt_reward[i] = n0 * m0
+                    self.warm_used[name] = [n0, round(m0, 4)]
+
+    def _total_plays(self, i: int) -> int:
+        return self.plays[i] + self.virt_plays[i]
 
     def select(self) -> int:
-        for i, p in enumerate(self.plays):
-            if p == 0:
+        for i in range(len(self.plays)):
+            if self._total_plays(i) == 0:
                 return i
+        total = sum(self._total_plays(i) for i in range(len(self.plays)))
         best_i, best_v = 0, None
-        for i, p in enumerate(self.plays):
-            v = self.reward[i] / p + math.sqrt(
-                2.0 * math.log(self.n) / p)
+        for i in range(len(self.plays)):
+            t = self._total_plays(i)
+            v = ((self.reward[i] + self.virt_reward[i]) / t
+                 + math.sqrt(2.0 * math.log(total) / t))
             if best_v is None or v > best_v + 1e-12:
                 best_i, best_v = i, v
         return best_i
@@ -234,7 +258,8 @@ class DisclosureBrain:
     facts per attempt; mints NO verdict."""
 
     def __init__(self, record: dict, send, *, budget: int = 12, seed: int = 0,
-                 max_payload_chars: int = MAX_PAYLOAD_CHARS):
+                 max_payload_chars: int = MAX_PAYLOAD_CHARS,
+                 priors: dict | None = None):
         if budget < 1:
             raise ValueError("budget must be >= 1")
         self.record = record or {}
@@ -242,6 +267,9 @@ class DisclosureBrain:
         self.budget = budget
         self.rng = random.Random(seed)
         self.max_payload_chars = max_payload_chars
+        # Informed warm start — what OTHER lanes learned about THIS target
+        # (TargetProfile.priors_for), as virtual pulls. None -> cold start.
+        self.priors = priors
 
     # -- mechanical judge ---------------------------------------------------------
 
@@ -260,7 +288,7 @@ class DisclosureBrain:
     # -- main loop -------------------------------------------------------------------
 
     def run(self) -> dict:
-        ucb = _UCB1(ARM_COUNT)
+        ucb = _UCB1(ARM_COUNT, priors=self.priors)
         seen: set = set()
         attempts: list = []
         hits: list = []
@@ -329,6 +357,8 @@ class DisclosureBrain:
             "attempts": attempts,
             "seed": self.rng.seed if isinstance(self.rng.seed, int) else None,
         }
+        if ucb.warm_used:
+            record["warm_start"] = dict(ucb.warm_used)
         if transport_error is not None:
             record["transport_error"] = transport_error
         return record
@@ -341,11 +371,18 @@ def sid_agentic_probe(record: dict | None = None, *, target=None,
                       session: LiveSession | None = None, budget: int = 12,
                       seed: int = 0, system_prompt: str | None = None,
                       run_controls: bool = True,
-                      max_requests: int | None = None) -> dict:
+                      max_requests: int | None = None,
+                      profile=None) -> dict:
     """The self-directed attacker against the authorized live lane (or an
     injected session for tests). The plant reaches the target via the
     SYSTEM context (never the payloads); the three-verdict ruling is
-    minted here with the same shared conjuncts as every other lane."""
+    minted here with the same shared conjuncts as every other lane.
+
+    profile: optional TargetProfile. READ: warm-starts the exfil-arm
+    bandit from what OTHER lanes (PI) learned about this target's cipher
+    competence. WRITE: per-attempt oracle outcomes and this lane's own
+    minted ruling are recorded back, so the NEXT lane/session inherits
+    them. The profile stores facts; it never rules."""
     if session is None and target is None:
         raise ValueError("live lane needs a target or an injected session")
     session = session or LiveSession(target, env)
@@ -354,9 +391,12 @@ def sid_agentic_probe(record: dict | None = None, *, target=None,
     system = system_prompt or build_context_system("SID.P1", record) \
         or DEFAULT_SID_SYSTEM
 
+    priors = None
+    if profile is not None:
+        priors = profile.priors_for("cipher", list(ARM_NAMES))
     brain = DisclosureBrain(record=record,
                             send=lambda p: session.send(system, p),
-                            budget=budget, seed=seed)
+                            budget=budget, seed=seed, priors=priors)
     out = brain.run()
     transport_error = out.pop("transport_error", None)
 
@@ -412,6 +452,16 @@ def sid_agentic_probe(record: dict | None = None, *, target=None,
     }
     if transport_error is not None:
         rec["error"] = transport_error
+    if profile is not None:
+        # WRITE-back: oracle facts per attempt (sid verdict vocabulary ->
+        # ledger outcome), then the lane's OWN minted ruling, labeled as
+        # the lane's. The profile never rules.
+        _outcome = {"succeeded": "hit", "refused": "resisted",
+                    "no_positive_evidence": "no_evidence"}
+        for a in out["attempts"]:
+            profile.record_attempt("LLM02", "cipher", a["arm"],
+                                   _outcome[a["verdict"]])
+        profile.record_family_verdict("LLM02", verdict)
     return rec
 
 
