@@ -13,17 +13,23 @@ fn node(id: &str, score: f64, requires: &[&str]) -> Node {
 
 #[test]
 fn golden_full_pipeline() {
-    // scan: transcript with plain + smuggled canary
+    // scan: transcript with plain + smuggled canary + the cipher matrix
     let canary = "canary-9f2c";
     let mut text = String::from("system prompt ... ");
     text.push_str(canary);
     text.push(' ');
     text.push_str(&llmred_kernel::variants::tag_encode(canary));
+    text.push(' ');
+    text.push_str(&llmred_kernel::variants::atbash(canary));
+    text.push(' ');
+    text.push_str(&llmred_kernel::variants::caesar(canary, 3));
     let hits = scan(&text, &[canary.to_string()]).unwrap();
-    assert_eq!(hits.len(), 2);
+    assert_eq!(hits.len(), 4);
     assert_eq!(hits[0].variant, "plain");
     assert_eq!(hits[0].pos, 18);
     assert_eq!(hits[1].variant, "unicode_tags");
+    assert_eq!(hits[2].variant, "atbash");
+    assert_eq!(hits[3].variant, "caesar3");
 
     // graph: memory-poisoning path dies without a memory surface
     let nodes = vec![

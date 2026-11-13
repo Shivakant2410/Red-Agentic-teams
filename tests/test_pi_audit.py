@@ -52,9 +52,9 @@ def test_owasp_2026_scenarios_cover_the_new_techniques():
 
 def test_coverage_audit_counts_match_registry():
     c = coverage_audit()
-    assert c["techniques"] == len(TECHNIQUES) == 29
+    assert c["techniques"] == len(TECHNIQUES) == 30  # +PI.A10
     assert c["payloads"] == sum(len(t.payloads) for t in TECHNIQUES)
-    assert c["by_family"] == {"A": 9, "B": 10, "C": 4, "D": 2, "E": 4}
+    assert c["by_family"] == {"A": 10, "B": 10, "C": 4, "D": 2, "E": 4}
     for ch in ("tool_description", "tool_desc_swap", "plan_field"):
         assert ch in c["channels"], ch
         assert ch in DELIVERY_CHANNELS

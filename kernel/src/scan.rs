@@ -122,7 +122,7 @@ mod tests {
     }
 
     #[test]
-    fn six_variants_found() {
+    fn ten_variants_found() {
         let canary = "can-123";
         let mut text = String::from("noise ");
         for (_, needle) in crate::variants::variants(canary) {
@@ -131,7 +131,10 @@ mod tests {
         }
         let hits = scan(&text, &[c(canary)]).unwrap();
         let names: Vec<&str> = hits.iter().map(|h| h.variant).collect();
-        for v in ["plain", "base64", "base64-nopad", "rot13", "unicode_tags", "zero_width"] {
+        for v in [
+            "plain", "base64", "base64-nopad", "rot13", "unicode_tags",
+            "zero_width", "atbash", "caesar1", "caesar3", "caesar25",
+        ] {
             assert!(names.contains(&v), "missing variant {v}");
         }
     }

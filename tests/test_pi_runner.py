@@ -114,8 +114,8 @@ def test_capability_missing_is_skip_record_not_verdict():
     assert "PI.E3" in skipped_families          # egress_surface capability unmet
     assert "PI.D2" in skipped_families          # fine_tune_access capability unmet
     assert s["skipped"] == 10
-    assert s["attempted"] == 24          # cells: A1/A2 2 payloads each, A5 3,
-                                         # A7 2, B9/A8/A9 1 each; skipped 10
+    assert s["attempted"] == 28          # cells: A1/A2 2 payloads each, A5 3,
+                                         # A7 2, A10 4, B9/A8/A9 1 each; skipped 10
 
 
 def test_operator_input_missing_is_skip_never_fake_attempt():
