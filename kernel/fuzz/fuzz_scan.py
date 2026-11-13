@@ -20,9 +20,14 @@ Corpus classes (all seeded, reproducible):
              multi-byte position bugs live here (surrogates excluded: they
              cannot cross the JSON transport)
   sandwich   canaries embedded through their real smuggle layers (plain,
-             base64, rot13, unicode-tags, zero-width) inside junk
-  near_miss  case flips, hex swaps, suffix trims, ZW-split canaries — the
-             scanner must report the REAL hits and nothing else
+             base64, rot13, unicode-tags, zero-width AND the cipher matrix:
+             atbash, caesar1/3/25) inside junk
+  cipher_near nested encodings (a decoder applied twice), wrong-shift /
+             wrong-canary ciphers, half-mirrored strings — both engines
+             must agree exactly, INCLUDING on zero hits
+  near_miss  case flips, hex swaps, suffix trims, ZW-split canaries, cipher
+             blobs with one letter flipped / off-by-one shift — the scanner
+             must report the REAL hits and nothing else
   patho      overlapping repeats (canary*k), ZW runs, tag-plane runs
   multi      prefix/superstring canary families in one scan — pattern
              interference
@@ -57,7 +62,13 @@ from redteam.kernel_bridge import (  # noqa: E402
     kernel_available,
     scan_canaries,
 )
-from redteam.pi.oracles import _canary_variants, canary_hits, make_canary  # noqa: E402
+from redteam.pi.oracles import (  # noqa: E402
+    _canary_variants,
+    atbash,
+    caesar,
+    canary_hits,
+    make_canary,
+)
 
 ARTIFACTS = Path(__file__).resolve().parent / "artifacts"
 
@@ -73,7 +84,8 @@ _SOUP_CLASSES = [
     [chr(c) for c in (0x05D0, 0x05D1, 0x05D2)],           # RTL
     [chr(c) for c in (0xFF21, 0xFF22, 0xFF33)],           # fullwidth
 ]
-_SMUGGLE_LAYERS = ("plain", "base64", "rot13", "unicode_tags", "zero_width")
+_SMUGGLE_LAYERS = ("plain", "base64", "rot13", "unicode_tags", "zero_width",
+                   "atbash", "caesar1", "caesar3", "caesar25")
 
 
 def _layer(canary: str, layer: str) -> str:
@@ -99,7 +111,8 @@ def gen_sandwich(rng: random.Random, canaries: list[str]) -> str:
 
 def gen_near_miss(rng: random.Random, canaries: list[str]) -> str:
     c = rng.choice(canaries)
-    kind = rng.choice(["case", "hex_swap", "trim", "zw_split", "flip_one"])
+    kind = rng.choice(["case", "hex_swap", "trim", "zw_split", "flip_one",
+                       "atbash_flip", "caesar_off"])
     if kind == "case":
         return c.swapcase() + " " + c
     if kind == "hex_swap" and len(c) > 3:
@@ -110,7 +123,36 @@ def gen_near_miss(rng: random.Random, canaries: list[str]) -> str:
     if kind == "zw_split":
         mid = len(c) // 2
         return c[:mid] + "\u200b" + c[mid:]     # matches zero_width variant
+    if kind == "atbash_flip" and len(c) > 2:
+        blob = atbash(c)
+        i = rng.randrange(len(blob))
+        blob = blob[:i] + rng.choice("abcdefghijklmnopqrstuvwxyz") + blob[i + 1:]
+        return blob + " " + c
+    if kind == "caesar_off":
+        return caesar(c, 2) + " " + c           # off-by-one from every cell
     return c[::-1] + " " + c
+
+
+def gen_cipher_near(rng: random.Random, canaries: list[str]) -> str:
+    """Cipher-matrix adversarial forms: NESTED encodings (a decoder applied
+    twice — no single variant equals them), wrong-shift / wrong-canary
+    ciphers, half-mirrored strings. Contract: hits ONLY where a genuine
+    single-layer needle of a scanned canary appears; both engines must agree
+    exactly, including on the zeros."""
+    c = rng.choice(canaries)
+    other = rng.choice(canaries)
+    kind = rng.choice(["nested", "wrong_shift", "half_atbash",
+                       "cipher_then_plain"])
+    if kind == "nested":
+        inner = _layer(c, rng.choice(("rot13", "atbash", "caesar3")))
+        return _layer(inner, rng.choice(("rot13", "atbash", "caesar3")))
+    if kind == "wrong_shift":
+        # another canary's cipher cell + this canary under a different cell
+        return _layer(other, "caesar3") + " " + _layer(c, "caesar1")
+    if kind == "half_atbash":
+        mid = max(1, len(c) // 2)
+        return atbash(c[:mid]) + c[mid:]
+    return _layer(c, "atbash") + " " + c
 
 
 def gen_patho(rng: random.Random, canaries: list[str]) -> str:
@@ -145,8 +187,8 @@ def gen_big(rng: random.Random, canaries: list[str]) -> str:
     return text
 
 
-GENERATORS = (gen_soup, gen_sandwich, gen_near_miss, gen_patho,
-              gen_multi, gen_edge)
+GENERATORS = (gen_soup, gen_sandwich, gen_near_miss, gen_cipher_near,
+              gen_patho, gen_multi, gen_edge)
 
 
 def _check_invariants(text: str, canaries: list[str],
