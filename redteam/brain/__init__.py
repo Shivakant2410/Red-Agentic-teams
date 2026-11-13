@@ -15,6 +15,8 @@ every time, and died at process exit. This package is the missing organ:
 Divergences from the cited literature are stated in each module.
 """
 
+from .orchestrator import FamilyOrchestrator
 from .profile import REWARD, TargetProfile, fingerprint_target
 
-__all__ = ["REWARD", "TargetProfile", "fingerprint_target"]
+__all__ = ["REWARD", "TargetProfile", "FamilyOrchestrator",
+           "fingerprint_target"]
