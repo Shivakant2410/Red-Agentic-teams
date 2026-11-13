@@ -71,6 +71,12 @@ hands.py               Phase E1 — agent hands and skills: every profile's tool
                        `python -m redteam.hands --json`; rendering in
                        docs/hands-and-skills.md. A new tool without a Hand bound
                        to a named agent is shelfware — draft Hand+Skill+card triples
+offensive.py          Phase E2 — the deterministic offensive engine: the declared
+                       Skills compiled to executable workflows (recon -> lead trust
+                       discipline -> class exploitation -> independent verify pass),
+                       ZERO model calls. Live-fire regression: the machinery alone
+                       must confirm every planted lab bug (tests/test_offensive.py).
+                       Run: python3 scripts/live_offensive_run.py
 bandit.py              Contextual multi-armed bandit (Thompson sampling) over
                        attack_tree.py's technique choices; persists to
                        memory/bandit.json, same cross-engagement pattern as memory.py

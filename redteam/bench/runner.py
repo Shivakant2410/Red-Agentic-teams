@@ -94,11 +94,16 @@ def _write_engagement(target, path: Path, container_ip: str | None = None) -> No
         "starts": time.strftime("%Y-%m-%d"), "ends": "2099-01-01",
         "scope": {
             "allowed_hosts": allowed_hosts,
-            "allowed_ports": [target.host_port, target.container_port, 80, 443],
+            "allowed_ports": [target.host_port, target.container_port,
+                              *getattr(target, "extra_ports", []), 80, 443],
             "allowed_schemes": ["http", "https"],
             "allow_private_ranges": True,   # localhost/container IP are both private ranges
         },
         "objective": target.objective,      # the red-team scoreboard for this target
+        # RoE-seeded lab principals (empty for docker targets): the same
+        # "operator hands you low-privilege accounts" contract a real engagement
+        # uses. The offensive engine reads this block from engagement.raw.
+        "credentials": getattr(target, "credentials", {}),
         "limits": {"max_requests_per_second": 20, "max_total_requests": 5000,
                    "max_run_seconds": 1800},
         # Genuinely-agentic on a FREE model: route the reasoning step to a large free

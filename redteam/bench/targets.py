@@ -35,6 +35,14 @@ class BenchTarget:
     # without Docker (CI containers, this dev sandbox) run the benchmark matrix.
     cmd: list[str] = field(default_factory=list)
     env: dict = field(default_factory=dict)
+    # RoE-seeded principals (lab fixtures only): the operator hands the agent the
+    # same low-privilege accounts a real engagement would. Reaches the run via the
+    # engagement file's "credentials" block; the offensive engine reads it from
+    # engagement.raw. Never secrets — planted lab passwords.
+    credentials: dict = field(default_factory=dict)
+    # Ports the target itself serves but that are not host/container_port (e.g.
+    # Fetcher's hidden internal service) — must be IN SCOPE or the chain is illegal.
+    extra_ports: list[int] = field(default_factory=list)
 
     @property
     def is_compose(self) -> bool:
@@ -245,6 +253,12 @@ LAB_TRACKR = BenchTarget(
     cmd=[sys.executable, str(_LAB_DIR / "trackr.py"), "8894"],
     env={"TRACKR_COOKIE_TRUST": "1",
          "TRACKR_EXPORT_NOOWN": "1"},
+    credentials={"dev-a": {"password": "pw-a", "login_url": "/login",
+                           "token_field": "token"},
+                 "dev-b": {"password": "pw-b", "login_url": "/login",
+                           "token_field": "token"},
+                 "admin": {"password": "adm-pw", "login_url": "/login",
+                           "token_field": "token"}},
     ground_truth=[
         GroundTruthVuln("trackr-cookie-role-bypass", "access_control", "CWE-284",
                         "/admin/export", "high"),
@@ -271,6 +285,7 @@ LAB_FETCHER = BenchTarget(
     cmd=[sys.executable, str(_LAB_DIR / "fetcher.py"), "8893", "8892"],
     env={"FETCHER_SSRF_PROFILE": "open",
          "FETCHER_DEBUG_PROFILE": "on"},
+    extra_ports=[8892],
     ground_truth=[
         GroundTruthVuln("fetcher-ssrf", "ssrf", "CWE-918", "/api/import", "critical"),
         GroundTruthVuln("fetcher-debug-token-disclosure", "sensitive_data", "CWE-200",

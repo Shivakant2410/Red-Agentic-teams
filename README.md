@@ -97,6 +97,11 @@ hands.py             Agent hands and skills — every agent's tool set is a stat
                      `python -m redteam.hands --json`; rendering in
                      docs/hands-and-skills.md; operator tooling research in
                      docs/operator-tooling-research.md
+offensive.py         Deterministic offensive engine — declared skills executed as
+                     code through the scoped ToolContext (recon -> crosschecked
+                     leads -> prove with negative control -> verify pass), no model
+                     calls; live-fire: `python3 scripts/live_offensive_run.py`
+                     (engine vs the lab targets, scored against ground truth)
 synthesis.py         Evidence-join layer (docs/synthesis.md): deterministic rules turn
                      run observations (params, identities, findings) into evidence-
                      carrying attack ideas with draft checks, injected into the swarm's
