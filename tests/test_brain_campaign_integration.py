@@ -41,6 +41,7 @@ from redteam.brain import TargetProfile, fingerprint_target  # noqa: E402
 from redteam.brain.orchestrator import FamilyOrchestrator  # noqa: E402
 from redteam.pi.agent import agentic_live_probe  # noqa: E402
 from redteam.pi.live import LiveLaneError  # noqa: E402
+from redteam.sc.agent import sc_agentic_probe  # noqa: E402
 from redteam.sid.agent import sid_agentic_probe  # noqa: E402
 from redteam.sid.oracles import make_pii_record  # noqa: E402
 
@@ -116,6 +117,49 @@ def _build_campaign(profile, budget: int = 48) -> FamilyOrchestrator:
             session=_FakeSession(_sid_reply_fn(rec)), profile=p)
     orch.register("LLM02", llm02_lane)
     return orch
+
+
+# -- the fourth channel ----------------------------------------------------------
+
+class _NaiveGate:
+    """Admission control that checks nothing — the SC lane folds it."""
+
+    def __call__(self, artifact):
+        return {"admit": True, "reasons": []}
+
+
+def test_fourth_channel_sc_runs_in_one_campaign_with_pi_and_sid():
+    """THREE agentic channels under ONE budget on ONE shared profile: pi
+    (LLM01), sid (LLM02), and the SC provenance-probing loop (LLM03). The
+    SC lane funds like the others, records its shape facts into the same
+    ledger, and mints its ruling like every other family."""
+    profile = TargetProfile(
+        fingerprint=fingerprint_target("chat", "fake-model", "sys-sha"))
+    profile.start_session()
+    orch = FamilyOrchestrator(profile, budget=64, per_lane_cap=16)
+    orch.register("LLM01", lambda p, b: agentic_live_probe(
+        None, canary=CANARY, budget=min(b, 16), seed=0,
+        session=_FakeSession(lambda s, u: pi_decode_b64_target(u)),
+        profile=p))
+    orch.register("LLM02", lambda p, b: sid_agentic_probe(
+        make_pii_record(random.Random(0)), budget=min(b, 16), seed=0,
+        session=_FakeSession(_sid_reply_fn(make_pii_record(random.Random(0)))),
+        profile=p))
+    orch.register("LLM03", lambda p, b: sc_agentic_probe(
+        _NaiveGate(), budget=min(b, 12), seed=0, profile=p))
+    report = orch.run()
+
+    fams = report["families"]
+    assert set(fams) == {"LLM01", "LLM02", "LLM03"}
+    assert fams["LLM03"]["verdict"] == "succeeded"
+    assert fams["LLM03"]["requests"] > 0
+    assert fams["LLM03"]["attempts"] > 0
+    assert report["budget_spent"] == sum(f["requests"] for f in fams.values())
+    # the SC shape facts live in the SAME ledger as the cipher facts
+    assert profile.axes["sc_shape"]["unsafe_global"]["hits"] >= 1
+    assert profile.family_state("LLM03")["verdicts"]["succeeded"] == 1
+    brief = report["profile_briefing"]
+    assert "sc_shape." in brief and "family LLM03" in brief
 
 
 # -- the campaign -----------------------------------------------------------------
