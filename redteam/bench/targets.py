@@ -219,6 +219,30 @@ LAB_FORUM = BenchTarget(
 # flaw alone is provably insufficient. L3 hard: four-hop cross-service chain (SSRF ->
 # internal discovery -> token disclosure -> token-bearing SSRF read of an in-memory FLAG).
 
+LAB_MODELHUB = BenchTarget(
+    name="LLM Lab: Modelhub (unauthenticated AI generation)",
+    container_port=8897, host_port=8897,
+    base_url="http://127.0.0.1:8897",
+    cmd=[sys.executable, str(_LAB_DIR / "modelhub.py"), "8897"],
+    env={"MODELHUB_GENERATE_PROFILE": "open"},
+    ground_truth=[
+        GroundTruthVuln("modelhub-ai-unauth", "access_control", "CWE-306",
+                        "/api/generate", "critical"),
+    ],
+    objective={
+        "name": "Modelhub exposed AI gateway",
+        "description": "A private model gateway whose generation endpoint "
+                       "skips authentication. Prove the model invokes for "
+                       "an unauthenticated caller.",
+        "success_criteria": [
+            {"id": "ai_invoke", "kind": "host_access", "target": "/api/generate",
+             "description": "An unauthenticated POST to /api/generate "
+                            "returns model output that processed the "
+                            "probe prompt"},
+        ],
+    },
+)
+
 LAB_TINYVAULT = BenchTarget(
     name="LLM Lab: Tinyvault (cross-principal order read)",
     container_port=8896, host_port=8896,

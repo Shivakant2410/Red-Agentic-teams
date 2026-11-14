@@ -52,6 +52,34 @@ WORKFLOWISH = re.compile(
     r"(?i)(cart|coupon|checkout|payment|order|redeem|apply|purchase|"
     r"transfer|withdraw|gift|basket|invoice|charge)")
 STATE_READ = re.compile(r"(?i)\"(total|price|amount|balance|due|subtotal)\"\s*:")
+
+# ---- sensor: technology fingerprinting (wappalyzer-lite, first-party) -----
+_TECH_HEADERS = ("server", "x-powered-by", "x-generator", "x-aspnet-version",
+                 "x-runtime", "x-drupal-cache", "x-vercel-id", "x-amz-cf-id")
+_TECH_COOKIES = {"phpsessid": "PHP", "jsessionid": "Java/Tomcat",
+                 "asp.net_sessionid": "ASP.NET", "csrftoken": "Django",
+                 "laravel_session": "Laravel", "connect.sid": "Express/Node",
+                 "rack.session": "Rails/Rack", "rememberme": "Spring"}
+_TECH_BODY = (("wp-content|wp-json|wp-login", "WordPress"),
+              ("__NEXT_DATA__", "Next.js"), ("/_nuxt/", "Nuxt"),
+              ("ng-version", "Angular"), ("data-reactroot", "React"),
+              ("/static/js/main.", "Create React App"),
+              ("__sveltekit", "SvelteKit"), ("drupal.js|/sites/default", "Drupal"),
+              ("/media/jui/|Joomla", "Joomla"), ("/cgi-bin/", "CGI"),
+              ("laravel_session|illuminate", "Laravel"))
+_META_GENERATOR = re.compile(
+    r"(?i)<meta[^>]+name=[\"']generator[\"'][^>]+content=[\"']([^\"']{2,60})[\"']")
+
+# ---- sensor: exposed AI infrastructure (ollama/openai-compat/gradio/etc) --
+AI_PATHS = ("/v1/models", "/api/tags", "/api/generate", "/v1/completions",
+            "/v1/chat/completions", "/api/chat/completions", "/api/chat",
+            "/.well-known/ai-plugin.json", "/api/status", "/ollama/api/tags")
+_AI_INVOKE_PATH = re.compile(
+    r"(/api/generate|/chat/completions|/v1/completions|/api/chat)$")
+_AI_LIST_BODY = re.compile(
+    r'"(models|data)"\s*:\s*\[|ai-plugin|"object"\s*:\s*"list"')
+_AI_MODEL_ID = re.compile(r'"(?:model|id|name)"\s*:\s*"([^"\s]{2,60})"')
+
 # the app's own action links: href/url/action pointing at a workflow surface
 # WITH parameters (a redeem/apply/coupon link with a code in it)
 WORKFLOW_LINK = re.compile(
@@ -66,7 +94,7 @@ WORKFLOW_LINK = re.compile(
 HORIZON_EST = {"surface-probe": 6, "cookie-forge": 6, "cross-principal-read": 18,
                "graphql-schema-map": 4, "graphql-cross-tenant": 14,
                "internal-pivot": 8, "unauth-access": 12, "bearer-pivot": 14,
-               "workflow-chain": 16}
+               "workflow-chain": 16, "ai-infra-abuse": 8}
 
 # reactivation: which killed bets may be re-queued when the MATERIAL they
 # depend on grows (the survey's branch-reactivation mechanism — credential
@@ -133,6 +161,9 @@ class AttackState:
     workflow_links: list = field(default_factory=list)  # the app's own action links
     state_reads: list = field(default_factory=list)     # {url, field} amount reads
     api_paths: list = field(default_factory=list)       # paths an index revealed
+    technologies: dict = field(default_factory=dict)    # tech name -> evidence
+    ai_surface: list = field(default_factory=list)      # observed AI paths (200)
+    ai_models: list = field(default_factory=list)       # model ids the AI named
     observed_urls: set = field(default_factory=set)     # urls the run has read
     unexplored: list = field(default_factory=list)      # believed, never opened
     signals: list = field(default_factory=list)
@@ -257,8 +288,72 @@ class Brain:
         if STACKISH.search(text):
             sigs.append(Signal("stack-detail", "", url, 0.7, "stack/verbose error"))
 
+        # ---- sensor: technology fingerprinting (wappalyzer-lite) ----------
+        # headers, cookie names, and body markers -> state.technologies. This
+        # is first-party: every name is read off a response the run received.
+        ev: list[str] = []
+        for hname in _TECH_HEADERS:
+            hv = (headers or {}).get(hname) or (headers or {}).get(hname.title())
+            if hv:
+                ev.append(f"{hname}: {str(hv)[:60]}")
+        for cookie in list((headers or {}).get("Set-Cookie", "").split(";"))[:2]:
+            cname = cookie.split("=")[0].strip().lower()
+            tech = _TECH_COOKIES.get(cname)
+            if tech:
+                ev.append(f"cookie {cname} -> {tech}")
+                self._remember_tech(tech, f"cookie {cname}", sigs, url)
+        for pattern, tech in _TECH_BODY:
+            if re.search(pattern, text):
+                ev.append(f"body marker {pattern} -> {tech}")
+                self._remember_tech(tech, pattern, sigs, url)
+        mgen = _META_GENERATOR.search(text)
+        if mgen:
+            ev.append(f"meta generator {mgen.group(1)}")
+            self._remember_tech(mgen.group(1).strip()[:40], "meta generator",
+                                sigs, url)
+        for e in ev[:4]:
+            if " -> " in e and e.split(" -> ")[0].lower().startswith(("server",
+                    "x-powered", "x-generator", "x-aspnet", "x-runtime",
+                    "x-drupal", "x-vercel", "x-amz")):
+                self._remember_tech(e.split(" -> ")[1][:40], e, sigs, url)
+            elif " -> " not in e:
+                self._remember_tech(e[:40], e, sigs, url)
+
+        # ---- sensor: exposed AI infrastructure ---------------------------
+        # a 200 on a known AI endpoint (ollama/openai-compat/ai-plugin) or a
+        # body that names a model inventory is the classic exposed-infra find.
+        if status == 200 and text:
+            hit = url in AI_PATHS or _AI_LIST_BODY.search(text)
+            if hit:
+                invoke = _AI_INVOKE_PATH.search(url)
+                if invoke:
+                    kind_sig = "ai-invoke"
+                elif url in AI_PATHS or url.endswith(("/models", "/tags")):
+                    kind_sig = "ai-infra"
+                else:
+                    kind_sig = ""
+                if kind_sig and url not in self.state.ai_surface \
+                        and len(self.state.ai_surface) < 8:
+                    self.state.ai_surface.append(url)
+                    sigs.append(Signal(kind_sig, url, url, 0.9,
+                                       "AI surface answers unauthenticated"))
+                for mid in _AI_MODEL_ID.findall(text)[:3]:
+                    if mid.lower() not in ("model", "name", "id") \
+                            and mid not in self.state.ai_models \
+                            and len(self.state.ai_models) < 6:
+                        self.state.ai_models.append(mid)
+
         self.state.signals.extend(sigs)
         return sigs
+
+    def _remember_tech(self, name: str, evidence: str, sigs: list, url: str):
+        name = name.strip()[:40]
+        if not name or name.lower() in ("none", "nginx/html"):
+            return
+        if name not in self.state.technologies:
+            self.state.technologies[name] = evidence[:80]
+            sigs.append(Signal("stack-detail", name, url, 0.5,
+                               f"technology fingerprint: {evidence[:60]}"))
 
     # -- generation: SIGNAL COMBINATION rules, not bug templates --------------
 
@@ -387,6 +482,40 @@ class Brain:
                     "high", "CWE-285", 4, 0.6, f"auth-gate@{gate_url}",
                     kill="401/403 consistent across shapes -> real API check")
 
+        # R8 — exposed AI infrastructure: a model surface the run REACHED with
+        # no principal is itself the bet. Invocation > enumeration: an
+        # unauthenticated generate/completions endpoint is free model access
+        # (CWE-306); a bare model listing is disclosure (CWE-200).
+        ai_paths = list(dict.fromkeys(st.ai_surface))
+        invoke = next((p for p in ai_paths if _AI_INVOKE_PATH.search(p)), "")
+        if not invoke:
+            # the invoke door is often POST-only (never observed unauth) but
+            # DOCUMENTED in the api surface the run already read; with AI
+            # infrastructure observed, a documented invoke path is evidence
+            invoke = next((p for p in st.api_paths
+                           if _AI_INVOKE_PATH.search(p) and ai_paths), "")
+        listing = next((p for p in ai_paths
+                        if p.endswith(("/models", "/tags"))
+                        or p.endswith("ai-plugin.json")), "")
+        if invoke:
+            add("ai-infra-abuse",
+                f"{invoke} is an AI generation surface the run reached with NO "
+                f"principal — if it invokes unauthenticated, the model is free "
+                f"for anyone",
+                "unauth POST returns model output containing the probe marker",
+                {"path": invoke, "mode": "invoke",
+                 "model": (st.ai_models[0] if st.ai_models else "")},
+                "critical", "CWE-306", 8, 0.9, f"ai-infra@{invoke}",
+                kill="401/403 on invoke -> the endpoint requires auth")
+        elif listing:
+            add("ai-infra-abuse",
+                f"{listing} enumerates the AI model inventory to anyone — "
+                f"disclosure of what the origin runs",
+                "unauth GET returns a model inventory body",
+                {"path": listing, "mode": "list"},
+                "medium", "CWE-200", 4, 0.7, f"ai-infra@{listing}",
+                kill="401/403 on list -> not exposed")
+
         # R6 — harvest -> re-aim: a credential-shaped string the run obtained
         # from ANY of its own responses, pointed at every realm the signals
         # revealed. The operator's core move: a token's ISSUING surface is not
@@ -475,7 +604,8 @@ class Brain:
 
     EXECUTABLE_KINDS = {"surface-probe", "cookie-forge", "cross-principal-read",
                         "graphql-cross-tenant", "internal-pivot",
-                        "unauth-access", "bearer-pivot", "workflow-chain"}
+                        "unauth-access", "bearer-pivot", "workflow-chain",
+                        "ai-infra-abuse"}
 
     def admit_hypothesis(self, spec: dict) -> tuple[bool, str]:
         """A model (or any external planner) proposes a bet. It enters THE SAME
@@ -519,6 +649,17 @@ class Brain:
             if path not in known:
                 return False, ("unauth-access needs an observed auth gate "
                                f"(gates: {sorted(known)[:5]})")
+        # same evidence discipline for AI-infra bets: the path must be an AI
+        # surface the run actually observed answering, OR a documented invoke
+        # path while AI infrastructure was observed (a POST-only generate is
+        # never seen unauth — the openapi doc is the second method).
+        if kind == "ai-infra-abuse":
+            path = _url_path(str(probes.get("path", "")).split("?")[0])
+            observed = {_url_path(a) for a in self.state.ai_surface}
+            documented = {_url_path(a) for a in self.state.api_paths}
+            if path not in observed and not (observed and path in documented):
+                return False, ("ai-infra-abuse needs an observed AI surface "
+                               f"(observed: {self.state.ai_surface[:5]})")
         try:
             horizon = int(spec.get("horizon") or HORIZON_EST.get(kind, 6))
         except (TypeError, ValueError):

@@ -289,7 +289,8 @@ class OffensiveEngine:
                      "/docs", "/api", "/api/", "/admin", "/admin/", "/login",
                      "/debug/", "/backup/", "/actuator", "/server-status",
                      "/.env", "/.git/HEAD", "/.env.bak", "/config.json",
-                     "/graphql", "/api/graphql", "/graphiql"):
+                     "/graphql", "/api/graphql", "/graphiql",
+                     "/v1/models", "/api/tags"):
             st, body = self._fetch({"method": "GET", "url": self._base + path},
                                    tool="http_probe")
             if st == 200 and (body or "").strip():
@@ -327,6 +328,12 @@ class OffensiveEngine:
                             kind="path", url=line.split(":", 1)[1].strip(),
                             source_tool="robots", trust="first-party",
                             claim=f"robots disallows {line.strip()}"))
+        # 4b. wordlist content discovery — the classic dir/file pass, capped,
+        #     in-scope only (the ScopeGuard rates every single fetch)
+        out.update(self._workflow_content_discovery())
+        # 4c. passive OSINT (certificate transparency, DNS) — OFF by default,
+        #     enabled per engagement ("osint:" block); never touches the app
+        self._workflow_osint(out)
         # 5. arjun-class param discovery on the base (tool-claim, bounded)
         res = self._run_tool("param_discovery", target=self._base,
                              reason="find hidden parameters")
@@ -355,6 +362,96 @@ class OffensiveEngine:
     def _mark_first_party(self, lead: Lead) -> bool:
         lead.crosscheck = "first-party"
         return True
+
+    # -- recon: content discovery + passive OSINT ------------------------------
+
+    # Bounded wordlist (nuclei/dirb high-yield): exposure-shaped files and
+    # panels. Deduped against the static probe list in _round_recon.
+    _DISCOVERY_PATHS = (
+        "/.well-known/security.txt", "/.well-known/ai-plugin.json",
+        "/.well-known/openid-configuration",
+        "/.git/config", "/.git/logs/HEAD", "/.svn/entries", "/.htaccess",
+        "/web.config", "/crossdomain.xml", "/.DS_Store",
+        "/composer.json", "/package.json", "/package-lock.json", "/yarn.lock",
+        "/requirements.txt", "/go.mod", "/Dockerfile", "/docker-compose.yml",
+        "/Jenkinsfile", "/.gitlab-ci.yml", "/.travis.yml",
+        "/.npmrc", "/.kube/config", "/.aws/credentials", "/.ssh/id_rsa",
+        "/.env.local", "/.env.production", "/.env.development",
+        "/config.php", "/wp-config.php", "/settings.php", "/database.yml",
+        "/db.sql", "/dump.sql", "/backup.zip", "/backup.tar.gz",
+        "/phpinfo.php", "/info.php", "/adminer.php", "/xmlrpc.php",
+        "/wp-admin/", "/wp-login.php", "/administrator/",
+        "/phpmyadmin/", "/jenkins/", "/kibana/", "/grafana/",
+        "/metrics", "/healthz", "/debug/vars", "/api-docs", "/swagger-ui",
+        "/console", "/server-info",
+    )
+
+    def _workflow_content_discovery(self) -> dict:
+        st_brain = self._brain.state if self._brain is not None else None
+        probed = hits = 0
+        for path in self._DISCOVERY_PATHS:
+            if st_brain is not None and path in st_brain.observed_urls:
+                continue   # _round_recon's static pass already opened it
+            probed += 1
+            st, body = self._fetch({"method": "GET",
+                                    "url": self._base + path},
+                                   tool="http_probe")
+            if st in (200, 401, 403):
+                hits += 1
+                self._leads.append(Lead(
+                    kind="path", url=path, source_tool="content-discovery",
+                    trust="first-party",
+                    claim=f"GET {path} -> {st} ({len(body or '')}b)",
+                    note=(body or "")[:2000]))
+        self._audit("recon.content_discovery", probed=probed, hits=hits)
+        return {"content_discovery": {"probed": probed, "hits": hits}}
+
+    def _workflow_osint(self, out: dict) -> None:
+        """Certificate-transparency + DNS subdomain candidates. PASSIVE: not
+        one packet reaches the app. RoE-gated (engagement 'osint' block) and
+        domain-gated — localhost/IP labs are never eligible. Candidates land
+        in the inventory as osint-candidate services; the ScopeGuard still
+        refuses to FETCH any host the engagement did not allow."""
+        import socket
+        from urllib.parse import urlsplit
+
+        from .osint import (crtsh_subdomains, dns_bruteforce, osint_fetch,
+                            is_osint_eligible, DNS_WORDLIST)
+        cfg = (self._eng.raw.get("osint") or {})
+        if not isinstance(cfg, dict):
+            cfg = {}
+        host = (urlsplit(self._base).hostname or "").lower()
+        if not is_osint_eligible(host):
+            self._audit("recon.osint", skipped="not a public domain", host=host)
+            return
+        if not (cfg.get("crtsh") or cfg.get("dns")):
+            self._audit("recon.osint", skipped="engagement osint block disabled",
+                        host=host)
+            return
+        found: list[str] = []
+        if cfg.get("crtsh"):
+            subs = crtsh_subdomains(host, osint_fetch)
+            found.extend(subs)
+            self._audit("recon.osint", source="crt.sh", host=host,
+                        found=len(subs), sample=subs[:5])
+        if cfg.get("dns"):
+            def _resolve(h, t):
+                try:
+                    infos = socket.getaddrinfo(h, None)
+                    return infos[0][4][0] if infos else None
+                except OSError:
+                    return None
+            hits = dns_bruteforce(host, DNS_WORDLIST, _resolve)
+            found.extend(hits)
+            self._audit("recon.osint", source="dns", host=host,
+                        found=len(hits), sample=sorted(hits)[:5])
+        uniq = sorted(dict.fromkeys(found))
+        inv = getattr(self._ctx, "inventory", None)
+        for name in uniq:
+            if inv is not None:
+                inv.observe_http(name, 0, "osint", 0, source="osint-candidate")
+        out["osint_candidates"] = uniq[:20]
+
 
     # -- ROUND 1b: class workflows (hands.py Skills, executable) --------------
 
@@ -941,6 +1038,7 @@ class OffensiveEngine:
             "cookie-forge": self._exec_cookie_forge,
             "cross-principal-read": self._exec_cross_principal_read,
             "unauth-access": self._exec_unauth_access,
+            "ai-infra-abuse": self._exec_ai_infra_abuse,
             "bearer-pivot": self._exec_bearer_pivot,
             "workflow-chain": self._exec_workflow_chain,
             "internal-pivot": lambda h: (
@@ -971,6 +1069,70 @@ class OffensiveEngine:
         new = len(self._brain.state.signals) - before
         # exploratory by design: never 'confirms', always feeds observe()
         return False, f"opened {len(paths)} paths, {new} fresh signals"
+
+    # -- executor: workflow chain (R7 — the multi-step state organ) ------------
+
+    def _exec_ai_infra_abuse(self, hyp: Hypothesis) -> tuple[bool, str]:
+        """Exposed AI infrastructure: prove the model answers to ANYONE.
+        invoke = unauth generation (CWE-306, echo-marker proof);
+        list   = unauth model inventory (CWE-200, body-shape proof)."""
+        path = str(hyp.probes.get("path", ""))
+        mode = hyp.probes.get("mode", "invoke")
+        path = path if path.startswith("/") else "/" + path
+        if mode == "list":
+            payload = {"method": "GET", "url": self._base + path}
+            st, body_p = self._preobserve(payload)
+            if st != 200:
+                return False, f"{st} — model inventory not exposed"
+            ctrl = {"method": "GET",
+                    "url": self._base + f"/no-such-{int(time.time())}"}
+            st_c, _ = self._preobserve(ctrl)
+            res_v = self._run_tool(
+                "verify_vulnerability",
+                title=f"AI model inventory readable at {path} unauthenticated",
+                severity="medium", target=path,
+                summary=f"{path} enumerates the model inventory without "
+                        f"authentication (CWE-200) — disclosure of what the "
+                        f"origin runs.",
+                requests={"payload": payload, "control": ctrl},
+                conditions=[{"type": "status", "request": "payload",
+                             "equals": 200},
+                            {"type": "status", "request": "control",
+                             "equals": st_c}],
+                negative_control=ctrl, cwe="CWE-200",
+                recommendation="Require auth on model-management surfaces.")
+            return bool(res_v.get("recorded")), f"list -> {st}"
+        # invoke: the echo marker is the proof — the endpoint did not merely
+        # answer, it PROCESSED OUR INPUT into model output
+        marker = "rt-sentinel-7f3a"
+        payload = {"method": "POST", "url": self._base + path,
+                   "headers": {"Content-Type": "application/json"},
+                   "body": json.dumps({"model": hyp.probes.get("model") or "default",
+                                       "prompt": marker, "stream": False})}
+        st, body_p = self._preobserve(payload)
+        if st != 200:
+            return False, f"{st} — generation requires auth"
+        if marker not in (body_p or "") and not re.search(
+                r'"(response|completion|content|message|output)"\s*:', body_p or ""):
+            return False, "200 but no model-output shape — not an AI sink"
+        ctrl = {"method": "POST",
+                "url": self._base + f"/no-such-{int(time.time())}",
+                "headers": {"Content-Type": "application/json"},
+                "body": payload["body"]}
+        st_c, _ = self._preobserve(ctrl)
+        res_v = self._run_tool(
+            "verify_vulnerability",
+            title=f"AI generation at {path} answers without authentication",
+            severity="critical", target=path,
+            summary=f"{path} generated model output for an UNAUTHENTICATED "
+                    f"request (CWE-306) — free model access for anyone on the "
+                    f"network.",
+            requests={"payload": payload, "control": ctrl},
+            conditions=[{"type": "status", "request": "payload", "equals": 200},
+                        {"type": "status", "request": "control", "equals": st_c}],
+            negative_control=ctrl, cwe="CWE-306",
+            recommendation="Authenticate and rate-limit model invocation.")
+        return bool(res_v.get("recorded")), f"invoke -> {st}"
 
     # -- executor: workflow chain (R7 — the multi-step state organ) ------------
 

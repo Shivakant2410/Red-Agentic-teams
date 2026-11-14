@@ -29,8 +29,8 @@ from redteam.access import AccessGraph  # noqa: E402
 from redteam.audit import AuditLog  # noqa: E402
 from redteam.bench.scoring import score_run  # noqa: E402
 from redteam.bench.targets import (LAB_BLOGMENT, LAB_FETCHER,  # noqa: E402
-                                   LAB_LEDGER, LAB_PIVOT, LAB_TRACKR,
-                                   LAB_WORKFLOW)
+                                   LAB_LEDGER, LAB_MODELHUB, LAB_PIVOT,
+                                   LAB_TINYVAULT, LAB_TRACKR, LAB_WORKFLOW)
 from redteam.config import load_engagement  # noqa: E402
 from redteam.findings import FindingStore  # noqa: E402
 from redteam.inventory import AssetInventory  # noqa: E402
@@ -162,7 +162,9 @@ def main() -> int:
     for target, slug in ((LAB_TRACKR, "trackr"), (LAB_FETCHER, "fetcher"),
                          (LAB_BLOGMENT, "blogment"), (LAB_LEDGER, "ledger"),
                          (LAB_PIVOT, "pivot"),
-                         (LAB_WORKFLOW, "workflow")):
+                         (LAB_WORKFLOW, "workflow"),
+                         (LAB_MODELHUB, "modelhub"),
+                         (LAB_TINYVAULT, "tinyvault")):
         print(f"\n=== {target.name} ===")
         res = run_target(target, OUT_ROOT / slug)
         eng = res.get("engine", res)

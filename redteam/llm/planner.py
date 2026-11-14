@@ -84,6 +84,9 @@ def build_digest(brain) -> dict:
         "credential_refs": [f"@harvested:{i}"
                             for i in range(min(3, len(st.tokens)))],
         "api_surface": list(st.api_paths[:8]),
+        "technologies": sorted(st.technologies)[:10],
+        "ai_surface": list(st.ai_surface[:8]),
+        "ai_models": list(st.ai_models[:6]),
         "workflow_links": list(st.workflow_links[:5]),
         "state_reads": [r["url"] for r in st.state_reads[:5]],
         "unexplored_paths": [p for p in st.unexplored

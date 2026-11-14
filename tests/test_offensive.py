@@ -582,3 +582,72 @@ def test_engine_never_needs_a_model():
     src = (REPO / "redteam" / "offensive.py").read_text()
     assert "build_llm_client" not in src
     assert "OpenRouterClient" not in src
+
+
+# ---- exposed AI infrastructure: sensors, mint, executor, admission gate ----
+
+@pytest.fixture(scope="module")
+def modelhub_lab(tmp_path_factory):
+    gt = [GroundTruthVuln("modelhub-ai-unauth", "access_control", "CWE-306",
+                          "/api/generate", "critical")]
+    lab = _Lab(tmp_path_factory.mktemp("modelhub"), "modelhub.py",
+               {"MODELHUB_GENERATE_PROFILE": "open"}, {}, gt)
+    yield lab
+    lab.stop()
+
+
+def test_engine_proves_exposed_ai_infra_model_free(modelhub_lab):
+    """The full new chain end-to-end on a live lab: recon observes /v1/models,
+    observe() raises the ai-infra signal, R8 mints ai-infra-abuse, the
+    executor proves unauthenticated generation by echo marker, the verify
+    pass confirms, and scoring calls it a true positive with no FP."""
+    engine, ctx = modelhub_lab.engine()
+    summary = engine.run()
+    confirmed = [f for f in ctx.findings.all() if f.confidence == "confirmed"]
+    assert any(f.cwe == "CWE-306" and "/api/generate" in (f.target or "")
+               for f in confirmed), [f.target for f in confirmed]
+    assert summary["pending"] == 0
+    score = score_run("modelhub", [asdict(f) for f in ctx.findings.all()],
+                      modelhub_lab.ground_truth)
+    assert score.true_positives == 1 and score.false_positives == 0
+
+
+def test_sensors_fingerprint_tech_and_ai_surface(tmp_path):
+    """observe() is the sensor: headers/cookies/body -> technologies;
+    AI-shaped bodies on AI paths -> ai_surface + model ids."""
+    import types
+    from redteam.audit import AuditLog
+    from redteam.hypothesize import Brain
+
+    brain = Brain(types.SimpleNamespace(audit=AuditLog(tmp_path / "a.jsonl")),
+                  "http://127.0.0.1:1", creds={})
+    brain.observe("http://127.0.0.1:1/v1/models", 200,
+                  '{"object":"list","data":[{"id":"mh-mini-7b"}]}',
+                  headers={"Server": "nginx/1.24.0",
+                           "Set-Cookie": "PHPSESSID=abc123; Path=/"})
+    techs = set(brain.state.technologies)
+    assert any("nginx" in t.lower() for t in techs)
+    assert "PHP" in techs
+    assert brain.state.ai_surface == ["/v1/models"]
+    assert brain.state.ai_models == ["mh-mini-7b"]
+    kinds = {s.kind for s in brain.state.signals}
+    assert "ai-infra" in kinds
+
+
+def test_ai_infra_bet_admission_requires_observed_surface(tmp_path):
+    """Evidence discipline for the new kind: the model may not invent an
+    exposed AI gateway — the path must be one the run OBSERVED answering."""
+    import types
+    from redteam.audit import AuditLog
+    from redteam.hypothesize import Brain
+
+    brain = Brain(types.SimpleNamespace(audit=AuditLog(tmp_path / "a.jsonl")),
+                  "http://127.0.0.1:1", creds={})
+    spec = {"kind": "ai-infra-abuse", "statement": "gateway may be exposed",
+            "prediction": "unauth POST generates", "probes": {"path": "/api/generate"},
+            "cost": 6, "strength": 0.5}
+    ok, why = brain.admit_hypothesis(spec)
+    assert not ok and "observed AI surface" in why, (ok, why)
+    brain.state.ai_surface = ["/api/generate"]
+    ok, why = brain.admit_hypothesis(spec)
+    assert ok, why
