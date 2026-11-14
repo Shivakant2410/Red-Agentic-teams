@@ -341,6 +341,10 @@ def main(argv=None) -> int:
         "skipped": skipped,
         "profile_path": str(path),
     }
+    # the kill-chain composer: EARNED verdicts ordered into an attack
+    # path — it reads the report, never upgrades a verdict
+    from .killchain import assess_kill_chain, chain_summary_line
+    report["kill_chain"] = assess_kill_chain(report, profile=profile)
 
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
@@ -359,6 +363,7 @@ def main(argv=None) -> int:
               f"frozen={f['frozen']}")
     print(f"budget {campaign['budget_spent']}/{campaign['budget']}  "
           f"stop: {campaign['stop_reason']}")
+    print(f"kill chain: {chain_summary_line(report['kill_chain'])}")
     print(f"profile saved: {path}")
     print("--- briefing for the next session ---")
     print(campaign["profile_briefing"] or "(empty — nothing learned yet)")
