@@ -261,6 +261,119 @@ def test_admit_hypothesis_validates_before_queueing(pivot_lab):
         assert not ok, f"should reject on {why}: {reason}"
 
 
+@pytest.fixture(scope="module")
+def workflow_lab(tmp_path_factory):
+    # NO template covers Widgetmill. The chain it demands is the multi-step
+    # state organ: the app ITSELF hands out an action link (/coupon/apply?
+    # code=WELCOME10); a state read (GET /cart) measures the effect; proving
+    # the missing one-shot binding takes ORDERED SEQUENCES (apply, read,
+    # apply-again, read) against a second principal's honest control —
+    # never k-of-n.
+    creds = {"alice": {"password": "pw-alice", "login_url": "/login",
+                       "token_field": "token"},
+             "bob": {"password": "pw-bob", "login_url": "/login",
+                     "token_field": "token"}}
+    gt = [GroundTruthVuln("workflow-coupon-replay", "business_logic",
+                          "CWE-840", "/coupon/apply", "critical")]
+    lab = _Lab(tmp_path_factory.mktemp("workflow"), "workflow.py",
+               {"WORKFLOW_PROFILE": "open"}, creds, gt)
+    yield lab
+    lab.stop()
+
+
+def test_brain_proves_a_one_shot_workflow_on_an_untemplated_target(workflow_lab):
+    """The multi-step state organ: workflow link + state read -> the
+    repeat-action bet -> ordered-sequence proof (attack vs control). The
+    coupon is confirmed once; a second identical bet is refused by the
+    executor-level dedupe."""
+    engine, ctx = workflow_lab.engine()
+    summary = engine.run()
+    confirmed = [f for f in ctx.findings.all() if f.confidence == "confirmed"]
+    assert any(f.cwe == "CWE-840" for f in confirmed), (
+        [f.cwe for f in ctx.findings.all()])
+    assert any(h.startswith("workflow-chain") and h.endswith("*")
+               for h in summary["hypotheses"]), summary["hypotheses"]
+    assert summary["pending"] == 0
+    score = score_run("workflow", [asdict(f) for f in ctx.findings.all()],
+                      workflow_lab.ground_truth)
+    assert score.false_positives == 0
+
+
+def test_workflow_chain_falsifies_when_one_shot_is_enforced(tmp_path_factory):
+    """The kill condition: when the server enforces the redemption record, the
+    control drifts like the attack — the tool falsifies and NOTHING lands."""
+    creds = {"alice": {"password": "pw-alice", "login_url": "/login",
+                       "token_field": "token"},
+             "bob": {"password": "pw-bob", "login_url": "/login",
+                     "token_field": "token"}}
+    gt = [GroundTruthVuln("workflow-coupon-replay", "business_logic",
+                          "CWE-840", "/coupon/apply", "critical")]
+    lab = _Lab(tmp_path_factory.mktemp("workflow-enf"), "workflow.py",
+               {"WORKFLOW_PROFILE": "enforced"}, creds, gt)
+    try:
+        engine, ctx = lab.engine()
+        engine.run()
+        assert not [f for f in ctx.findings.all()
+                    if f.confidence in ("confirmed", "pending_verification")], (
+            [f.confidence for f in ctx.findings.all()])
+    finally:
+        lab.stop()
+
+
+def test_planner_admits_through_the_same_discipline(workflow_lab):
+    """The model amplifier E2E: a factual credential-free digest goes out; one
+    call returns a malformed proposal and a correct one. The malformed is
+    REJECTED with the reason (audited); the correct is ADMITTED into the SAME
+    queue, EXECUTED through the same dispatch, and honestly refused a second
+    confirmation. The model never sees a credential value."""
+    import json as _json
+    from redteam.hypothesize import Brain
+    from redteam.llm.planner import propose
+    calls = {"n": 0}
+
+    def fake_llm(messages):
+        calls["n"] += 1
+        digest = messages[-1]["content"]
+        assert "pw-alice" not in digest and "usr-tok" not in digest, \
+            "credential material leaked into the model context"
+        bad = _json.dumps({"kind": "workflow-chain", "statement": "x" * 20,
+                           "prediction": "y" * 20,
+                           "probes": {"read": {"nested": "dict"}}})
+        good = _json.dumps({
+            "kind": "workflow-chain",
+            "statement": "the promo link the shop hands out may not be "
+                         "bound one-shot",
+            "prediction": "repeating it keeps discounting the session cart; "
+                          "the honest control does not drift",
+            "probes": {"mutate_url": "/coupon/apply?code=WELCOME10",
+                       "read_url": "/cart", "read_field": "total",
+                       "principal": "alice", "second": "bob"},
+            "severity": "critical", "cost": 8, "strength": 0.8,
+            "cwe": "CWE-840", "source": "unit-planner"})
+        return '{"hypotheses": [%s, %s]}' % (bad, good)
+
+    engine, ctx = workflow_lab.engine()
+    brain = Brain(ctx, workflow_lab.base,
+                  creds={"alice": {"password": "x"}, "bob": {"password": "y"}})
+    # admission discipline, directly: malformed rejected, correct admitted
+    results = propose(brain, fake_llm, ctx.audit)
+    assert [ok for ok, _ in results] == [False, True], results
+    assert any(h.id.startswith("llm-workflow-chain") for h in brain.queue)
+
+    # and end-to-end: a run whose planner hook is wired admits the same bet
+    # mid-run (after the deterministic drain) and executes it through the
+    # same dispatch
+    engine2, ctx2 = workflow_lab.engine()
+    engine2._llm_chat = fake_llm
+    summary = engine2.run()
+    assert calls["n"] >= 1
+    llm_bets = [h for h in summary["hypotheses"] if h.startswith("llm-")]
+    assert llm_bets, summary["hypotheses"]          # admitted AND executed
+    confirmed = [f for f in ctx2.findings.all() if f.confidence == "confirmed"]
+    assert sum(1 for f in confirmed if f.cwe == "CWE-840") == 1, (
+        "one bug, one finding — the model must not double-count")
+
+
 def test_brain_generalizes_to_an_untemplated_target(ledger_lab):
     """The generalization contract: a target NO workflow template covers is
     confirmed through signal-driven hypotheses only — shape of the error

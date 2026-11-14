@@ -47,10 +47,29 @@ INTERNAL_REF = re.compile(r"(?i)(internal|admin|ops|svc|auth)[\w.\-]*\s+(?:servi
 TOKENISH = re.compile(
     r"(?i)\b\w*(token|secret|api[_-]?key|bearer|credential)\w*\b"
     r"[\"']?\s*[:=]\s*[\"']?([A-Za-z0-9_\-./]{8,64})")
+# the multi-step organ: workflow-shaped surfaces and the amounts they move
+WORKFLOWISH = re.compile(
+    r"(?i)(cart|coupon|checkout|payment|order|redeem|apply|purchase|"
+    r"transfer|withdraw|gift|basket|invoice|charge)")
+STATE_READ = re.compile(r"(?i)\"(total|price|amount|balance|due|subtotal)\"\s*:")
+# the app's own action links: href/url/action pointing at a workflow surface
+# WITH parameters (a redeem/apply/coupon link with a code in it)
+WORKFLOW_LINK = re.compile(
+    r"(?i)(?:href|url|action|link)[\"']?\s*[:=]\s*[\"']"
+    r"(/[^\"'\s]*(?:cart|coupon|redeem|checkout|payment|order|apply|purchase|"
+    r"transfer|withdraw|gift)[^\"'\s]*\?[^\"'\s]+)[\"']")
 GRAPHQL_SHAPE = re.compile(r"\"errors\"\s*:.*?(query|graphql|Must provide)",
                            re.S)
 STACKISH = re.compile(r"(?i)(Traceback|at [\w.$]+\(|\.py\", line \d+|"
                       r"Exception in thread|at java\.|/#\d+ 0x[0-9a-f]+)")
+
+
+def _url_path(u: str) -> str:
+    """State stores PATHS (executors join with base); callers pass full URLs."""
+    if "://" in u:
+        rest = u.split("://", 1)[1]
+        return "/" + rest.split("/", 1)[1] if "/" in rest else "/"
+    return u
 
 
 @dataclass
@@ -94,6 +113,8 @@ class AttackState:
     internal_ports: list = field(default_factory=list)
     url_bearers: list = field(default_factory=list)     # POST endpoints taking url=
     tokens: list = field(default_factory=list)          # (value, url) harvested
+    workflow_links: list = field(default_factory=list)  # the app's own action links
+    state_reads: list = field(default_factory=list)     # {url, field} amount reads
     api_paths: list = field(default_factory=list)       # paths an index revealed
     observed_urls: set = field(default_factory=set)     # urls the run has read
     unexplored: list = field(default_factory=list)      # believed, never opened
@@ -118,13 +139,15 @@ class Brain:
     # -- observation: pure first-party parsing --------------------------------
 
     def observe(self, url: str, status: int, body: str,
-                headers: dict | None = None, method: str = "GET") -> list[Signal]:
+                headers: dict | None = None, method: str = "GET",
+                req_body: str = "") -> list[Signal]:
         sigs: list[Signal] = []
         text = body or ""
         low = text.lower()
         # canonical key: the same resource with different query strings is ONE
-        # observation target (a killed probe must not mint a duplicate bet)
-        url = url.split("?")[0]
+        # observation target (a killed probe must not mint a duplicate bet);
+        # stored as a PATH so executors can join with base exactly once
+        url = _url_path(url.split("?")[0])
         self.state.observed_urls.add(url)
 
         for name in set(ROLEISH_COOKIE.findall(text) or []):
@@ -181,6 +204,27 @@ class Brain:
                                "credential-shaped string"))
             if (value, url) not in self.state.tokens:
                 self.state.tokens.append((value, url))
+
+        # the multi-step organ: the app's own workflow LINKS (promo/redeem/
+        # apply URLs it hands out itself) are one-shot CANDIDATES; a read that
+        # speaks amounts is how the effect is measured. R7 pairs them into the
+        # repeat-action bet.
+        if status == 200:
+            for m in WORKFLOW_LINK.finditer(text):
+                link = m.group(1)
+                if link not in self.state.workflow_links \
+                        and len(self.state.workflow_links) < 8:
+                    self.state.workflow_links.append(link)
+                    sigs.append(Signal("workflow-shape", link, url, 0.7,
+                                       "app hands out a workflow action link"))
+        if status == 200 and method == "GET" and WORKFLOWISH.search(url):
+            mread = STATE_READ.search(text)
+            if mread and url not in [r["url"] for r in self.state.state_reads] \
+                    and len(self.state.state_reads) < 8:
+                self.state.state_reads.append(
+                    {"url": url, "field": mread.group(1).lower()})
+                sigs.append(Signal("state-read", url, url, 0.5,
+                                   f"state-bearing read ({mread.group(1)})"))
         # a service index is a map handed over by the app itself: every path
         # it lists is a door the run has not opened yet
         if status == 200:
@@ -351,6 +395,33 @@ class Brain:
                     f"token-shape x gate/index@{targets[0]}",
                     kill="401/403 uniform across principals -> realm checks roles")
 
+        # R7 — workflow chains: an action link the app itself handed out + a
+        # read that speaks amounts = the one-shot question. If the server does
+        # not bind the action to a single application, repeating the link
+        # moves the amount again — the class scanners cannot even express,
+        # proven with ordered sequences (attack vs control), never k-of-n.
+        if st.workflow_links and st.state_reads and len(st.principals) >= 2:
+            others = [p for p in st.principals
+                      if not re.search(r"admin|root|super", p)]
+            low = others[0] if others else st.principals[0]
+            second = next((p for p in st.principals if p != low), "")
+            for link in st.workflow_links[:2]:
+                for read in st.state_reads[:2]:
+                    add("workflow-chain",
+                        f"the app hands out action link {link} — if that "
+                        f"action is not bound one-shot, repeating it moves "
+                        f"{read['field']} at {read['url']} again "
+                        f"(business-logic abuse, one-shot semantics)",
+                        f"repeating the action changes the amount for "
+                        f"'{low}', while '{second}'s honest flow with a "
+                        f"single application shows no drift",
+                        {"mutate_url": link, "read_url": read["url"],
+                         "read_field": read["field"], "principal": low,
+                         "second": second},
+                        "critical", "CWE-840", 8, 0.75,
+                        f"workflow-shape@{link} x state-read@{read['url']}",
+                        kill="repeat rejected like the control -> one-shot enforced")
+
         out.sort(key=lambda h: -h.rank)
         self.queue.extend(out)
         self.queue.sort(key=lambda h: -h.rank)
@@ -368,7 +439,7 @@ class Brain:
 
     EXECUTABLE_KINDS = {"surface-probe", "cookie-forge", "cross-principal-read",
                         "graphql-cross-tenant", "internal-pivot",
-                        "unauth-access", "bearer-pivot"}
+                        "unauth-access", "bearer-pivot", "workflow-chain"}
 
     def admit_hypothesis(self, spec: dict) -> tuple[bool, str]:
         """A model (or any external planner) proposes a bet. It enters THE SAME

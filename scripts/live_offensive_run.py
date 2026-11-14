@@ -11,6 +11,7 @@ scope-checked and rate-limited, every lead crosschecked, every finding proven
 k-of-n with a negative control and confirmed only by the verify pass.
 """
 import json
+import shutil
 import os
 import subprocess
 import sys
@@ -28,7 +29,8 @@ from redteam.access import AccessGraph  # noqa: E402
 from redteam.audit import AuditLog  # noqa: E402
 from redteam.bench.scoring import score_run  # noqa: E402
 from redteam.bench.targets import (LAB_BLOGMENT, LAB_FETCHER,  # noqa: E402
-                                   LAB_LEDGER, LAB_PIVOT, LAB_TRACKR)
+                                   LAB_LEDGER, LAB_PIVOT, LAB_TRACKR,
+                                   LAB_WORKFLOW)
 from redteam.config import load_engagement  # noqa: E402
 from redteam.findings import FindingStore  # noqa: E402
 from redteam.inventory import AssetInventory  # noqa: E402
@@ -94,6 +96,11 @@ def write_engagement(target, path: Path) -> None:
 
 
 def run_target(target, run_dir: Path) -> dict:
+    # a live-fire run must be reproducible: stale findings.json from earlier
+    # eras of the code otherwise masquerade as false positives (shakedown
+    # 20261114: exactly that — duplicate CWE-639 records from the pre-
+    # canonicalization engine)
+    shutil.rmtree(run_dir, ignore_errors=True)
     run_dir.mkdir(parents=True, exist_ok=True)
     write_engagement(target, run_dir / "engagement.yaml")
     eng = load_engagement(str(run_dir / "engagement.yaml"))
@@ -138,7 +145,8 @@ def main() -> int:
     total = {"tp": 0, "fp": 0, "fn": 0}
     for target, slug in ((LAB_TRACKR, "trackr"), (LAB_FETCHER, "fetcher"),
                          (LAB_BLOGMENT, "blogment"), (LAB_LEDGER, "ledger"),
-                         (LAB_PIVOT, "pivot")):
+                         (LAB_PIVOT, "pivot"),
+                         (LAB_WORKFLOW, "workflow")):
         print(f"\n=== {target.name} ===")
         res = run_target(target, OUT_ROOT / slug)
         eng = res.get("engine", res)

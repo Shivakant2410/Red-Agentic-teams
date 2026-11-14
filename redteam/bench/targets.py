@@ -310,6 +310,34 @@ LAB_PIVOT = BenchTarget(
     },
 )
 
+LAB_WORKFLOW = BenchTarget(
+    name="L6 Adaptive: Widgetmill (app-handed action link -> unbounded one-shot)",
+    container_port=8893, host_port=8893,
+    base_url="http://127.0.0.1:8893",
+    cmd=[sys.executable, str(_LAB_DIR / "workflow.py"), "8893"],
+    env={"WORKFLOW_PROFILE": "open"},
+    credentials={"alice": {"password": "pw-alice", "login_url": "/login",
+                           "token_field": "token"},
+                 "bob": {"password": "pw-bob", "login_url": "/login",
+                         "token_field": "token"}},
+    ground_truth=[
+        GroundTruthVuln("workflow-coupon-replay", "business_logic",
+                        "CWE-840", "/coupon/apply", "critical"),
+    ],
+    objective={
+        "name": "Workflow: the coupon that never runs out",
+        "description": "The app hands every visitor a promo link. Applying it "
+                       "once is honest; nothing binds it one-shot. Prove the "
+                       "repeat moves the cart total again, against an honest "
+                       "single-application control.",
+        "success_criteria": [
+            {"id": "coupon_replay", "kind": "data_access", "target": "cart_total",
+             "description": "repeating the action link keeps discounting the "
+                            "session cart"},
+        ],
+    },
+)
+
 LAB_LEDGER = BenchTarget(
     name="L4 Adaptive: Ledger (GraphQL introspection -> cross-tenant read)",
     container_port=8891, host_port=8891,

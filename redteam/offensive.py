@@ -94,7 +94,8 @@ class OffensiveEngine:
 
     def __init__(self, engagement: Engagement, tools: dict[str, Tool] | None = None,
                  ctx: ToolContext | None = None, creds: dict | None = None,
-                 max_rounds: int = 3, log: Callable[..., None] = print):
+                 max_rounds: int = 3, log: Callable[..., None] = print,
+                 llm_chat: Callable[..., str] | None = None):
         self._eng = engagement
         self._tools = tools if tools is not None else build_registry(
             enable_sandbox=False, enable_browser=False)
@@ -106,6 +107,9 @@ class OffensiveEngine:
         self._base: str = ""
         self._brain: Brain | None = None
         self.rounds: list[dict] = []
+        # the model amplifier: when present, it proposes bets into the SAME
+        # queue under the SAME discipline (see llm/planner.py). Never required.
+        self._llm_chat = llm_chat
 
     # -- plumbing -------------------------------------------------------------
 
@@ -132,7 +136,8 @@ class OffensiveEngine:
         if self._brain is not None:
             try:
                 self._brain.observe(req.get("url", ""), status, body,
-                                    headers, req.get("method", "GET"))
+                                    headers, req.get("method", "GET"),
+                                    req_body=req.get("body") or "")
             except Exception:  # the brain must never break the run
                 pass
         return status, body
@@ -881,18 +886,35 @@ class OffensiveEngine:
             if l.believed() and l.method == "POST"
             and re.search(r"import|fetch|url|upload|proxy", (l.url or "").lower())]
         ran: list[str] = []
+
+        def _drain():
+            while brain.queue and len(ran) < budget:
+                hyp = brain.queue.pop(0)
+                try:
+                    confirmed, learned = self._execute_hypothesis(hyp)
+                except Exception as exc:  # a bad bet must never kill the run
+                    confirmed, learned = False, f"executor error: {exc}"
+                brain.note_hypothesis_result(hyp, confirmed, learned)
+                ran.append(f"{hyp.id}{'*' if confirmed else ''}")
+                self._audit("brain.hypothesis.executed", id=hyp.id,
+                            kind=hyp.kind, source=hyp.source,
+                            confirmed=confirmed, learned=learned[:160])
+                brain.generate()  # chaining: each result may mint the next bet
+
         brain.generate()
-        while brain.queue and len(ran) < budget:
-            hyp = brain.queue.pop(0)
+        _drain()
+        # the model enters ONE queue — after the deterministic queue drained,
+        # spending only what is left of the budget. Amplifier, never a
+        # dependency: a failing or absent model changes nothing above.
+        if self._llm_chat is not None:
             try:
-                confirmed, learned = self._execute_hypothesis(hyp)
-            except Exception as exc:  # a bad bet must never kill the run
-                confirmed, learned = False, f"executor error: {exc}"
-            brain.note_hypothesis_result(hyp, confirmed, learned)
-            ran.append(f"{hyp.id}{'*' if confirmed else ''}")
-            self._audit("brain.hypothesis.executed", id=hyp.id, kind=hyp.kind,
-                        confirmed=confirmed, learned=learned[:160])
-            brain.generate()  # chaining: each result may mint the next bet
+                from .llm.planner import propose
+                results = propose(brain, self._llm_chat, self._ctx.audit)
+                for ok, why in results:
+                    self._log(f"[planner] admitted={ok} {why}")
+            except Exception as exc:  # amplifier failure == no model at all
+                self._log(f"[planner] unavailable: {exc}")
+            _drain()
         return ran
 
     def _execute_hypothesis(self, hyp: Hypothesis) -> tuple[bool, str]:
@@ -904,6 +926,7 @@ class OffensiveEngine:
             "cross-principal-read": self._exec_cross_principal_read,
             "unauth-access": self._exec_unauth_access,
             "bearer-pivot": self._exec_bearer_pivot,
+            "workflow-chain": self._exec_workflow_chain,
             "internal-pivot": lambda h: (
                 self._workflow_ssrf(), "delegated to ssrf-callback-map"),
         }
@@ -917,18 +940,97 @@ class OffensiveEngine:
     def _exec_surface_probe(self, hyp: Hypothesis) -> tuple[bool, str]:
         paths = hyp.probes.get("paths", [])
         before = len(self._brain.state.signals)
+        # the operator browses logged-in too: each door is opened unauthenticated
+        # AND as a held principal — authed responses carry the workflow signals
+        low = next((p for p in sorted(self._creds)
+                    if self._ctx.sessions and self._ctx.sessions.get(p)
+                    and not re.search(r"admin|root|super", p)), None)
         for path in paths:
             url = self._base + path if path.startswith("/") else path
             self._fetch({"method": "GET", "url": url}, tool="http_probe")
+            if low:
+                self._fetch({"method": "GET", "url": url,
+                             "headers": dict(self._ctx.sessions.get(low).headers)},
+                            tool="http_probe")
         new = len(self._brain.state.signals) - before
         # exploratory by design: never 'confirms', always feeds observe()
         return False, f"opened {len(paths)} paths, {new} fresh signals"
+
+    # -- executor: workflow chain (R7 — the multi-step state organ) ------------
+
+    def _exec_workflow_chain(self, hyp: Hypothesis) -> tuple[bool, str]:
+        mutate_url = hyp.probes.get("mutate_url", "")
+        read_url = hyp.probes.get("read_url", "")
+        field = hyp.probes.get("read_field", "total")
+        low = hyp.probes.get("principal", "")
+        second = hyp.probes.get("second", "")
+        if not (mutate_url and read_url and low and second):
+            return False, "incomplete workflow probes"
+        # one boundary proving is enough: same action, same flaw
+        if any(f.cwe == "CWE-840" and mutate_url.split("?")[0] in (f.target or "")
+               for f in self._ctx.findings.all()):
+            return False, "workflow abuse already proven here"
+        lh = dict(self._ctx.sessions.get(low).headers)
+        sh = dict(self._ctx.sessions.get(second).headers)
+
+        def _step(name, url, headers, label):
+            return {"name": name, "method": "GET", "url": self._base + url,
+                    "headers": headers, "session_label": label}
+
+        # attack: apply, read, apply AGAIN, read — drift means the action is
+        # not bound one-shot. control: a second principal applies ONCE and
+        # reads twice — no drift is the honest baseline.
+        attack_steps = [
+            _step("mutate1", mutate_url, lh, low),
+            _step("read1", read_url, lh, low),
+            _step("mutate2", mutate_url, lh, low),
+            _step("read2", read_url, lh, low),
+        ]
+        control_steps = [
+            _step("mutate1", mutate_url, sh, second),
+            _step("read1", read_url, sh, second),
+            _step("read2", read_url, sh, second),
+        ]
+        res = self._run_tool(
+            "verify_workflow_abuse",
+            title=f"Repeating the workflow action at "
+                  f"{mutate_url.split('?')[0]} keeps moving {field}",
+            severity="critical", target=mutate_url.split("?")[0],
+            summary=f"The app's own action link {mutate_url} applies a state "
+                    f"change and reports success. Repeating it as '{low}' "
+                    f"changes {field} again (read1 vs read2 differ) — the "
+                    f"action is not bound one-shot. Control: '{second}' "
+                    f"applies once and reads twice with no drift. Proof is "
+                    f"two ordered sequences run once each (attack vs "
+                    f"control), never k-of-n — one-shot semantics.",
+            attack_steps=attack_steps, control_steps=control_steps,
+            invariant=[{"type": "json_differs", "request_a": "read1",
+                        "request_b": "read2", "json_path": field}],
+            cwe="CWE-840",
+            recommendation="Bind one-shot state changes to a single-use "
+                           "redemption record; reject repeats idempotently.")
+        if res.get("verdict") == "falsified":
+            return False, "control also drifted -> action legitimately repeatable"
+        return bool(res.get("recorded")), \
+            "ordered-sequence proof handed to the pipeline"
 
     # -- executor: bearer pivot (R6 — harvest -> re-aim) -----------------------
 
     def _exec_bearer_pivot(self, hyp: Hypothesis) -> tuple[bool, str]:
         targets = hyp.probes.get("targets", [])
-        tokens = hyp.probes.get("tokens", [])
+        tokens = []
+        for t in hyp.probes.get("tokens", []):
+            # proposals NEVER carry credential values — a model sees only
+            # "@harvested:<index>" refs; the executor resolves them locally
+            if isinstance(t, str) and t.startswith("@harvested:"):
+                try:
+                    idx = int(t.split(":", 1)[1])
+                except ValueError:
+                    continue
+                if 0 <= idx < len(self._brain.state.tokens):
+                    tokens.append(self._brain.state.tokens[idx][0])
+            else:
+                tokens.append(t)
         principals = [p for p in sorted(self._creds)
                       if self._ctx.sessions and self._ctx.sessions.get(p)]
         low = next((p for p in principals
@@ -1252,15 +1354,39 @@ class OffensiveEngine:
         st_c, _ = self._preobserve(control)
         if st_p != 200 or st_c == 200:
             return False, f"{st_p}/{st_c} — no ownership gap here"
+        # the honest differential: the payload must return THE OTHER
+        # PRINCIPAL'S material, not merely "200 where unauth is denied" — an
+        # endpoint that silently ignores the id parameter returns the caller's
+        # own view and must not pass (shakedown 20261114: exactly that false
+        # positive on a correctly-scoped list endpoint).
+        owner_marker = ""
+        if other and self._ctx.sessions and self._ctx.sessions.get(other):
+            st_o, body_o = self._preobserve(
+                {"method": "GET", "url": self._base + payload_url,
+                 "headers": dict(self._ctx.sessions.get(other).headers)})
+            st_l, body_l = self._preobserve(
+                {"method": "GET", "url": self._base + resource,
+                 "headers": dict(low_hdrs)})
+            if st_o == 200 and body_o:
+                owner_marker = next(
+                    (t for t in dict.fromkeys(re.findall(r"[\w\-.]{6,}", body_o))
+                     if t not in (body_l or "") and not t.isdigit()), "")
+        if not owner_marker:
+            return False, ("no material unique to the owner's view -> "
+                           "cannot prove a cross-principal leak")
         res_v = self._run_tool(
             "verify_vulnerability",
             title=f"Cross-principal object read at {payload_url}",
             severity="critical", target=payload_url,
             summary=f"Observed id shape ({other_id}) replayed by '{low}' "
-                    f"returns 200 while unauthenticated is denied ({st_c}) — "
-                    f"object lookup without an owner check (CWE-639).",
+                    f"returns 200 while unauthenticated is denied ({st_c}) "
+                    f"and the response carries the owner's material "
+                    f"({owner_marker[:24]}) — object lookup without an "
+                    f"owner check (CWE-639).",
             requests={"payload": payload, "control": control},
             conditions=[{"type": "status", "request": "payload", "equals": 200},
+                        {"type": "body_regex", "request": "payload",
+                         "pattern": re.escape(owner_marker), "present": True},
                         {"type": "status", "request": "control",
                          "equals": st_c}],
             negative_control=control, cwe="CWE-639",
@@ -1303,8 +1429,19 @@ class OffensiveEngine:
         out = {"pending_before": len(pending), "confirmed": 0,
                "killed": 0, "still_pending": 0}
         for f in pending:
+            kwargs = {"finding_id": f.id}
+            spec = getattr(f, "check_spec", None) or {}
+            if getattr(f, "check_type", "") == "workflow" \
+                    and spec.get("attack_steps"):
+                # workflow findings demand fresh sequences (one-shot semantics:
+                # a verbatim replay of a truly one-shot action degrades to the
+                # weak verdict by design — the attack failing reads as
+                # not_reproducible, never as a false kill). The executor's
+                # steps ARE the replayable form of this bet.
+                kwargs["fresh_attack_steps"] = spec["attack_steps"]
+                kwargs["fresh_control_steps"] = spec["control_steps"]
             res = _parse_json_loose(self._tool("verify_finding_independently")
-                                    .run(self._ctx, finding_id=f.id)) or {}
+                                    .run(self._ctx, **kwargs)) or {}
             verdict = res.get("verdict", "not_reproducible")
             if verdict == "confirmed":
                 out["confirmed"] += 1
