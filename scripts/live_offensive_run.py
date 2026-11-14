@@ -115,12 +115,18 @@ def run_target(target, run_dir: Path) -> dict:
         chat_fn = None
         if os.environ.get("REDTEAM_LLM") == "1":
             # opt-in model amplifier: absent/failed provider == no model,
-            # the run stays deterministic (same discipline either way)
+            # the run stays deterministic (same discipline either way).
+            # REDTEAM_PLAN_MODEL pins a model to the plan role (e.g. a
+            # stronger free model for strict-JSON proposal quality).
             from redteam.config import LlmConfig
             from redteam.llm.planner import make_chat_fn
-            chat_fn = make_chat_fn(LlmConfig(), ctx.audit)
+            plan_model = os.environ.get("REDTEAM_PLAN_MODEL", "")
+            cfg = (LlmConfig(role_models={"plan": plan_model})
+                   if plan_model else LlmConfig())
+            chat_fn = make_chat_fn(cfg, ctx.audit)
             print("  [llm] planner:",
-                  "live provider wired" if chat_fn
+                  f"live provider wired (plan={plan_model or 'pool'})"
+                  if chat_fn
                   else "no provider/key configured -> deterministic")
         engine = OffensiveEngine(eng, ctx=ctx, llm_chat=chat_fn)
         engine._base_override = target.base_url

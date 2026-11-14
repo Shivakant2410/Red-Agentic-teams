@@ -463,6 +463,36 @@ def test_killed_bets_reactivate_when_material_arrives(tmp_path):
                 if h.source.startswith("reactivated")]) == 1
 
 
+def test_admit_coerces_model_cost_and_demands_gate_evidence(tmp_path):
+    """The admission contract for external planners: numeric-like cost
+    ("6", 6.0) coerces; an unauth-access bet with NO observed gate behind it
+    is refused — the model must cite evidence, not 'discover' that the
+    landing page is public."""
+    import types
+    from redteam.audit import AuditLog
+    from redteam.hypothesize import Brain
+
+    ctx = types.SimpleNamespace(audit=AuditLog(tmp_path / "audit.jsonl"))
+    brain = Brain(ctx, "http://127.0.0.1:1", creds={})
+    ok, why = brain.admit_hypothesis({
+        "kind": "surface-probe", "statement": "unexplored paths exist",
+        "prediction": "opening them yields signals",
+        "probes": {"paths": ["/a"]}, "cost": "6", "strength": 0.5})
+    assert ok, why
+    ok, why = brain.admit_hypothesis({
+        "kind": "unauth-access", "statement": "gate may be absent",
+        "prediction": "unauth GET succeeds",
+        "probes": {"path": "/"}, "cost": 6, "strength": 0.5})
+    assert not ok and "observed auth gate" in why, (ok, why)
+    # with a REAL observed gate behind it, the same bet is admissible
+    brain.state.gates = [("/api/activity", 401)]
+    ok, why = brain.admit_hypothesis({
+        "kind": "unauth-access", "statement": "gate may be absent",
+        "prediction": "unauth GET succeeds",
+        "probes": {"path": "/api/activity"}, "cost": 6.0, "strength": 0.5})
+    assert ok, why
+
+
 def test_brain_generalizes_to_an_untemplated_target(ledger_lab):
     """The generalization contract: a target NO workflow template covers is
     confirmed through signal-driven hypotheses only — shape of the error

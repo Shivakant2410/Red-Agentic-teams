@@ -502,10 +502,23 @@ class Brain:
         if severity not in _SEV:
             return False, f"severity must be one of {sorted(_SEV)}"
         try:
-            cost = max(1, min(40, int(spec.get("cost", 6))))
+            # models/external planners send "6", 6.0, or 6 alike — coerce
+            # numerics; null/garbage still rejects honestly
+            cost = max(1, min(40, int(float(spec.get("cost", 6)))))
         except (TypeError, ValueError):
             return False, "cost must be an integer"
         strength = min(0.9, max(0.0, float(spec.get("strength", 0.5))))
+        # evidence discipline: an unauth-access bet may only target a path the
+        # run actually OBSERVED gating (401/403). Deterministic mints are born
+        # from gates; model bets must cite the same evidence — otherwise the
+        # model "discovers" that the public landing page is public. No gates
+        # observed == no possible evidence == the bet is refused.
+        if kind == "unauth-access":
+            path = _url_path(str(probes.get("path", "")).split("?")[0])
+            known = {_url_path(u) for u, _s in self.state.gates}
+            if path not in known:
+                return False, ("unauth-access needs an observed auth gate "
+                               f"(gates: {sorted(known)[:5]})")
         try:
             horizon = int(spec.get("horizon") or HORIZON_EST.get(kind, 6))
         except (TypeError, ValueError):

@@ -33,6 +33,8 @@ Rules:
 severity, cost, strength, cwe?, kill?}]}
 - kind must be one of the executor_kinds listed in the digest.
 - probes values must be primitive (string/number/boolean) or FLAT lists of strings.
+- cost and strength are NUMBERS (e.g. "cost": 6, "strength": 0.5) — never strings, \
+never null; every hypothesis MUST include a non-empty probes object.
 - Reference harvested credentials ONLY as "@harvested:<index>" — the digest never \
 contains their values and you must never request or guess them.
 - statement and prediction must be falsifiable: state the condition under which the bet \
@@ -134,5 +136,6 @@ def propose(brain, chat_fn, audit=None, max_proposals: int = 3) -> list[tuple[bo
         ok, why = brain.admit_hypothesis(spec)
         out.append((ok, why))
         if audit:
-            audit.record("brain.hypothesis.proposed", ok=ok, reason=str(why)[:160])
+            audit.record("brain.hypothesis.proposed", ok=ok, reason=str(why)[:160],
+                         spec=str(spec)[:240] if not ok else "")
     return out

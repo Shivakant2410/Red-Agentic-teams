@@ -219,6 +219,34 @@ LAB_FORUM = BenchTarget(
 # flaw alone is provably insufficient. L3 hard: four-hop cross-service chain (SSRF ->
 # internal discovery -> token disclosure -> token-bearing SSRF read of an in-memory FLAG).
 
+LAB_TINYVAULT = BenchTarget(
+    name="LLM Lab: Tinyvault (cross-principal order read)",
+    container_port=8896, host_port=8896,
+    base_url="http://127.0.0.1:8896",
+    cmd=[sys.executable, str(_LAB_DIR / "tinyvault.py"), "8896"],
+    env={"TINYVAULT_IDOR_PROFILE": "open"},
+    credentials={"alice": {"password": "pw-alice", "login_url": "/login",
+                           "token_field": "token"},
+                 "bob": {"password": "pw-bob", "login_url": "/login",
+                         "token_field": "token"}},
+    ground_truth=[
+        GroundTruthVuln("tinyvault-idor", "idor", "CWE-639",
+                        "/api/activity", "high"),
+    ],
+    objective={
+        "name": "Tinyvault cross-principal order read",
+        "description": "The order drill-down resolves any id for any "
+                       "authenticated user. Prove alice can read bob's "
+                       "order by content.",
+        "success_criteria": [
+            {"id": "idor_read", "kind": "data_access", "target": "/api/",
+             "description": "alice's session retrieves bob's order body "
+                            "(owner marker) while the unauthenticated "
+                            "control is denied"},
+        ],
+    },
+)
+
 LAB_BLOGMENT = BenchTarget(
     name="L1 Easy: Blogment (reflected XSS + backup exposure)",
     container_port=8895, host_port=8895,
