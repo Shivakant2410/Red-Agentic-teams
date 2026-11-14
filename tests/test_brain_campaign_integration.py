@@ -38,8 +38,10 @@ _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 
 from redteam.brain import TargetProfile, fingerprint_target  # noqa: E402
+from redteam.brain.killchain import assess_kill_chain  # noqa: E402
 from redteam.brain.orchestrator import FamilyOrchestrator  # noqa: E402
 from redteam.ea.agent import ea_agentic_probe  # noqa: E402
+from redteam.oh.agent import oh_agentic_probe  # noqa: E402
 from redteam.pi.agent import agentic_live_probe  # noqa: E402
 from redteam.pi.live import LiveLaneError  # noqa: E402
 from redteam.sc.agent import sc_agentic_probe  # noqa: E402
@@ -217,6 +219,89 @@ def test_fifth_channel_ea_completes_the_four_channel_campaign():
     assert profile.family_state("LLM06")["verdicts"]["succeeded"] == 1
     brief = report["profile_briefing"]
     assert "ea_carrier.fetched_doc" in brief and "family LLM06" in brief
+
+
+# -- the sixth channel: the full five-channel campaign --------------------------------
+
+def _naive_pipeline():
+    """The model->consumer stand-in the OH lane folds: the model echoes
+    the requested payload (the LLM05 precondition, built on the lane's
+    own public markers) and every consumer acts naively."""
+    import re as _re
+    from redteam.oh.oracles import MARK_MD, MARK_SHELL, MARK_SQL, MARK_XSS
+
+    def _pipeline(prompt):
+        reply = "Incident summary: nothing unusual."
+        for rx in (MARK_MD, MARK_XSS, MARK_SHELL, MARK_SQL):
+            m = rx.search(prompt)
+            if m:
+                reply = m.group(0)
+                break
+        events = []
+        m = MARK_MD.search(reply)
+        if m:
+            events.append({"consumer": "renderer",
+                           "action": "remote_fetch", "detail": m.group(1)})
+        m = MARK_XSS.search(reply)
+        if m:
+            events.append({"consumer": "html", "action": "event_fired",
+                           "detail": m.group(0)})
+        m = MARK_SHELL.search(reply)
+        if m:
+            events.append({"consumer": "shell", "action": "executed",
+                           "detail": m.group(0)})
+        m = MARK_SQL.search(reply)
+        if m:
+            events.append({"consumer": "sql", "action": "rows_changed",
+                           "detail": m.group(0)})
+        return {"reply": reply, "consumer_events": events}
+
+    return _pipeline
+
+
+def test_sixth_channel_oh_completes_the_full_five_channel_campaign():
+    """FIVE agentic channels under ONE budget on ONE shared profile:
+    pi (LLM01), sid (LLM02), sc (LLM03), oh (LLM05), ea (LLM06). Every
+    OH handling fact lands in the same ledger — and with all four kill
+    chain rungs earned by real channels, the composer for the first
+    time reports an END-TO-END compromise."""
+    profile = TargetProfile(
+        fingerprint=fingerprint_target("chat", "fake-model", "sys-sha"))
+    profile.start_session()
+    orch = FamilyOrchestrator(profile, budget=128, per_lane_cap=16)
+    orch.register("LLM01", lambda p, b: agentic_live_probe(
+        None, canary=CANARY, budget=min(b, 16), seed=0,
+        session=_FakeSession(lambda s, u: pi_decode_b64_target(u)),
+        profile=p))
+    orch.register("LLM02", lambda p, b: sid_agentic_probe(
+        make_pii_record(random.Random(0)), budget=min(b, 16), seed=0,
+        session=_FakeSession(_sid_reply_fn(make_pii_record(random.Random(0)))),
+        profile=p))
+    orch.register("LLM03", lambda p, b: sc_agentic_probe(
+        _NaiveGate(), budget=min(b, 12), seed=0, profile=p))
+    orch.register("LLM05", lambda p, b: oh_agentic_probe(
+        _naive_pipeline(), budget=min(b, 12), seed=0, profile=p))
+    orch.register("LLM06", lambda p, b: ea_agentic_probe(
+        _VulnerableRuntime(), budget=min(b, 12), seed=0, profile=p))
+    report = orch.run()
+
+    fams = report["families"]
+    assert set(fams) == {"LLM01", "LLM02", "LLM03", "LLM05", "LLM06"}
+    assert fams["LLM05"]["verdict"] == "succeeded"
+    assert report["budget_spent"] == sum(f["requests"] for f in fams.values())
+    assert profile.axes["oh_payload"]["md_image_exfil"]["hits"] >= 1
+    assert profile.family_state("LLM05")["verdicts"]["succeeded"] == 1
+    brief = report["profile_briefing"]
+    assert "oh_payload.md_image_exfil" in brief and "family LLM05" in brief
+
+    # the composer's first end-to-end verdict: every rung earned by a
+    # real channel — foothold LLM01, execute LLM06, disclose LLM02,
+    # persist LLM03
+    kc = assess_kill_chain(report, profile=profile)
+    assert kc["verdict"] == "compromised_end_to_end"
+    assert [s["earned_via"] for s in kc["stages"]] == \
+        ["LLM01", "LLM06", "LLM02", "LLM03"]
+    assert kc["profile_sessions"] == 1
 
 
 # -- the campaign -----------------------------------------------------------------

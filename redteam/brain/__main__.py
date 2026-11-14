@@ -13,11 +13,11 @@ as a command:
     starts warm (cross-session, cross-family memory).
   --lanes picks the channels: LLM01 (PI agentic, needs --pi-endpoint),
     LLM02 (SID agentic, needs --sid-endpoint), LLM03 (the SC
-    provenance-probing channel), LLM06 (the EA agency-abuse channel).
-    Live lanes that are not wired are SKIPPED LOUDLY with a reason (the
-    llmred rule) — never silently, and a live endpoint that fails its
-    own authorization/key checks is a skip, not a crash. Exit code 2
-    when nothing ran.
+    provenance-probing channel), LLM05 (the OH output-handling channel),
+    LLM06 (the EA agency-abuse channel). Live lanes that are not wired
+    are SKIPPED LOUDLY with a reason (the llmred rule) — never silently,
+    and a live endpoint that fails its own authorization/key checks is a
+    skip, not a crash. Exit code 2 when nothing ran.
   --gate picks the built-in admission-gate stand-in for the offline SC
     channel: naive / provenance-only / content-only / strict — four
     deterministic gates built on the lane's OWN public oracles, the exact
@@ -168,6 +168,73 @@ BUILT_IN_EXECUTORS = {
     "email-only": _executor_carrier_policy("mail.fetch"),
 }
 
+# -- built-in pipeline stand-ins (offline OH campaigns) -------------------------------
+#
+# The same principle as the gates and executors: built on the OH lane's
+# OWN public markers (oh.oracles MARK_* — exactly the parsers a
+# production consumer stack runs) restricted to the handling policy the
+# name claims: naive sanitizes nothing; html-escaped escapes the HTML
+# sink only; no-remote-fetch blocks renderer fetches only; strict
+# sanitizes every consumer (the mitigation list of OWASP LLM05).
+
+from ..oh.oracles import MARK_MD, MARK_SHELL, MARK_SQL, MARK_XSS
+
+
+def _oh_echo_payload(prompt):
+    """The 'model' every stand-in runs: helpfully copies the requested
+    snippet verbatim into the reply — the LLM05 precondition."""
+    for rx in (MARK_MD, MARK_XSS, MARK_SHELL, MARK_SQL):
+        m = rx.search(prompt or "")
+        if m:
+            return m.group(0)
+    return "Incident summary: nothing unusual."
+
+
+def _oh_apply_consumers(reply, policy):
+    """Consumer side effects observed by the harness, restricted to the
+    handling policy the name claims."""
+    events = []
+    m = MARK_MD.search(reply)
+    if m and policy.get("renderer"):
+        events.append({"consumer": "renderer", "action": "remote_fetch",
+                       "detail": m.group(1)})
+    m = MARK_XSS.search(reply)
+    if m and policy.get("html"):
+        events.append({"consumer": "html", "action": "event_fired",
+                       "detail": m.group(0)})
+    m = MARK_SHELL.search(reply)
+    if m and policy.get("shell"):
+        events.append({"consumer": "shell", "action": "executed",
+                       "detail": m.group(0)})
+    m = MARK_SQL.search(reply)
+    if m and policy.get("sql"):
+        events.append({"consumer": "sql", "action": "rows_changed",
+                       "detail": m.group(0)})
+    return events
+
+
+_OH_POLICIES = {
+    "naive": {"renderer": True, "html": True, "shell": True, "sql": True},
+    "html-escaped": {"renderer": True, "html": False, "shell": True,
+                     "sql": True},
+    "no-remote-fetch": {"renderer": False, "html": True, "shell": True,
+                        "sql": True},
+    "strict": {"renderer": False, "html": False, "shell": False,
+               "sql": False},
+}
+
+
+def _make_pipeline(policy):
+    def _pipeline(prompt):
+        reply = _oh_echo_payload(prompt)
+        return {"reply": reply,
+                "consumer_events": _oh_apply_consumers(reply, policy)}
+    return _pipeline
+
+
+BUILT_IN_PIPELINES = {name: _make_pipeline(p)
+                      for name, p in _OH_POLICIES.items()}
+
 
 def _parse_env(entries) -> dict:
     env = {}
@@ -208,8 +275,8 @@ def main(argv=None) -> int:
     ap.add_argument("--per-lane-cap", type=int, default=16)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--lanes", nargs="*", default=["LLM01", "LLM02", "LLM03",
-                                                   "LLM06"],
-                    choices=("LLM01", "LLM02", "LLM03", "LLM06"))
+                                                   "LLM05", "LLM06"],
+                    choices=("LLM01", "LLM02", "LLM03", "LLM05", "LLM06"))
     ap.add_argument("--gate", default="strict", choices=tuple(BUILT_IN_GATES),
                     help="built-in admission-gate stand-in for the offline "
                          "SC channel (default: strict)")
@@ -217,6 +284,10 @@ def main(argv=None) -> int:
                     choices=tuple(BUILT_IN_EXECUTORS),
                     help="built-in agent-runtime stand-in for the offline "
                          "EA channel (default: hardened)")
+    ap.add_argument("--pipeline", default="strict",
+                    choices=tuple(BUILT_IN_PIPELINES),
+                    help="built-in model->consumer pipeline stand-in for "
+                         "the offline OH channel (default: strict)")
     ap.add_argument("--profile-dir", default="targets",
                     help="where per-target profiles persist "
                          "(default ./targets)")
@@ -310,6 +381,15 @@ def main(argv=None) -> int:
             profile=p))
         registered.append("LLM03")
 
+    # -- LLM05: the OH output-handling channel (offline) --------------------------
+    if "LLM05" in args.lanes:
+        from ..oh.agent import oh_agentic_probe
+        pipeline_fn = BUILT_IN_PIPELINES[args.pipeline]
+        orch.register("LLM05", lambda p, b: oh_agentic_probe(
+            pipeline_fn, budget=min(b, args.per_lane_cap), seed=args.seed,
+            profile=p))
+        registered.append("LLM05")
+
     # -- LLM06: the EA agency-abuse channel (offline) ----------------------------
     if "LLM06" in args.lanes:
         from ..ea.agent import ea_agentic_probe
@@ -338,6 +418,7 @@ def main(argv=None) -> int:
         "session": session_no,
         "gate": args.gate if "LLM03" in registered else None,
         "executor": args.executor if "LLM06" in registered else None,
+        "pipeline": args.pipeline if "LLM05" in registered else None,
         "skipped": skipped,
         "profile_path": str(path),
     }

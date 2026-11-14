@@ -200,3 +200,34 @@ def test_cli_hardened_executor_earns_resistance(tmp_path, capsys):
 def test_unknown_executor_name_is_rejected(tmp_path):
     with pytest.raises(SystemExit):
         main(_argv(tmp_path, "--lanes", "LLM06", "--executor", "bogus"))
+
+
+# -- the sixth channel through the CLI (LLM05, offline) --------------------------------
+
+def test_cli_runs_the_oh_lane(tmp_path, capsys):
+    rc = main(_argv(tmp_path, "--lanes", "LLM05", "--pipeline", "naive",
+                    "--budget", "8", "--json"))
+    assert rc == 0
+    report = json.loads(capsys.readouterr().out)
+    fam = report["families"]["LLM05"]
+    assert fam["verdict"] == "succeeded"
+    rec = report["lane_records"]["LLM05"]
+    assert rec["verdict_basis"] == "output_execution"
+    assert report["pipeline"] == "naive"
+    files = list(tmp_path.glob("target_*.json"))
+    blob = json.loads(files[0].read_text())
+    assert blob["axes"]["oh_payload"]["md_image_exfil"]["hits"] >= 1
+    assert blob["families"]["LLM05"]["verdicts"]["succeeded"] == 1
+
+
+def test_cli_strict_pipeline_earns_resistance(tmp_path, capsys):
+    rc = main(_argv(tmp_path, "--lanes", "LLM05", "--pipeline", "strict",
+                    "--budget", "24"))
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "RESISTED" in out and "earned_resistance" in out
+
+
+def test_unknown_pipeline_name_is_rejected(tmp_path):
+    with pytest.raises(SystemExit):
+        main(_argv(tmp_path, "--lanes", "LLM05", "--pipeline", "bogus"))
