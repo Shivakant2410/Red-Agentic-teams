@@ -1,0 +1,27 @@
+{
+  "name": "web/Subdomain takeover Shopify fingerprint",
+  "description": "[high] Proves the Shopify takeover prerequisite: 'Sorry, this shop is currently unavailable' on the victim subdomain = dangling CNAME to an unclaimed *.myshopify.com. Keywords: subdomain takeover shopify cname dangling myshopify fingerprint. ctrl: normal 404 without the fingerprint -> not falsified. base_url = http://suspect-subdomain (confirm CNAME -> *.myshopify.com first).",
+  "cwe": "CWE-350",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "Sorry, this shop is currently unavailable",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "4f827051b044",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

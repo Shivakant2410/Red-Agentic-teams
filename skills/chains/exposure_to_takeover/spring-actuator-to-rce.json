@@ -1,0 +1,103 @@
+{
+  "group": "exposure_to_takeover",
+  "slug": "spring-actuator-to-rce",
+  "name": "Spring: actuator env -> heapdump tokens -> gateway SpEL RCE",
+  "goal": "From exposed Spring Boot actuators to configuration secrets, in-memory session tokens, and a pre-auth SpEL RCE.",
+  "preconditions": "Spring Boot with exposed management endpoints (classic :8080 app or gateway).",
+  "cwe": [
+    "CWE-200",
+    "CWE-94"
+  ],
+  "impact": "Config secrets + session tokens + code execution on the gateway/app.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "redteam/Spring Boot actuator env leak",
+      "purpose": "Read /actuator/env: datasource creds, cloud keys, internal route map.",
+      "on_success": "Triage secrets; step 2 for in-memory tokens.",
+      "on_fail": "env blocked -> mappings/heapdump may still be open."
+    },
+    {
+      "n": 2,
+      "skill": "redteam/Spring Boot actuator heapdump",
+      "purpose": "Download heapdump; mine strings for active session IDs, tokens, cached credentials.",
+      "on_success": "Session tokens -> immediate authenticated access; gadget libraries visible for step 3.",
+      "on_fail": "heapdump blocked -> work with env alone; try jolokia (documented variant)."
+    },
+    {
+      "n": 3,
+      "skill": "redteam/Spring Cloud Gateway SpEL RCE",
+      "purpose": "If a Spring Cloud Gateway is present: pre-auth SpEL injection -> RCE.",
+      "on_success": "Step 4 closes the OS layer.",
+      "on_fail": "No gateway -> Log4Shell probe (web/Log4Shell JNDI lookup error probe) against Spring logging surfaces; spring4shell (documented variant)."
+    },
+    {
+      "n": 4,
+      "skill": "web/Command injection output echo marker",
+      "purpose": "Deterministic OS proof through the RCE channel.",
+      "on_success": "Full chain narrative closed.",
+      "on_fail": "Blind -> time-based oracle skill."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      ":8080 /actuator on app hosts",
+      "gateway services (Spring Cloud Gateway)",
+      "admin spring-boot-admin UIs",
+      "eureka/consul service inventories"
+    ],
+    "recon": [
+      {
+        "name": "Actuator census",
+        "how": "Probe /actuator, /env, /heapdump, /mappings, /jolokia directly and via one-hop proxies (headers confusion).",
+        "tooling": "ffuf + actuator wordlist",
+        "signal": "JSON env or heap content."
+      },
+      {
+        "name": "Spring Boot Admin hash",
+        "how": "Shodan favicon hash 116323821 finds Spring Boot Admin UIs fleet-wide.",
+        "tooling": "shodan/FOFA favicon search",
+        "signal": "Admin UI instances."
+      },
+      {
+        "name": "Heapdump mining",
+        "how": "strings + grep for 'session', 'token', 'AKIA', 'Bearer', class names for gadget libs.",
+        "tooling": "strings/grep/VisualVM",
+        "signal": "Live tokens and gadget libs."
+      },
+      {
+        "name": "Error-page fingerprint",
+        "how": "Whitelabel error page confirms Spring Boot; status/date headers help version guess.",
+        "tooling": "manual",
+        "signal": "Whitelabel page = actuator likely present."
+      }
+    ],
+    "variants": [
+      "/jolokia -> MBean RCE",
+      "eureka instance hijack",
+      "configserver exposure",
+      "spring cloud function SpEL (CVE-2022-22963)",
+      "spring4shell (CVE-2022-22965)"
+    ],
+    "dorks": [
+      "shodan: http.favicon.hash:116323821",
+      "google: intitle:\"Spring Boot Admin\"",
+      "github: management.endpoints.web.exposure.include=*"
+    ],
+    "pivot_hints": [
+      "creds -> admin_panels shelf",
+      "session tokens -> authenticated chains (idor, bfla)",
+      "RCE -> cloud metadata via localhost (cloud_takeover)"
+    ]
+  },
+  "fallbacks": [
+    "jenkins-to-cluster",
+    "recon-secrets-to-cloud"
+  ],
+  "sources": [
+    "Spring Boot Actuator docs + hardening guides",
+    "PortSwigger — Spring Actuator abuse",
+    "nuclei-templates — spring",
+    "CVE-2022-22963/22965 advisories"
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "name": "web/SQLi error-based MySQL-family",
+  "description": "[high] Proves error-based SQLi on the MySQL/MariaDB family: a broken quote makes the server return dialect-specific errors (You have an error in your SQL syntax / MariaDB server version / Mysql2::Error / ER_PARSE_ERROR / mysqlnd) = server-side SQL interpretation, MySQL dialect (complements the existing PostgreSQL skill). Keywords: sqli error-based mysql mariadb syntax exception injection. ctrl: benign POST shows no driver error -> not falsified. probe_url = JSON endpoint echoing 'name' into SQL.",
+  "cwe": "CWE-89",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{probe_url}}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"name\":\"x9f'\"}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "You have an error in your SQL syntax|MariaDB server version for the right syntax|Mysql2::Error|ER_PARSE_ERROR|mysqlnd",
+      "present": true
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "c3edb3ba2fba",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

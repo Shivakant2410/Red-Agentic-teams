@@ -1,0 +1,32 @@
+{
+  "name": "web/Cookie Domain scope overbreadth",
+  "description": "[medium] Proves cookie scope overbreadth: session cookie set with Domain=.victim.tld from a service subdomain = every sibling subdomain can receive it, so one subdomain takeover or XSS harvests sessions tenant-wide (CWE-565). Keywords: cookie domain scope overbreadth wildcard session subdomain sibling harvest. ctrl: host-only cookie (no Domain attr) -> not falsified. base_url = authenticated service subdomain root.",
+  "cwe": "CWE-565",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/login"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "header_regex",
+      "request": "payload",
+      "pattern": "set-cookie:[^\\r\\n]*domain=\\.",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "87fcb168134a",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

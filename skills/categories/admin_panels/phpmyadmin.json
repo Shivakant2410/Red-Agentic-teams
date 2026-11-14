@@ -1,0 +1,32 @@
+{
+  "name": "infra/phpMyAdmin panel exposed",
+  "description": "[medium] phpMyAdmin is reachable at /phpmyadmin/ (CWE-1188): the branded login surface + version = default/weak-credential and CVE targeting (SetupForge, CVE-2018-19968 etc.). Keywords: phpmyadmin mysql admin panel login exposed cve targeting web db. ctrl: absent/removed install 404s -> not falsified. base_url = host serving /phpmyadmin.",
+  "cwe": "CWE-1188",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/phpmyadmin/"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "(?i)phpmyadmin",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "bff1bd04b755",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

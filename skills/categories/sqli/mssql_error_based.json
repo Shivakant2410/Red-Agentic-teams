@@ -1,0 +1,31 @@
+{
+  "name": "web/SQLi error-based MSSQL-family",
+  "description": "[high] Proves error-based SQLi on the Microsoft SQL Server family: broken quote returns Unclosed quotation mark / Conversion failed / System.Data.SqlClient.SqlException / Microsoft OLE DB Provider for SQL Server = T-SQL interpretation (often exposes column/type context for UNION follow-up). Keywords: sqli error-based mssql sqlserver t-sql sqlexception injection. ctrl: benign POST shows no driver error -> not falsified. probe_url = JSON endpoint echoing 'q'.",
+  "cwe": "CWE-89",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{probe_url}}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"q\":\"x9f'\"}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "Unclosed quotation mark after the character string|Conversion failed when converting|System\\.Data\\.SqlClient\\.SqlException|Microsoft OLE DB Provider for SQL Server",
+      "present": true
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "6bf3c870fe4a",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

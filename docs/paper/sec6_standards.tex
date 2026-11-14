@@ -1,0 +1,159 @@
+\section{Frameworks, standards, and industry practice}\label{sec:standards}
+
+\subsection{OWASP Top 10 for LLM Applications: 2023 $\to$ 2026}\label{sec:owasp}
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{The OWASP list across its three editions (abbreviated names). The 2026
+edition is the agentic turn: acting systems, cascading effects, cross-system
+trust.}\label{tab:owasp-evolution}
+\begin{tabular}{L{4.5cm} L{4.3cm} L{4.5cm}}
+\toprule
+2023 (LLM01--10) & 2025 & 2026 (agentic edition) \\
+\midrule
+Prompt injection & Prompt injection (kept \#1) & Agentic directive injection
+family; hidden context exposure replaces system-prompt leakage \\
+Insecure output handling & Sensitive information disclosure & Excessive agency
+rises to \#3---tool effects, cascading actions \\
+Training data poisoning & Supply chain & Tool/MCP ecosystem classes first-class \\
+Plugin misuse & Data and model poisoning & Cross-system trust and second-order
+output chains \\
+Excessive agency & Improper output handling & Persistent memory classes
+recognized \\
+Unbounded consumption / leaky APIs & Unbounded consumption & Availability and
+cost-amplification classes consolidated; persistent memory recognized \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three readings of the reshuffle (expanded in Section~\ref{sec:owasp2026}): the
+unit of risk became the acting system; the delivery channel became retrieval
+itself; and persistence (memory, cross-run state) entered the threat model as a
+first-class citizen. Our taxonomy (Table~\ref{tab:taxonomy}) is deliberately a
+superset: evaluation-validity classes (W7--W9) are not OWASP categories at all,
+because they are weaknesses in \emph{us}, the measurers.
+
+\subsection{MITRE ATLAS, NIST AI RMF, EU AI Act, ISO 42001}\label{sec:standards-map}
+
+MITRE ATLAS (data release v2026.07) carries 101 techniques and 77
+sub-techniques grounded in 68 case studies, with the AML.T0051 family
+tagging prompt injection against agentic systems \cite{atlas}. For engineering use, ATLAS's value is the mapping discipline:
+every technique we model (Section~\ref{sec:taxonomy}) should carry an ATLAS
+anchor so that telemetry, detections, and reports speak a shared language.
+
+NIST's AI RMF plus its Generative AI Profile supplies the governance skeleton:
+\emph{measure} and \emph{manage} functions map almost one-to-one onto our cell
+cards and remediation queue \cite{nist-ai-rmf,nist-genai}. The EU AI Act adds
+dates: entered into force August 2024; GPAI obligations from August 2025; the
+high-risk and legacy-system milestones run through August 2026--2027
+\cite{eu-ai-act}. ISO/IEC 42001 gives the management-system wrapper
+certification audits will ask for \cite{iso42001}. None of these three tells an
+engineer \emph{what to build}; they tell an operator \emph{what to prove} ---
+which is why this paper's statistics exist: to make the proving honest.
+
+\subsection{Industry red-team tooling and the missing layer}\label{sec:tooling}
+
+The mature open tooling covers static probe execution: PyRIT (Microsoft's
+automation pipeline), garak (probe suites), promptfoo (eval harnesses), plus
+bug-bounty programs that have formalized AI scopes. Two gaps persist. First,
+\emph{adaptive measurement}: most suites are one-shot; the escalation ladder and
+guard-wear reporting of Section~\ref{sec:gaps} are rare. Second,
+\emph{honest statistics}: suites report rates, rarely intervals, almost never a
+retry-inflation null. The statistical layer of Section~\ref{sec:stats} is our
+fill for that gap, and it is deliberately a library, not a product: any cell
+card in any framework should be able to import it.
+
+\subsection{The commercial layer: who pays, and what it teaches}\label{sec:money}
+
+Between September 2025 and March 2026 the tooling landscape consolidated
+faster than the literature could record it. OpenAI agreed to acquire
+promptfoo (March~9, 2026), folding the most widely deployed open-source
+red-team harness---350{,}000+ developers reached, 130{,}000 monthly
+active, used by more than a quarter of the Fortune~500---into its
+Frontier platform while pledging to keep the core open source
+\cite{promptfoo-openai}. Check Point acquired Lakera (announced
+September~2025; terms undisclosed, press estimates $\approx$\$300M),
+pairing Lakera Guard's runtime enforcement with Lakera Red's automated
+testing and the Gandalf research funnel's 80M+ recorded attacks
+\cite{checkpoint-lakera,lakera-ctech}. SentinelOne acquired Prompt
+Security for GenAI runtime defense (August~2025)
+\cite{sentinelone-promptsec}. Microsoft left PyRIT open but sells its
+capability as the Foundry AI Red Teaming Agent \cite{foundry-rt}; garak
+remains free under NVIDIA. HackerOne monetizes the opposite direction:
+human creativity at bounty scale---a 540\% year-over-year surge in
+validated prompt-injection reports in 2025, and a human-led,
+agent-driven AI Red Teaming service \cite{hackerone-hpsr,hackerone-ai-rt}.
+
+Five revenue models now define the market:
+\begin{itemize}
+  \item \textbf{Runtime protection} (Lakera Guard, Prompt Security):
+  priced per protected application and call volume; the classic
+  security-budget line.
+  \item \textbf{Continuous red-team SaaS} (Lakera Red, the Foundry
+  agent, HackerOne AI Red Teaming): subscriptions for scheduled
+  adversarial campaigns with remediation workflows.
+  \item \textbf{Developer-platform probe volume} (promptfoo): free
+  community tier up to 10k probes per month, enterprise pricing for
+  scale, SSO, and compliance dashboards \cite{promptfoo-pricing}.
+  \item \textbf{Human bounty markets} (HackerOne): platform fees on
+  researcher payouts, now the largest single channel of AI finding
+  volume.
+  \item \textbf{Compliance-driven audit} (EU AI Act Art.~55 evidence,
+  ISO/IEC 42001): sold today as manual services; the least automated
+  of the five.
+\end{itemize}
+
+For this project the lesson is positioning, not envy. First, platform
+vendors buying the standard harness sharpens the auditor-independence
+problem: a model vendor grading its own exam, exactly the structural
+conflict regulated buyers already refuse in finance. An independent,
+statistics-first verdict layer is the open wedge. Second, every one of
+these products sells finding \emph{counts}; none sells calibrated
+\emph{uncertainty}. The statistical layer of Section~\ref{sec:stats}
+maps directly onto the compliance-audit model---the least automated and,
+given the 2026--2027 EU milestones, the fastest-moving of the five.
+
+\subsection{Incident record}\label{sec:incidents}
+
+The incident record is the taxonomy's reality check: every entry below maps
+to at least one W-class, and in no case did vendor-side monitoring surface
+the failure before researchers, customers, or viral exposure did.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Verified incidents and advisories that anchor the taxonomy's realism.}
+\label{tab:incidents}
+\begin{tabular}{L{3.2cm} L{5.0cm} L{5.2cm}}
+\toprule
+Case & Class & Outcome / lesson \\
+\midrule
+EchoLeak, M365 Copilot (CVE-2025-32711) \cite{echolake-cve,echolake-paper} &
+W6 + W1 & Zero-click exfil via email-seeded injection; reference-style Markdown
+bypassed redaction; image auto-fetch carried data out. \\
+MCP Inspector RCE (CVE-2025-49596) \cite{cve-2025-49596,oligo-mcp} & W4 &
+Developer tooling itself was the entry point; CVSS 9.4; fixed in 0.14.1. \\
+Cursor / MCP-STDIO family (CVE-2025-54136 et al.) \cite{ox-mcp-family} & W4 &
+Same STDIO injection pattern across vendors; supply-chain class is systemic. \\
+Air Canada chatbot (2024 tribunal) & W12 & Airline bound by its chatbot's
+promise; output chains carry legal weight. \\
+DPD chatbot swearing (2024) & W12 & Output-control failure; customer-facing
+reputational damage. \\
+Chevrolet of Watsonville ``\$1 Tahoe'' (2025) & W12 + W11 & Agent-shaped
+commercial surface accepted an absurd commitment; the offer went viral. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Books}\label{sec:books}
+
+Two books anchor the craft literature. \emph{Red Teaming} (Siva Kumar and
+Anderson, eds.) collects the enterprise-era practices: threat modeling for ML,
+abuse-case elicitation, and the operational choreography of AI red teams
+\cite{sivakumar-anderson}. Sotiropoulos's \emph{AI Penetration Testing} is the
+practitioner's field manual: recon through exploitation on LLM stacks with
+working toolchains \cite{sotiropoulos}. Both predate the 2026 agentic reshuffle,
+which is precisely why this paper exists: the gap they leave---agents acting,
+persisting, and propagating---is what Sections~\ref{sec:agentic}
+and~\ref{sec:gaps} fill.

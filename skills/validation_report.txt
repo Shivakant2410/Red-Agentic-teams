@@ -1,0 +1,16 @@
+════════ SKILL CATALOG VALIDATION — 2026-11-06T04:52:00Z ════════
+
+Layout: categories/<folder>/<slug>.json — 50 shelves, one skill object per file
+Batches: base 102 (legacy packs) + v5 expansion 12 + v6 OWASP-gap 17
+
+── Gate run (G1 schema / G2 structure / G3 falsifiability) ──
+
+catalog: 131 skills across 50 shelves
+ALL GATES PASS — schema exact · structure coherent · proofs hold · benign controls falsify-proof
+
+── Idempotent install evidence ──
+/tmp/skilltest_memdir3/skills.json: 0 existing -> 131 added, 0 already known, 131 total (catalog: 131 skills / 50 shelves)
+/tmp/skilltest_memdir3/skills.json: 131 existing -> 0 added, 131 already known, 131 total (catalog: 131 skills / 50 shelves)
+
+── Repo's own skill/falsify tests ──
+10 passed in 0.50s

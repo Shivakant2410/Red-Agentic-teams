@@ -177,6 +177,10 @@ class JwtInspectTool:
         }
 
     def run(self, ctx: ToolContext, token: str) -> str:
+        # Contract gate (toolfuzz W4 finding: a model-emitted list/None reached
+        # analyze() and raised AttributeError — a traceback is model-visible).
+        if not isinstance(token, str):
+            raise TypeError(f"token must be a string, got {type(token).__name__}")
         result = analyze(token)
         ctx.audit.record("jwt_inspect", ok=result.get("ok", False),
                          leads=len(result.get("leads", [])))

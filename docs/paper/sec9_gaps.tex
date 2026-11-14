@@ -1,0 +1,79 @@
+\section{The remediation queue}\label{sec:gaps}
+
+Nine recommendations, ordered by the relevance ranking of
+Table~\ref{tab:matrix}, each with the module change, the literature anchor, and
+a falsifiable acceptance criterion. Wave 1 (recommendations 1, 2, 5, 6, 7) is
+implemented; the rest are scheduled.
+
+\begin{enumerate}[itemsep=4pt, topsep=4pt]
+
+\item \textbf{Poison-resistant experience memory (W5).} \emph{Change:}
+write-time provenance (derived/imported/observed), impersonation quarantine at
+both write and load, HMAC-signed rows, trust-gated recall, provenance-isolated
+merges. \emph{Anchor:} write-time defenses beat read-time rerankers on benign
+utility \cite{memdef-origin,memdef-systematic}; poisoning works at $<$0.1\%
+row-poisoning rates \cite{agentpoison}. \emph{Acceptance:} adversarial suite
+(\texttt{test\_memory\_poison.py}) passes---planted notes cannot outrank
+derived tradecraft, directive-shaped content is quarantined, tampered files
+fail closed, provenance survives roundtrip. \emph{Status: DONE (commit
+\texttt{770f2af}).}
+
+\item \textbf{Adaptive jailbreak self-probe (W2).} \emph{Change:}
+\texttt{selfprobe.py} campaign plane---14-attempt arsenal, deterministic
+fail-closed classifier, authority/quote-back/reframe escalation ladder,
+guard-wear line, Wilson-interval card, runnable against any \texttt{GuardFn}.
+\emph{Anchor:} static defenses fail adaptively; one-shot suites overstate
+robustness \cite{pair,tap}. \emph{Acceptance:} leaky reference guard is caught
+with visible wear; clean guard scores zero through full escalation;
+deterministic byte-for-byte reruns. \emph{Status: DONE against reference
+guards; wire to full agent stack next.}
+
+\item \textbf{Swarm cascade probes (W3).} \emph{Change:} three probes on the
+orchestrator bus---dissent (a specialist rejects out-of-discipline bus
+instructions), quarantine (a compromised specialist is isolated without
+stopping the swarm), message integrity (inter-agent messages carry signatures).
+\emph{Anchor:} Prompt Infection propagation; MAST failure modes
+\cite{promptinfection,mast}. \emph{Acceptance:} a seeded bus payload is
+rejected/isolated in a test swarm; integrity violations alarm.
+
+\item \textbf{Tool-registry fuzzing (W4).} \emph{Change:} ToolFuzz-style
+automated fuzzing of our own tool API surface plus integrity checks on tool
+descriptions the planner reads. \emph{Anchor:} ToolFuzz's 20$\times$ discovery
+rate; the MCP CVE family \cite{toolfuzz,ox-mcp-family}. \emph{Acceptance:} a
+nightly fuzz run with zero unhandled misinterpretations; poisoned tool
+descriptions flagged before planner consumption.
+
+\item \textbf{Multilingual probe pack (W13).} \emph{Change:} 8-language
+authority-spoof attempts in the arsenal (wave 1), extended to all TTPs.
+\emph{Anchor:} 9--18-point guardrail drops outside English
+\cite{langbarrier,lowresjb}. \emph{Acceptance:} per-language compliance rates
+on the card; no language scoring zero attempts. \emph{Status: partially DONE
+(arsenal ships the pack).}
+
+\item \textbf{Multi-seed cells: pass$^k$ (W9).} \emph{Change:} benchmark matrix
+runs $k$ seeds per cell; cards report \texttt{pass\_hat\_k} with intervals.
+\emph{Anchor:} tau-bench collapse \cite{taubench}. \emph{Acceptance:} no cell
+published without $k\geq3$ or an explicit single-seed caveat. \emph{Status:
+estimator DONE; wiring pending.}
+
+\item \textbf{Retry-null on every ASR cell (W7).} \emph{Change:} cells print
+retry policy; \texttt{resampling\_\allowbreak null} verdict required where retries exist.
+\emph{Anchor:} session-vs-attempt inflation arithmetic (Sec.~\ref{sec:retry}).
+\emph{Acceptance:} no card ships a session rate labeled as per-attempt.
+\emph{Status: estimator DONE; wiring pending.}
+
+\item \textbf{Mid-table bundle (W8, W10, W12, W14 + judge calibration,
+pinning).} \emph{Change:} judge-calibration harness (interval-wrapped judge
+rates) \cite{judgesurvey,judgecalib}; self-side budget guard on agentic loops;
+downstream output-consumer contracts; model/backend pinning with drift alarms.
+\emph{Acceptance:} cross-model judge comparisons ship intervals; a backend
+swap trips a visible alarm.
+
+\item \textbf{Conditional capability tags (W1).} \emph{Change:} CaMeL-style
+capability lattices for high-risk tool calls, gated by target defendedness
+tier \cite{camel}. \emph{Anchor:} CaMeL's 6.8--8.0\% residual at 77\% utility
+--- the cost is real, so gate it by risk tier rather than paying it always.
+\emph{Acceptance:} in the highest tier, injection-tool reachability is
+provably blocked on the benchmark suite; utility cost measured and published.
+
+\end{enumerate}

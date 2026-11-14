@@ -1,0 +1,27 @@
+{
+  "name": "web/CSP unsafe-inline script allowance",
+  "description": "[medium] Proves CSP undermined by unsafe-inline in the script-src directive: inline scripts execute despite CSP = injected markup stays executable (CWE-693). Keywords: csp unsafe-inline script-src bypass weak policy. ctrl: strict policy without unsafe-inline -> not falsified. base_url = HTML endpoint.",
+  "cwe": "CWE-693",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/"
+    }
+  },
+  "conditions": [
+    {
+      "type": "header_regex",
+      "request": "payload",
+      "pattern": "content-security-policy:[^\\r\\n]*unsafe-inline",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "fc71925e2643",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

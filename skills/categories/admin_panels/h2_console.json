@@ -1,0 +1,31 @@
+{
+  "name": "redteam/H2 database console exposed",
+  "description": "[adv] H2 web console reachable (CWE-284; JFrog research CVE-2021-42392): the console accepts arbitrary JDBC URLs — JNDI gadget => unauth RCE on the box. Keywords: h2 database console jdbc jndi rce spring dev misconfiguration. ctrl: prod build 404s the console -> not falsified. base_url = site root (copy skill for /h2-console/login variants).",
+  "cwe": "CWE-284",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/h2-console"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "H2 Console|jdbc:h2:"
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "7cddc0ca11fc",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

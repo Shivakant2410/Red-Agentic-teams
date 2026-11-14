@@ -1,0 +1,36 @@
+{
+  "name": "elite/GraphQL alias amplification primitive",
+  "description": "[high] GraphQL alias batching: one operation carrying many aliased root fields is processed server-side in a single request (Apollo docs flag it as an enumeration vector; Checkmarx documented rate-limit bypass) — the response echoes every alias. Keywords: graphql alias batching rate limit bypass enumeration amplifier. ctrl: benign single-field query echoes one __typename, failing the multi-match regex -> not falsified. base_url = host root. Amplify: N aliased login/mutation calls per request defeat per-request rate limiting.",
+  "cwe": "CWE-770",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/graphql",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"query\":\"{ a1:__typename a2:__typename a3:__typename a4:__typename a5:__typename a6:__typename a7:__typename a8:__typename }\"}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "__typename.*__typename.*__typename",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "65f8a0930d5d",
+  "created": "2026-11-05T18:20:19.655790+00:00",
+  "last_used": "2026-11-05T18:20:19.655790+00:00"
+}

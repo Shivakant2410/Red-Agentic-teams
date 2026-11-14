@@ -1,0 +1,31 @@
+{
+  "name": "redteam/Spring Boot actuator heapdump",
+  "description": "[adv] Actuator heapdump without auth (CWE-200; Wiz actuator misconfigurations): the HPROF 'JAVA PROFILE' stream is the live JVM heap — passwords, tokens and sessions can be carved with jhat/JXray. Keywords: spring boot actuator heapdump hprof java profile memory secrets. ctrl: hardened management port 401/404s -> not falsified. base_url = service root (copy skill to the management port path).",
+  "cwe": "CWE-200",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/actuator/heapdump"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "JAVA PROFILE 1\\.0"
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "7becdd828b80",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

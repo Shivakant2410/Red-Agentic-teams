@@ -1,0 +1,32 @@
+{
+  "name": "infra/CouchDB unauth _all_dbs",
+  "description": "[medium] Apache CouchDB (5984) answers /_all_dbs without auth (CWE-200): the database list is returned AND the Server: CouchDB/x header fingerprints the engine = document-level dump follow-up via /db/_all_docs. Keywords: couchdb 5984 all_dbs databases unauth mochiweb server header. ctrl: require_valid_user=true installs answer 401 -> not falsified. base_url = http://<couchdb>:5984.",
+  "cwe": "CWE-200",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/_all_dbs"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "header_regex",
+      "request": "payload",
+      "pattern": "server: *couchdb",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "aca1976d5f67",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

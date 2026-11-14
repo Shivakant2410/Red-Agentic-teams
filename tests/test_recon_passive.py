@@ -8,7 +8,8 @@ from unittest.mock import patch
 
 from redteam.attack_tree import AttackTree
 from redteam.config import Engagement
-from redteam.knowledge import ENDPOINT, KnowledgeGraph
+from redteam.knowledge import ENDPOINT, KnowledgeGraph, TECHNOLOGY
+from redteam.planner import state_briefing
 from redteam.recon.passive import run_passive_recon
 
 
@@ -112,4 +113,110 @@ def test_no_match_yields_empty_summary_no_crash():
     with patch("redteam.recon.passive.requests.get",
               side_effect=_route({})):   # everything 404s
         summary = run_passive_recon(eng, graph)
-    assert summary == {"endpoints_discovered": 0, "schemas_found": 0}
+    assert summary == {"endpoints_discovered": 0, "schemas_found": 0, "doc_leads": 0}
+
+
+# -- API-doc descriptions (the live-fire 2026-11-02 recon blindspot) --------------
+# The ladder-3 fetcher fixture leaks its ops token in the /api/import operation
+# DESCRIPTION of /openapi.json. Passive recon fetched the doc but stored only path
+# URLs — the leak reached neither the graph nor any agent-visible briefing, so hop 1
+# of the chain was unsolvable through the cheapest reading layer. These tests pin the
+# fix: descriptions survive into the graph AND render in state_briefing.
+
+_FETCHER_SCHEMA = (
+    '{"openapi": "3.0.0", "info": {"title": "Fetcher Release Automation API", '
+    '"version": "1.0.0"}, '
+    '"paths": {'
+        '"/api/import": {"post": {'
+            '"summary": "Import release artifacts from a mirror URL", '
+            '"description": "Server-side fetch of a URL. Auth: ops service account — '
+            'header \'Authorization: Bearer tok-ops-551f\' (see runbook)."}}, '
+        '"/debug/env": {"get": {"summary": "internal use only"}}'
+    '}}'
+)
+
+
+def test_openapi_operation_descriptions_land_in_the_graph():
+    eng = _engagement()
+    graph = KnowledgeGraph()
+    with patch("redteam.recon.passive.requests.get",
+              side_effect=_route({"https://example.com/openapi.json":
+                                  _Resp(200, _FETCHER_SCHEMA)})):
+        summary = run_passive_recon(eng, graph)
+    assert summary["doc_leads"] == 2   # /api/import (description) + /debug/env (summary)
+    node = next(n for n in graph.nodes(ENDPOINT) if n.key.endswith("/api/import"))
+    assert "tok-ops-551f" in node.attrs["doc"]
+    # a summary-only path also counts as documented
+    plain = next(n for n in graph.nodes(ENDPOINT) if n.key.endswith("/debug/env"))
+    assert plain.attrs["doc"] == "internal use only"
+    tech = graph.nodes(TECHNOLOGY)[0]
+    assert tech.attrs["title"] == "Fetcher Release Automation API"
+
+
+def test_doc_leak_reaches_the_agent_briefing():
+    """The actual live-fire failure: the token was ON THE WIRE but invisible to every
+    layer the agent reads. Pass/fail line: state_briefing must quote the description."""
+    eng = _engagement()
+    graph = KnowledgeGraph()
+    with patch("redteam.recon.passive.requests.get",
+              side_effect=_route({"https://example.com/openapi.json":
+                                  _Resp(200, _FETCHER_SCHEMA)})):
+        run_passive_recon(eng, graph)
+    brief = state_briefing(graph)
+    assert "tok-ops-551f" in brief
+    assert "https://example.com/api/import" in brief
+    assert "API DOC NOTES" in brief
+
+
+def test_top_level_api_description_is_captured_too():
+    schema = ('{"openapi": "3.0.0", "info": {"title": "Acme", '
+              '"description": "Internal API — staging only, uses X-Debug-Key: kd-771"}, '
+              '"paths": {"/v1/ping": {}}}')
+    eng = _engagement()
+    graph = KnowledgeGraph()
+    with patch("redteam.recon.passive.requests.get",
+              side_effect=_route({"https://example.com/openapi.json": _Resp(200, schema)})):
+        run_passive_recon(eng, graph)
+    tech = graph.nodes(TECHNOLOGY)[0]
+    assert "X-Debug-Key: kd-771" in tech.attrs["doc"]
+    assert "kd-771" in state_briefing(graph)
+
+
+def test_doc_cap_bounds_context_bloat():
+    huge = 'x' * 60_000
+    schema = ('{"openapi": "3.0.0", "info": {"title": "T"}, '
+              f'"paths": {{"/blob": {{"get": {{"description": "{huge}"}}}}}}}}')
+    eng = _engagement()
+    graph = KnowledgeGraph()
+    with patch("redteam.recon.passive.requests.get",
+              side_effect=_route({"https://example.com/openapi.json": _Resp(200, schema)})):
+        run_passive_recon(eng, graph)
+    node = next(n for n in graph.nodes(ENDPOINT) if n.key.endswith("/blob"))
+    assert len(node.attrs["doc"]) <= 400          # recon-side cap
+    brief = state_briefing(graph)
+    doc_line = next(l for l in brief.splitlines() if "/blob" in l)
+    assert len(doc_line) < 300                    # briefing-side cap keeps it compact
+
+
+def test_no_docs_means_no_doc_section():
+    eng = _engagement()
+    graph = KnowledgeGraph()
+    with patch("redteam.recon.passive.requests.get",
+              side_effect=_route({"https://example.com/robots.txt":
+                                  _Resp(200, "User-agent: *\nDisallow: /admin\n")})):
+        run_passive_recon(eng, graph)
+    assert "API DOC NOTES" not in state_briefing(graph)
+
+
+def test_malformed_schema_fields_fail_soft():
+    """path items that aren't dicts (a schema bug in the target) must not crash recon."""
+    schema = ('{"openapi": "3.0.0", "info": {"title": "T"}, '
+              '"paths": {"/weird": "not-a-dict", "/ok": {"get": {"summary": "fine"}}}}')
+    eng = _engagement()
+    graph = KnowledgeGraph()
+    with patch("redteam.recon.passive.requests.get",
+              side_effect=_route({"https://example.com/openapi.json": _Resp(200, schema)})):
+        summary = run_passive_recon(eng, graph)
+    assert summary["endpoints_discovered"] == 2
+    node = next(n for n in graph.nodes(ENDPOINT) if n.key.endswith("/ok"))
+    assert node.attrs["doc"] == "fine"

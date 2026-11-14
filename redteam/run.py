@@ -234,6 +234,15 @@ class RunOptions:
     # much — cheap quiet gambits first, loud ones only when the bandit's evidence
     # clears the price. <=0 disables budgeting (unlimited spend, legacy behavior).
     round_noise_budget: float = 12.0
+    # Phase B3 — drift-plus-penalty scheduler tuning (per-engagement knobs for
+    # RunOptions.round_noise_budget's controller; None = the calibrated module
+    # defaults in orchestrator.py — mu 2.0, V 1.0). mu: the sustainable per-claim
+    # OPSEC loudness (noise credits; claims louder accrue detection pressure,
+    # quieter repay it). V: the weight of learned progress (yield-per-cost) against
+    # pressure — HIGH V = overt engagement (chase yield, tolerate noise), LOW V =
+    # stealthy assumed-breach (quiet gambits even under zero observed pressure).
+    noise_mu: float | None = None
+    noise_V: float | None = None
     # Evidence proxy (MITM recording plane for sandbox tool traffic). On by default
     # whenever the sandbox runs; opt out with no_evidence_proxy. When TLS
     # interception is impossible (no `cryptography`), the proxy degrades to
@@ -491,7 +500,9 @@ def execute_run(opts: RunOptions) -> dict:
             from .orchestrator import Orchestrator
             driver = Orchestrator(engagement, tools, ctx, client, graph=graph,
                                   attack_tree=attack_tree, memory=memory,
-                                  noise_budget=opts.round_noise_budget)
+                                  noise_budget=opts.round_noise_budget,
+                                  noise_mu=opts.noise_mu, noise_V=opts.noise_V,
+                                  research_dir=out)   # Phase C1: persist the research journal
         else:
             driver = RedTeamAgent(engagement, tools, ctx, client, max_steps=opts.max_steps,
                                   graph=graph, attack_tree=attack_tree, memory=memory,

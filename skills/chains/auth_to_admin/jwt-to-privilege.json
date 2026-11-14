@@ -1,0 +1,103 @@
+{
+  "group": "auth_to_admin",
+  "slug": "jwt-to-privilege",
+  "name": "JWT: kid traversal -> forged claims -> object access",
+  "goal": "Break token integrity (empty-key signing, claim forgery) and ride the forged identity into object-level access.",
+  "preconditions": "JWT in Authorization header or cookie; a kid parameter and role claims present.",
+  "cwe": [
+    "CWE-347",
+    "CWE-345"
+  ],
+  "impact": "Attacker-signed tokens accepted as any user/role; horizontal and vertical privilege escalation.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "web/JWT kid path-traversal empty-key acceptance",
+      "purpose": "Prove verification weakness: kid-controlled key lookup accepting an attacker-chosen (empty) key.",
+      "on_success": "Sign tokens as anyone; jump straight to step 3 if role claims are attacker-writable.",
+      "on_fail": "kid rejected -> try alg:none, RS256->HS256 confusion (public key from /jwks), jku/x5u injection (documented variants)."
+    },
+    {
+      "n": 2,
+      "skill": "elite/JWT forged-claim acceptance check",
+      "purpose": "Prove the verifier accepts re-signed claims (role/user/sub) — the escalation primitive.",
+      "on_success": "Forge admin token -> step 3.",
+      "on_fail": "Claims verified against server state -> fall back to session-layer chains (cross-origin-action-suite)."
+    },
+    {
+      "n": 3,
+      "skill": "web/IDOR horizontal object-graph",
+      "purpose": "Use the forged identity to enumerate other tenants' objects.",
+      "on_success": "Bulk extraction like chain idor-mass-extraction.",
+      "on_fail": "Object authz intact server-side -> document token forgery alone (still critical)."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "Authorization: Bearer ...",
+      "access_token/refresh cookies",
+      "localStorage tokens (grep JS)",
+      "SAML/OAuth id_token reuse"
+    ],
+    "recon": [
+      {
+        "name": "Token census",
+        "how": "Collect every token shape the app issues (login, refresh, email confirm) and diff their claims and algorithms.",
+        "tooling": "manual + jwt_tool",
+        "signal": "Different verification per token type; weaker one is the way in."
+      },
+      {
+        "name": "Header param sweep",
+        "how": "Test kid path traversal, jku/x5u remote JWKS, and duplicate JSON keys in the header.",
+        "tooling": "jwt_tool -X",
+        "signal": "Verifier behavior changes with header content."
+      },
+      {
+        "name": "JWKS endpoint probe",
+        "how": "Find /jwks /keys /.well-known/jwks.json; public keys enable HS256 confusion attempts.",
+        "tooling": "manual",
+        "signal": "RS256->HS256 confusion accepts when key cache misbehaves."
+      },
+      {
+        "name": "Expiry/audience laxness",
+        "how": "Replay expired tokens, swap aud/iss across services, drop exp entirely.",
+        "tooling": "manual",
+        "signal": "Verifier checks signature but not context."
+      },
+      {
+        "name": "Cookie scope pairing",
+        "how": "Pair JWT cookies with web/Cookie Domain scope overbreadth — a forged cookie on any subdomain lands on the app.",
+        "tooling": "web/Cookie Domain scope overbreadth skill",
+        "signal": "Domain=.target.tld on a session cookie."
+      }
+    ],
+    "variants": [
+      "alg:none acceptance",
+      "RS256->HS256 confusion",
+      "kid SQLi in key lookup",
+      "jku/x5u attacker JWKS",
+      "signature-stripping on custom refresh flows",
+      "JWT in query string (referrer leakage)"
+    ],
+    "dorks": [
+      "github: jwt.verify( { algorithms",
+      "github: \"kid\" \"fs.readFileSync\" jwt",
+      "google: inurl:id_token= site:target.tld"
+    ],
+    "pivot_hints": [
+      "forged admin -> BFLA chain for function-level proof",
+      "refresh-token theft -> persistent access",
+      "pair with oauth chain when login is OAuth-backed"
+    ]
+  },
+  "fallbacks": [
+    "auth-bypass-to-admin",
+    "cross-origin-action-suite"
+  ],
+  "sources": [
+    "PortSwigger — JWT attacks",
+    "PayloadsAllTheThings — JWT",
+    "OWASP JWT Cheat Sheet",
+    "jwt_tool repository notes"
+  ]
+}

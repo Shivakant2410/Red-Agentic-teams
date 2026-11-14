@@ -1,0 +1,43 @@
+{
+  "name": "web/SSTI Mako python-arithmetic proof",
+  "description": "[high] Proves Mako SSTI (Python): ${7*7} evaluates to 49 AND ${7*'7'} to 7777777 — int*str repetition is PYTHON semantics, which separates Mako/Jinja2 from Freemarker (Java: that pair raises). Keywords: ssti mako python template injection ${} interpolation. ctrl: benign query leaves 49 absent -> not falsified. probe_url = endpoint reflecting the q param into a Mako template.",
+  "cwe": "CWE-1336",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{probe_url}}?q=%24%7B7%2A7%7D"
+    },
+    "mako_repeat": {
+      "method": "GET",
+      "url": "{{probe_url}}?q=%24%7B7%2A%277%27%7D"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\b49\\b",
+      "present": true
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\$\\{7\\*7\\}",
+      "present": false
+    },
+    {
+      "type": "body_regex",
+      "request": "mako_repeat",
+      "pattern": "7777777",
+      "present": true
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "15fd26d43664",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

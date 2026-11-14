@@ -1,0 +1,105 @@
+{
+  "group": "cloud_takeover",
+  "slug": "aws-imds-full-takeover",
+  "name": "AWS IMDS: SSRF -> role -> session keys -> takeover",
+  "goal": "Turn a same-origin SSRF into live AWS session credentials for the instance profile.",
+  "preconditions": "A parameter or header that makes the server issue HTTP requests (or read file:// paths); EC2 deployment without IMDSv2 hop limit enforcement.",
+  "cwe": [
+    "CWE-918",
+    "CWE-798"
+  ],
+  "impact": "Live AKIA/ASIA session keys for the instance role -> S3/EC2/STS actions in the role's scope; combined with public bucket listing this is direct data-plane takeover.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "web/SSRF file-scheme local file read",
+      "purpose": "Prove the sink at the strongest primitive (file://) and fingerprint the host (cloud-init, /etc/passwd, hostname).",
+      "on_success": "Record the sink; try http:// against 169.254.169.254 through the same sink.",
+      "on_fail": "file:// blocked but http:// works -> go straight to step 2; neither works -> pivot to chain multi-cloud-metadata-sweep for header-based providers."
+    },
+    {
+      "n": 2,
+      "skill": "web/SSRF AWS IMDSv1 role discovery",
+      "purpose": "Read /latest/meta-data/iam/security-credentials/ to learn the attached role name.",
+      "on_success": "Save the role name as the {{role_name}} input of step 3.",
+      "on_fail": "401 on IMDS = IMDSv2 token required -> try X-aws-ec2-metadata-token header injection via web/CRLF response-header injection; GCP/Azure instead -> multi-cloud-metadata-sweep."
+    },
+    {
+      "n": 3,
+      "skill": "web/SSRF AWS IMDSv1 credential dump",
+      "purpose": "Dump the role's AccessKeyId/SecretAccessKey/Token = live session credentials.",
+      "on_success": "Validate scope with a cheap ListBuckets/GetCallerIdentity call; pivot to redteam/S3-GCS public bucket listing for the data plane.",
+      "on_fail": "Keys present but scoped-down -> keep them as evidence, sweep other SSRF sinks for other roles; redteam/.env dotenv secrets exposure may hold static keys."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "url/fetch/proxy/dest/img/render query params",
+      "webhook configurators (Slack/Discord/Teams)",
+      "import-from-URL (avatars, Google-Sheets style import, CMS media by URL)",
+      "PDF/report generators (wkhtmltopdf, headless Chrome)",
+      "link-preview unfurlers, oEmbed endpoints",
+      "XML/DOCX/SVG import features (XXE-as-SSRF)"
+    ],
+    "recon": [
+      {
+        "name": "Parameter wordlist fuzz on sinks",
+        "how": "FFUF the collected endpoint list with canary URL values in every candidate parameter.",
+        "tooling": "ffuf + SecLists burp-parameter-names",
+        "signal": "Canary callback or response containing canary content."
+      },
+      {
+        "name": "Wayback parameter mining",
+        "how": "Pull historical URLs, grep for fetch-shaped parameters, replay them at the live host.",
+        "tooling": "gau / waybackurls + grep -E 'url=|dest=|proxy='",
+        "signal": "Old endpoints still alive are untested by dev."
+      },
+      {
+        "name": "Internal port scan via latency",
+        "how": "Time requests to 127.0.0.1:N through the sink; open ports answer fast or differently.",
+        "tooling": "Burp Intruder + response-time column",
+        "signal": "Latency deltas identify 80/8080/8000/9200/6379 neighbors."
+      },
+      {
+        "name": "IMDS address variants",
+        "how": "Try 169.254.169.254, 169.254.169.254.nip.io, decimal/hex/IPv6 encodings to slip past blocklists.",
+        "tooling": "manual + Burp Repeater",
+        "signal": "Blocklist bypass when one encoding returns data others 403."
+      },
+      {
+        "name": "Header-based metadata triggers",
+        "how": "Inject Metadata-Flavor / Metadata / X-aws-ec2-metadata-token headers where the sink forwards client headers.",
+        "tooling": "Burp + param-miner header brute",
+        "signal": "GCP/Azure metadata JSON in the response."
+      }
+    ],
+    "variants": [
+      "SSRF in webhook signature validators",
+      "SSRF in SAML IdP metadata fetch",
+      "SSRF in Grafana/Prometheus datasource URLs",
+      "SSRF in k8s admission webhooks",
+      "SSRF in image/media processors via URL",
+      "ImageMagick-style processors with file scheme"
+    ],
+    "dorks": [
+      "github: \"169.254.169.254\" language:python (review hardcoded IMDS calls)",
+      "github: \"imds\" \"hop_limit\"",
+      "google: inurl:fetch?url= OR inurl:proxy?url="
+    ],
+    "pivot_hints": [
+      "Session keys -> assume-role across accounts in the org",
+      "role name reveals workload -> enumerate sibling instances via same stack (favicon clustering)",
+      "no cloud creds? file:// read of ~/.aws/credentials or /var/lib/kubelet/... configs"
+    ]
+  },
+  "fallbacks": [
+    "multi-cloud-metadata-sweep",
+    "xxe-to-metadata"
+  ],
+  "sources": [
+    "PayloadsAllTheThings — Server Side Request Forgery",
+    "HackTricks — Cloud SSRF & metadata",
+    "AWS docs — IMDSv2 session tokens",
+    "PortSwigger Web Security Academy — SSRF"
+  ]
+}

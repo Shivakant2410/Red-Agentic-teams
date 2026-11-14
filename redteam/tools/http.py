@@ -12,6 +12,13 @@ banner, page title) — zero extra requests, the surface map builds itself while
 team works. Scope-DENIED attempts are recorded too: a blocked request is evidence
 that the boundary held. Telemetry failures are swallowed — recording must never
 break a request mid-proof.
+
+Phase B3: it is ALSO the detection-observation point. Every response feeds
+observe_response() below, which pushes latency/status/challenge/rate-limit signals
+into the run's BeliefFilter (sandbox/detection_belief.py) — the POMDP the
+orchestrator's DriftPlusPenaltyScheduler reads to throttle the swarm when the
+defender starts talking. Same contract as every other tap here: best-effort,
+swallowed failures, zero extra requests.
 """
 
 from __future__ import annotations
@@ -135,6 +142,25 @@ def _passive_observe(ctx: ToolContext, req: dict, status: int,
         pass  # a fingerprinting surprise must never break a proof in flight
 
 
+def observe_response(ctx: ToolContext, req: dict, status: int, elapsed: float,
+                     resp_headers: dict, body: str) -> None:
+    """Feed one completed exchange to the run's detection BeliefFilter (Phase B3).
+
+    Called at the response return point of BOTH fetch_once and make_fetch's
+    re-runnable fetch, so every in-scope exchange — proofs, re-verifications,
+    probes — updates the POMDP the scheduler throttles on. A run without a
+    detection filter (single-agent mode, legacy paths) costs one getattr and
+    nothing more; a broken filter must never break the request in flight."""
+    detection = getattr(ctx, "detection", None)
+    if detection is None:
+        return
+    try:
+        detection.observe_response(req.get("url", ""), status, elapsed,
+                                   resp_headers or {}, body or "")
+    except Exception:
+        pass  # observation must never break a proof (same rule as _record_traffic)
+
+
 def fetch_once(ctx: ToolContext, req: dict, tool: str = "", session: str = ""):
     """Single scope-checked request -> (status, body, elapsed, headers).
 
@@ -147,9 +173,11 @@ def fetch_once(ctx: ToolContext, req: dict, tool: str = "", session: str = ""):
     else:
         result = _host_request(req)
     status, body, _elapsed, headers = result
-    _record_traffic(ctx, req, status, time.monotonic() - start, headers, body,
+    elapsed = time.monotonic() - start
+    _record_traffic(ctx, req, status, elapsed, headers, body,
                     tool=tool, session=session)
     _passive_observe(ctx, req, status, headers, body)
+    observe_response(ctx, req, status, elapsed, headers, body)
     return result
 
 
@@ -193,8 +221,10 @@ def make_fetch(ctx: ToolContext, req: dict, tool: str = ""):
             status, body, elapsed, headers = _sandbox_request(ctx, req)
         else:
             status, body, elapsed, headers = _host_request(req)
-        _record_traffic(ctx, req, status, time.monotonic() - start, headers, body,
+        elapsed = time.monotonic() - start
+        _record_traffic(ctx, req, status, elapsed, headers, body,
                         tool=tool or "verify", session="")
         _passive_observe(ctx, req, status, headers, body)
+        observe_response(ctx, req, status, elapsed, headers, body)
         return status, body, elapsed
     return fetch

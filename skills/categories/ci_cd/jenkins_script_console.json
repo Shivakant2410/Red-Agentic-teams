@@ -1,0 +1,31 @@
+{
+  "name": "redteam/Jenkins script console unauth",
+  "description": "[adv] Jenkins /script Groovy console without authentication (CWE-306; jenkins.io script-console docs: Administer permission, create sub-processes, decrypt credentials): 200 on /script is RCE-as-a-feature. Keywords: jenkins script console groovy rce administer ci cd unauth. ctrl: secured controller 403s -> not falsified. base_url = Jenkins root; pair with the pack's Jenkins job-enumeration skill.",
+  "cwe": "CWE-306",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/script"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "Groovy script|scriptConsole|Jenkins\\.instance"
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "d1b076c61ebb",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

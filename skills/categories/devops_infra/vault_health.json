@@ -1,0 +1,32 @@
+{
+  "name": "infra/Vault sys/health unauth disclosure",
+  "description": "[low] HashiCorp Vault /v1/sys/health (8200) is intentionally unauthenticated but leaks cluster state to anyone (CWE-200): initialized/sealed/version = exact Vault version (CVE targeting), seal state, cluster name. Keywords: vault 8200 sys health unauth version seal state hashicorp. ctrl: benign target (health behind auth/proxy) answers 403 -> not falsified. base_url = http://<vault>:8200.",
+  "cwe": "CWE-200",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/v1/sys/health"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\\"initialized\\\":(true|false)",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "1b71062d8255",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

@@ -1,0 +1,110 @@
+{
+  "group": "ai_agent_hijack",
+  "slug": "rag-poison-to-exfil",
+  "name": "RAG poisoning -> cross-tenant bleed -> prompt extraction -> cross-session leak",
+  "goal": "Attack the retrieval plane end to end: plant poisoned corpus content, ride tenant-isolation failures to foreign data, extract operator configuration, and close with memory that leaks across sessions.",
+  "preconditions": "A RAG-backed assistant with a corpus an outsider can influence (uploads, shared docs, public ingestion) or multi-tenant vector storage.",
+  "cwe": [
+    "CWE-1427",
+    "CWE-863"
+  ],
+  "impact": "Persistent misinformation at policy confidence, cross-tenant data exposure, and operator-configuration disclosure — all through the data plane, no code exec needed.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "ai/RAG document poisoning retrieval",
+      "purpose": "Prove planted corpus content wins retrieval and gets asserted as truth.",
+      "on_success": "Note retrieval confidence and citation behavior; scale to the objective you want asserted.",
+      "on_fail": "Corpus read-only -> skip to step 2 (bleed needs only query access)."
+    },
+    {
+      "n": 2,
+      "skill": "ai/Cross-context retrieval bleed",
+      "purpose": "Prove tenant scoping fails at query time — foreign-tenant canary in your answer.",
+      "on_success": "Data-plane authz finding; enumerate what else is reachable.",
+      "on_fail": "Scoping solid -> corpus-poisoning evidence alone carries the finding."
+    },
+    {
+      "n": 3,
+      "skill": "ai/System prompt direct extraction",
+      "purpose": "Upgrade from data to configuration: pull the operator's system prompt (LLM07).",
+      "on_success": "Feeds jailbreak crafting and injection targeting for the report.",
+      "on_fail": "Extraction hardened -> use planted documents (ai/RAG planted document exfil) as the indirect route."
+    },
+    {
+      "n": 4,
+      "skill": "ai/Cross-session leakage",
+      "purpose": "Prove memory/session isolation failure — what one session plants, another reads.",
+      "on_success": "Persistence primitive: leaks become durable, not one-shot.",
+      "on_fail": "Sessions isolated -> document retrieval-plane findings; memory hardening is the fix note."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "document upload → indexing pipelines",
+      "shared knowledge bases / wikis the assistant reads",
+      "multi-tenant help centers",
+      "public ingestion endpoints (web scrapers, connectors)",
+      "customer-facing 'ask our docs' bots"
+    ],
+    "recon": [
+      {
+        "name": "Citation interrogation",
+        "how": "Ask the assistant to cite sources and versions; citation habits reveal corpus layout, freshness and indexing cadence.",
+        "tooling": "manual + corpus-index-mismatch skill",
+        "signal": "Source names, stale versions, cross-tenant source leakage."
+      },
+      {
+        "name": "Retrieval echo probing",
+        "how": "Seed unique phrases into any writable surface and ask targeted questions — retrieval of the phrase proves ingestion into the vector store.",
+        "tooling": "manual + ai/RAG document poisoning retrieval",
+        "signal": "Your seed phrase asserted back with confidence."
+      },
+      {
+        "name": "Tenant-pair probing",
+        "how": "Two accounts, shaped queries: A's query phrased as semantic neighbors of B's documents; watch for B-content in A's answers.",
+        "tooling": "two-account harness + cross-context skill",
+        "signal": "Foreign canary in answers."
+      },
+      {
+        "name": "Corpus-write surface census",
+        "how": "Enumerate every way outsider text reaches the corpus: uploads, comments, connectors, scraped pages — each is a poisoning canal.",
+        "tooling": "manual feature walk",
+        "signal": "Attacker-writable content that gets indexed."
+      },
+      {
+        "name": "Embedding-collision dictionary",
+        "how": "Craft near-duplicate phrasings of sensitive-topic queries; collisions that pull restricted chunks reveal embedding-space weaknesses.",
+        "tooling": "embedding-semantic-collision skill",
+        "signal": "Restricted-doc retrieval on innocuous-ish queries."
+      }
+    ],
+    "variants": [
+      "multi-hop poisoning (planted doc cites planted doc)",
+      "chunk-boundary abuse to straddle tenant splits",
+      "connector poisoning (third-party source as the canal)",
+      "retrieval-conditioned jailbreaks (poisoned doc carries jailbreak text)",
+      "index rollback abuse (re-stale the corpus after a fix)"
+    ],
+    "dorks": [
+      "github: \"vectorstore\" \"tenant\" filter",
+      "github: langchain \"as_retriever\" search_kwargs",
+      "google: \"ask our docs\" assistant site:target.tld"
+    ],
+    "pivot_hints": [
+      "cross-tenant bleed often pairs with idor-mass-extraction on the same objects",
+      "poisoned policy claims = revenue/regulatory impact framing",
+      "extraction output feeds the jailbreak-to-client-xss ladder"
+    ]
+  },
+  "fallbacks": [
+    "injection-to-tool-abuse",
+    "graphql-recon-to-exfil"
+  ],
+  "sources": [
+    "OWASP LLM Top 10 2025 — LLM08 vector/embedding weaknesses, LLM04 data poisoning, LLM07 leakage",
+    "promptfoo red-team plugins — rag-poisoning, cross-session-leak",
+    "published RAG tenant-isolation research",
+    "OWASP GenAI Red Teaming Manual v1.0"
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "group": "edge_cache_smuggling",
+  "slug": "cache-deception-pii",
+  "name": "Deception: path trick -> victim-cached profile -> PII harvest",
+  "goal": "Make authenticated victims cache their own profile data to public URLs, then harvest at scale.",
+  "preconditions": "A cache that keys on the path but caches extension-looking requests, plus an authenticated profile endpoint.",
+  "cwe": [
+    "CWE-640",
+    "CWE-524"
+  ],
+  "impact": "PII/tokens of many users extracted from public cache entries.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "elite/Web cache deception authenticated leak",
+      "purpose": "Prove the deception: victim profile cached to a public path (/profile/nonexistent.css).",
+      "on_success": "Identify which data lands in cache; step 3 scales harvest.",
+      "on_fail": "Cache ignores extensions -> try ;/.jpg trailing tricks, path params, or two-layer (CDN+app) variants."
+    },
+    {
+      "n": 2,
+      "skill": "web/IDOR horizontal object-graph",
+      "purpose": "Correlate: if profile endpoints take IDs, deception + IDOR multiplies victims per cached entry.",
+      "on_success": "Broader blast radius documented.",
+      "on_fail": "Skip — deception alone stands."
+    },
+    {
+      "n": 3,
+      "skill": "web/Rate limiting absent burst acceptance",
+      "purpose": "Confirm no throttle on cache reads -> unbounded PII extraction.",
+      "on_success": "Blast radius = every user who visits the poisoned link pattern.",
+      "on_fail": "Throttled -> slow-extract within budget; document rate-limit separately."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "profile/settings endpoints",
+      "X-Cache/Age-bearing responses",
+      "CDN-fronted authenticated apps",
+      "banking/dashboard style apps with static-asset caching"
+    ],
+    "recon": [
+      {
+        "name": "Cache extension matrix",
+        "how": "Request authenticated pages with .css/.js/.ico/.json suffixes and path tricks; diff response headers for cache status.",
+        "tooling": "manual + Intruder",
+        "signal": "Cached entry appears for an authenticated body."
+      },
+      {
+        "name": "Two-layer audit",
+        "how": "Check CDN layer and app layer separately; one may cache what the other would not.",
+        "tooling": "header diffing",
+        "signal": "CF-Cache-Status vs app cache disagree."
+      },
+      {
+        "name": "Vary analysis",
+        "how": "Audit Vary headers — missing Vary: Cookie/Authorization is the deception enabler.",
+        "tooling": "manual",
+        "signal": "No vary on auth headers."
+      },
+      {
+        "name": "Cache key simplification",
+        "how": "param-miner finds unkeyed params; simplification (ignoring query, case, port) widens deception surface.",
+        "tooling": "param-miner",
+        "signal": "Unexpected cache hits."
+      }
+    ],
+    "variants": [
+      "deception via ;.js path params",
+      "case/encoding tricks",
+      "CloudFront cache policies",
+      "Varnish vcl behavior",
+      "app-level caches (django cache_page)"
+    ],
+    "dorks": [
+      "google: inurl:profile site:target.tld",
+      "shodan: http.html:\"varnish\"",
+      "github: cache_page( django"
+    ],
+    "pivot_hints": [
+      "pair with smuggling chain for poison+deception combo",
+      "harvested tokens feed auth chains",
+      "document cache behavior map for the client"
+    ]
+  },
+  "fallbacks": [
+    "smuggling-to-poisoned-reset",
+    "idor-mass-extraction"
+  ],
+  "sources": [
+    "PortSwigger — Web cache deception",
+    "snyk/original deception research (Filipov)",
+    "HackTricks — Cache deception",
+    "CDN cache-policy docs"
+  ]
+}

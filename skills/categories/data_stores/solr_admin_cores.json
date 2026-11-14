@@ -1,0 +1,32 @@
+{
+  "name": "infra/Apache Solr admin cores unauth",
+  "description": "[medium] Apache Solr admin API (8983) answers /solr/admin/cores?wt=json without auth (CWE-200): responseHeader + per-core status = core inventory for the CVE-2019-0193 / Velocity-template RCE follow-ups. Keywords: solr 8983 admin cores unauth dataimporthandler velocity rce recon. ctrl: hardened installs 403/404 -> not falsified. base_url = http://<solr>:8983.",
+  "cwe": "CWE-200",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/solr/admin/cores?wt=json&indexInfo=false"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\\"responseHeader\\\"|\\\"status\\\":0",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "6ec208baac37",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

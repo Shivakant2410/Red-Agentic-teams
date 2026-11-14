@@ -1,0 +1,52 @@
+{
+  "name": "web/Rate limiting absent burst acceptance",
+  "description": "[medium] Proves absence of rate limiting on a sensitive endpoint: five rapid identical requests all return 200 (no 429/throttle anywhere in the burst) = OTP/login/token brute surfaces open (OWASP API4). Keywords: rate limiting brute force otp verification throttling api abuse burst. ctrl: throttled endpoint 429s mid-burst -> not falsified. base_url = sensitive endpoint (OTP verify / login / token check).",
+  "cwe": "CWE-770",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/api/otp/verify?code=000000"
+    },
+    "burst2": {
+      "method": "GET",
+      "url": "{{base_url}}/api/otp/verify?code=000000"
+    },
+    "burst3": {
+      "method": "GET",
+      "url": "{{base_url}}/api/otp/verify?code=000000"
+    },
+    "burst4": {
+      "method": "GET",
+      "url": "{{base_url}}/api/otp/verify?code=000000"
+    },
+    "burst5": {
+      "method": "GET",
+      "url": "{{base_url}}/api/otp/verify?code=000000"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "status",
+      "request": "burst3",
+      "equals": 200
+    },
+    {
+      "type": "status",
+      "request": "burst5",
+      "equals": 200
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "c88ed2691b97",
+  "created": "2026-11-06T02:07:37.515534+00:00",
+  "last_used": "2026-11-06T02:07:37.515534+00:00"
+}

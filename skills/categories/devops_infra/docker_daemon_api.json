@@ -1,0 +1,31 @@
+{
+  "name": "redteam/Docker daemon API unauthenticated",
+  "description": "[adv] Docker Engine API on 2375 without auth (CWE-668; PentestPad port 2375, Unit42, Akamai Hunt): /version JSON proves a plaintext root-equivalent daemon — containers, host mounts, secrets next. Keywords: docker engine api 2375 unauth daemon root exposure containers. ctrl: TLS-only or firewalled daemon 403s -> not falsified. base_url = host root (skill targets :2375).",
+  "cwe": "CWE-668",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}:2375/version"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\"ApiVersion\"|\"Os\""
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "bfb4d72e4edb",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

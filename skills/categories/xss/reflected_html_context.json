@@ -1,0 +1,26 @@
+{
+  "name": "web/XSS reflected HTML-context",
+  "description": "[high] Proves reflected XSS in HTML context: unique marker + attribute-closing + svg/onload reflected RAW (not entity-encoded) = executable markup reaches the DOM. Keywords: xss reflected cross-site-scripting html injection markup. ctrl: benign request lacks the marker -> not falsified. probe_url = endpoint whose q param reflects into the HTML body.",
+  "cwe": "CWE-79",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{probe_url}}?q=Zq3vX9%22%3E%3Csvg%2Fonload%3Dalert(1)%3E"
+    }
+  },
+  "conditions": [
+    {
+      "type": "reflected_unescaped",
+      "request": "payload",
+      "token": "Zq3vX9\"><svg/onload=alert(1)>"
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "0903153ff2be",
+  "created": "2026-11-05T18:01:37.085987+00:00",
+  "last_used": "2026-11-05T18:01:37.085987+00:00"
+}

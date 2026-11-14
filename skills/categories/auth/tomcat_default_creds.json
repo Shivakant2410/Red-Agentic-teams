@@ -1,0 +1,35 @@
+{
+  "name": "elite/Tomcat Manager default credential acceptance",
+  "description": "[critical] Apache Tomcat Manager default credentials (tomcat:tomcat) accepted: 200 + 'Tomcat Web Application Manager' on /manager/html = full WAR deploy surface = webshell (T1505.003). Keywords: tomcat manager default credentials war deploy webshell basic auth. ctrl: request without auth gets 401 -> not falsified. base_url = site root; copy skill with other default-cred pairs base64'd into the Authorization header.",
+  "cwe": "CWE-798",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/manager/html",
+      "headers": {
+        "Authorization": "Basic dG9tY2F0OnRvbWNhdA=="
+      }
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "Tomcat Web Application Manager",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "5057b0e7ee9c",
+  "created": "2026-11-05T18:20:19.655790+00:00",
+  "last_used": "2026-11-05T18:20:19.655790+00:00"
+}

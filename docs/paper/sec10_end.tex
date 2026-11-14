@@ -1,0 +1,55 @@
+\section{Limitations and conclusion}\label{sec:end}
+
+\subsection{Limitations}
+
+\textbf{Informed priors are judgments.} The $P$ values in
+Section~\ref{sec:model} are anchored on published rates but chosen by us. The
+Monte Carlo sensitivity analysis of Section~\ref{sec:model} states exactly what
+they decide: the head of the ranking is invariant (W5 holds rank 1 and
+$\{$W5, W2$\}$ holds the top two as a set in $100\%$ of $10{,}000$ draws with
+every prior and defendedness perturbed by $\pm0.10$), ranks 3--10 reorder
+almost freely, and the at-least-one figure survives halving every prior. The
+ranking is therefore a hypothesis about priorities, not an evidence-fitted
+measurement---and below rank 3 it should be read as an argument, not a
+measurement.
+
+\textbf{ASR heterogeneity.} The pools of Section~\ref{sec:pooling} combine
+studies that differ in targets, defenses, and judges. The pooling is designed
+for that (per-study posteriors, inverse-variance combination), but no
+statistical treatment makes a RAG-corpus study and a web-agent study
+commensurable; the pools summarize \emph{magnitudes}, not a single phenomenon.
+
+\textbf{Preprint dependence.} Several 2026 load-bearing anchors (memory-defense
+costs, multilingual jailbreak transfer, judge calibration) are preprints and may
+be revised. The named-exclusions discipline of Section~\ref{sec:exclusions} is
+our hedge; a revision that changes a load-bearing number should change the
+corresponding prior and rank, and the pipeline makes that a one-parameter edit.
+
+\textbf{Single-framework grounding.} The deep map (Table~\ref{tab:deepmap})
+describes one codebase. The taxonomy, the model, and the statistics are
+portable; the module names and the audited defendedness values are not.
+
+\subsection{Conclusion}
+
+The 2024--2026 record moves the AI red-team problem from ``can the model be
+talked into saying something bad'' to ``can the system be steered into doing
+something bad, persistently, across runs, through content it ingests''. The
+evidence says the direct-attack frontier is fully broken but quantifiable
+(undefended pool 0.296, defended pool 0.075, a $3.96\times$ cut with a
+7.5\% residual); that agentic surfaces multiply the delivery channels (retrieval,
+memory, tools, swarm buses, output chains); and that measurement itself is a
+weakness class (retry inflation, judge bias, single-seed overclaiming) that no
+published rate escapes.
+
+Our answer is an engineering program, not a position paper: a fourteen-class
+taxonomy anchored to OWASP 2026 and MITRE ATLAS; a relevance model that ranks
+by calibrated quantity and survives its own sensitivity analysis; a statistical
+layer that makes every reported rate auditable; and a first integration wave
+already running in the framework---poison-resistant memory, adaptive
+self-probing with guard-wear reporting, and the estimators underneath. The
+highest-leverage insight is also the least glamorous: for a system that
+ingests attacker-influenced content, the memory plane is where attacks
+compound, so write-time provenance is worth more than any read-time cleverness.
+The queue in Section~\ref{sec:gaps} is the Monday-morning version of this
+paper, and its falsifiable acceptance criteria are how the next revision will
+be graded.

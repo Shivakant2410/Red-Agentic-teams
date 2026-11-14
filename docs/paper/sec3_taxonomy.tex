@@ -1,0 +1,79 @@
+\section{The weakness taxonomy W1--W14}\label{sec:taxonomy}
+
+Table~\ref{tab:taxonomy} defines the fourteen weakness classes used through the
+rest of the paper. Anchors: OWASP Top 10 for LLM Applications (2026 agentic
+edition) \cite{owasp2026} and MITRE ATLAS techniques \cite{atlas}. The \emph{lens}
+column carries the paper's central discipline: \textbf{O} = offensive class (we
+wield it against targets), \textbf{D} = defensive exposure (our own stack is the
+victim), \textbf{B} = dual-use (both).
+
+\begin{longtable}{L{0.8cm} L{3.0cm} L{4.2cm} L{3.1cm} L{0.8cm}}
+\caption{The fourteen weakness classes. OWASP codes reference the 2026 agentic
+edition; ATLAS codes the 2026.10 matrix.}\label{tab:taxonomy}\\
+\toprule
+ID & Class & Definition & Anchors & Lens \\
+\midrule
+\endfirsthead
+\toprule
+ID & Class & Definition & Anchors & Lens \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+W1 & Injection vs defended stacks & Indirect prompt injection against agents that
+already deploy injection defenses; the residual rate that survives tool firewalls
+and spotlighting. & LLM01; AML.T0051 & D \\
+W2 & Adaptive jailbreak & Iterative, response-aware jailbreak of the agent stack
+itself (PAIR/TAP-style escalation), including against our guard chain. &
+LLM01; AML.T0048 & B \\
+W3 & Swarm cascade & Compromise propagating across cooperating agents (payloads in
+inter-agent messages, infected shared context). & AML.T0051 agentic; MAST & O \\
+W4 & Tool/MCP supply chain & Poisoned tool descriptions, malicious MCP servers,
+fuzzable tool registries; the ToolFuzz surface. & LLM06 (supply chain);
+AML tool-exploitation family & D \\
+W5 & Memory poisoning & Adversarial writes to long-term memory/experience stores
+that persist across runs and reshape future behavior. & Agentic memory class
+(AgentPoison family) & D \\
+W6 & Hidden-context exfiltration & Data leaving through render/egress channels
+(reference-style Markdown, auto-fetched images) driven by retrieved instructions
+--- the EchoLeak shape. & LLM02/hidden-context exposure; CWE-200 & B \\
+W7 & Retry-inflated measurement & Measurement validity: retry-until-success
+harnesses reporting session rates as per-attempt capability. & Evaluation-method
+class (this paper) & B \\
+W8 & Judge miscalibration & LLM-as-judge bias inflating or deflating ASR and
+safety scores. & Evaluation-method class \cite{judgesurvey} & B \\
+W9 & Single-seed reliability & Reporting pass@1 as capability when pass$^k$ across
+independent runs collapses (tau-bench pass$^8<25\%$ class). &
+Evaluation-method class \cite{taubench} & B \\
+W10 & Cost/turn amplification & Agentic loops turned into budget-exhaustion DoS;
+cost amplification as an attack primitive. & Availability class & O \\
+W11 & Misuse compliance & Agents complying with overtly harmful tasks when asked
+politely (AgentHarm/SafeArena rates). & LLM01; AML.T0048 & O \\
+W12 & Output-chain second order & Our outputs becoming another system's inputs
+with unverified trust; downstream consumers as exfil/enrichment channels. &
+LLM06?---inter-system; CWE-200 & B \\
+W13 & Multilingual erosion & Guardrail strength decaying outside English;
+multilingual jailbreaks and safety drift. & LLM01 & O \\
+W14 & Supply-chain/model drift & Backend/model/pin drift changing behavior under
+the same code; silent capability shifts. & LLM06?---supply chain & D \\
+\end{longtable}
+
+\subsection{Reading the 2026 OWASP reshuffle}\label{sec:owasp2026}
+
+Three moves in the 2026 edition matter more than the rest. First, \emph{excessive
+agency} at position~3 ratifies what the incident record already showed: the harm
+comes from \emph{what the system is allowed to do}, not only from what it says.
+Second, \emph{system prompt leakage} becoming \emph{hidden context exposure}
+widens the class from ``the prompt leaked'' to ``retrieved context did something
+the operator never wrote''---which is EchoLeak's exact structure: our own
+retrieval became the attack delivery channel. Third, the list is now written for
+systems that \emph{act}: tool effects, cascading actions, and cross-system trust
+appear as first-class categories rather than footnotes.
+
+Our own incident log contains a miniature of this reshuffle. In an internal
+exercise, a red-team finding was stored in two halves: a screenshot of a vulnerable
+page went into one store, and the rendered proof text went through a rendering
+path that treated it as content. Neither half was sensitive alone; the recombined
+pair was a working exfiltration story. That is W6 in one paragraph---and it is
+why the D-lens exists: the framework's own storage and rendering pipeline recreated
+the vulnerability class it was built to hunt.

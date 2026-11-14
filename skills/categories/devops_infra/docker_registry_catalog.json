@@ -1,0 +1,32 @@
+{
+  "name": "infra/Docker Registry v2 catalog unauth",
+  "description": "[high] Docker Registry HTTP API v2 answers /v2/_catalog without auth (CWE-668): the repositories array = every image in the registry (internal names, vendor stacks); tag + manifest pulls follow and frequently leak ENV-injected secrets. Keywords: docker registry v2 catalog repositories images unauth manifest secrets. ctrl: auth-enabled registry answers 401 UNAUTHORIZED -> not falsified. base_url = registry host (skill rides /v2/_catalog).",
+  "cwe": "CWE-668",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/v2/_catalog"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\\"repositories\\\"\\s*:",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "d7bdd4436bc9",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

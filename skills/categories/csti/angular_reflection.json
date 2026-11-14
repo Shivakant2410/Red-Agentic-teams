@@ -1,0 +1,33 @@
+{
+  "name": "web/Angular client-side template injection reflection",
+  "description": "[medium] Proves the CSTI precondition pair over HTTP: `{{7*7}}` reflected RAW into a page that carries an Angular bootstrap marker (ng-version/ng-app) = the browser will compile and evaluate it (confirm 49 in DOM with a browser tool). Keywords: csti client-side template injection angular sandbox expression. ctrl: reflection sanitized or no Angular marker -> not falsified. base_url = endpoint reflecting q into an Angular-rendered page.",
+  "cwe": "CWE-1336",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/page?q=%7B%7B7*7%7D%7D"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\{\\{7\\*7\\}\\}",
+      "present": true
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "ng-(?:version|app)",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "bd3597a0c2bc",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

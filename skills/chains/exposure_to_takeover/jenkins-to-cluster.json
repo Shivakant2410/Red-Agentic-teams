@@ -1,0 +1,105 @@
+{
+  "group": "exposure_to_takeover",
+  "slug": "jenkins-to-cluster",
+  "name": "CI -> cluster: Jenkins enum -> Groovy RCE -> kubelet -> etcd",
+  "goal": "From unauthenticated Jenkins enumeration to script-console RCE and then into the Kubernetes control plane.",
+  "preconditions": "Jenkins (and ideally a k8s cluster) reachable.",
+  "cwe": [
+    "CWE-306",
+    "CWE-284"
+  ],
+  "impact": "CI code execution, cluster pod inventory with env secrets, etcd secrets read.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "redteam/Jenkins unauth job enumeration",
+      "purpose": "Map jobs, build names, env hints — the recon layer for the console.",
+      "on_success": "Job/agent naming informs privilege targeting.",
+      "on_fail": "Console blocked -> keep enum evidence; pivot to kubelet next."
+    },
+    {
+      "n": 2,
+      "skill": "redteam/Jenkins script console unauth",
+      "purpose": "Groovy console execution = CI-plane RCE (build credentials, cloud keys in env).",
+      "on_success": "Read Jenkins env + creds store paths -> often k8s SA tokens.",
+      "on_fail": "Console authed -> default creds (auth shelf) or CVE-era deser (documented variant); continue to cluster probes."
+    },
+    {
+      "n": 3,
+      "skill": "redteam/Kubelet read-only PodList API",
+      "purpose": "Kubelet PodList exposes pod env vars — often includes secrets/tokens.",
+      "on_success": "Harvest env secrets from pods.",
+      "on_fail": "10250 blocked -> 10255 read-only (infra/Kubelet read-only 10255 metrics) or apiserver anon (infra/Kubernetes API anonymous version disclosure)."
+    },
+    {
+      "n": 4,
+      "skill": "redteam/etcd unauth key-value read",
+      "purpose": "Cluster store read: all secrets if exposed on :2379.",
+      "on_success": "Cluster-level secret harvest = full infrastructure compromise narrative.",
+      "on_fail": "etcd secured -> document kubelet findings; try docker daemon (devops_infra shelf)."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      ":8080 Jenkins",
+      ":2379 etcd",
+      ":10250/:10255 kubelet",
+      "CI agent nodes",
+      "org-hosted dev clusters"
+    ],
+    "recon": [
+      {
+        "name": "CI surface census",
+        "how": "Probe Jenkins paths (/people, /asynchPeople, /script, /securityRealm) and status pages.",
+        "tooling": "ffuf + jenkins wordlist",
+        "signal": "Jenkins UI or API without auth."
+      },
+      {
+        "name": "Kubelet dual-port probe",
+        "how": "10250 (authed API) vs 10255 (read-only) — often one is open.",
+        "tooling": "manual/curl",
+        "signal": "PodList JSON."
+      },
+      {
+        "name": "etcd version probe",
+        "how": "GET /version on :2379 reveals exposure; keyspace read follows.",
+        "tooling": "manual",
+        "signal": "etcd cluster version JSON."
+      },
+      {
+        "name": "Service inventory side-doors",
+        "how": "Consul/Nomad/Portainer/Docker APIs on adjacent hosts (devops_infra shelf) complete the CI->infra map.",
+        "tooling": "devops_infra skills",
+        "signal": "Any unauth service API."
+      }
+    ],
+    "variants": [
+      "Jenkins CVE-era deserialization (CLI)",
+      "Groovy console with default creds",
+      "kubelet exec via 10250 (needs POST auth — documented gap)",
+      "apiserver anonymous pivots",
+      "helm tiller (legacy)",
+      "argo workflows unauth"
+    ],
+    "dorks": [
+      "shodan: product:\"Jenkins\" port:8080",
+      "shodan: port:2379 etcd",
+      "google: intitle:\"Dashboard [Jenkins]\""
+    ],
+    "pivot_hints": [
+      "CI creds -> repo access -> source chain (recon-secrets-to-cloud)",
+      "cluster secrets -> cloud_takeover chains",
+      "docker daemon -> devops_infra shelf for container escape narrative"
+    ]
+  },
+  "fallbacks": [
+    "container-plane-sweep",
+    "spring-actuator-to-rce"
+  ],
+  "sources": [
+    "Jenkins security advisories",
+    "Kubernetes hardening guide (kubelet read-only port)",
+    "HackTricks — Jenkins/K8s",
+    "etcd exposure advisories"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "web/.DS_Store mac resource exposure",
+  "description": "[low] Proves a macOS .DS_Store artifact is web-served (CWE-538): the Bud1 magic in the response = directory names/files inside the deployed tree are recoverable (ds_store parser) — frequently leaks admin/backup paths. Keywords: ds-store mac artifact directory disclosure bud1 recon files. ctrl: benign path 404s -> not falsified. base_url = site root (copy skill per-directory).",
+  "cwe": "CWE-538",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/.DS_Store"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "Bud1",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "08971c6ae0fe",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

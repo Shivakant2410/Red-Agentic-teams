@@ -1,0 +1,110 @@
+{
+  "group": "business_logic_abuse",
+  "slug": "cross-origin-action-suite",
+  "name": "Cross-origin suite: CSRF -> clickjacking -> CSWSH -> cookie scope",
+  "goal": "Assemble the victim-side action surface: state changes without CSRF, clickjacking, cross-origin WebSocket, and overbroad cookie scope.",
+  "preconditions": "Authenticated state-changing endpoints; browser-mediated victims.",
+  "cwe": [
+    "CWE-352",
+    "CWE-1021",
+    "CWE-1385"
+  ],
+  "impact": "Unauthorized actions on behalf of logged-in users; cookie fixation from sibling origins.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "web/CSRF token enforcement absent state-change",
+      "purpose": "Prove a state change succeeds without any token — the core CSRF primitive.",
+      "on_success": "Pick the highest-value state change (email/password/admin) for the PoC.",
+      "on_fail": "Token enforced -> SameSite/Referer gaps and login-CSRF variants (documented)."
+    },
+    {
+      "n": 2,
+      "skill": "web/Frame-clickjacking protections absent",
+      "purpose": "UI redress completes the browser attack surface where token/origin checks are weak.",
+      "on_success": "Clickjacking narrative for settings/actions pages.",
+      "on_fail": "Framing blocked -> keep CSRF evidence; try WS next."
+    },
+    {
+      "n": 3,
+      "skill": "web/WebSocket cross-origin handshake acceptance",
+      "purpose": "CSWSH: attacker page opens authenticated WS and issues actions as the victim.",
+      "on_success": "WS actions on behalf of victims — strong modern CSRF analog.",
+      "on_fail": "Origin checked -> keep as hardening finding; CSRF alone stands."
+    },
+    {
+      "n": 4,
+      "skill": "web/Cookie Domain scope overbreadth",
+      "purpose": "Overbroad Domain cookies make sibling-subdomain attacks (cookie injection/fixation) land.",
+      "on_success": "Fixation story: attacker sets cookie on any sibling, victim submits it.",
+      "on_fail": "Scope tight -> document suite without fixation."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "every state-changing form/AJAX endpoint",
+      "settings/profile/email-change pages",
+      "WebSocket endpoints (grep JS for new WebSocket)",
+      "admin actions with low-friction UI"
+    ],
+    "recon": [
+      {
+        "name": "Token presence census",
+        "how": "Inventory which forms carry CSRF tokens; the missing ones are the proof set.",
+        "tooling": "manual/HTML parse",
+        "signal": "Form without hidden token."
+      },
+      {
+        "name": "SameSite audit",
+        "how": "Inspect Set-Cookie attributes: SameSite=None without Secure, or legacy Lax bypass via subdomains.",
+        "tooling": "manual",
+        "signal": "Cross-site sendable cookies."
+      },
+      {
+        "name": "Frame options check",
+        "how": "X-Frame-Options/CSP frame-ancestors absence on action pages.",
+        "tooling": "manual",
+        "signal": "Framable action page."
+      },
+      {
+        "name": "WS origin test",
+        "how": "Open WS from a foreign origin with victim cookies (cookie-authenticated WS = CSWSH).",
+        "tooling": "manual page",
+        "signal": "Handshake accepted cross-origin."
+      },
+      {
+        "name": "Cookie scope map",
+        "how": "Collect Domain attributes; overbroad scope + attacker-controllable sibling = fixation vector.",
+        "tooling": "manual + subdomain recon",
+        "signal": "Domain=.parent on auth cookie."
+      }
+    ],
+    "variants": [
+      "JSON CSRF via text/plain forms",
+      "login CSRF (silent account binding)",
+      "SameSite bypass via sibling subdomains",
+      "null-origin iframes",
+      "WS origin null acceptance"
+    ],
+    "dorks": [
+      "github: csrf_exempt (django)",
+      "github: Access-Control-Allow-Origin: * credentials",
+      "google: inurl:settings site:target.tld"
+    ],
+    "pivot_hints": [
+      "combine with oauth chain for silent account binding",
+      "cookie fixation pairs with takeover chains",
+      "CSWSH pairs with graphql subscriptions"
+    ]
+  },
+  "fallbacks": [
+    "oauth-session-ato",
+    "checkout-abuse-race"
+  ],
+  "sources": [
+    "OWASP CSRF Cheat Sheet",
+    "PortSwigger — Clickjacking/CSRF labs",
+    "RFC 6455 + WS origin guidance",
+    "SameSite cookie spec notes"
+  ]
+}

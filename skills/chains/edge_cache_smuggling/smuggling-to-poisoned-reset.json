@@ -1,0 +1,109 @@
+{
+  "group": "edge_cache_smuggling",
+  "slug": "smuggling-to-poisoned-reset",
+  "name": "Smuggling: desync detect -> cache poison -> reset capture",
+  "goal": "Prove front/back desync, convert it into cache poisoning, and land poisoned password-reset links to capture victim tokens.",
+  "preconditions": "A front proxy paired with a backend that disagrees on CL/TE framing.",
+  "cwe": [
+    "CWE-444",
+    "CWE-640"
+  ],
+  "impact": "Cache-wide content injection and account takeover of arbitrary reset recipients.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "elite/Request smuggling CL.TE timing oracle",
+      "purpose": "Prove the CL.TE desync differential with a deterministic timing oracle.",
+      "on_success": "Craft poison-prefix requests; step 3 scales it.",
+      "on_fail": "No CL.TE -> step 2 (TE.CL)."
+    },
+    {
+      "n": 2,
+      "skill": "elite/Request smuggling TE.CL timing oracle",
+      "purpose": "The reverse differential — one of the two usually fires.",
+      "on_success": "Same pivot as step 1.",
+      "on_fail": "Both silent -> H2 desync / client-side desync are documented gaps (need h2/browser tooling); fall back to header-based poisoning (step 3 without desync)."
+    },
+    {
+      "n": 3,
+      "skill": "web/Web cache poisoning unkeyed X-Forwarded-Host",
+      "purpose": "Scale: poison cacheable responses with attacker content via unkeyed headers (works with or without desync).",
+      "on_success": "Poisoned cache serves payload to every visitor of that path.",
+      "on_fail": "Header filtered -> find other unkeyed inputs via param-miner; CRLF (web/CRLF response-header injection) to inject whole headers."
+    },
+    {
+      "n": 4,
+      "skill": "web/Password reset poisoning X-Forwarded-Host",
+      "purpose": "Victim-targeted capture: reset emails carry attacker-host links when the Host header is unkeyed.",
+      "on_success": "Capture reset tokens -> account takeover; pair with cache poison for self-reset via admin page (PortSwigger combo).",
+      "on_fail": "Host pinned -> X-Forwarded-Host alternates (X-HTTP-Host-Override etc.), or poisoning path for stored variant."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "any cacheable path behind a proxy",
+      "password-reset/email-sending features",
+      "health/status endpoints (desync probes hide here)",
+      "CDN-fronted APIs"
+    ],
+    "recon": [
+      {
+        "name": "Framing differential timing",
+        "how": "CL.TE and TE.CL timing pairs on likely-cached and likely-uncached paths.",
+        "tooling": "Turbo Intruder / manual pairs",
+        "signal": "Consistent delay on one framing = desync direction."
+      },
+      {
+        "name": "Duplicate-header acceptance",
+        "how": "Send duplicate Content-Length and Transfer-Encoding mixes; error messages and 400/501 responses fingerprint the front.",
+        "tooling": "manual",
+        "signal": "Front rejects one shape, origin accepts another."
+      },
+      {
+        "name": "Cache-key mapping",
+        "how": "Cache-buster param + candidate unkeyed headers; diff cached vs uncached responses.",
+        "tooling": "param-miner",
+        "signal": "Reflection into cached body."
+      },
+      {
+        "name": "Reset-link host audit",
+        "how": "Trigger a reset and read the link's host; then vary X-Forwarded-Host shapes.",
+        "tooling": "manual",
+        "signal": "Email link host changes with header."
+      },
+      {
+        "name": "Peer stack clustering",
+        "how": "Favicon hash + header clustering finds sibling apps on the same edge — one desync often repeats across the fleet.",
+        "tooling": "shodan/FOFA favicon search",
+        "signal": "Same stack, same exploit surface."
+      }
+    ],
+    "variants": [
+      "H2.CL / H2.TE desync (needs h2 tooling — documented gap)",
+      "client-side desync (browser-based)",
+      "0.CL (POST-body desync)",
+      "smuggling into gRPC/HTTP2 gateways",
+      "desync + CORS combos"
+    ],
+    "dorks": [
+      "shodan: favicon-hash + Via/Server clustering to find identical front/back stacks",
+      "github: \"Transfer-Encoding: chunked\" proxy",
+      "google: inurl:/reset? token"
+    ],
+    "pivot_hints": [
+      "poisoned admin cache + reset combo (PortSwigger classic)",
+      "pair with cache-deception-pii for data theft",
+      "document desync alone — it is critical by itself"
+    ]
+  },
+  "fallbacks": [
+    "cache-deception-pii",
+    "routing-confusion-lfi"
+  ],
+  "sources": [
+    "PortSwigger Research — HTTP Desync Attacks (Kettle)",
+    "PortSwigger — Web cache poisoning",
+    "HackTricks — Smuggling",
+    "RFC 7230/9112 framing rules"
+  ]
+}

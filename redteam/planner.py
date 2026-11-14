@@ -14,7 +14,7 @@ exhaustive* instead of forgetful and random.
 
 from __future__ import annotations
 
-from .knowledge import ENDPOINT, HOST, SERVICE, KnowledgeGraph
+from .knowledge import ENDPOINT, HOST, SERVICE, TECHNOLOGY, KnowledgeGraph
 
 # Methodology weighting: higher = test sooner. Tune from real engagement data.
 _CHECK_PRIORITY = {
@@ -37,6 +37,25 @@ _CHECK_HINT = {
 }
 
 
+def surface_doc_notes(graph: KnowledgeGraph, limit: int = 5, note_chars: int = 200) -> list[tuple[str, str]]:
+    """(node_key, doc) pairs for nodes that carry a `doc` attr from passive recon —
+    openapi operation/level summary+description prose. API docs are where targets leak
+    service-account tokens, internal hostnames and auth requirements in plain text, and
+    the recon layer now stores them; but nothing else renders node attrs into agent
+    context, so state_briefing surfaces them here, capped (target-controlled text —
+    bound the injection/bloat surface)."""
+    notes: list[tuple[str, str]] = []
+    for n in graph.nodes(TECHNOLOGY):
+        doc = n.attrs.get("doc")
+        if doc:
+            notes.append((f"api {n.attrs.get('title') or n.key}", str(doc)[:note_chars]))
+    for n in graph.nodes(ENDPOINT):
+        doc = n.attrs.get("doc")
+        if doc:
+            notes.append((n.key, str(doc)[:note_chars]))
+    return notes[:limit]
+
+
 def state_briefing(graph: KnowledgeGraph, max_targets: int = 6) -> str:
     s = graph.summary()
     counts = s["counts"]
@@ -46,6 +65,11 @@ def state_briefing(graph: KnowledgeGraph, max_targets: int = 6) -> str:
         f"endpoints={counts.get(ENDPOINT, 0)} | coverage {s['coverage_pct']}% "
         f"({s['coverage_tested']}/{s['coverage_total']} checks)"
     )
+    doc_notes = surface_doc_notes(graph)
+    if doc_notes:
+        lines.append("[API DOC NOTES — verbatim from the target's published schema docs; "
+                     "docs regularly leak auth schemes, service tokens and internal hosts]")
+        lines.extend(f"  - {key}: {note}" for key, note in doc_notes)
     actions = next_actions(graph, limit=max_targets)
     if actions:
         lines.append("[NEXT — prioritized untested checks]")

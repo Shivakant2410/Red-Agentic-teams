@@ -1,0 +1,35 @@
+{
+  "name": "redteam/Elasticsearch unauth data exposure",
+  "description": "[basic] Elasticsearch answering without authentication (CWE-306; PentestPad port 9200, hackviser): version JSON on / plus _cat/indices enumerate every index — then GET /<index>/_search dumps documents. Keywords: elasticsearch 9200 unauth indices cat cluster exposure noauth. ctrl: hardened cluster 401s everything -> not falsified. base_url = host root (skill targets :9200).",
+  "cwe": "CWE-306",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}:9200/_cat/indices?v"
+    },
+    "probe": {
+      "method": "GET",
+      "url": "{{base_url}}:9200/"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "health status index"
+    },
+    {
+      "type": "body_regex",
+      "request": "probe",
+      "pattern": "\"cluster_name\""
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "07141de65564",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

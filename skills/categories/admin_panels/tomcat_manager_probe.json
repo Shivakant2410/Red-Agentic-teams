@@ -1,0 +1,32 @@
+{
+  "name": "redteam/Tomcat Manager exposed 401-probe",
+  "description": "[medium] Apache Tomcat Manager reachable: 401 with Basic realm 'Tomcat Manager' on /manager/html = WAR deploy surface for a webshell (T1505.003) pending weak-credential test. Keywords: tomcat manager deploy war java webshell. ctrl: benign path 404 without realm header -> not falsified. base_url = site root.",
+  "cwe": "CWE-1188",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/manager/html"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 401
+    },
+    {
+      "type": "header_regex",
+      "request": "payload",
+      "pattern": "realm=\"tomcat manager",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "e7aa51aad860",
+  "created": "2026-11-05T18:01:37.085987+00:00",
+  "last_used": "2026-11-05T18:01:37.085987+00:00"
+}

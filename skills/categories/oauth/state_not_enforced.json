@@ -1,0 +1,32 @@
+{
+  "name": "web/OAuth state parameter not enforced",
+  "description": "[high] Proves OAuth CSRF: the callback consumes an authorization code with NO state parameter = code-injection / account-linking CSRF (CWE-352). Keywords: oauth state parameter csrf callback code account linking authorization. ctrl: strict callback rejects missing state with 400 -> not falsified. base_url = oauth callback endpoint.",
+  "cwe": "CWE-352",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/oauth/callback?code=c7code"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 302
+    },
+    {
+      "type": "header_regex",
+      "request": "payload",
+      "pattern": "location:\\s*/dashboard",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "05205939aa00",
+  "created": "2026-11-06T04:51:35.422905+00:00",
+  "last_used": "2026-11-06T04:51:35.422905+00:00"
+}

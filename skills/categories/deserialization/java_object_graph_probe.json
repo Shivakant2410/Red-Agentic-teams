@@ -1,0 +1,31 @@
+{
+  "name": "web/Java deserialization object-graph probe",
+  "description": "[high] Proves a Java deserialization sink (CWE-502): posting a truncated rO0AB… serialized-object blob (magic AC ED + partial) makes the server throw java.io StreamCorruptedException / InvalidClassException / ClassNotFoundException = the app calls readObject() on attacker bytes (gadget-chain follow-up with ysoserial). Keywords: java deserialization ysoserial readobject streamcorrupted gadget. ctrl: benign POST shows no java.io error -> not falsified. probe_url = endpoint consuming an opaque serialized body/cookie.",
+  "cwe": "CWE-502",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{probe_url}}",
+      "headers": {
+        "Content-Type": "application/octet-stream"
+      },
+      "body": "rO0ABXQAAkFo"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "java\\.io\\.(StreamCorruptedException|InvalidClassException|InvalidObjectException|ClassNotFoundException)",
+      "present": true
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "6ad3b52ae302",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

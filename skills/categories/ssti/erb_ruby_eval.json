@@ -1,0 +1,33 @@
+{
+  "name": "web/SSTI ERB ruby-eval proof",
+  "description": "[high] Proves Ruby ERB SSTI: <%= 7*7 %> evaluates to 49 with the raw tag absent = server-side ERB evaluation (Rails/Sinatra view layer). Keywords: ssti erb ruby rails template injection eval. ctrl: benign query leaves 49 absent -> not falsified. probe_url = endpoint reflecting the q param through ERB.",
+  "cwe": "CWE-1336",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{probe_url}}?q=%3C%25%3D%207%2A7%20%25%3E"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "\\b49\\b",
+      "present": true
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "<%=\\s*7\\*7",
+      "present": false
+    }
+  ],
+  "params": [
+    "probe_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "0a274588690c",
+  "created": "2026-11-05T19:30:06.502181+00:00",
+  "last_used": "2026-11-05T19:30:06.502181+00:00"
+}

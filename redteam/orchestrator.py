@@ -53,6 +53,7 @@ import threading
 
 from .agent import RedTeamAgent
 from .attack_tree import FAILED, TECHNIQUES, TODO, technique_cost
+from .sandbox.detection_belief import BeliefFilter
 from .config import Engagement
 from .events import coerce_payload
 from .killchain import (CREDENTIAL_ACCESS, DISCOVERY, LATERAL_MOVEMENT,
@@ -60,6 +61,9 @@ from .killchain import (CREDENTIAL_ACCESS, DISCOVERY, LATERAL_MOVEMENT,
 from .llm.openrouter import OpenRouterClient
 from .llm.routing import PARSE, PLAN
 from .reflection import coach_note, reflect
+from .strategy import EngagementStrategy, reset_tree_nudges
+from .swarm import (AWAITING_VERIFICATION, CONFIRMED, REFUTED, EvidenceRef,
+                    ResearchBundle, SwarmError, weakness_for_technique)
 from .tools import ToolContext, Tool
 
 
@@ -259,19 +263,128 @@ def run_verify_pass(engagement: Engagement, tools: dict[str, Tool], ctx: ToolCon
     return remaining
 
 
-class NoiseBudget:
-    """Per-round OPSEC spend cap for the exploit swarm (docs/multi-gambit.md §3.4).
+# -- Phase B3 scheduler constants (the mu/V/SCALE rationale lives here on purpose:
+#    next to the class the numbers feed, where a reviewer will look first) ----------
+#
+# These calibrate the drift-plus-penalty controller against ONE fixed ruler: the
+# OPSEC price table attack_tree.TECHNIQUE_COST, whose entire domain is [1.0, 5.0]
+# (quiet probes 1.0, mid techniques ~2.0, bulk exfil 5.0, mean 2.46 over 13
+# techniques). Every constant below is anchored in that domain — nothing is magic.
+#
+# DEFAULT_MU = 2.0 — the sustainable per-claim loudness: the swarm's AVERAGE claim
+#   may cost as much as access.control/idor (2.0) without detection pressure
+#   accumulating. Claims quieter than mu repay pressure (a cost-1 probe drains the
+#   queue by 1), claims louder accrue it (an exfil adds 3). This is the conservative
+#   choice by construction: mu sits BELOW the table's mean (2.46), so an ordinary
+#   mixed basket stays near-stable while any loud-heavy streak drifts Q up — slow to
+#   forgive, quick to throttle.
+#
+# DEFAULT_V = 1.0 — the weight of progress (learned yield-per-cost, a Thompson draw
+#   divided by cost, so bounded in [0, 1]) against the pressure term Q*cost. At V=1
+#   the progress pull is at most 1 credit while any Q >= 1 makes the pressure term
+#   dominate — i.e. under ANY real detection pressure the scheduler prefers stealth
+#   over yield (conservative default), and at Q=0 the order is exactly the legacy
+#   yield-per-cost ranking regardless of V. Overt engagements raise V toward SCALE
+#   (yield competes with a fully-alerted detector); assumed-breach stealth lowers it.
+#
+# DEFAULT_SCALE = 4.0 — converts the belief filter's risk in [0,1] into noise-credit
+#   pressure on the SAME ruler: risk=1.0 (detector effectively certain) presses as
+#   hard as the loudest single technique minus one quiet probe (5 - 1 = 4); risk=0.5
+#   presses like one access.control (2.0) over the sustainable rate. With the default
+#   round budget of 12, a fully-alerted belief withholds a third of a round — a real
+#   throttle that never paralyzes the swarm.
+DEFAULT_MU = 2.0
+DEFAULT_V = 1.0
+DEFAULT_SCALE = 4.0
 
-    Every claim reserves its technique's OPSEC price (attack_tree.technique_cost)
-    from a shared round budget; a gambit that doesn't fit the remainder is skipped
-    in favor of cheaper ones still to hand (greedy knapsack), and a lost claim race
-    refunds the reservation. Thread-safe — swarm workers spend concurrently. A
-    budget of 0 disables spend tracking entirely (pre-bandit behavior)."""
 
-    def __init__(self, total: float):
+class DriftPlusPenaltyScheduler:
+    """Per-round OPSEC spend controller for the exploit swarm (Phase B3; supersedes
+    NoiseBudget's flat one-shot greedy knapsack, docs/multi-gambit.md §3.4).
+
+    THE MODEL: every claim spends the technique's OPSEC price (attack_tree.
+    technique_cost) from a per-round allowance, AND accrues detection pressure in a
+    virtual queue — the Lyapunov drift-plus-penalty recursion
+
+        Q(t+1) = max(Q(t) + noise_cost(a) - mu, 0)
+
+    applied per action on try_spend() (and unwound on refund(): a lost claim race
+    means no request was ever sent, so its pressure never happened). Q is a DEBT in
+    noise credits: spending louder than mu borrows against the future.
+
+    THE BLEND (where the POMDP plugs in): the pressure the controller actually acts
+    on is
+
+        Q(t) = max(raw_accumulator(t), belief_filter.risk_score(t) * SCALE)
+
+    The raw accumulator alone would only rise after the noise was already spent; the
+    belief term is the immediate override — a challenge burst observed by tools/
+    http.py's hook raises risk_score within one round and the scheduler throttles
+    NOW, without waiting for the queue to drift up. The raw term keeps the pressure
+    honest in the other direction: a noisy-but-unnoticed streak still owes its debt.
+
+    THE DECISION: each claim cycle, candidates from the tree's actionable frontier
+    are ranked by
+
+        score(a) = Q(t) * noise_cost(a) - V * progress_value(a)
+
+    and the swarm walks them cheapest-score-first (min score, ascending), skipping
+    candidates that don't fit the remaining allowance — the same greedy fill shape
+    NoiseBudget always had, with a pressure-aware order instead of a flat one.
+    progress_value is the existing yield estimate: the bandit's Thompson draw
+    divided by the technique's cost (exactly BanditStore.select's score), so at
+    Q=0 the ranking degenerates to the legacy yield-per-cost order — the old
+    behavior is the Q=0 special case, not a lost sibling. Ties keep the tree's
+    priority order (stable sort — the same equal-split tie-breaking the knapsack
+    relied on). Without a bandit, progress is a constant and the order degenerates
+    to the tree's order at Q=0, cheap-first under pressure.
+
+    THE THROTTLE: the round allowance restored by reset() is
+    max(mu, total - Q(t)) — pressure withholds budget one-for-one (the debt is
+    denominated in the same credits), floored at mu so the swarm can always afford
+    one sustainable claim and never deadlocks against its own queue.
+
+    Thread-safe — swarm workers spend concurrently. The public interface is
+    NoiseBudget's exactly (remaining / can_afford / try_spend / refund / reset);
+    `NoiseBudget` remains as an alias below so every existing caller and test
+    keeps working unchanged."""
+
+    def __init__(self, total: float, *, mu: float = DEFAULT_MU, V: float = DEFAULT_V,
+                 scale: float = DEFAULT_SCALE, bandit=None, belief=None):
         self._total = max(float(total), 0.0)
         self._remaining = self._total
         self._lock = threading.Lock()
+        self._mu = max(float(mu), 1e-6)
+        self._V = max(float(V), 0.0)
+        self._scale = max(float(scale), 0.0)
+        self._bandit = bandit     # BanditStore | None — progress_value's source
+        self._belief = belief     # BeliefFilter | None — the POMDP side of the blend
+        self._q_raw = 0.0         # raw_accumulator: the cross-round virtual queue
+
+    # -- pressure state ------------------------------------------------------------
+
+    def q_effective(self) -> float:
+        """Q(t) = max(raw_accumulator, belief risk * SCALE) — read live so a
+        challenge burst throttles the very next claim, not the next round."""
+        with self._lock:
+            raw = self._q_raw
+        risk = 0.0
+        if self._belief is not None:
+            try:
+                risk = float(self._belief.risk_score())
+            except Exception:
+                risk = 0.0   # a broken POMDP degrades to raw-queue-only, never blocks
+        return max(raw, risk * self._scale)
+
+    def _risk_snapshot(self) -> float:
+        if self._belief is None:
+            return 0.0
+        try:
+            return float(self._belief.risk_score())
+        except Exception:
+            return 0.0
+
+    # -- NoiseBudget-compatible accounting -------------------------------------------
 
     @property
     def remaining(self) -> float:
@@ -283,35 +396,94 @@ class NoiseBudget:
             return self._remaining >= cost - 1e-9
 
     def try_spend(self, cost: float) -> bool:
-        """Atomically reserve `cost` from the remaining budget; False if it doesn't
+        """Atomically reserve `cost` from the remaining allowance AND advance the
+        pressure queue one action (Q <- max(Q + cost - mu, 0)); False if it doesn't
         fit (the caller moves on to a cheaper candidate — nothing was spent)."""
         with self._lock:
             if self._remaining >= cost - 1e-9:
                 self._remaining -= cost
+                self._q_raw = max(self._q_raw + cost - self._mu, 0.0)
                 return True
             return False
 
     def refund(self, cost: float) -> None:
-        """Return a reservation to the budget (capped at the total — refunds can
-        never mint budget that was never there)."""
+        """Return a reservation (capped at the total — refunds can never mint
+        budget that was never there) and unwind the claim's pressure step."""
         with self._lock:
             self._remaining = min(self._total, self._remaining + cost)
+            self._q_raw = max(self._q_raw - cost + self._mu, 0.0)
 
     def reset(self) -> None:
-        """Restore the full allowance — called ONCE per exploit round. 'Per-round'
-        is the documented contract (RunOptions.round_noise_budget); without the
-        reset, round 0's spend starves every later round and the swarm stops
-        exploring after its first claims (caught by the product E2E run of
-        2026-10-30: 12 rounds started, only round 0 ever claimed)."""
+        """Start a new round: restore the allowance, throttled by current pressure
+        (max(mu, total - Q(t))) — called ONCE per exploit round. 'Per-round' is the
+        documented contract (RunOptions.round_noise_budget); without the reset,
+        round 0's spend starves every later round and the swarm stops exploring
+        after its first claims (caught by the product E2E run of 2026-10-30: 12
+        rounds started, only round 0 ever claimed). The PRESSURE QUEUE is
+        deliberately NOT reset — cross-round memory is the entire point; only the
+        round's bookkeeping allowance starts whole."""
         with self._lock:
-            self._remaining = self._total
+            # Hard cap first (the round budget is a CONTRACT — spend must never
+            # exceed total), then the pressure throttle, then the mu floor so the
+            # swarm can always afford one sustainable claim (only meaningful when
+            # total > mu; the cap always wins).
+            self._remaining = min(self._total, max(self._mu, self._total
+                                                   - max(self._q_raw, self._risk_snapshot() * self._scale)))
+
+    # -- candidate ranking (replaces the flat greedy knapsack order) ------------------
+
+    def rank(self, candidates: list[tuple]) -> list[dict]:
+        """Score candidates by drift-plus-penalty and return them cheapest-score
+        first. `candidates` are (technique, bucket, cost) or (technique, bucket,
+        cost, meta) tuples exactly like BanditStore.select takes; a meta is
+        returned verbatim on the item. score(a) = Q*cost - V*progress with
+        progress = Thompson draw / cost when a bandit is attached (one draw per
+        candidate, input order — so a fixed seed reproduces BanditStore.select's
+        draws and, at Q=0, its exact order), else a constant (order = tree order
+        at Q=0, cheap-first under pressure). Stable sort: equal scores keep the
+        tree's priority order — the knapsack's equal-split tie-breaking."""
+        q = self.q_effective()
+        scored: list[dict] = []
+        for item in candidates:
+            if len(item) == 4:
+                technique, bucket, cost, meta = item
+                has_meta = True
+            else:
+                technique, bucket, cost = item
+                meta, has_meta = None, False
+            cost = max(float(cost), 1e-6)
+            draw = None
+            if self._bandit is not None:
+                try:
+                    draw = float(self._bandit.sample(technique, bucket))
+                except Exception:
+                    draw = None
+            progress = (draw / cost) if draw is not None else 1.0
+            entry = {"technique": technique, "bucket": bucket, "cost": cost,
+                     "progress": progress, "score": q * cost - self._V * progress}
+            if draw is not None:
+                entry["draw"] = draw
+            if has_meta:
+                entry["meta"] = meta
+            scored.append(entry)
+        scored.sort(key=lambda s: s["score"])   # stable — ties keep tree order
+        return scored
+
+
+# Backward-compatibility alias: NoiseBudget's public interface is the scheduler's
+# accounting subset, and every existing caller/test imports this name. The class
+# above IS the replacement; this alias IS the contract that nothing else had to move.
+NoiseBudget = DriftPlusPenaltyScheduler
 
 
 class Orchestrator:
     def __init__(self, engagement: Engagement, tools: dict[str, Tool], ctx: ToolContext,
                  client: OpenRouterClient, graph=None, attack_tree=None, memory=None,
                  max_exploit_rounds: int = 12, max_access_rounds: int = 4,
-                 max_swarm_workers: int = 3, noise_budget: float | None = None):
+                 max_swarm_workers: int = 3, noise_budget: float | None = None,
+                 detection=None, noise_mu: float | None = None,
+                 noise_V: float | None = None,
+                 research_dir: str | Path | None = None):
         self._eng = engagement
         self._tools = tools
         self._ctx = ctx
@@ -334,13 +506,56 @@ class Orchestrator:
         # Phase 5/6 notes), 3 concurrent is the realistic ceiling, not a target to raise
         # without also raising the token budget.
         self._max_swarm_workers = max_swarm_workers
+        # Phase B3 — the detection belief (POMDP over the defender's state): adopt one
+        # wired by the caller (run.py / tests) or create our own, and expose it on the
+        # shared ToolContext so tools/http.py's observation hook feeds THE SAME filter
+        # the scheduler reads. Every multi-agent run gets the filter (the hook is
+        # best-effort and costs nothing); only the scheduler CONSUMES it.
+        self._detection = detection or getattr(ctx, "detection", None) or BeliefFilter()
+        try:
+            if getattr(ctx, "detection", None) is not self._detection:
+                ctx.detection = self._detection
+        except Exception:
+            pass   # a frozen/odd ctx must never block construction — the hook just no-ops
         # Per-round OPSEC budget (docs/multi-gambit.md §3.4): None/0 = unlimited
-        # spend (exact legacy behavior); a positive value caps what the swarm may
-        # spend per round in noise credits, spent according to the bandit's
-        # yield-per-cost ranking (when a bandit is attached) or plain priority.
-        self._noise = NoiseBudget(noise_budget) if noise_budget and noise_budget > 0 else None
+        # spend (exact legacy behavior); a positive value drives the
+        # DriftPlusPenaltyScheduler — per-round allowance, drift-plus-penalty claim
+        # ordering (Q*cost - V*progress), and the POMDP blend that throttles the
+        # swarm when the belief filter sees the defender reacting. mu/V default to
+        # the calibrated module constants; run.py exposes both as per-run knobs
+        # (RunOptions.noise_mu / noise_V) for per-engagement tuning.
+        self._noise = None
+        if noise_budget and noise_budget > 0:
+            self._noise = DriftPlusPenaltyScheduler(
+                noise_budget,
+                mu=DEFAULT_MU if noise_mu is None else max(float(noise_mu), 1e-6),
+                V=DEFAULT_V if noise_V is None else max(float(noise_V), 0.0),
+                bandit=getattr(attack_tree, "bandit", None),
+                belief=self._detection)
         self._budget = None
         self._manifest = None
+        # Reflection state defaults (re-created fresh per run() — a new engagement
+        # starts with clean reflections; these exist so direct method use never
+        # hits an attribute error).
+        self._reflections: list[dict] = []
+        self._reflection_notes: list[str] = []
+        # Phase B5 defaults (re-created fresh per run() — a new engagement starts
+        # with a clean strategy state; these exist so direct method use in tests
+        # never hits an attribute error).
+        self._strategy = EngagementStrategy()
+        self._round_claims: list[str] = []
+        self._confirmed_seen: set = set()   # tree node ids already fed to the ledger
+        # Phase C1 — collective intelligence layer (redteam/swarm/, ADR-001): a
+        # run-scoped hypothesis registry + research forum. research_dir=None keeps
+        # it in-memory (zero file I/O — legacy callers and direct-construction tests
+        # are unchanged); run.py passes the run dir so a killed run replays.
+        # The bundle is per-Orchestrator (per engagement) — no global state.
+        self._research = ResearchBundle.for_run(
+            str(getattr(engagement, "name", "") or "engagement"),
+            run_dir=research_dir, bus=getattr(ctx, "events", None))
+        self._research_hyp_by_node: dict[str, str] = {}       # tree node id -> hypothesis id
+        self._research_finding_hyp: dict[str, str] = {}       # finding id -> hypothesis id
+        self._research_verdicts_seen: dict[str, str] = {}     # finding id -> last mirrored confidence
 
     def with_runtime(self, budget=None, manifest=None, manifest_path=None):
         self._budget = budget
@@ -405,50 +620,68 @@ class Orchestrator:
         self._ctx.audit.record("orchestrator.swarm_start", round=round_no,
                                workers=n_workers, actionable=len(actionable))
         if self._noise is not None:
-            self._noise.reset()   # per-ROUND budget: every round starts whole
+            self._noise.reset()   # per-ROUND allowance: throttled by current pressure
+            self._emit("scheduler.state", round=round_no,
+                       q=round(self._noise.q_effective(), 4),
+                       risk=round(self._detection.risk_score(), 4),
+                       allowance=round(self._noise.remaining, 4))
 
         def worker(worker_id: int) -> str:
             summary = ""
-            bandit = getattr(self._attack_tree, "bandit", None)
             # Each worker claims its OWN next item each time through the loop (not a
             # fixed slice assigned upfront) so a fast worker that finishes its hypothesis
             # quickly picks up the next untried one instead of sitting idle while a
             # slower sibling is still on its first.
             while True:
                 claimed = None
-                if bandit is not None:
-                    # Cost-aware claim order (docs/multi-gambit.md §3.4): the tree's
-                    # ranked frontier is re-sorted by Thompson draw / OPSEC cost, so
-                    # under a round noise budget the swarm buys cheap gambits first
-                    # and pays a loud technique's price only when its evidence is
-                    # strong enough to clear it. Candidates still come ONLY from the
-                    # tree's actionable frontier — the bandit reorders in-scope work,
+                nodes = self._attack_tree.actionable(limit=self._max_swarm_workers * 4)
+                if not nodes:
+                    break
+                if self._noise is not None:
+                    # Drift-plus-penalty claim order (Phase B3, docs/multi-gambit.md
+                    # §3.4): the tree's frontier is re-sorted by Q*cost - V*progress,
+                    # so at zero pressure the swarm buys the highest learned yield-
+                    # per-cost first (the legacy bandit order), and under detection
+                    # pressure (raw queue or the belief filter's POMDP) it pivots to
+                    # quiet gambits. Candidates still come ONLY from the tree's
+                    # actionable frontier — the scheduler reorders in-scope work,
                     # it never creates, authorizes, or widens anything.
-                    nodes = self._attack_tree.actionable(limit=self._max_swarm_workers * 4)
-                    ranked = bandit.select(
+                    ranked = self._noise.rank(
                         [(n.technique, n.bucket, technique_cost(n.technique), n)
-                         for n in nodes], k=len(nodes))
+                         for n in nodes])
                     for item in ranked:
                         node, cost = item["meta"], item["cost"]
-                        if self._noise is not None and not self._noise.try_spend(cost):
-                            continue   # doesn't fit the remaining round budget — a cheaper one may
+                        if not self._noise.try_spend(cost):
+                            continue   # doesn't fit the remaining allowance — a cheaper one may
                         if self._attack_tree.claim(node.technique, node.target):
                             claimed = node
                             break
-                        if self._noise is not None:
-                            self._noise.refund(cost)   # lost the claim race — budget back
+                        self._noise.refund(cost)   # lost the claim race — allowance and pressure back
                 else:
-                    for node in self._attack_tree.actionable(limit=self._max_swarm_workers * 4):
-                        cost = technique_cost(node.technique)
-                        if self._noise is not None and not self._noise.try_spend(cost):
-                            continue
+                    for node in nodes:
                         if self._attack_tree.claim(node.technique, node.target):
                             claimed = node
                             break
-                        if self._noise is not None:
-                            self._noise.refund(cost)
                 if claimed is None:
                     break   # nothing left unclaimed/affordable — this worker is done
+                # Phase C1 — the claimed (technique, target) becomes a registered,
+                # atomically-claimed research hypothesis (redteam/swarm). A lost
+                # registry claim means a live sibling owns the equivalent hypothesis:
+                # do not double-investigate — release the noise reservation, mark the
+                # tree node FAILED (unclaimable for THIS round, retryable next round,
+                # same rationale as the empty-attempt FAILED below) and move on. A
+                # research-layer ERROR never suppresses work: the swarm proceeds
+                # exactly as Gen-1 did (degrade to audit record, never crash).
+                hyp, suppressed = self._research_claim_for_node(claimed, worker_id)
+                if suppressed:
+                    if self._noise is not None:
+                        self._noise.refund(technique_cost(claimed.technique))
+                    self._attack_tree.mark(claimed.technique, claimed.target, FAILED)
+                    continue
+                # Phase B5: the strategy ledger's claim evidence comes straight from
+                # the claim loop (list.append is atomic under the GIL — swarm workers
+                # race here, and a torn count is impossible).
+                self._round_claims.append(claimed.technique)
                 self._emit("swarm.claim", worker=worker_id, round=round_no,
                            technique=claimed.technique, target=claimed.target)
                 if self._budget is not None:
@@ -458,13 +691,16 @@ class Orchestrator:
                         break
                 technique = TECHNIQUES.get(claimed.technique)
                 desc = technique.description if technique else claimed.technique
-                findings_before = len(self._ctx.findings.all())
+                # Phase C1: track finding identity (not just count) so the swarm's
+                # own hypothesis gets the finding attached as evidence afterward.
+                findings_before_ids = {f.id for f in self._ctx.findings.all()}
                 # Gen-3 class routing: every claimed hypothesis goes to the OWASP class
                 # expert that owns the technique (see specialists.py) — claim/noise/
                 # verify machinery unchanged. Unowned techniques still run the generic
                 # EXPLOIT profile, and RED_CLASS_SPECIALISTS=0 disables routing outright
                 # (the specialists-vs-generalist A/B switch).
                 profile = profile_for(claimed.technique)
+                research_note = self._research_note_for(hyp)
                 exploit = self._make_specialist(
                     profile, agent_name=f"{profile.name}-w{worker_id}",
                     addon_suffix=f"\n\nYOUR ASSIGNED TARGET THIS TURN: "
@@ -473,7 +709,10 @@ class Orchestrator:
                     f"in parallel. You are {profile.name}-w{worker_id}: if you need context "
                     f"you don't have (an error body, a token shape, whether a sibling already "
                     f"looked here), search_peer_traces shows what the OTHER workers' raw "
-                    f"tool activity actually saw — hits are leads, prove them yourself.")
+                    f"tool activity actually saw — hits are leads, prove them yourself."
+                    + (f"\n\nRESEARCH BRIEFING (run-scoped hypothesis registry — this is "
+                       f"recorded context, not proof; every claim still needs YOUR proof "
+                       f"through the normal pipeline):\n{research_note}" if research_note else ""))
                 summary = exploit.run(
                     f"{objective}\n\nThis run: EXPLOIT swarm worker {worker_id} round "
                     f"{round_no + 1} — prove {claimed.technique} on {claimed.target}.",
@@ -492,7 +731,14 @@ class Orchestrator:
                 # reset stale FAILED nodes back to TODO via attack_tree.sync() picking up
                 # new graph/finding state, so a hypothesis that failed with a thin surface
                 # can still be retried once more context exists.
-                if len(self._ctx.findings.all()) == findings_before:
+                new_findings = [f for f in self._ctx.findings.all()
+                                if f.id not in findings_before_ids]
+                # Phase C1: the swarm's hypothesis gets the attempt's outcome attached —
+                # evidence + AWAITING_VERIFICATION on a landed finding, counter-evidence
+                # + lease release on an empty attempt (the next round's briefing then
+                # says "prior attempts exist", turning wasted work into reusable context).
+                self._research_after_attempt(claimed, worker_id, round_no, new_findings)
+                if not new_findings:
                     self._attack_tree.mark(claimed.technique, claimed.target, FAILED)
             return summary
 
@@ -505,6 +751,161 @@ class Orchestrator:
                 except Exception as exc:
                     self._ctx.audit.record("orchestrator.swarm_worker_error", error=str(exc))
         return summary
+
+    # -- Phase C1: collective-intelligence plumbing (redteam/swarm/, ADR-001) -----
+    #
+    # Three rules govern every helper below:
+    #   1. The registry records research; it never selects, authorizes, or widens
+    #      work — the attack tree remains the only selector (its deterministic
+    #      actionable()/claim() order is untouched).
+    #   2. The independent verification pipeline remains the ONLY authority over
+    #      confidence: CONFIRMED/REFUTED on a hypothesis is a mirror of
+    #      FindingStore verdicts, never a cause of them.
+    #   3. A research-layer failure degrades to an audit record — the swarm runs
+    #      exactly as Gen-1 did when the registry/forum is unavailable.
+
+    def _research_claim_for_node(self, node, worker_id: int):
+        """Find-or-register + atomically claim the hypothesis for a claimed tree node.
+
+        Returns (hypothesis, suppressed):
+          (hyp, False)  — the worker owns the hypothesis; proceed (with briefing).
+          (None, True)  — a live sibling owns the equivalent hypothesis; the caller
+                          suppresses this duplicate investigation.
+          (None, False) — research layer failed; the caller proceeds unresearched
+                          (degrade, never crash).
+        """
+        agent = f"exploit-w{worker_id}"
+        try:
+            technique = TECHNIQUES.get(node.technique)
+            claim_text = (f"{node.technique} on {node.target}"
+                          + (f": {technique.description}" if technique else ""))
+            hyp, _ = self._research.claim_or_register(
+                asset_ref=node.target,
+                weakness_class=weakness_for_technique(node.technique),
+                claim=claim_text, agent=agent, technique=node.technique)
+            if hyp is None:
+                self._ctx.audit.record("research.duplicate_suppressed",
+                                       technique=node.technique, target=node.target,
+                                       worker=agent)
+                return None, True
+            self._research_hyp_by_node[node.id] = hyp.hypothesis_id
+            return hyp, False
+        except SwarmError as exc:      # registry-level issue (e.g. malformed target)
+            self._ctx.audit.record("research.error", stage="claim",
+                                   technique=node.technique, error=str(exc))
+            return None, False
+        except Exception as exc:       # forum/journal trouble must never break a run
+            self._ctx.audit.record("research.error", stage="claim",
+                                   technique=node.technique, error=str(exc))
+            return None, False
+
+    def _research_note_for(self, hyp) -> str:
+        """Bounded research briefing for the specialist (prior attempts, sibling
+        hypotheses, forum observations). Empty string = nothing worth saying."""
+        if hyp is None:
+            return ""
+        return self._research.worker_note(hyp)
+
+    def _research_after_attempt(self, node, worker_id: int, round_no: int,
+                                new_findings: list) -> None:
+        """Attach the attempt's outcome to the node's hypothesis: landed findings
+        become evidence + AWAITING_VERIFICATION (the hypothesis is no longer being
+        worked — verification owns it now); an empty attempt becomes counter-evidence
+        and the lease is released so a later round can re-claim with full history."""
+        if node.id not in self._research_hyp_by_node:
+            return
+        hyp_id = self._research_hyp_by_node[node.id]
+        agent = f"exploit-w{worker_id}"
+        try:
+            if new_findings:
+                for f in new_findings:
+                    self._research.registry.attach_evidence(
+                        hyp_id,
+                        EvidenceRef(evidence_id=f"ev-finding-{f.id}", kind="finding",
+                                    origin="agent", source_agent=agent,
+                                    artifact_ref=f.id,
+                                    summary=f"{f.severity}: {f.title} @ {f.target}",
+                                    ts=self._research_ts()),
+                        agent)
+                    self._research.registry.set_status(
+                        hyp_id, AWAITING_VERIFICATION, agent, finding_id=f.id,
+                        reason=f"finding {f.id} landed; awaiting independent verification")
+                    self._research_finding_hyp[f.id] = hyp_id
+                    self._research.forum.publish(
+                        "observation.created", source_agent=agent,
+                        payload={"hypothesis_id": hyp_id, "summary": f"finding {f.id} "
+                                 f"({f.severity}): {f.title} @ {f.target}",
+                                 "origin": "agent"},
+                        agent_role="exploit", subject_hypothesis_id=hyp_id,
+                        asset_ref=node.target)
+            else:
+                self._research.registry.attach_counter_evidence(
+                    hyp_id,
+                    EvidenceRef(evidence_id=f"ev-attempt-{node.id}-r{round_no}",
+                                kind="attempt", origin="agent", source_agent=agent,
+                                artifact_ref=f"node:{node.id}",
+                                summary=f"round {round_no + 1} attempt produced no "
+                                        f"proof; hypothesis remains unconfirmed",
+                                ts=self._research_ts()),
+                    agent)
+                self._research.registry.release(
+                    hyp_id, agent, reason="attempt produced no proof")
+        except SwarmError as exc:
+            self._ctx.audit.record("research.error", stage="after_attempt",
+                                   hypothesis_id=hyp_id, error=str(exc))
+        except Exception as exc:
+            self._ctx.audit.record("research.error", stage="after_attempt",
+                                   hypothesis_id=hyp_id, error=str(exc))
+
+    def _research_ts(self) -> str:
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).isoformat()
+
+    def _mirror_verification_outcomes(self) -> int:
+        """Mirror the INDEPENDENT verification pipeline's verdicts onto the swarm's
+        hypotheses — the only path a hypothesis takes to CONFIRMED/REFUTED.
+
+        Direction matters: this runs AFTER run_verify_pass has already promoted or
+        falsified findings through FindingStore.promote(). It reflects verdicts, it
+        never causes them, and a pending finding leaves its hypothesis in
+        AWAITING_VERIFICATION (never CONFIRMED). Not-reproducible/rejected returns
+        the hypothesis to ACTIVE (unproven, re-attemptable), counter-evidence intact.
+        Returns how many verdicts were newly mirrored."""
+        mirrored = 0
+        try:
+            for f in self._ctx.findings.all():
+                current = getattr(f, "confidence", "")
+                if current not in ("confirmed", "falsified", "not_reproducible", "rejected"):
+                    continue
+                if self._research_verdicts_seen.get(f.id) == current:
+                    continue   # already mirrored at this confidence — sync() re-runs are free
+                hyp_id = self._research_finding_hyp.get(f.id)
+                if hyp_id is None:
+                    self._research_verdicts_seen[f.id] = current
+                    continue   # finding outside the swarm's hypothesis set
+                try:
+                    self._research.registry.record_verification_outcome(
+                        hyp_id, verdict=current, finding_id=f.id,
+                        by_agent="verify-pipeline")
+                    self._research_verdicts_seen[f.id] = current
+                    mirrored += 1
+                except SwarmError as exc:
+                    # An invalid mirror (e.g. a stale finding promoted after the
+                    # hypothesis moved on) is an audit note, not a run failure.
+                    self._ctx.audit.record("research.mirror_skipped",
+                                           hypothesis_id=hyp_id, finding_id=f.id,
+                                           error=str(exc))
+                    self._research_verdicts_seen[f.id] = current
+        except Exception as exc:
+            self._ctx.audit.record("research.error", stage="mirror", error=str(exc))
+        return mirrored
+
+    def _research_summary(self) -> dict:
+        try:
+            return {"registry": self._research.registry.stats(),
+                    "forum": self._research.forum.stats()}
+        except Exception:
+            return {}
 
     def _run_access_loop(self, objective: str, on_text=None) -> str:
         """Press a confirmed foothold as far as the kill chain says it goes.
@@ -542,6 +943,8 @@ class Orchestrator:
                                             objective, budget=self._budget, on_text=on_text)
             if still_pending:
                 self._ctx.audit.record("orchestrator.verify_incomplete", remaining=still_pending)
+            # Phase C1: the pipeline just spoke — mirror its verdicts onto hypotheses.
+            self._mirror_verification_outcomes()
 
             achieved_now = set(killchain.achieved())
             if achieved_now == last_achieved:
@@ -562,6 +965,12 @@ class Orchestrator:
         # the run directory (reflections.json) for the report/dashboard.
         self._reflections: list[dict] = []
         self._reflection_notes: list[str] = []
+        # Phase B5 — the cross-round strategy state (redteam/strategy.py): directives
+        # with TTLs, released on evidence or expiry, carried through reflection
+        # failures; the strategist amends it instead of restarting every round.
+        self._strategy = EngagementStrategy()
+        self._round_claims: list[str] = []   # this round's claimed techniques (evidence)
+        self._confirmed_seen: set = set()
 
         # Phase 0 — deterministic recon runs once, before either driver starts (see
         # cli.py's call to run_deterministic_recon) so single-agent and multi-agent runs
@@ -622,6 +1031,10 @@ class Orchestrator:
                                             objective, budget=self._budget, on_text=on_text)
             if still_pending:
                 self._ctx.audit.record("orchestrator.verify_incomplete", remaining=still_pending)
+            # Phase C1: mirror the verification pass's verdicts onto the swarm's
+            # hypotheses (CONFIRMED/REFUTED are reflections of the pipeline, never
+            # causes of finding confidence).
+            self._mirror_verification_outcomes()
             if self._attack_tree is not None:
                 # Promote nodes this pass just confirmed NOW: only worker agents sync
                 # (on their own turns), so a confirmation landing in the final verify
@@ -660,6 +1073,7 @@ class Orchestrator:
                                             objective, budget=self._budget, on_text=on_text)
             if still_pending:
                 self._ctx.audit.record("orchestrator.verify_incomplete", remaining=still_pending)
+            self._mirror_verification_outcomes()
             if self._attack_tree is not None:
                 self._attack_tree.sync(graph=self._graph, findings=self._ctx.findings.all())
 
@@ -676,13 +1090,21 @@ class Orchestrator:
         self._ctx.audit.record("orchestrator.finish",
                                findings=len(self._ctx.findings.all()),
                                confirmed=confirmed_count)
+        # Phase C1: the run's research record on the bus + audit trail (the journal
+        # itself remains replayable from disk when research_dir was given).
+        research = self._research_summary()
+        if research:
+            self._ctx.audit.record("research.summary", **research)
+            self._emit("run.research.summary", **research)
         self._emit("run.summary", findings=len(self._ctx.findings.all()),
                    confirmed=confirmed_count, reflections=len(self._reflections))
         return summary
 
     def _reflect_on_round(self, objective: str, round_no: int) -> None:
-        """One strategist call per completed round; applies its tree nudges, stores the
-        reflection, and emits it to the dashboard. Never raises."""
+        """One strategist call per completed round; folds the round's evidence into
+        the cross-round strategy state (Phase B5, redteam/strategy.py), lets the
+        strategist AMEND that state instead of restarting, and re-applies exactly
+        the surviving directives to the tree. Never raises."""
         if not getattr(self._eng, "enable_reflection", True):
             return
         if self._budget is not None:
@@ -695,6 +1117,23 @@ class Orchestrator:
             tail = self._ctx.audit.read_all()[-120:]
         except Exception:
             pass
+        # Phase B5 — evidence in, deterministic decay out: what the swarm claimed
+        # this round (its own claim loop) and what the tree confirmed (only NEWLY
+        # completed nodes — confirmed_chain() repeats, the ledger must not), then
+        # tick() expires TTLs and releases directives on evidence — whether or not
+        # the strategist answers (forgetting is never LLM-dependent).
+        confirmed: list[str] = []
+        if self._attack_tree is not None:
+            try:
+                for n in self._attack_tree.confirmed_chain():
+                    if n.id not in self._confirmed_seen:
+                        self._confirmed_seen.add(n.id)
+                        confirmed.append(n.technique)
+            except Exception:
+                confirmed = []
+        self._strategy.observe_round(round_no + 1, self._round_claims, confirmed)
+        self._round_claims = []
+        released = self._strategy.tick(round_no + 1)
         objective_obj = getattr(self._ctx, "objective", None)
         reflection = reflect(
             self._client,
@@ -706,26 +1145,38 @@ class Orchestrator:
             killchain=getattr(self._ctx, "killchain", None),
             audit_tail=tail,
             notes_so_far=self._reflection_notes,
+            strategy_brief=self._strategy.brief() or None,
         )
+        amended = None
+        if reflection is not None:
+            amended = self._strategy.amend(reflection, round_no + 1)
+        applied = self._apply_strategy_state()
         if reflection is None:
+            # The amplifier failed. The state still decayed above and the surviving
+            # directives remain applied for the next round — the run continues
+            # exactly as Gen-1 did, with a strategy that still forgets on schedule.
+            if released:
+                self._ctx.audit.record("orchestrator.strategy_released",
+                                       round=round_no + 1, released=released)
+                self._emit("strategy.state", round=round_no + 1, released=released,
+                           **self._strategy.state())
             return
-        applied = 0
-        if self._attack_tree is not None:
-            try:
-                applied = self._attack_tree.apply_strategy(
-                    prioritize=reflection.get("prioritize"),
-                    deprioritize=reflection.get("deprioritize"))
-            except Exception:
-                applied = 0
         reflection["round"] = round_no + 1
         reflection["boosts_applied"] = applied
+        reflection["strategy_amended"] = amended
+        reflection["strategy_released"] = released
         self._reflections.append(reflection)
         self._reflection_notes.append(coach_note(reflection))
         self._ctx.audit.record("orchestrator.reflection", round=round_no + 1,
                                boosts=applied)
+        if released:
+            self._ctx.audit.record("orchestrator.strategy_released",
+                                   round=round_no + 1, released=released)
         self._emit("reflection", round=round_no + 1, boosts_applied=applied,
                    assessment=reflection["assessment"],
                    focus_next=reflection.get("focus_next") or [])
+        self._emit("strategy.state", round=round_no + 1, released=released,
+                   **self._strategy.state())
         # Persist for the report/dashboard even if the process dies mid-run.
         if self._manifest is not None:
             try:
@@ -734,5 +1185,24 @@ class Orchestrator:
                 (out_dir / "reflections.json").write_text(
                     json.dumps(self._reflections, indent=2, ensure_ascii=False),
                     encoding="utf-8")
+                (out_dir / "strategy.json").write_text(
+                    json.dumps(self._strategy.to_dict(), indent=2,
+                               ensure_ascii=False), encoding="utf-8")
             except Exception:
                 pass
+
+    def _apply_strategy_state(self) -> int:
+        """Phase B5 — the strategy object is the ONLY writer of tree nudges: restore
+        the nudge layer to neutral, then apply exactly the live directives. A
+        released directive genuinely releases (the old apply-once-forever behavior
+        is gone), and a live directive survives a failed reflection. Returns how
+        many boosts landed on real nodes — the audit event's shape is unchanged."""
+        if self._attack_tree is None:
+            return 0
+        reset_tree_nudges(self._attack_tree)
+        press, avoid = self._strategy.directives_for_tree()
+        try:
+            return self._attack_tree.apply_strategy(prioritize=press,
+                                                    deprioritize=avoid)
+        except Exception:
+            return 0

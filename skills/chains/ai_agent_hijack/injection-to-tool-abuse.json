@@ -1,0 +1,111 @@
+{
+  "group": "ai_agent_hijack",
+  "slug": "injection-to-tool-abuse",
+  "name": "Injection -> goal hijack -> tool-call hijack -> markdown exfil",
+  "goal": "Turn untrusted content into a completed attacker objective: the agent adopts the hijacked goal, calls a tool with attacker arguments, and walks the data out through a renderer-fetched image URL.",
+  "preconditions": "Any agent/LLM feature that ingests untrusted text (document summary, email triage, web research) and can invoke tools or emit rich output.",
+  "cwe": [
+    "CWE-1427",
+    "CWE-200"
+  ],
+  "impact": "Silent data exfiltration from the victim's context with no malicious request ever sent by the attacker directly — the agent does the theft.",
+  "steps": [
+    {
+      "n": 1,
+      "skill": "ai/Indirect injection via untrusted content",
+      "purpose": "Prove untrusted content steers the model (lethal trifecta leg 2).",
+      "on_success": "Record the injection channel; escalate from marker to objective next.",
+      "on_fail": "Content sanitized -> try delimiter confusion and payload splitting; email/OCR/alt-text as alternate carriers."
+    },
+    {
+      "n": 2,
+      "skill": "ai/Goal hijack untrusted content",
+      "purpose": "Prove the agent's PLAN is replaced, not merely annotated — objective-level control.",
+      "on_success": "Save the divergent plan as the impact narrative.",
+      "on_fail": "Plan intact -> check for narrower instruction-following (step 3 still viable)."
+    },
+    {
+      "n": 3,
+      "skill": "ai/Tool-call hijack via injected directive",
+      "purpose": "Convert hijacked intent into a concrete attacker-argumented tool invocation.",
+      "on_success": "Capture the tool-call JSON as the action-plane evidence.",
+      "on_fail": "Tools not exposed to this endpoint -> map other agent surfaces (MCP census) or fall back to output-plane exfil (step 4)."
+    },
+    {
+      "n": 4,
+      "skill": "ai/Markdown image exfil channel",
+      "purpose": "Prove the external-communication leg: a renderer-fetchable URL embedding the planted canary completes the trifecta.",
+      "on_success": "Full-chain impact: private data + untrusted content + exfil channel all proven.",
+      "on_fail": "Renderer blocks remote images -> enumerate other egress (link previews, emoji loads, error-report beacons); document the honest gap if none."
+    }
+  ],
+  "discovery": {
+    "entry_points": [
+      "document/PDF import & summarize features",
+      "email/chat triage bots",
+      "web-research & citation features",
+      "customer-support copilots",
+      "code-review bots ingesting PRs",
+      "calendar/CRM assistants"
+    ],
+    "recon": [
+      {
+        "name": "Untrusted-source mapping",
+        "how": "List every text source the agent reads that an outsider can write (docs, emails, tickets, web pages, PR comments) — each is an injection canal.",
+        "tooling": "manual feature walk + JS bundle reading",
+        "signal": "Any render/summarize of attacker-writable content."
+      },
+      {
+        "name": "Tool-discovery prompts",
+        "how": "Ask capabilities directly and obliquely ('how would you send that?'); tool names leaked in errors reveal the action plane.",
+        "tooling": "manual + redteam/Jenkins-style error mining",
+        "signal": "Tool/function names, argument shapes, approval model."
+      },
+      {
+        "name": "Renderer census",
+        "how": "Identify where agent output is rendered richly (web UI, markdown email, Slack unfurl) — each renderer is potential exfil egress.",
+        "tooling": "manual",
+        "signal": "Markdown/HTML rendering with image/link fetching."
+      },
+      {
+        "name": "Canary rehearsal",
+        "how": "Plant prompt_canary, run the full chain on your own tenant, confirm every hop fires before touching production targets.",
+        "tooling": "staging + ai skills",
+        "signal": "Chain completes end-to-end in rehearsal."
+      },
+      {
+        "name": "Cross-user state probing",
+        "how": "Check whether injected content in user A's artifacts can reach user B's agent sessions (shared docs, public repos) — that upgrades single-victim to fleet-scale.",
+        "tooling": "two-account harness",
+        "signal": "Cross-principal propagation."
+      }
+    ],
+    "variants": [
+      "email/OCR/alt-text carriers for the payload",
+      "memory-mediated injection (poison memory, trigger later)",
+      "agent-to-agent relay through helper bots",
+      "JSON-mode confusion to smuggle directives past filters",
+      "tool-argument confusion (attacker sets recipient, not action)"
+    ],
+    "dorks": [
+      "github: \"system_prompt\" \"tools\" agent config",
+      "github: mcp.json tools server list",
+      "google: inurl:chat \"assistant\" site:target.tld"
+    ],
+    "pivot_hints": [
+      "pair with mcp-poisoning-to-hijack when the agent consumes MCP servers",
+      "exfil channel doubles as C2 proof for the report narrative",
+      "rag-poison-to-exfil when injection via corpus is quieter than per-request"
+    ]
+  },
+  "fallbacks": [
+    "mcp-poisoning-to-hijack",
+    "rag-poison-to-exfil"
+  ],
+  "sources": [
+    "Simon Willison — the lethal trifecta (private data + untrusted content + external communication)",
+    "OWASP Top 10 for Agentic Applications 2026 — ASI01 agent goal hijack, ASI02 tool misuse",
+    "OWASP LLM Top 10 2025 — LLM01 prompt injection",
+    "documented exfil-attack writeups (Microsoft 365 Copilot, GitHub MCP server, GitLab Duo)"
+  ]
+}
