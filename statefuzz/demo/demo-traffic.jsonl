@@ -1,0 +1,53 @@
+{"ts": 1793719478.36, "method": "POST", "path": "/accounts/acc:A1/deposit", "principal": "A", "timing": "race", "note": "INTERRUPT::T1:race8", "statuses": [200, 200, 200, 200, 200, 200, 200, 200]}
+{"ts": 1793719478.411, "method": "POST", "path": "/accounts/acc:A1/withdraw", "principal": "A", "timing": "race", "note": "INTERRUPT::T2:race8", "statuses": [200, 200, 200, 200, 200, 200, 200, 200]}
+{"ts": 1793719478.412, "method": "POST", "path": "/transfers", "principal": "A", "timing": "race", "note": "INTERRUPT::T3:race8", "statuses": [200, 200, 200, 200, 200, 200, 200, 200]}
+{"ts": 1793719478.413, "method": "POST", "path": "/accounts/acc:A1/close", "principal": "A", "timing": "race", "note": "INTERRUPT::T5:race8", "statuses": [409, 409, 409, 409, 409, 409, 409, 200]}
+{"ts": 1793719478.413, "elapsed_ms": 0.01, "method": "POST", "path": "/accounts/acc:A1/close", "principal": "A", "timing": "single", "note": "REORDER::T1+T5:first", "status": 409}
+{"ts": 1793719478.413, "elapsed_ms": 0.01, "method": "POST", "path": "/accounts/acc:A1/deposit", "principal": "A", "timing": "single", "note": "REORDER::T1+T5:second", "status": 200}
+{"ts": 1793719478.463, "elapsed_ms": 50.1, "method": "POST", "path": "/accounts/acc:A1/withdraw", "principal": "A", "timing": "single", "note": "REORDER::T1+T2:first", "status": 200}
+{"ts": 1793719478.463, "elapsed_ms": 0.02, "method": "POST", "path": "/accounts/acc:A1/deposit", "principal": "A", "timing": "single", "note": "REORDER::T1+T2:second", "status": 200}
+{"ts": 1793719478.464, "elapsed_ms": 0.01, "method": "POST", "path": "/accounts/acc:A1/close", "principal": "A", "timing": "single", "note": "REORDER::T2+T5:first", "status": 200}
+{"ts": 1793719478.464, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/withdraw", "principal": "A", "timing": "single", "note": "REORDER::T2+T5:second", "status": 409}
+{"ts": 1793719478.464, "elapsed_ms": 0.01, "method": "POST", "path": "/accounts/acc:A1/deposit", "principal": "A", "timing": "single", "note": "REORDER::T2+T1:first", "status": 200}
+{"ts": 1793719478.514, "elapsed_ms": 50.11, "method": "POST", "path": "/accounts/acc:A1/withdraw", "principal": "A", "timing": "single", "note": "REORDER::T2+T1:second", "status": 200}
+{"ts": 1793719478.514, "elapsed_ms": 0.01, "method": "POST", "path": "/accounts/acc:A1/close", "principal": "A", "timing": "single", "note": "REORDER::T3+T5:first", "status": 200}
+{"ts": 1793719478.514, "elapsed_ms": 0.01, "method": "POST", "path": "/transfers", "principal": "A", "timing": "single", "note": "REORDER::T3+T5:second", "status": 200}
+{"ts": 1793719478.514, "elapsed_ms": 0.01, "method": "POST", "path": "/accounts/acc:A1/deposit", "principal": "A", "timing": "single", "note": "REORDER::T3+T1:first", "status": 200}
+{"ts": 1793719478.514, "elapsed_ms": 0.01, "method": "POST", "path": "/transfers", "principal": "A", "timing": "single", "note": "REORDER::T3+T1:second", "status": 200}
+{"ts": 1793719478.514, "elapsed_ms": 0.01, "method": "POST", "path": "/accounts/acc:A1/deposit", "principal": "A", "timing": "single", "note": "REORDER::T5+T1:first", "status": 200}
+{"ts": 1793719478.514, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/close", "principal": "A", "timing": "single", "note": "REORDER::T5+T1:second", "status": 200}
+{"ts": 1793719478.514, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/withdraw", "principal": "A", "timing": "single", "note": "REORDER::T5+T2:first", "status": 409}
+{"ts": 1793719478.514, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/close", "principal": "A", "timing": "single", "note": "REORDER::T5+T2:second", "status": 409}
+{"ts": 1793719478.514, "elapsed_ms": 0.01, "method": "POST", "path": "/accounts/acc:A1/deposit", "principal": "A", "timing": "single", "note": "NEGATIVE::T1:amount=-1", "status": 200}
+{"ts": 1793719478.515, "elapsed_ms": 0.01, "method": "POST", "path": "/accounts/acc:A1/deposit", "principal": "A", "timing": "single", "note": "NEGATIVE::T1:amount=0", "status": 200}
+{"ts": 1793719478.515, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/deposit", "principal": "B", "timing": "single", "note": "CROSS-USER::T1:B-on-A", "status": 200}
+{"ts": 1793719478.565, "elapsed_ms": 50.1, "method": "POST", "path": "/accounts/acc:A1/withdraw", "principal": "A", "timing": "single", "note": "NEGATIVE::T2:amount=-1", "status": 200}
+{"ts": 1793719478.615, "elapsed_ms": 50.12, "method": "POST", "path": "/accounts/acc:A1/withdraw", "principal": "A", "timing": "single", "note": "NEGATIVE::T2:amount=0", "status": 200}
+{"ts": 1793719478.615, "elapsed_ms": 0.01, "method": "POST", "path": "/accounts/acc:A1/withdraw", "principal": "B", "timing": "single", "note": "CROSS-USER::T2:B-on-A", "status": 409}
+{"ts": 1793719478.615, "elapsed_ms": 0.01, "method": "POST", "path": "/transfers", "principal": "A", "timing": "single", "note": "NEGATIVE::T3:amount=-1", "status": 200}
+{"ts": 1793719478.615, "elapsed_ms": 0.01, "method": "POST", "path": "/transfers", "principal": "A", "timing": "single", "note": "NEGATIVE::T3:amount=0", "status": 200}
+{"ts": 1793719478.616, "elapsed_ms": 0.01, "method": "POST", "path": "/transfers", "principal": "B", "timing": "single", "note": "CROSS-USER::T3:B-on-A", "status": 200}
+{"ts": 1793719478.616, "elapsed_ms": 0.01, "method": "GET", "path": "/accounts/acc:A1/statement", "principal": "B", "timing": "single", "note": "CROSS-USER::T4:B-on-A", "status": 200}
+{"ts": 1793719478.616, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/close", "principal": "B", "timing": "single", "note": "CROSS-USER::T5:B-on-A", "status": 403}
+{"ts": 1793719478.616, "elapsed_ms": 0.01, "method": "POST", "path": "/accounts/acc:A1/deposit", "principal": "A", "timing": "single", "note": "REPLAY::T1:1", "status": 200}
+{"ts": 1793719478.616, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/deposit", "principal": "A", "timing": "single", "note": "REPLAY::T1:2", "status": 200}
+{"ts": 1793719478.616, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/deposit", "principal": "A", "timing": "single", "note": "PARTIAL::T1:drop:amount", "status": 422}
+{"ts": 1793719478.616, "elapsed_ms": 0.01, "method": "POST", "path": "/accounts/acc:A1/deposit", "principal": "A", "timing": "single", "note": "IDEMPOTENCE::T1:1", "status": 200}
+{"ts": 1793719478.616, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/deposit", "principal": "A", "timing": "single", "note": "IDEMPOTENCE::T1:2", "status": 200}
+{"ts": 1793719478.666, "elapsed_ms": 50.1, "method": "POST", "path": "/accounts/acc:A1/withdraw", "principal": "A", "timing": "single", "note": "REPLAY::T2:1", "status": 200}
+{"ts": 1793719478.666, "elapsed_ms": 0.01, "method": "POST", "path": "/accounts/acc:A1/withdraw", "principal": "A", "timing": "single", "note": "REPLAY::T2:2", "status": 409}
+{"ts": 1793719478.666, "elapsed_ms": 0.01, "method": "POST", "path": "/accounts/acc:A1/withdraw", "principal": "A", "timing": "single", "note": "PARTIAL::T2:drop:amount", "status": 422}
+{"ts": 1793719478.667, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/withdraw", "principal": "A", "timing": "single", "note": "IDEMPOTENCE::T2:1", "status": 409}
+{"ts": 1793719478.667, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/withdraw", "principal": "A", "timing": "single", "note": "IDEMPOTENCE::T2:2", "status": 409}
+{"ts": 1793719478.667, "elapsed_ms": 0.01, "method": "POST", "path": "/transfers", "principal": "A", "timing": "single", "note": "REPLAY::T3:1", "status": 200}
+{"ts": 1793719478.667, "elapsed_ms": 0.01, "method": "POST", "path": "/transfers", "principal": "A", "timing": "single", "note": "REPLAY::T3:2", "status": 200}
+{"ts": 1793719478.667, "elapsed_ms": 0.0, "method": "POST", "path": "/transfers", "principal": "A", "timing": "single", "note": "PARTIAL::T3:drop:amount", "status": 422}
+{"ts": 1793719478.667, "elapsed_ms": 0.0, "method": "POST", "path": "/transfers", "principal": "A", "timing": "single", "note": "PARTIAL::T3:drop:from", "status": 404}
+{"ts": 1793719478.667, "elapsed_ms": 0.0, "method": "POST", "path": "/transfers", "principal": "A", "timing": "single", "note": "PARTIAL::T3:drop:to", "status": 404}
+{"ts": 1793719478.667, "elapsed_ms": 0.01, "method": "POST", "path": "/transfers", "principal": "A", "timing": "single", "note": "IDEMPOTENCE::T3:1", "status": 200}
+{"ts": 1793719478.667, "elapsed_ms": 0.0, "method": "POST", "path": "/transfers", "principal": "A", "timing": "single", "note": "IDEMPOTENCE::T3:2", "status": 200}
+{"ts": 1793719478.667, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/close", "principal": "A", "timing": "single", "note": "SKIP::T5", "status": 200}
+{"ts": 1793719478.667, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/close", "principal": "A", "timing": "single", "note": "REPLAY::T5:1", "status": 409}
+{"ts": 1793719478.667, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/close", "principal": "A", "timing": "single", "note": "REPLAY::T5:2", "status": 409}
+{"ts": 1793719478.667, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/close", "principal": "A", "timing": "single", "note": "IDEMPOTENCE::T5:1", "status": 409}
+{"ts": 1793719478.667, "elapsed_ms": 0.0, "method": "POST", "path": "/accounts/acc:A1/close", "principal": "A", "timing": "single", "note": "IDEMPOTENCE::T5:2", "status": 409}

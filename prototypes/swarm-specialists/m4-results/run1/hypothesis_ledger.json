@@ -1,0 +1,712 @@
+{
+  "tool": "hypothesis-ledger",
+  "version": "1.0.0",
+  "generated": "2026-11-07T04:04:34+0000",
+  "stats": {
+    "total": 15,
+    "by_status": {
+      "confirmed": 10,
+      "inconclusive": 2,
+      "refuted": 2,
+      "tested": 1
+    },
+    "by_source": {
+      "window-driver/scan": 1,
+      "window-driver/fresh": 1,
+      "swarm-board/7ffbf7": 12,
+      "deferred-window/7ffbf7": 1
+    },
+    "by_tag": {
+      "marker": 2,
+      "h_fsm": 1,
+      "h_open_vocab": 1,
+      "h_hidden_verbs": 1,
+      "h_mass_assign": 1,
+      "h_cross_tenant": 1,
+      "h_arith_cycle": 1,
+      "h_quota_race": 1,
+      "h_async_seam": 1,
+      "h_state_skip": 1,
+      "h_value_replay": 1,
+      "h_credit_race": 1,
+      "h_fsm_live": 1,
+      "deferred-window": 1
+    }
+  },
+  "score": 12.25,
+  "entries": [
+    {
+      "id": "H-0001",
+      "source": "window-driver/scan",
+      "tag": "marker",
+      "title": "async seam /api/payouts/PAY-f9e0e11195/events will debit 50000 exactly once",
+      "prior": 0.55,
+      "plan": "drain inside window -> poll /api/payouts/PAY-f9e0e11195/events -> cancel after settle -> wallet read-back",
+      "derived_from": [
+        "SF-WINDOW_DRIVER-0035"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "window-drive",
+          "detail": "violation: FW-SETTLED-CANCEL",
+          "requests_spent": 0,
+          "finding_ids": [
+            "FW-SETTLED-CANCEL"
+          ],
+          "ts": 1794024268.8028724
+        }
+      ],
+      "evidence": [
+        {
+          "note": "violation: FW-SETTLED-CANCEL",
+          "wallet_trace": [
+            {
+              "step": "baseline",
+              "wallet": null
+            },
+            {
+              "step": "poll",
+              "status": "pending"
+            },
+            {
+              "step": "poll",
+              "status": "pending"
+            },
+            {
+              "step": "poll",
+              "status": "pending"
+            },
+            {
+              "step": "poll",
+              "status": "pending"
+            },
+            {
+              "step": "poll",
+              "status": "pending"
+            },
+            {
+              "step": "poll",
+              "status": "pending"
+            },
+            {
+              "step": "poll",
+              "status": "settled"
+            },
+            {
+              "step": "post-settle-wallet",
+              "wallet": 50000
+            },
+            {
+              "step": "cancel",
+              "verb": "cancel",
+              "status": 200,
+              "refund": 50000,
+              "wallet": 100000
+            }
+          ]
+        }
+      ],
+      "created": 1794024267.5769584,
+      "resolved": 1794024268.8028753,
+      "marker": {
+        "event_path": "/api/payouts/PAY-f9e0e11195/events",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-f9e0e11195",
+        "amount": 50000,
+        "amount_field": "amount_cents",
+        "principal": "seam-286-267546",
+        "ttl": 6.0,
+        "state": "resolved",
+        "actions_done": [
+          "cancel-after-settle"
+        ]
+      }
+    },
+    {
+      "id": "H-0002",
+      "source": "window-driver/fresh",
+      "tag": "marker",
+      "title": "async seam /api/payouts/PAY-69e47b20a1/events will debit 50000 exactly once",
+      "prior": 0.55,
+      "plan": "drain inside window -> poll /api/payouts/PAY-69e47b20a1/events -> cancel after settle -> wallet read-back",
+      "derived_from": [
+        "SF-EXPLOIT-0034"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "window-drive",
+          "detail": "violation: FW-TOCTOU-SETTLE",
+          "requests_spent": 0,
+          "finding_ids": [
+            "FW-TOCTOU-SETTLE"
+          ],
+          "ts": 1794024270.0380704
+        }
+      ],
+      "evidence": [
+        {
+          "note": "violation: FW-TOCTOU-SETTLE",
+          "wallet_trace": [
+            {
+              "step": "fresh-window",
+              "amount": 50000,
+              "wallet": 100000
+            },
+            {
+              "step": "drain",
+              "wallet_after": 46027
+            },
+            {
+              "step": "poll",
+              "status": "pending"
+            },
+            {
+              "step": "poll",
+              "status": "pending"
+            },
+            {
+              "step": "poll",
+              "status": "pending"
+            },
+            {
+              "step": "poll",
+              "status": "pending"
+            },
+            {
+              "step": "poll",
+              "status": "pending"
+            },
+            {
+              "step": "poll",
+              "status": "pending"
+            },
+            {
+              "step": "poll",
+              "status": "settled"
+            },
+            {
+              "step": "final-wallet",
+              "wallet": -3973,
+              "settled": "settled"
+            },
+            {
+              "step": "post-settle-wallet",
+              "wallet": -3973
+            },
+            {
+              "step": "cancel",
+              "verb": "cancel",
+              "status": 200,
+              "refund": 50000,
+              "wallet": 46027
+            }
+          ]
+        }
+      ],
+      "created": 1794024268.8099704,
+      "resolved": 1794024270.0380785,
+      "marker": {
+        "event_path": "/api/payouts/PAY-69e47b20a1/events",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-69e47b20a1",
+        "amount": 50000,
+        "amount_field": "amount_cents",
+        "principal": "wind-315-268802",
+        "baseline": 100000,
+        "ttl": 6.0,
+        "state": "resolved",
+        "actions_done": [
+          "drain-window",
+          "cancel-after-settle"
+        ]
+      }
+    },
+    {
+      "id": "H-0003",
+      "source": "swarm-board/7ffbf7",
+      "tag": "h_fsm",
+      "title": "Order lifecycle is a two-step state machine; transition guards may be missing",
+      "prior": 0.7,
+      "plan": "spawn statefuzz specialist",
+      "derived_from": [
+        "SF-HYPOTHESIS-0005"
+      ],
+      "status": "inconclusive",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "honestly skipped: surface lacks the modeled checkout lifecycle",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794024274.1335607
+        }
+      ],
+      "evidence": [
+        {
+          "note": "FSM spawn skipped on shape mismatch (see CONTROL skip-statefuzz)"
+        }
+      ],
+      "created": 1794024274.1324072,
+      "resolved": 1794024274.1335623
+    },
+    {
+      "id": "H-0004",
+      "source": "swarm-board/7ffbf7",
+      "tag": "h_open_vocab",
+      "title": "The live surface may hold value resources, verbs and read-backs the stale document never mentioned",
+      "prior": 0.55,
+      "plan": "probe the open noun/verb/subpath vocabularies against the live target; fold every fact into a revised surface",
+      "derived_from": [
+        "SF-HYPOTHESIS-0006"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Terminal verb 'settle' on shipments succeeds straight from the pristine create state (booked): the shipments payout lands while the induced lifecycle shows 3 409-gated transition(s) \u2014 the state machine is not enforced on the money path (verified)",
+          "requests_spent": 616,
+          "finding_ids": [
+            "FW-STATE-SKIP"
+          ],
+          "ts": 1794024274.1334987
+        },
+        {
+          "kind": "finding",
+          "detail": "Credit verb 'release' on vouchers is repeatable: two further credits (30000 + 30000 cents) on one object \u2014 the consumed/released state is never committed (verified)",
+          "requests_spent": 616,
+          "finding_ids": [
+            "FW-RELEASE-REPLAY"
+          ],
+          "ts": 1794024274.133511
+        },
+        {
+          "kind": "finding",
+          "detail": "Credit verb 'rebook' on shipments is repeatable: two further credits (399 + 399 cents) on one object \u2014 the consumed/released state is never committed (verified)",
+          "requests_spent": 616,
+          "finding_ids": [
+            "FW-REBOOK-REPLAY"
+          ],
+          "ts": 1794024274.133518
+        },
+        {
+          "kind": "finding",
+          "detail": "Credit verb 'release' on vouchers has no per-object guard under concurrency: 8 of 8 synchronised requests won, crediting 240000 cents (8x face) on ONE object (verified)",
+          "requests_spent": 616,
+          "finding_ids": [
+            "FW-CREDIT-RACE"
+          ],
+          "ts": 1794024274.1335251
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-STATE-SKIP",
+          "status": "verified"
+        },
+        {
+          "finding": "FW-RELEASE-REPLAY",
+          "status": "verified"
+        },
+        {
+          "finding": "FW-REBOOK-REPLAY",
+          "status": "verified"
+        },
+        {
+          "finding": "FW-CREDIT-RACE",
+          "status": "verified"
+        }
+      ],
+      "created": 1794024274.132413,
+      "resolved": 1794024274.1335266
+    },
+    {
+      "id": "H-0005",
+      "source": "swarm-board/7ffbf7",
+      "tag": "h_hidden_verbs",
+      "title": "Parameterised money resources may expose undocumented ops verbs",
+      "prior": 0.4,
+      "plan": "verb wordlist probe on param paths",
+      "derived_from": [
+        "SF-HYPOTHESIS-0007"
+      ],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794024274.1335714
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probe ran against the live target and demonstrated no violation"
+        }
+      ],
+      "created": 1794024274.132416,
+      "resolved": 1794024274.1335726
+    },
+    {
+      "id": "H-0006",
+      "source": "swarm-board/7ffbf7",
+      "tag": "h_mass_assign",
+      "title": "Undocumented body fields may override pricing or entitlements",
+      "prior": 0.5,
+      "plan": "differential create with injected candidates",
+      "derived_from": [
+        "SF-HYPOTHESIS-0008"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Mass assignment: client-supplied rate_cents overrides server-side pricing (differential: lawful totals vs injected totals); NEGATIVE value CREDITED the wallet (+50000) (verified)",
+          "requests_spent": 616,
+          "finding_ids": [
+            "FW-MASS-PRICE"
+          ],
+          "ts": 1794024274.1324706
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-MASS-PRICE",
+          "status": "verified"
+        }
+      ],
+      "created": 1794024274.1324189,
+      "resolved": 1794024274.1324744
+    },
+    {
+      "id": "H-0007",
+      "source": "swarm-board/7ffbf7",
+      "tag": "h_cross_tenant",
+      "title": "Global read-backs may leak other tenants' ids; leaked ids may pay the caller",
+      "prior": 0.5,
+      "plan": "cross-principal readback scan + deputy write",
+      "derived_from": [
+        "SF-HYPOTHESIS-0009"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Cross-tenant object disclosure: a fresh principal reads another tenant's shipment identifier from /api/shipments/recent (verified)",
+          "requests_spent": 616,
+          "finding_ids": [
+            "FW-AUDIT-LEAK"
+          ],
+          "ts": 1794024274.1324797
+        },
+        {
+          "kind": "finding",
+          "detail": "No ownership check on rebook: the credit lands in the CALLER's balance \u2014 monetize any leaked tenant's object  (verified)",
+          "requests_spent": 616,
+          "finding_ids": [
+            "FW-DEPUTY-CREDIT"
+          ],
+          "ts": 1794024274.1324854
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-AUDIT-LEAK",
+          "status": "verified"
+        },
+        {
+          "finding": "FW-DEPUTY-CREDIT",
+          "status": "verified"
+        }
+      ],
+      "created": 1794024274.132421,
+      "resolved": 1794024274.1324868
+    },
+    {
+      "id": "H-0008",
+      "source": "swarm-board/7ffbf7",
+      "tag": "h_arith_cycle",
+      "title": "Value-neutral cycles of a priced transition may accumulate rounding drift",
+      "prior": 0.45,
+      "plan": "cycle 12x, net wallet delta",
+      "derived_from": [
+        "SF-HYPOTHESIS-0010"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Value-neutral resize cycles accumulate balance (+3 cents within 12 round-trips): credit rounds up, charge rounds down (verified)",
+          "requests_spent": 616,
+          "finding_ids": [
+            "FW-ROUND-DRIFT"
+          ],
+          "ts": 1794024274.1324902
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-ROUND-DRIFT",
+          "status": "verified"
+        }
+      ],
+      "created": 1794024274.1324258,
+      "resolved": 1794024274.1324918
+    },
+    {
+      "id": "H-0009",
+      "source": "swarm-board/7ffbf7",
+      "tag": "h_quota_race",
+      "title": "Quota-limited claims may lose the check-then-act race to distinct principals",
+      "prior": 0.5,
+      "plan": "multi-principal last-byte race",
+      "derived_from": [
+        "SF-HYPOTHESIS-0011"
+      ],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794024274.1335828
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probe ran against the live target and demonstrated no violation"
+        }
+      ],
+      "created": 1794024274.132428,
+      "resolved": 1794024274.1335847
+    },
+    {
+      "id": "H-0010",
+      "source": "swarm-board/7ffbf7",
+      "tag": "h_async_seam",
+      "title": "A money surface with no documented async seam may hide one (deferred-effect lifecycle with unguarded settle/cancel)",
+      "prior": 0.45,
+      "plan": "noun-probe resource creates; learn the field from the error contract; open one seam; window driver takes it from there",
+      "derived_from": [
+        "SF-HYPOTHESIS-0012"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered) (verified)",
+          "requests_spent": 616,
+          "finding_ids": [
+            "FW-SETTLED-CANCEL"
+          ],
+          "ts": 1794024274.132496
+        },
+        {
+          "kind": "finding",
+          "detail": "Async settle debits without a balance re-check: draining the wallet inside the deferred window drives the balance negative (-3973) (verified)",
+          "requests_spent": 616,
+          "finding_ids": [
+            "FW-TOCTOU-SETTLE"
+          ],
+          "ts": 1794024274.1325002
+        },
+        {
+          "kind": "finding",
+          "detail": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered) (verified)",
+          "requests_spent": 616,
+          "finding_ids": [
+            "FW-SETTLED-CANCEL"
+          ],
+          "ts": 1794024274.1334903
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-SETTLED-CANCEL",
+          "status": "verified"
+        },
+        {
+          "finding": "FW-TOCTOU-SETTLE",
+          "status": "verified"
+        },
+        {
+          "finding": "FW-SETTLED-CANCEL",
+          "status": "verified"
+        }
+      ],
+      "created": 1794024274.1324306,
+      "resolved": 1794024274.1334932
+    },
+    {
+      "id": "H-0011",
+      "source": "swarm-board/7ffbf7",
+      "tag": "h_state_skip",
+      "title": "attack-graph: untested money edge shipments settle",
+      "prior": 0.45,
+      "plan": "graph-guided: cheapest untested edge to the wallet goal (~24 requests)",
+      "derived_from": [
+        "SF-ATTACK_GRAPH-0018"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Terminal verb 'settle' on shipments succeeds straight from the pristine create state (booked): the shipments payout lands while the induced lifecycle shows 3 409-gated transition(s) \u2014 the state machine is not enforced on the money path (verified)",
+          "requests_spent": 616,
+          "finding_ids": [
+            "FW-STATE-SKIP"
+          ],
+          "ts": 1794024274.133502
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-STATE-SKIP",
+          "status": "verified"
+        }
+      ],
+      "created": 1794024274.1324332,
+      "resolved": 1794024274.1335034
+    },
+    {
+      "id": "H-0012",
+      "source": "swarm-board/7ffbf7",
+      "tag": "h_value_replay",
+      "title": "A discovered credit verb may be repeatable per object (the consumed/released state never commits)",
+      "prior": 0.55,
+      "plan": "open-vocab verb facts -> replay credited verb x2 on a fresh object",
+      "derived_from": [
+        "SF-HYPOTHESIS-0019"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Credit verb 'release' on vouchers is repeatable: two further credits (30000 + 30000 cents) on one object \u2014 the consumed/released state is never committed (verified)",
+          "requests_spent": 616,
+          "finding_ids": [
+            "FW-RELEASE-REPLAY"
+          ],
+          "ts": 1794024274.1335087
+        },
+        {
+          "kind": "finding",
+          "detail": "Credit verb 'rebook' on shipments is repeatable: two further credits (399 + 399 cents) on one object \u2014 the consumed/released state is never committed (verified)",
+          "requests_spent": 616,
+          "finding_ids": [
+            "FW-REBOOK-REPLAY"
+          ],
+          "ts": 1794024274.1335156
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-RELEASE-REPLAY",
+          "status": "verified"
+        },
+        {
+          "finding": "FW-REBOOK-REPLAY",
+          "status": "verified"
+        }
+      ],
+      "created": 1794024274.1324358,
+      "resolved": 1794024274.1335168
+    },
+    {
+      "id": "H-0013",
+      "source": "swarm-board/7ffbf7",
+      "tag": "h_credit_race",
+      "title": "A discovered credit verb without a single-use guard may lose the check-then-act race",
+      "prior": 0.55,
+      "plan": "open-vocab verb facts -> last-byte race x8 on a fresh object",
+      "derived_from": [
+        "SF-HYPOTHESIS-0020"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Credit verb 'release' on vouchers has no per-object guard under concurrency: 8 of 8 synchronised requests won, crediting 240000 cents (8x face) on ONE object (verified)",
+          "requests_spent": 616,
+          "finding_ids": [
+            "FW-CREDIT-RACE"
+          ],
+          "ts": 1794024274.1335227
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-CREDIT-RACE",
+          "status": "verified"
+        }
+      ],
+      "created": 1794024274.1324377,
+      "resolved": 1794024274.1335242
+    },
+    {
+      "id": "H-0014",
+      "source": "swarm-board/7ffbf7",
+      "tag": "h_fsm_live",
+      "title": "The live lifecycle (undocumented transitions) may hide order guards the stale doc never stated",
+      "prior": 0.5,
+      "plan": "walk lifecycle verbs across one object's states; publish the induced transition table; flag transitions answered 2xx at two states",
+      "derived_from": [
+        "SF-HYPOTHESIS-0021"
+      ],
+      "status": "tested",
+      "tests": [
+        {
+          "kind": "probe",
+          "detail": "probe produced observations without a violation",
+          "requests_spent": 616,
+          "finding_ids": [],
+          "ts": 1794024274.1335962
+        }
+      ],
+      "evidence": [
+        {
+          "note": "technique ran; observation-only outcome (e.g. hidden verbs enumerated)"
+        }
+      ],
+      "created": 1794024274.1324403,
+      "resolved": 1794024274.133598
+    },
+    {
+      "id": "H-0015",
+      "source": "deferred-window/7ffbf7",
+      "tag": "deferred-window",
+      "title": "deferred effect via /api/payouts/PAY-029870c990/events;/api/payouts/PAY-32d6587ace/events;/api/payouts/PAY-3aebb16d23/events;/api/payouts/PAY-7ad93b17d1/events (ttl 6.0s)",
+      "prior": 0.5,
+      "plan": "poll /api/payouts/PAY-029870c990/events;/api/payouts/PAY-32d6587ace/events;/api/payouts/PAY-3aebb16d23/events;/api/payouts/PAY-7ad93b17d1/events until resolved",
+      "derived_from": [],
+      "status": "inconclusive",
+      "tests": [
+        {
+          "kind": "poll",
+          "detail": "4 async settle window(s) opened, 21 event poll(s) issued by the swarm",
+          "requests_spent": 21,
+          "finding_ids": [],
+          "ts": 1794024274.1367447
+        }
+      ],
+      "evidence": [
+        {
+          "note": "window(s) opened and polled; no violation demonstrated"
+        }
+      ],
+      "created": 1794024274.1367385,
+      "resolved": 1794024274.1367602,
+      "deferred": {
+        "marker": "4 window(s)",
+        "callback_path": "/api/payouts/PAY-029870c990/events;/api/payouts/PAY-32d6587ace/events;/api/payouts/PAY-3aebb16d23/events;/api/payouts/PAY-7ad93b17d1/events",
+        "expectation": {},
+        "ttl": 6.0
+      }
+    }
+  ]
+}

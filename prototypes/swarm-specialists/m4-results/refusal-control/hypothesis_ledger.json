@@ -1,0 +1,252 @@
+{
+  "tool": "hypothesis-ledger",
+  "version": "1.0.0",
+  "generated": "2026-11-07T04:04:42+0000",
+  "stats": {
+    "total": 8,
+    "by_status": {
+      "inconclusive": 1,
+      "refuted": 7
+    },
+    "by_source": {
+      "swarm-board/bfcccb": 8
+    },
+    "by_tag": {
+      "h_fsm": 1,
+      "h_open_vocab": 1,
+      "h_hidden_verbs": 1,
+      "h_mass_assign": 1,
+      "h_cross_tenant": 1,
+      "h_arith_cycle": 1,
+      "h_quota_race": 1,
+      "h_async_seam": 1
+    }
+  },
+  "score": 7.0,
+  "entries": [
+    {
+      "id": "H-0001",
+      "source": "swarm-board/bfcccb",
+      "tag": "h_fsm",
+      "title": "Order lifecycle is a two-step state machine; transition guards may be missing",
+      "prior": 0.7,
+      "plan": "spawn statefuzz specialist",
+      "derived_from": [
+        "SF-HYPOTHESIS-0107"
+      ],
+      "status": "inconclusive",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "honestly skipped: surface lacks the modeled checkout lifecycle",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794024282.0414844
+        }
+      ],
+      "evidence": [
+        {
+          "note": "FSM spawn skipped on shape mismatch (see CONTROL skip-statefuzz)"
+        }
+      ],
+      "created": 1794024282.0414398,
+      "resolved": 1794024282.0414865
+    },
+    {
+      "id": "H-0002",
+      "source": "swarm-board/bfcccb",
+      "tag": "h_open_vocab",
+      "title": "The live surface may hold value resources, verbs and read-backs the stale document never mentioned",
+      "prior": 0.55,
+      "plan": "probe the open noun/verb/subpath vocabularies against the live target; fold every fact into a revised surface",
+      "derived_from": [
+        "SF-HYPOTHESIS-0108"
+      ],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794024282.041491
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probe ran against the live target and demonstrated no violation"
+        }
+      ],
+      "created": 1794024282.0414443,
+      "resolved": 1794024282.0414922
+    },
+    {
+      "id": "H-0003",
+      "source": "swarm-board/bfcccb",
+      "tag": "h_hidden_verbs",
+      "title": "Parameterised money resources may expose undocumented ops verbs",
+      "prior": 0.4,
+      "plan": "verb wordlist probe on param paths",
+      "derived_from": [
+        "SF-HYPOTHESIS-0109"
+      ],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794024282.041495
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probe ran against the live target and demonstrated no violation"
+        }
+      ],
+      "created": 1794024282.041447,
+      "resolved": 1794024282.0414958
+    },
+    {
+      "id": "H-0004",
+      "source": "swarm-board/bfcccb",
+      "tag": "h_mass_assign",
+      "title": "Undocumented body fields may override pricing or entitlements",
+      "prior": 0.5,
+      "plan": "differential create with injected candidates",
+      "derived_from": [
+        "SF-HYPOTHESIS-0110"
+      ],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794024282.0414987
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probe ran against the live target and demonstrated no violation"
+        }
+      ],
+      "created": 1794024282.0414493,
+      "resolved": 1794024282.0414999
+    },
+    {
+      "id": "H-0005",
+      "source": "swarm-board/bfcccb",
+      "tag": "h_cross_tenant",
+      "title": "Global read-backs may leak other tenants' ids; leaked ids may pay the caller",
+      "prior": 0.5,
+      "plan": "cross-principal readback scan + deputy write",
+      "derived_from": [
+        "SF-HYPOTHESIS-0111"
+      ],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794024282.0415025
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probe ran against the live target and demonstrated no violation"
+        }
+      ],
+      "created": 1794024282.0414512,
+      "resolved": 1794024282.0415034
+    },
+    {
+      "id": "H-0006",
+      "source": "swarm-board/bfcccb",
+      "tag": "h_arith_cycle",
+      "title": "Value-neutral cycles of a priced transition may accumulate rounding drift",
+      "prior": 0.45,
+      "plan": "cycle 12x, net wallet delta",
+      "derived_from": [
+        "SF-HYPOTHESIS-0112"
+      ],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794024282.0415063
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probe ran against the live target and demonstrated no violation"
+        }
+      ],
+      "created": 1794024282.0414536,
+      "resolved": 1794024282.0415072
+    },
+    {
+      "id": "H-0007",
+      "source": "swarm-board/bfcccb",
+      "tag": "h_quota_race",
+      "title": "Quota-limited claims may lose the check-then-act race to distinct principals",
+      "prior": 0.5,
+      "plan": "multi-principal last-byte race",
+      "derived_from": [
+        "SF-HYPOTHESIS-0113"
+      ],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794024282.0415103
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probe ran against the live target and demonstrated no violation"
+        }
+      ],
+      "created": 1794024282.0414555,
+      "resolved": 1794024282.0415115
+    },
+    {
+      "id": "H-0008",
+      "source": "swarm-board/bfcccb",
+      "tag": "h_async_seam",
+      "title": "A money surface with no documented async seam may hide one (deferred-effect lifecycle with unguarded settle/cancel)",
+      "prior": 0.45,
+      "plan": "noun-probe resource creates; learn the field from the error contract; open one seam; window driver takes it from there",
+      "derived_from": [
+        "SF-HYPOTHESIS-0114"
+      ],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794024282.0415142
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probe ran against the live target and demonstrated no violation"
+        }
+      ],
+      "created": 1794024282.0414577,
+      "resolved": 1794024282.0415154
+    }
+  ]
+}

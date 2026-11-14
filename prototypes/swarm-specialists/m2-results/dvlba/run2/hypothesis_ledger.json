@@ -1,0 +1,737 @@
+{
+  "tool": "hypothesis-ledger",
+  "version": "1.0.0",
+  "generated": "2026-11-07T02:55:21+0000",
+  "stats": {
+    "total": 20,
+    "by_status": {
+      "confirmed-by-transcript": 1,
+      "confirmed": 14,
+      "refuted": 4,
+      "inconclusive": 1
+    },
+    "by_source": {
+      "swarm-board/1544cd": 10,
+      "deferred-window/1544cd": 1,
+      "statefuzz/swarm-embedded": 9
+    },
+    "by_tag": {
+      "h_race": 1,
+      "h_async": 1,
+      "h_idor": 1,
+      "h_refund": 1,
+      "h_coupon": 1,
+      "h_fsm": 1,
+      "h_open_vocab": 1,
+      "h_mass_assign": 1,
+      "h_arith_cycle": 1,
+      "h_quota_race": 1,
+      "deferred-window": 1,
+      "dvlba-shaped-probes": 1,
+      "SF-NEG-QTY": 1,
+      "SF-STACK-DISC": 1,
+      "SF-CKOUT-REPLAY": 1,
+      "SF-SHIP-UNPAID": 1,
+      "SF-IDOR-ORDER": 1,
+      "SF-REFUND-CROSS": 1,
+      "SF-REFUND-REPLAY": 1,
+      "SF-ASYNC-DBL": 1
+    }
+  },
+  "score": 18.5,
+  "entries": [
+    {
+      "id": "H-0001",
+      "source": "swarm-board/1544cd",
+      "tag": "h_race",
+      "title": "Single-use redemption may lose check-then-act races",
+      "prior": 0.5,
+      "plan": "last-byte-synchronised race, 8 workers",
+      "derived_from": [
+        "SF-HYPOTHESIS-0127"
+      ],
+      "status": "confirmed-by-transcript",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Single-use redeem loses check-then-act race (verified-by-transcript)",
+          "requests_spent": 181,
+          "finding_ids": [
+            "SW-RACE"
+          ],
+          "ts": 1794020121.6298764
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "SW-RACE",
+          "status": "verified-by-transcript"
+        }
+      ],
+      "created": 1794020121.6298387,
+      "resolved": 1794020121.6298792
+    },
+    {
+      "id": "H-0002",
+      "source": "swarm-board/1544cd",
+      "tag": "h_async",
+      "title": "Async refund leg may double-credit within the callback window",
+      "prior": 0.55,
+      "plan": "async refund + sync refund, poll callback",
+      "derived_from": [
+        "SF-HYPOTHESIS-0128"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Async + sync refund double-credit in the deferred window (verified)",
+          "requests_spent": 181,
+          "finding_ids": [
+            "SW-ASYNC"
+          ],
+          "ts": 1794020121.629883
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "SW-ASYNC",
+          "status": "verified"
+        }
+      ],
+      "created": 1794020121.629844,
+      "resolved": 1794020121.6298845
+    },
+    {
+      "id": "H-0003",
+      "source": "swarm-board/1544cd",
+      "tag": "h_idor",
+      "title": "Parameterised object endpoints may lack ownership checks",
+      "prior": 0.6,
+      "plan": "cross-user read of a fresh order",
+      "derived_from": [
+        "SF-HYPOTHESIS-0129"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Any user can read any order (IDOR) (verified)",
+          "requests_spent": 181,
+          "finding_ids": [
+            "SW-IDOR"
+          ],
+          "ts": 1794020121.6298873
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "SW-IDOR",
+          "status": "verified"
+        }
+      ],
+      "created": 1794020121.6298466,
+      "resolved": 1794020121.6298888
+    },
+    {
+      "id": "H-0004",
+      "source": "swarm-board/1544cd",
+      "tag": "h_refund",
+      "title": "Refund transitions may be replayable and mis-credited",
+      "prior": 0.6,
+      "plan": "replay refund x2 as a second principal",
+      "derived_from": [
+        "SF-HYPOTHESIS-0130"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Refund credits the CALLER, not the owner (verified)",
+          "requests_spent": 181,
+          "finding_ids": [
+            "SW-REF-X"
+          ],
+          "ts": 1794020121.629892
+        },
+        {
+          "kind": "finding",
+          "detail": "Refund is replayable (verified)",
+          "requests_spent": 181,
+          "finding_ids": [
+            "SW-REF-R"
+          ],
+          "ts": 1794020121.629896
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "SW-REF-X",
+          "status": "verified"
+        },
+        {
+          "finding": "SW-REF-R",
+          "status": "verified"
+        }
+      ],
+      "created": 1794020121.6298487,
+      "resolved": 1794020121.6298969
+    },
+    {
+      "id": "H-0005",
+      "source": "swarm-board/1544cd",
+      "tag": "h_coupon",
+      "title": "Multi-use coupon application may stack without cap",
+      "prior": 0.5,
+      "plan": "replay coupon/apply x12",
+      "derived_from": [
+        "SF-HYPOTHESIS-0131"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Coupon stacks without cap (verified)",
+          "requests_spent": 181,
+          "finding_ids": [
+            "SW-STACK"
+          ],
+          "ts": 1794020121.6298997
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "SW-STACK",
+          "status": "verified"
+        }
+      ],
+      "created": 1794020121.6298506,
+      "resolved": 1794020121.6299007
+    },
+    {
+      "id": "H-0006",
+      "source": "swarm-board/1544cd",
+      "tag": "h_fsm",
+      "title": "Order lifecycle is a two-step state machine; transition guards may be missing",
+      "prior": 0.7,
+      "plan": "spawn statefuzz specialist",
+      "derived_from": [
+        "SF-HYPOTHESIS-0132"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Negative-quantity checkout credits the attacker wallet (verified)",
+          "requests_spent": 181,
+          "finding_ids": [
+            "SF-NEG-QTY"
+          ],
+          "ts": 1794020121.629904
+        },
+        {
+          "kind": "finding",
+          "detail": "Coupon stacks without cap: discount exceeds subtotal (verified)",
+          "requests_spent": 181,
+          "finding_ids": [
+            "SF-STACK-DISC"
+          ],
+          "ts": 1794020121.629908
+        },
+        {
+          "kind": "finding",
+          "detail": "checkout/init is replayable: one cart snapshot yields duplicate orders (verified)",
+          "requests_spent": 181,
+          "finding_ids": [
+            "SF-CKOUT-REPLAY"
+          ],
+          "ts": 1794020121.6299112
+        },
+        {
+          "kind": "finding",
+          "detail": "Order ships without payment (SKIP confirm) (verified)",
+          "requests_spent": 181,
+          "finding_ids": [
+            "SF-SHIP-UNPAID"
+          ],
+          "ts": 1794020121.6299145
+        },
+        {
+          "kind": "finding",
+          "detail": "Any user can read any order (IDOR) (verified)",
+          "requests_spent": 181,
+          "finding_ids": [
+            "SF-IDOR-ORDER"
+          ],
+          "ts": 1794020121.6299179
+        },
+        {
+          "kind": "finding",
+          "detail": "Refund credits the CALLER, not the owner (cross-user withdrawal) (verified)",
+          "requests_spent": 181,
+          "finding_ids": [
+            "SF-REFUND-CROSS"
+          ],
+          "ts": 1794020121.6299212
+        },
+        {
+          "kind": "finding",
+          "detail": "Refund is replayable: double credit on one order (verified)",
+          "requests_spent": 181,
+          "finding_ids": [
+            "SF-REFUND-REPLAY"
+          ],
+          "ts": 1794020121.6299245
+        },
+        {
+          "kind": "finding",
+          "detail": "Async refund + sync refund double-credit inside the deferred window (verified)",
+          "requests_spent": 181,
+          "finding_ids": [
+            "SF-ASYNC-DBL"
+          ],
+          "ts": 1794020121.6299279
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "SF-NEG-QTY",
+          "status": "verified"
+        },
+        {
+          "finding": "SF-STACK-DISC",
+          "status": "verified"
+        },
+        {
+          "finding": "SF-CKOUT-REPLAY",
+          "status": "verified"
+        },
+        {
+          "finding": "SF-SHIP-UNPAID",
+          "status": "verified"
+        },
+        {
+          "finding": "SF-IDOR-ORDER",
+          "status": "verified"
+        },
+        {
+          "finding": "SF-REFUND-CROSS",
+          "status": "verified"
+        },
+        {
+          "finding": "SF-REFUND-REPLAY",
+          "status": "verified"
+        },
+        {
+          "finding": "SF-ASYNC-DBL",
+          "status": "verified"
+        }
+      ],
+      "created": 1794020121.6298532,
+      "resolved": 1794020121.629929
+    },
+    {
+      "id": "H-0007",
+      "source": "swarm-board/1544cd",
+      "tag": "h_open_vocab",
+      "title": "The live surface may hold value resources, verbs and read-backs the stale document never mentioned",
+      "prior": 0.55,
+      "plan": "probe the open noun/verb/subpath vocabularies against the live target; fold every fact into a revised surface",
+      "derived_from": [
+        "SF-HYPOTHESIS-0133"
+      ],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794020121.6299424
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probe ran against the live target and demonstrated no violation"
+        }
+      ],
+      "created": 1794020121.6298554,
+      "resolved": 1794020121.6299443
+    },
+    {
+      "id": "H-0008",
+      "source": "swarm-board/1544cd",
+      "tag": "h_mass_assign",
+      "title": "Undocumented body fields may override pricing or entitlements",
+      "prior": 0.5,
+      "plan": "differential create with injected candidates",
+      "derived_from": [
+        "SF-HYPOTHESIS-0134"
+      ],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794020121.6299481
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probe ran against the live target and demonstrated no violation"
+        }
+      ],
+      "created": 1794020121.6298575,
+      "resolved": 1794020121.629949
+    },
+    {
+      "id": "H-0009",
+      "source": "swarm-board/1544cd",
+      "tag": "h_arith_cycle",
+      "title": "Value-neutral cycles of a priced transition may accumulate rounding drift",
+      "prior": 0.45,
+      "plan": "cycle 12x, net wallet delta",
+      "derived_from": [
+        "SF-HYPOTHESIS-0135"
+      ],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794020121.6299524
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probe ran against the live target and demonstrated no violation"
+        }
+      ],
+      "created": 1794020121.62986,
+      "resolved": 1794020121.6299539
+    },
+    {
+      "id": "H-0010",
+      "source": "swarm-board/1544cd",
+      "tag": "h_quota_race",
+      "title": "Quota-limited claims may lose the check-then-act race to distinct principals",
+      "prior": 0.5,
+      "plan": "multi-principal last-byte race",
+      "derived_from": [
+        "SF-HYPOTHESIS-0136"
+      ],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794020121.6299572
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probe ran against the live target and demonstrated no violation"
+        }
+      ],
+      "created": 1794020121.6298618,
+      "resolved": 1794020121.6299584
+    },
+    {
+      "id": "H-0011",
+      "source": "deferred-window/1544cd",
+      "tag": "deferred-window",
+      "title": "deferred effect via /api/callbacks/206f0d382fb2 (ttl 6.0s)",
+      "prior": 0.5,
+      "plan": "poll /api/callbacks/206f0d382fb2 until resolved",
+      "derived_from": [],
+      "status": "inconclusive",
+      "tests": [
+        {
+          "kind": "poll",
+          "detail": "1 async settle window(s) opened, 0 event poll(s) issued by the swarm",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1794020121.6309392
+        }
+      ],
+      "evidence": [
+        {
+          "note": "window(s) opened and polled; no violation demonstrated"
+        }
+      ],
+      "created": 1794020121.630935,
+      "resolved": 1794020121.6309483,
+      "deferred": {
+        "marker": "1 window(s)",
+        "callback_path": "/api/callbacks/206f0d382fb2",
+        "expectation": {},
+        "ttl": 6.0
+      }
+    },
+    {
+      "id": "H-0012",
+      "source": "statefuzz/swarm-embedded",
+      "tag": "dvlba-shaped-probes",
+      "title": "statefuzz's 8 dvlba-shaped probe classes model this target's lifecycle",
+      "prior": 0.3,
+      "plan": "lawful walk + 8 mutant probes + race + deferred",
+      "derived_from": [],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "probes",
+          "detail": "8 probe finding(s) fired",
+          "requests_spent": 87,
+          "finding_ids": [
+            "SF-NEG-QTY",
+            "SF-STACK-DISC",
+            "SF-CKOUT-REPLAY",
+            "SF-SHIP-UNPAID",
+            "SF-IDOR-ORDER",
+            "SF-REFUND-CROSS",
+            "SF-REFUND-REPLAY",
+            "SF-ASYNC-DBL"
+          ],
+          "ts": 1794020121.6310859
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probes applied"
+        }
+      ],
+      "created": 1794020121.6310797,
+      "resolved": 1794020121.6310887
+    },
+    {
+      "id": "H-0013",
+      "source": "statefuzz/swarm-embedded",
+      "tag": "SF-NEG-QTY",
+      "title": "Negative-quantity checkout credits the attacker wallet",
+      "prior": 0.6,
+      "plan": "POST /api/cart/items",
+      "derived_from": [],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "probe-finding",
+          "detail": "POST /api/cart/items",
+          "requests_spent": 0,
+          "finding_ids": [
+            "SF-NEG-QTY"
+          ],
+          "ts": 1794020121.6310933
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "SF-NEG-QTY"
+        }
+      ],
+      "created": 1794020121.6310906,
+      "resolved": 1794020121.6310947
+    },
+    {
+      "id": "H-0014",
+      "source": "statefuzz/swarm-embedded",
+      "tag": "SF-STACK-DISC",
+      "title": "Coupon stacks without cap: discount exceeds subtotal",
+      "prior": 0.6,
+      "plan": "POST /api/coupon/apply",
+      "derived_from": [],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "probe-finding",
+          "detail": "POST /api/coupon/apply",
+          "requests_spent": 0,
+          "finding_ids": [
+            "SF-STACK-DISC"
+          ],
+          "ts": 1794020121.631098
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "SF-STACK-DISC"
+        }
+      ],
+      "created": 1794020121.6310961,
+      "resolved": 1794020121.6311
+    },
+    {
+      "id": "H-0015",
+      "source": "statefuzz/swarm-embedded",
+      "tag": "SF-CKOUT-REPLAY",
+      "title": "checkout/init is replayable: one cart snapshot yields duplicate orders",
+      "prior": 0.6,
+      "plan": "POST /api/checkout/init",
+      "derived_from": [],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "probe-finding",
+          "detail": "POST /api/checkout/init",
+          "requests_spent": 0,
+          "finding_ids": [
+            "SF-CKOUT-REPLAY"
+          ],
+          "ts": 1794020121.6311033
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "SF-CKOUT-REPLAY"
+        }
+      ],
+      "created": 1794020121.631101,
+      "resolved": 1794020121.6311047
+    },
+    {
+      "id": "H-0016",
+      "source": "statefuzz/swarm-embedded",
+      "tag": "SF-SHIP-UNPAID",
+      "title": "Order ships without payment (SKIP confirm)",
+      "prior": 0.6,
+      "plan": "POST /api/orders/{id}/ship",
+      "derived_from": [],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "probe-finding",
+          "detail": "POST /api/orders/{id}/ship",
+          "requests_spent": 0,
+          "finding_ids": [
+            "SF-SHIP-UNPAID"
+          ],
+          "ts": 1794020121.6311083
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "SF-SHIP-UNPAID"
+        }
+      ],
+      "created": 1794020121.6311061,
+      "resolved": 1794020121.6311102
+    },
+    {
+      "id": "H-0017",
+      "source": "statefuzz/swarm-embedded",
+      "tag": "SF-IDOR-ORDER",
+      "title": "Any user can read any order (IDOR)",
+      "prior": 0.6,
+      "plan": "GET /api/orders/{id}",
+      "derived_from": [],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "probe-finding",
+          "detail": "GET /api/orders/{id}",
+          "requests_spent": 0,
+          "finding_ids": [
+            "SF-IDOR-ORDER"
+          ],
+          "ts": 1794020121.6311135
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "SF-IDOR-ORDER"
+        }
+      ],
+      "created": 1794020121.631111,
+      "resolved": 1794020121.631115
+    },
+    {
+      "id": "H-0018",
+      "source": "statefuzz/swarm-embedded",
+      "tag": "SF-REFUND-CROSS",
+      "title": "Refund credits the CALLER, not the owner (cross-user withdrawal)",
+      "prior": 0.6,
+      "plan": "POST /api/orders/{id}/refund",
+      "derived_from": [],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "probe-finding",
+          "detail": "POST /api/orders/{id}/refund",
+          "requests_spent": 0,
+          "finding_ids": [
+            "SF-REFUND-CROSS"
+          ],
+          "ts": 1794020121.6311185
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "SF-REFUND-CROSS"
+        }
+      ],
+      "created": 1794020121.631116,
+      "resolved": 1794020121.6311202
+    },
+    {
+      "id": "H-0019",
+      "source": "statefuzz/swarm-embedded",
+      "tag": "SF-REFUND-REPLAY",
+      "title": "Refund is replayable: double credit on one order",
+      "prior": 0.6,
+      "plan": "POST /api/orders/{id}/refund",
+      "derived_from": [],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "probe-finding",
+          "detail": "POST /api/orders/{id}/refund",
+          "requests_spent": 0,
+          "finding_ids": [
+            "SF-REFUND-REPLAY"
+          ],
+          "ts": 1794020121.6311235
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "SF-REFUND-REPLAY"
+        }
+      ],
+      "created": 1794020121.6311212,
+      "resolved": 1794020121.6311252
+    },
+    {
+      "id": "H-0020",
+      "source": "statefuzz/swarm-embedded",
+      "tag": "SF-ASYNC-DBL",
+      "title": "Async refund + sync refund double-credit inside the deferred window",
+      "prior": 0.6,
+      "plan": "POST /api/refunds/async",
+      "derived_from": [],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "probe-finding",
+          "detail": "POST /api/refunds/async",
+          "requests_spent": 0,
+          "finding_ids": [
+            "SF-ASYNC-DBL"
+          ],
+          "ts": 1794020121.6311283
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "SF-ASYNC-DBL"
+        }
+      ],
+      "created": 1794020121.631126,
+      "resolved": 1794020121.6311305
+    }
+  ]
+}

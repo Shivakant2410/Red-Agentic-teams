@@ -1,0 +1,2116 @@
+[
+  {
+    "id": "F-001",
+    "kind": "CONTROL",
+    "source": "orchestrator",
+    "ts": 1794022476.2528365,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "engage",
+      "target": "http://127.0.0.1:8461"
+    },
+    "derived_from": []
+  },
+  {
+    "id": "SF-RECON-0001",
+    "kind": "OBSERVATION",
+    "source": "recon",
+    "ts": 1794022476.255088,
+    "confidence": 1.0,
+    "tags": [
+      "index"
+    ],
+    "payload": {
+      "index_status": 200,
+      "hints": [
+        "service directory: GET /api (verbs only; schemas omitted by policy)",
+        "/static/app-config.js"
+      ]
+    },
+    "derived_from": [
+      "F-001"
+    ]
+  },
+  {
+    "id": "SF-RECON-0002",
+    "kind": "OBSERVATION",
+    "source": "recon",
+    "ts": 1794022476.2588542,
+    "confidence": 1.0,
+    "tags": [
+      "robots"
+    ],
+    "payload": {
+      "robots": {
+        "raw": "User-agent: *\nDisallow: /static/\n"
+      }
+    },
+    "derived_from": [
+      "F-001"
+    ]
+  },
+  {
+    "id": "SF-RECON-0003",
+    "kind": "OBSERVATION",
+    "source": "recon",
+    "ts": 1794022476.2604299,
+    "confidence": 1.0,
+    "tags": [
+      "route-index"
+    ],
+    "payload": {
+      "route_index": {
+        "accounts": {
+          "object": {
+            "method": "GET",
+            "path": "/api/accounts/{account_id}"
+          }
+        },
+        "audit": {
+          "read": {
+            "method": "GET",
+            "path": "/api/audit"
+          }
+        },
+        "events": {
+          "object": {
+            "method": "GET",
+            "path": "/api/events/{token}"
+          }
+        },
+        "me": {
+          "read": {
+            "method": "GET",
+            "path": "/api/me"
+          }
+        },
+        "payouts": {
+          "actions": [
+            {
+              "method": "POST",
+              "path": "/api/payouts/{payout_id}/cancel",
+              "verb": "cancel"
+            }
+          ],
+          "create": {
+            "method": "POST",
+            "path": "/api/payouts"
+          },
+          "object": {
+            "method": "GET",
+            "path": "/api/payouts/{payout_id}"
+          }
+        },
+        "transfers": {
+          "actions": [
+            {
+              "method": "POST",
+              "path": "/api/transfers",
+              "verb": "transfer"
+            }
+          ]
+        },
+        "vaults": {
+          "actions": [
+            {
+              "method": "POST",
+              "path": "/api/vaults/{vault_id}/resize",
+              "verb": "resize"
+            },
+            {
+              "method": "POST",
+              "path": "/api/vaults/{vault_id}/cancel",
+              "verb": "cancel"
+            }
+          ],
+          "create": {
+            "method": "POST",
+            "path": "/api/vaults"
+          },
+          "object": {
+            "method": "GET",
+            "path": "/api/vaults/{vault_id}"
+          }
+        },
+        "vouchers": {
+          "actions": [
+            {
+              "method": "POST",
+              "path": "/api/vouchers/claim",
+              "verb": "claim"
+            }
+          ]
+        }
+      },
+      "service": "meridian-vault-api",
+      "resources": [
+        "accounts",
+        "audit",
+        "events",
+        "me",
+        "payouts",
+        "transfers",
+        "vaults",
+        "vouchers"
+      ]
+    },
+    "derived_from": [
+      "F-001"
+    ]
+  },
+  {
+    "id": "SF-RECON-0004",
+    "kind": "OBSERVATION",
+    "source": "recon",
+    "ts": 1794022476.2619903,
+    "confidence": 1.0,
+    "tags": [
+      "fingerprint"
+    ],
+    "payload": {
+      "status": 200,
+      "server": "Werkzeug/3.1.9 Python/3.12.16"
+    },
+    "derived_from": [
+      "F-001"
+    ]
+  },
+  {
+    "id": "SF-RECON-0005",
+    "kind": "OBSERVATION",
+    "source": "recon",
+    "ts": 1794022476.2715194,
+    "confidence": 1.0,
+    "tags": [
+      "paths"
+    ],
+    "payload": {
+      "probed": 6,
+      "hits": [
+        "/.env"
+      ]
+    },
+    "derived_from": [
+      "F-001"
+    ]
+  },
+  {
+    "id": "SF-SURFACE_MAPPER-0006",
+    "kind": "SURFACE",
+    "source": "surface_mapper",
+    "ts": 1794022476.2731633,
+    "confidence": 1.0,
+    "tags": [
+      "surface"
+    ],
+    "payload": {
+      "path_count": 8,
+      "endpoints": [
+        "/api/accounts/{account_id}",
+        "/api/audit",
+        "/api/events/{token}",
+        "/api/me",
+        "/api/payouts",
+        "/api/payouts/{payout_id}",
+        "/api/payouts/{payout_id}/cancel",
+        "/api/transfers",
+        "/api/vaults",
+        "/api/vaults/{vault_id}",
+        "/api/vaults/{vault_id}/cancel",
+        "/api/vaults/{vault_id}/resize",
+        "/api/vouchers/claim"
+      ],
+      "auth_model": "bearer-required",
+      "stateful_flows": [
+        "payouts: create -> cancel",
+        "transfers: transfer",
+        "vaults: create -> resize,cancel",
+        "vouchers: claim"
+      ],
+      "resource_actions": {
+        "accounts": {
+          "create": null,
+          "actions": [],
+          "param": "/api/accounts/{account_id}",
+          "param_name": "account_id",
+          "create_schema": {}
+        },
+        "audit": {
+          "create": null,
+          "actions": [],
+          "param": null,
+          "param_name": null,
+          "create_schema": {}
+        },
+        "events": {
+          "create": null,
+          "actions": [],
+          "param": "/api/events/{token}",
+          "param_name": "token",
+          "create_schema": {}
+        },
+        "me": {
+          "create": null,
+          "actions": [],
+          "param": null,
+          "param_name": null,
+          "create_schema": {}
+        },
+        "payouts": {
+          "create": "/api/payouts",
+          "actions": [
+            {
+              "verb": "cancel",
+              "path": "/api/payouts/{payout_id}/cancel",
+              "method": "POST",
+              "schema": {},
+              "schema_unknown": true
+            }
+          ],
+          "param": "/api/payouts/{payout_id}",
+          "param_name": "payout_id",
+          "create_schema": {
+            "amount_cents": {
+              "type": "integer",
+              "minimum": 100
+            }
+          }
+        },
+        "transfers": {
+          "create": null,
+          "actions": [
+            {
+              "verb": "transfer",
+              "path": "/api/transfers",
+              "method": "POST",
+              "schema": {
+                "amount_cents": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "to_account": {
+                  "type": "string",
+                  "minimum": null
+                }
+              },
+              "schema_unknown": false
+            }
+          ],
+          "param": null,
+          "param_name": null,
+          "create_schema": {}
+        },
+        "vaults": {
+          "create": "/api/vaults",
+          "actions": [
+            {
+              "verb": "resize",
+              "path": "/api/vaults/{vault_id}/resize",
+              "method": "POST",
+              "schema": {
+                "target_cents": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "schema_unknown": false
+            },
+            {
+              "verb": "cancel",
+              "path": "/api/vaults/{vault_id}/cancel",
+              "method": "POST",
+              "schema": {
+                "reason": {
+                  "type": "string",
+                  "minimum": null
+                }
+              },
+              "schema_unknown": false
+            }
+          ],
+          "param": "/api/vaults/{vault_id}",
+          "param_name": "vault_id",
+          "create_schema": {
+            "target_cents": {
+              "type": "integer",
+              "minimum": 100
+            }
+          }
+        },
+        "vouchers": {
+          "create": null,
+          "actions": [
+            {
+              "verb": "claim",
+              "path": "/api/vouchers/claim",
+              "method": "POST",
+              "schema": {},
+              "schema_unknown": true
+            }
+          ],
+          "param": null,
+          "param_name": null,
+          "create_schema": {}
+        }
+      },
+      "readback": [
+        "/api/audit",
+        "/api/me"
+      ],
+      "param_objects": [
+        "/api/accounts/{account_id}",
+        "/api/events/{token}",
+        "/api/payouts/{payout_id}",
+        "/api/vaults/{vault_id}"
+      ],
+      "source": "route-index"
+    },
+    "derived_from": [
+      "SF-RECON-0003"
+    ]
+  },
+  {
+    "id": "SF-SURFACE_MAPPER-0007",
+    "kind": "OBSERVATION",
+    "source": "surface_mapper",
+    "ts": 1794022476.273169,
+    "confidence": 1.0,
+    "tags": [
+      "auth-boundary"
+    ],
+    "payload": {
+      "auth_model": "bearer-required",
+      "evidence": "anon GET /api/audit -> 401"
+    },
+    "derived_from": [
+      "SF-RECON-0003"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0008",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794022476.2732892,
+    "confidence": 0.6,
+    "tags": [
+      "h_idor"
+    ],
+    "payload": {
+      "tag": "h_idor",
+      "title": "Parameterised object endpoints may lack ownership checks",
+      "prior": 0.6,
+      "test_plan": "cross-user read of a fresh order",
+      "origin": "rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0009",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794022476.2732928,
+    "confidence": 0.7,
+    "tags": [
+      "h_fsm"
+    ],
+    "payload": {
+      "tag": "h_fsm",
+      "title": "Order lifecycle is a two-step state machine; transition guards may be missing",
+      "prior": 0.7,
+      "test_plan": "spawn statefuzz specialist",
+      "origin": "rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0010",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794022476.2732954,
+    "confidence": 0.55,
+    "tags": [
+      "h_open_vocab"
+    ],
+    "payload": {
+      "tag": "h_open_vocab",
+      "title": "The live surface may hold value resources, verbs and read-backs the stale document never mentioned",
+      "prior": 0.55,
+      "test_plan": "probe the open noun/verb/subpath vocabularies against the live target; fold every fact into a revised surface",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0011",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794022476.273297,
+    "confidence": 0.4,
+    "tags": [
+      "h_hidden_verbs"
+    ],
+    "payload": {
+      "tag": "h_hidden_verbs",
+      "title": "Parameterised money resources may expose undocumented ops verbs",
+      "prior": 0.4,
+      "test_plan": "verb wordlist probe on param paths",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0012",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794022476.2732995,
+    "confidence": 0.55,
+    "tags": [
+      "h_state_guard"
+    ],
+    "payload": {
+      "tag": "h_state_guard",
+      "title": "Cancel-terminated resources may leave sibling write verbs open and the dedupe keyed to the body",
+      "prior": 0.55,
+      "test_plan": "create -> cancel -> replay/mutate -> sibling write",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0013",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794022476.2733014,
+    "confidence": 0.5,
+    "tags": [
+      "h_mass_assign"
+    ],
+    "payload": {
+      "tag": "h_mass_assign",
+      "title": "Undocumented body fields may override pricing or entitlements",
+      "prior": 0.5,
+      "test_plan": "differential create with injected candidates",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0014",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794022476.273303,
+    "confidence": 0.5,
+    "tags": [
+      "h_cross_tenant"
+    ],
+    "payload": {
+      "tag": "h_cross_tenant",
+      "title": "Global read-backs may leak other tenants' ids; leaked ids may pay the caller",
+      "prior": 0.5,
+      "test_plan": "cross-principal readback scan + deputy write",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0015",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794022476.273305,
+    "confidence": 0.55,
+    "tags": [
+      "h_async_toctou"
+    ],
+    "payload": {
+      "tag": "h_async_toctou",
+      "title": "Async settles may debit without re-checking the balance",
+      "prior": 0.55,
+      "test_plan": "create async -> drain balance -> await settle",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0016",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794022476.2733066,
+    "confidence": 0.5,
+    "tags": [
+      "h_terminal_credit"
+    ],
+    "payload": {
+      "tag": "h_terminal_credit",
+      "title": "Cancel of a settled async artifact may refund after delivery",
+      "prior": 0.5,
+      "test_plan": "create async -> settle -> cancel",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0017",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794022476.2733085,
+    "confidence": 0.45,
+    "tags": [
+      "h_arith_cycle"
+    ],
+    "payload": {
+      "tag": "h_arith_cycle",
+      "title": "Value-neutral cycles of a priced transition may accumulate rounding drift",
+      "prior": 0.45,
+      "test_plan": "cycle 12x, net wallet delta",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0018",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794022476.2733104,
+    "confidence": 0.5,
+    "tags": [
+      "h_quota_race"
+    ],
+    "payload": {
+      "tag": "h_quota_race",
+      "title": "Quota-limited claims may lose the check-then-act race to distinct principals",
+      "prior": 0.5,
+      "test_plan": "multi-principal last-byte race",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0019",
+    "kind": "CONTROL",
+    "source": "exploit",
+    "ts": 1794022476.2849693,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "skip-statefuzz",
+      "reason": "surface has no checkout lifecycle; the pinned statefuzz probes are dvlba-shaped \u2014 M3 live-FSM composition path is h_fsm_live (engine/fsm)"
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0009"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0020",
+    "kind": "ESCALATION",
+    "source": "exploit",
+    "ts": 1794022476.4061458,
+    "confidence": 1.0,
+    "tags": [
+      "ambient-credit",
+      "h_open_vocab"
+    ],
+    "payload": {
+      "event": "ambient-credit",
+      "chain": [
+        "technique:h_open_vocab",
+        "ambient-wallet-delta",
+        "unattributed-value-movement"
+      ],
+      "impact": "discovery moved value with no finding: ov-19-476288 -500",
+      "severity": "medium",
+      "deltas": [
+        {
+          "name": "ov-19-476288",
+          "tag": "h_open_vocab",
+          "before": 250000,
+          "after": 249500,
+          "delta": -500,
+          "attributed": false
+        }
+      ],
+      "technique": "h_open_vocab"
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0010"
+    ]
+  },
+  {
+    "id": "SF-ATTACK_GRAPH-0021",
+    "kind": "OBSERVATION",
+    "source": "attack_graph",
+    "ts": 1794022476.4085279,
+    "confidence": 1.0,
+    "tags": [
+      "attack-graph"
+    ],
+    "payload": {
+      "attack_graph": {
+        "money_paths": [],
+        "next_actions": [],
+        "surface_nodes": 10,
+        "surface_edges": 5
+      },
+      "artifact": "/home/z/my-project/ra-work/prototypes/swarm-specialists/m0-results/meridian/run1/attack_surface.json",
+      "evidence": "attack graph rebuilt from board facts + ambient wallet events (1)"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0020"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0022",
+    "kind": "OBSERVATION",
+    "source": "exploit",
+    "ts": 1794022476.4533434,
+    "confidence": 1.0,
+    "tags": [
+      "h_hidden_verbs"
+    ],
+    "payload": {
+      "hidden_endpoints": [
+        {
+          "verb": "settle",
+          "probe_status": 200,
+          "resource": "payouts"
+        },
+        {
+          "verb": "retry",
+          "probe_status": 409,
+          "resource": "payouts"
+        }
+      ]
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0011"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0023",
+    "kind": "ESCALATION",
+    "source": "exploit",
+    "ts": 1794022476.4576342,
+    "confidence": 1.0,
+    "tags": [
+      "ambient-credit",
+      "h_hidden_verbs"
+    ],
+    "payload": {
+      "event": "ambient-credit",
+      "chain": [
+        "technique:h_hidden_verbs",
+        "ambient-wallet-delta",
+        "unattributed-value-movement"
+      ],
+      "impact": "discovery moved value with no finding: hdv-91-476408 -100; hdv-105-476430 -100",
+      "severity": "medium",
+      "deltas": [
+        {
+          "name": "hdv-91-476408",
+          "tag": "h_hidden_verbs",
+          "before": 250000,
+          "after": 249900,
+          "delta": -100,
+          "attributed": false
+        },
+        {
+          "name": "hdv-105-476430",
+          "tag": "h_hidden_verbs",
+          "before": 250000,
+          "after": 249900,
+          "delta": -100,
+          "attributed": false
+        }
+      ],
+      "technique": "h_hidden_verbs"
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0011"
+    ]
+  },
+  {
+    "id": "SF-ATTACK_GRAPH-0024",
+    "kind": "OBSERVATION",
+    "source": "attack_graph",
+    "ts": 1794022476.4580448,
+    "confidence": 1.0,
+    "tags": [
+      "attack-graph"
+    ],
+    "payload": {
+      "attack_graph": {
+        "money_paths": [],
+        "next_actions": [],
+        "surface_nodes": 10,
+        "surface_edges": 5
+      },
+      "artifact": "/home/z/my-project/ra-work/prototypes/swarm-specialists/m0-results/meridian/run1/attack_surface.json",
+      "evidence": "attack graph rebuilt from board facts + ambient wallet events (3)"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0023"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0025",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794022476.4859936,
+    "confidence": 0.9,
+    "tags": [
+      "h_state_guard",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-CANCEL-REASON",
+        "title": "Cancel dedupe is keyed by the reason string, not the object: a different reason re-credits the full remainder",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/vaults/{vault_id}/cancel",
+        "evidence": [
+          {
+            "lawful_cancel_credit": 100,
+            "identical_replay_status": 409,
+            "mutated_cancel_status": 200,
+            "second_credit_cents": 100,
+            "mutated_body": {
+              "reason": "moving-abroad"
+            }
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own active subscription"
+        ],
+        "grants": [
+          "credit the same subscription's remainder repeatedly"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_state_guard",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0012"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0026",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794022476.485999,
+    "confidence": 0.9,
+    "tags": [
+      "h_state_guard",
+      "I2"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-TERMINAL-RESIZE",
+        "title": "Write transition accepted on a CANCELED object: resize re-credits the full prorated remainder after cancel already did",
+        "severity": "high",
+        "invariant": "I2",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/vaults/{vault_id}/resize (terminal-state)",
+        "evidence": [
+          {
+            "canceled_object": "VLT-696a841371",
+            "verb": "resize",
+            "status": 200,
+            "credit_after_terminal": 100,
+            "unmodeled_transition": "canceled --resize--> credited"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own canceled subscription"
+        ],
+        "grants": [
+          "double every cancel by mutating afterwards"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_state_guard",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0012"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0027",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794022476.5156806,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-CANCEL-REASON",
+      "status": "verified",
+      "technique": "h_state_guard"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0025"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0028",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794022476.5398862,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-TERMINAL-RESIZE",
+      "status": "verified",
+      "technique": "h_state_guard"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0026"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0029",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794022476.5838704,
+    "confidence": 0.9,
+    "tags": [
+      "h_cross_tenant",
+      "I3"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-AUDIT-LEAK",
+        "title": "Cross-tenant object disclosure: a fresh principal reads another tenant's vault identifier from /api/audit",
+        "severity": "medium",
+        "invariant": "I3",
+        "operators": [
+          "CROSS-USER"
+        ],
+        "endpoint": "GET /api/audit",
+        "evidence": [
+          {
+            "victim": "xtv-187-476563",
+            "leaked_id": "VLT-6fbb4762f2",
+            "leak_path": "/api/audit"
+          }
+        ],
+        "preconditions": [
+          "any account"
+        ],
+        "grants": [
+          "knowledge of any vault identifier"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_cross_tenant",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0014"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0030",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794022476.5838754,
+    "confidence": 0.9,
+    "tags": [
+      "h_cross_tenant",
+      "I3"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-DEPUTY-CREDIT",
+        "title": "No ownership check on resize: the credit lands in the CALLER's balance \u2014 monetize any leaked tenant's object ",
+        "severity": "critical",
+        "invariant": "I3",
+        "operators": [
+          "CROSS-USER"
+        ],
+        "endpoint": "POST /api/vaults/{vault_id}/resize (cross-tenant)",
+        "evidence": [
+          {
+            "victim": "xtv-187-476563",
+            "attacker": "xta-191-476569",
+            "object": "VLT-6fbb4762f2",
+            "attacker_gain": 99,
+            "verb": "resize",
+            "body": {
+              "target_cents": 1
+            },
+            "discovered_verb": false,
+            "obtained_via": "/api/audit"
+          }
+        ],
+        "preconditions": [
+          "knowledge of any vault identifier"
+        ],
+        "grants": [
+          "drain any tenant's object value into your own balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_cross_tenant",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0014"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0031",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794022476.612736,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-AUDIT-LEAK",
+      "status": "verified",
+      "technique": "h_cross_tenant"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0029"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0032",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794022476.6312804,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-DEPUTY-CREDIT",
+      "status": "verified",
+      "technique": "h_cross_tenant"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0030"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0033",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794022477.4780047,
+    "confidence": 0.9,
+    "tags": [
+      "h_async_toctou",
+      "I4"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-TOCTOU-SETTLE",
+        "title": "Async settle debits without a balance re-check: draining the wallet inside the deferred window drives the balance negative (-125000)",
+        "severity": "critical",
+        "invariant": "I4",
+        "operators": [
+          "INTERRUPT"
+        ],
+        "endpoint": "POST /api/payouts",
+        "evidence": [
+          {
+            "balance_before": 250000,
+            "drained_during_window": 250000,
+            "settled_amount": 125000,
+            "final_balance": -125000,
+            "event": "/api/events/EV-930a7c11bfeb"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "recipient account"
+        ],
+        "grants": [
+          "double-spend the prepaid balance across the async seam"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_async_toctou",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0015"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0034",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794022478.4372811,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-TOCTOU-SETTLE",
+      "status": "verified",
+      "technique": "h_async_toctou"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0033"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0035",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794022478.4583156,
+    "confidence": 0.9,
+    "tags": [
+      "h_terminal_credit",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{payout_id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-1f5f75721f",
+            "amount": 83333,
+            "settled_debit": 83333,
+            "cancel_credit": 83333,
+            "net_position": 0,
+            "settled_via": "hidden release"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_terminal_credit",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0016"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0036",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794022478.9024017,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-SETTLED-CANCEL",
+      "status": "verified",
+      "technique": "h_terminal_credit"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0035"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0037",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794022478.9413192,
+    "confidence": 0.9,
+    "tags": [
+      "h_arith_cycle",
+      "I4"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-ROUND-DRIFT",
+        "title": "Value-neutral resize cycles accumulate balance (+3 cents within 12 round-trips): credit rounds up, charge rounds down",
+        "severity": "medium",
+        "invariant": "I4",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/vaults/{vault_id}/resize (resize-cycle)",
+        "evidence": [
+          {
+            "cycles": 12,
+            "net_delta_cents": 3,
+            "expect": "0: down->up returns to the same state at the same price",
+            "credit_seen": true
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own active subscription"
+        ],
+        "grants": [
+          "farm sub-cent proration drift into unlimited credit"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_arith_cycle",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0017"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0038",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794022478.996195,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-ROUND-DRIFT",
+      "status": "verified",
+      "technique": "h_arith_cycle"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0037"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0039",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794022479.0484047,
+    "confidence": 0.9,
+    "tags": [
+      "h_quota_race",
+      "I5"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-QUOTA-RACE",
+        "title": "Quota-limited claim loses the check-then-act race: 8 distinct principals claimed past the advertised quota of 3",
+        "severity": "high",
+        "invariant": "I5",
+        "operators": [
+          "INTERRUPT",
+          "CROSS-USER"
+        ],
+        "endpoint": "POST /api/vouchers/claim",
+        "evidence": [
+          {
+            "race_n": 8,
+            "successful_claims": 8,
+            "advertised_quota": 3,
+            "winning_principals": [
+              "qrc0-387-478996",
+              "qrc1-390-479000",
+              "qrc2-393-479005",
+              "qrc3-396-479010",
+              "qrc4-398-479013",
+              "qrc5-400-479016",
+              "qrc6-402-479019",
+              "qrc7-404-479022"
+            ],
+            "last_byte_sync": true
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "campaign artifact from the engagement brief"
+        ],
+        "grants": [
+          "claim the artifact once per concurrent identity, multiplying its value past the quota"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified-by-transcript",
+      "technique": "h_quota_race",
+      "verification": {
+        "by": "verify",
+        "method": "single-use artifact consumed by the finder; transcript evidence stands (weight 0.5)",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0018"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0040",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794022479.1123211,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-QUOTA-RACE",
+      "status": "verified-by-transcript",
+      "technique": "h_quota_race"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0039"
+    ]
+  },
+  {
+    "id": "SF-ACCESS-0041",
+    "kind": "ESCALATION",
+    "source": "access",
+    "ts": 1794022479.112461,
+    "confidence": 1.0,
+    "tags": [
+      "chain",
+      "critical"
+    ],
+    "payload": {
+      "chain": {
+        "chain_id": "CH-FW-AUDIT-LEAK-FW-DEPUTY-CREDIT",
+        "members": [
+          "FW-AUDIT-LEAK",
+          "FW-DEPUTY-CREDIT"
+        ],
+        "path": "FW-AUDIT-LEAK --(grants preconditions)--> FW-DEPUTY-CREDIT",
+        "severity": "critical",
+        "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance."
+      },
+      "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance.",
+      "severity": "critical",
+      "members": [
+        "FW-AUDIT-LEAK",
+        "FW-DEPUTY-CREDIT"
+      ]
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0029",
+      "SF-EXPLOIT-0030"
+    ]
+  },
+  {
+    "id": "SF-SURFACE_MAPPER-0042",
+    "kind": "OBSERVATION",
+    "source": "surface_mapper",
+    "ts": 1794022479.1129105,
+    "confidence": 1.0,
+    "tags": [
+      "robots-parsed"
+    ],
+    "payload": {
+      "note": "robots parsed; no new scope"
+    },
+    "derived_from": [
+      "SF-RECON-0002"
+    ]
+  },
+  {
+    "id": "F-002",
+    "kind": "CONTROL",
+    "source": "router",
+    "ts": 1794022479.1129344,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "stall-escalate",
+      "round": 34
+    },
+    "derived_from": []
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0043",
+    "kind": "OBSERVATION",
+    "source": "window_driver",
+    "ts": 1794022479.1203325,
+    "confidence": 1.0,
+    "tags": [
+      "async-opened",
+      "traffic-scan"
+    ],
+    "payload": {
+      "async_opened": {
+        "event_path": "/api/events/EV-9b7acbeda1cb",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-8703de2c1c",
+        "amount": 500,
+        "amount_field": "amount_cents",
+        "principal": "ov-19-476288"
+      },
+      "evidence": "auto-registered from traffic scan (202/event shape)"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0044",
+    "kind": "OBSERVATION",
+    "source": "window_driver",
+    "ts": 1794022479.1203554,
+    "confidence": 1.0,
+    "tags": [
+      "async-opened",
+      "traffic-scan"
+    ],
+    "payload": {
+      "async_opened": {
+        "event_path": "/api/events/EV-f3472aefaa74",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-6fae2b80a6",
+        "amount": 100,
+        "amount_field": "amount_cents",
+        "principal": "hdv-91-476408"
+      },
+      "evidence": "auto-registered from traffic scan (202/event shape)"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0045",
+    "kind": "OBSERVATION",
+    "source": "window_driver",
+    "ts": 1794022479.120367,
+    "confidence": 1.0,
+    "tags": [
+      "async-opened",
+      "traffic-scan"
+    ],
+    "payload": {
+      "async_opened": {
+        "event_path": "/api/events/EV-d44b485d49fa",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-6255827565",
+        "amount": 100,
+        "amount_field": "amount_cents",
+        "principal": "mas-174-476539"
+      },
+      "evidence": "auto-registered from traffic scan (202/event shape)"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0046",
+    "kind": "OBSERVATION",
+    "source": "window_driver",
+    "ts": 1794022479.1203756,
+    "confidence": 1.0,
+    "tags": [
+      "async-opened",
+      "traffic-scan"
+    ],
+    "payload": {
+      "async_opened": {
+        "event_path": "/api/events/EV-e9f9271b5dcc",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-6fc8b9068e",
+        "amount": 100,
+        "amount_field": "amount_cents",
+        "principal": "mas-174-476539"
+      },
+      "evidence": "auto-registered from traffic scan (202/event shape)"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0047",
+    "kind": "OBSERVATION",
+    "source": "window_driver",
+    "ts": 1794022479.120381,
+    "confidence": 1.0,
+    "tags": [
+      "async-opened",
+      "traffic-scan"
+    ],
+    "payload": {
+      "async_opened": {
+        "event_path": "/api/events/EV-e91913a6fbd3",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-c0e3141226",
+        "amount": 100,
+        "amount_field": "amount_cents",
+        "principal": "mas-174-476539"
+      },
+      "evidence": "auto-registered from traffic scan (202/event shape)"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0048",
+    "kind": "OBSERVATION",
+    "source": "window_driver",
+    "ts": 1794022479.120387,
+    "confidence": 1.0,
+    "tags": [
+      "async-opened",
+      "traffic-scan"
+    ],
+    "payload": {
+      "async_opened": {
+        "event_path": "/api/events/EV-4fac8e5d9e3a",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-79fb6df169",
+        "amount": 100,
+        "amount_field": "amount_cents",
+        "principal": "mas-174-476539"
+      },
+      "evidence": "auto-registered from traffic scan (202/event shape)"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0049",
+    "kind": "OBSERVATION",
+    "source": "window_driver",
+    "ts": 1794022479.120392,
+    "confidence": 1.0,
+    "tags": [
+      "async-opened",
+      "traffic-scan"
+    ],
+    "payload": {
+      "async_opened": {
+        "event_path": "/api/events/EV-86552dddaf59",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-a15548a4a9",
+        "amount": 100,
+        "amount_field": "amount_cents",
+        "principal": "mas-174-476539"
+      },
+      "evidence": "auto-registered from traffic scan (202/event shape)"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0050",
+    "kind": "OBSERVATION",
+    "source": "window_driver",
+    "ts": 1794022479.1203976,
+    "confidence": 1.0,
+    "tags": [
+      "async-opened",
+      "traffic-scan"
+    ],
+    "payload": {
+      "async_opened": {
+        "event_path": "/api/events/EV-930a7c11bfeb",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-4de0c1387b",
+        "amount": 125000,
+        "amount_field": "amount_cents",
+        "principal": "toc-233-476637"
+      },
+      "evidence": "auto-registered from traffic scan (202/event shape)"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0051",
+    "kind": "OBSERVATION",
+    "source": "window_driver",
+    "ts": 1794022479.1204038,
+    "confidence": 1.0,
+    "tags": [
+      "async-opened",
+      "traffic-scan"
+    ],
+    "payload": {
+      "async_opened": {
+        "event_path": "/api/events/EV-21838fc857e1",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-1f5f75721f",
+        "amount": 83333,
+        "amount_field": "amount_cents",
+        "principal": "tcm-288-478437"
+      },
+      "evidence": "auto-registered from traffic scan (202/event shape)"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0052",
+    "kind": "OBSERVATION",
+    "source": "window_driver",
+    "ts": 1794022479.12041,
+    "confidence": 1.0,
+    "tags": [
+      "async-opened",
+      "traffic-scan"
+    ],
+    "payload": {
+      "async_opened": {
+        "event_path": "/api/events/EV-54aabe23762f",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-495e9ad617",
+        "amount": 100,
+        "amount_field": "amount_cents",
+        "principal": "cyc-328-478902"
+      },
+      "evidence": "auto-registered from traffic scan (202/event shape)"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0053",
+    "kind": "FINDING",
+    "source": "window_driver",
+    "ts": 1794022479.7750552,
+    "confidence": 0.9,
+    "tags": [
+      "h_window_driver",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-8703de2c1c",
+            "amount": 500,
+            "settled_status": null,
+            "post_settle_wallet": 249000,
+            "cancel_credit": 500,
+            "event": "/api/events/EV-9b7acbeda1cb",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own settled payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "candidate",
+      "technique": "h_window_driver"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0054",
+    "kind": "FINDING",
+    "source": "window_driver",
+    "ts": 1794022479.7750616,
+    "confidence": 0.9,
+    "tags": [
+      "h_window_driver",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-6fae2b80a6",
+            "amount": 100,
+            "settled_status": null,
+            "post_settle_wallet": 249900,
+            "cancel_credit": 100,
+            "event": "/api/events/EV-f3472aefaa74",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own settled payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "candidate",
+      "technique": "h_window_driver"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0055",
+    "kind": "FINDING",
+    "source": "window_driver",
+    "ts": 1794022479.7750638,
+    "confidence": 0.9,
+    "tags": [
+      "h_window_driver",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-6255827565",
+            "amount": 100,
+            "settled_status": null,
+            "post_settle_wallet": 249500,
+            "cancel_credit": 100,
+            "event": "/api/events/EV-d44b485d49fa",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own settled payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "candidate",
+      "technique": "h_window_driver"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0056",
+    "kind": "FINDING",
+    "source": "window_driver",
+    "ts": 1794022479.7750657,
+    "confidence": 0.9,
+    "tags": [
+      "h_window_driver",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-6fc8b9068e",
+            "amount": 100,
+            "settled_status": null,
+            "post_settle_wallet": 249600,
+            "cancel_credit": 100,
+            "event": "/api/events/EV-e9f9271b5dcc",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own settled payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "candidate",
+      "technique": "h_window_driver"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0006"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0057",
+    "kind": "FINDING",
+    "source": "window_driver",
+    "ts": 1794022479.806862,
+    "confidence": 0.9,
+    "tags": [
+      "h_window_driver",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-c0e3141226",
+            "amount": 100,
+            "settled_status": null,
+            "post_settle_wallet": 249700,
+            "cancel_credit": 100,
+            "event": "/api/events/EV-e91913a6fbd3",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own settled payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "candidate",
+      "technique": "h_window_driver"
+    },
+    "derived_from": [
+      "SF-WINDOW_DRIVER-0043"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0058",
+    "kind": "FINDING",
+    "source": "window_driver",
+    "ts": 1794022479.8068674,
+    "confidence": 0.9,
+    "tags": [
+      "h_window_driver",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-79fb6df169",
+            "amount": 100,
+            "settled_status": null,
+            "post_settle_wallet": 249800,
+            "cancel_credit": 100,
+            "event": "/api/events/EV-4fac8e5d9e3a",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own settled payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "candidate",
+      "technique": "h_window_driver"
+    },
+    "derived_from": [
+      "SF-WINDOW_DRIVER-0043"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0059",
+    "kind": "FINDING",
+    "source": "window_driver",
+    "ts": 1794022479.8068697,
+    "confidence": 0.9,
+    "tags": [
+      "h_window_driver",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-a15548a4a9",
+            "amount": 100,
+            "settled_status": null,
+            "post_settle_wallet": 249900,
+            "cancel_credit": 100,
+            "event": "/api/events/EV-86552dddaf59",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own settled payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "candidate",
+      "technique": "h_window_driver"
+    },
+    "derived_from": [
+      "SF-WINDOW_DRIVER-0043"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0060",
+    "kind": "FINDING",
+    "source": "window_driver",
+    "ts": 1794022479.8068717,
+    "confidence": 0.9,
+    "tags": [
+      "h_window_driver",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-4de0c1387b",
+            "amount": 125000,
+            "settled_status": null,
+            "post_settle_wallet": -125000,
+            "cancel_credit": 125000,
+            "event": "/api/events/EV-930a7c11bfeb",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own settled payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "candidate",
+      "technique": "h_window_driver"
+    },
+    "derived_from": [
+      "SF-WINDOW_DRIVER-0043"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0061",
+    "kind": "FINDING",
+    "source": "window_driver",
+    "ts": 1794022479.8258057,
+    "confidence": 0.9,
+    "tags": [
+      "h_window_driver",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-1f5f75721f",
+            "amount": 83333,
+            "settled_status": null,
+            "post_settle_wallet": 250000,
+            "cancel_credit": 83333,
+            "event": "/api/events/EV-21838fc857e1",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own settled payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "candidate",
+      "technique": "h_window_driver"
+    },
+    "derived_from": [
+      "SF-WINDOW_DRIVER-0044"
+    ]
+  }
+]

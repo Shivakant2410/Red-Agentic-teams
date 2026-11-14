@@ -1,0 +1,365 @@
+{
+  "tool": "swarm",
+  "version": "0.4.0-m1",
+  "generated": "2026-11-06T15:16:20+0000",
+  "elapsed_s": 7.6,
+  "requests": 169,
+  "statefuzz_sub_budget_requests": null,
+  "rounds": 40,
+  "roster": [
+    "recon",
+    "surface_mapper",
+    "hypothesis",
+    "exploit",
+    "verify",
+    "access",
+    "statefuzz_spec",
+    "window_driver"
+  ],
+  "spawn_events": [],
+  "llm_seam_calls": [],
+  "markers_registered": 6,
+  "ledger": {
+    "facts": 35,
+    "by_kind": {
+      "CONTROL": 12,
+      "OBSERVATION": 10,
+      "SURFACE": 1,
+      "HYPOTHESIS": 7,
+      "FINDING": 5
+    },
+    "by_source": {
+      "orchestrator": 1,
+      "recon": 2,
+      "surface_mapper": 2,
+      "hypothesis": 7,
+      "exploit": 4,
+      "verify": 5,
+      "window_driver": 9,
+      "router": 5
+    }
+  },
+  "hypothesis_ledger": {
+    "stats": {
+      "total": 13,
+      "by_status": {
+        "confirmed": 5,
+        "refuted": 6,
+        "inconclusive": 1,
+        "tested": 1
+      },
+      "by_source": {
+        "window-driver/scan": 5,
+        "window-driver/fresh": 1,
+        "swarm-board/4c1efc": 7
+      },
+      "by_tag": {
+        "marker": 6,
+        "h_fsm": 1,
+        "h_hidden_verbs": 1,
+        "h_mass_assign": 1,
+        "h_cross_tenant": 1,
+        "h_arith_cycle": 1,
+        "h_quota_race": 1,
+        "h_async_seam": 1
+      }
+    },
+    "score": 11.25
+  },
+  "memory_before": {
+    "recon": {
+      "name": "recon",
+      "techniques": {
+        "fetch_robots": 0.364,
+        "fetch_index": 0.364,
+        "fetch_route_index": 0.364,
+        "fetch_openapi": 0.6,
+        "probe_common_paths": 0.364,
+        "fingerprint_server": 0.556
+      },
+      "insights": 1,
+      "trials": 6
+    },
+    "surface_mapper": {
+      "name": "surface_mapper",
+      "techniques": {
+        "map_surface": 0.6
+      },
+      "insights": 0,
+      "trials": 1
+    },
+    "hypothesis": {
+      "name": "hypothesis",
+      "techniques": {
+        "generate": 0.667
+      },
+      "insights": 1,
+      "trials": 1
+    },
+    "exploit": {
+      "name": "exploit",
+      "techniques": {
+        "h_hidden_verbs": 0.556,
+        "h_mass_assign": 0.364,
+        "h_cross_tenant": 0.364,
+        "h_arith_cycle": 0.556,
+        "h_quota_race": 0.364,
+        "h_async_seam": 0.667,
+        "h_fsm": 0.556
+      },
+      "insights": 1,
+      "trials": 7
+    },
+    "verify": {
+      "name": "verify",
+      "techniques": {
+        "check:FW-ROUND-DRIFT": 0.667,
+        "check:FW-SETTLED-CANCEL": 0.667,
+        "check:FW-TOCTOU-SETTLE": 0.667
+      },
+      "insights": 0,
+      "trials": 3
+    },
+    "access": {
+      "name": "access",
+      "techniques": {
+        "escalate": 0.364
+      },
+      "insights": 0,
+      "trials": 1
+    },
+    "statefuzz_spec": {
+      "name": "statefuzz_spec",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "window_driver": {
+      "name": "window_driver",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    }
+  },
+  "memory_after": {
+    "recon": {
+      "name": "recon",
+      "techniques": {
+        "fetch_robots": 0.364,
+        "fetch_index": 0.364,
+        "fetch_route_index": 0.364,
+        "fetch_openapi": 0.667,
+        "probe_common_paths": 0.364,
+        "fingerprint_server": 0.6
+      },
+      "insights": 1,
+      "trials": 8
+    },
+    "surface_mapper": {
+      "name": "surface_mapper",
+      "techniques": {
+        "map_surface": 0.667
+      },
+      "insights": 0,
+      "trials": 2
+    },
+    "hypothesis": {
+      "name": "hypothesis",
+      "techniques": {
+        "generate": 0.75
+      },
+      "insights": 1,
+      "trials": 2
+    },
+    "exploit": {
+      "name": "exploit",
+      "techniques": {
+        "h_hidden_verbs": 0.6,
+        "h_mass_assign": 0.364,
+        "h_cross_tenant": 0.364,
+        "h_arith_cycle": 0.6,
+        "h_quota_race": 0.364,
+        "h_async_seam": 0.75,
+        "h_fsm": 0.6
+      },
+      "insights": 1,
+      "trials": 11
+    },
+    "verify": {
+      "name": "verify",
+      "techniques": {
+        "check:FW-ROUND-DRIFT": 0.75,
+        "check:FW-SETTLED-CANCEL": 0.75,
+        "check:FW-TOCTOU-SETTLE": 0.75
+      },
+      "insights": 0,
+      "trials": 6
+    },
+    "access": {
+      "name": "access",
+      "techniques": {
+        "escalate": 0.286
+      },
+      "insights": 0,
+      "trials": 2
+    },
+    "statefuzz_spec": {
+      "name": "statefuzz_spec",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "window_driver": {
+      "name": "window_driver",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    }
+  },
+  "findings": [
+    {
+      "finding": {
+        "id": "FW-ROUND-DRIFT",
+        "title": "Value-neutral resize cycles accumulate balance (+3 cents within 12 round-trips): credit rounds up, charge rounds down",
+        "severity": "medium",
+        "invariant": "I4",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/shipments/{shipment_id}/rerate (resize-cycle)",
+        "evidence": [
+          {
+            "cycles": 12,
+            "net_delta_cents": 3,
+            "expect": "0: down->up returns to the same state at the same price",
+            "credit_seen": true
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own active subscription"
+        ],
+        "grants": [
+          "farm sub-cent proration drift into unlimited credit"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      },
+      "provenance": [
+        "exploit"
+      ],
+      "techniques": [
+        "h_arith_cycle"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0101"
+      ]
+    },
+    {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-d43dd89a5f",
+            "amount": 50000,
+            "settled_status": null,
+            "post_settle_wallet": 50000,
+            "cancel_credit": 50000,
+            "event": "/api/payouts/PAY-d43dd89a5f/events",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own settled payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "fresh replay: cancel after settle refunded 50000",
+        "independent_principals": []
+      },
+      "provenance": [
+        "window_driver"
+      ],
+      "techniques": [
+        "h_window_driver"
+      ],
+      "fact_ids": [
+        "SF-WINDOW_DRIVER-0105",
+        "SF-WINDOW_DRIVER-0107",
+        "SF-WINDOW_DRIVER-0114"
+      ]
+    },
+    {
+      "finding": {
+        "id": "FW-TOCTOU-SETTLE",
+        "title": "Async settle debits without a balance re-check: draining the wallet inside the deferred window drives the balance negative (-3973)",
+        "severity": "critical",
+        "invariant": "I4",
+        "operators": [
+          "INTERRUPT"
+        ],
+        "endpoint": "POST /api/payouts",
+        "evidence": [
+          {
+            "balance_before": 100000,
+            "settled_amount": 50000,
+            "wallet_after_drain": 46027,
+            "final_balance": -3973,
+            "event": "/api/payouts/PAY-ed28692dd0/events",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "sufficient balance at create time"
+        ],
+        "grants": [
+          "double-spend the prepaid balance across the async seam"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "fresh-principal replay: settle drove the balance negative (-3973)",
+        "independent_principals": []
+      },
+      "provenance": [
+        "window_driver"
+      ],
+      "techniques": [
+        "h_window_driver"
+      ],
+      "fact_ids": [
+        "SF-WINDOW_DRIVER-0106"
+      ]
+    }
+  ],
+  "escalations": []
+}

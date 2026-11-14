@@ -1,0 +1,1005 @@
+{
+  "tool": "swarm",
+  "version": "0.6.0-m3",
+  "generated": "2026-11-07T03:34:49+0000",
+  "elapsed_s": 2.4,
+  "requests": 181,
+  "statefuzz_sub_budget_requests": 87,
+  "rounds": 40,
+  "roster": [
+    "recon",
+    "surface_mapper",
+    "hypothesis",
+    "exploit",
+    "verify",
+    "access",
+    "statefuzz_spec",
+    "window_driver",
+    "attack_graph"
+  ],
+  "spawn_events": [
+    {
+      "parent": "exploit",
+      "child": "statefuzz_spec",
+      "requests": 112
+    }
+  ],
+  "llm_seam_calls": [],
+  "markers_registered": 0,
+  "attack_graph": {
+    "surface_nodes": 19,
+    "surface_edges": 10,
+    "money_paths": 0,
+    "next_actions": []
+  },
+  "ambient_watch": {
+    "events": 0,
+    "unexplained": 0,
+    "deltas": []
+  },
+  "ledger": {
+    "facts": 47,
+    "by_kind": {
+      "CONTROL": 16,
+      "OBSERVATION": 3,
+      "SURFACE": 1,
+      "HYPOTHESIS": 10,
+      "FINDING": 14,
+      "ESCALATION": 3
+    },
+    "by_source": {
+      "orchestrator": 1,
+      "recon": 2,
+      "surface_mapper": 2,
+      "hypothesis": 10,
+      "exploit": 7,
+      "verify": 14,
+      "exploit/statefuzz_spec": 8,
+      "access": 3
+    }
+  },
+  "hypothesis_ledger": {
+    "stats": {
+      "total": 20,
+      "by_status": {
+        "confirmed-by-transcript": 1,
+        "confirmed": 15,
+        "refuted": 4
+      },
+      "by_source": {
+        "swarm-board/e3475c": 10,
+        "deferred-window/e3475c": 1,
+        "statefuzz/swarm-embedded": 9
+      },
+      "by_tag": {
+        "h_race": 1,
+        "h_async": 1,
+        "h_idor": 1,
+        "h_refund": 1,
+        "h_coupon": 1,
+        "h_fsm": 1,
+        "h_open_vocab": 1,
+        "h_mass_assign": 1,
+        "h_arith_cycle": 1,
+        "h_quota_race": 1,
+        "deferred-window": 1,
+        "dvlba-shaped-probes": 1,
+        "SF-NEG-QTY": 1,
+        "SF-STACK-DISC": 1,
+        "SF-CKOUT-REPLAY": 1,
+        "SF-SHIP-UNPAID": 1,
+        "SF-IDOR-ORDER": 1,
+        "SF-REFUND-CROSS": 1,
+        "SF-REFUND-REPLAY": 1,
+        "SF-ASYNC-DBL": 1
+      }
+    },
+    "score": 19.5
+  },
+  "memory_before": {
+    "recon": {
+      "name": "recon",
+      "techniques": {
+        "fetch_robots": 0.364,
+        "fetch_index": 0.364,
+        "fetch_route_index": 0.364,
+        "fetch_openapi": 0.6,
+        "probe_common_paths": 0.364,
+        "fingerprint_server": 0.556
+      },
+      "insights": 1,
+      "trials": 6
+    },
+    "surface_mapper": {
+      "name": "surface_mapper",
+      "techniques": {
+        "map_surface": 0.6
+      },
+      "insights": 0,
+      "trials": 1
+    },
+    "hypothesis": {
+      "name": "hypothesis",
+      "techniques": {
+        "generate": 0.667
+      },
+      "insights": 1,
+      "trials": 1
+    },
+    "exploit": {
+      "name": "exploit",
+      "techniques": {
+        "h_open_vocab": 0.364,
+        "h_mass_assign": 0.364,
+        "h_arith_cycle": 0.364,
+        "h_quota_race": 0.364,
+        "h_async": 0.556,
+        "h_coupon": 0.556,
+        "h_fsm": 0.556,
+        "h_idor": 0.556,
+        "h_race": 0.556,
+        "h_refund": 0.556
+      },
+      "insights": 1,
+      "trials": 10
+    },
+    "verify": {
+      "name": "verify",
+      "techniques": {
+        "check:SF-ASYNC-DBL": 0.667,
+        "check:SF-CKOUT-REPLAY": 0.667,
+        "check:SF-IDOR-ORDER": 0.667,
+        "check:SF-NEG-QTY": 0.667,
+        "check:SF-REFUND-CROSS": 0.667,
+        "check:SF-REFUND-REPLAY": 0.667,
+        "check:SF-SHIP-UNPAID": 0.667,
+        "check:SF-STACK-DISC": 0.667,
+        "check:SW-ASYNC": 0.667,
+        "check:SW-IDOR": 0.667,
+        "check:SW-RACE": 0.667,
+        "check:SW-REF-R": 0.667,
+        "check:SW-REF-X": 0.667,
+        "check:SW-STACK": 0.667
+      },
+      "insights": 0,
+      "trials": 14
+    },
+    "access": {
+      "name": "access",
+      "techniques": {
+        "escalate": 0.556
+      },
+      "insights": 0,
+      "trials": 1
+    },
+    "statefuzz_spec": {
+      "name": "statefuzz_spec",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "window_driver": {
+      "name": "window_driver",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "attack_graph": {
+      "name": "attack_graph",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    }
+  },
+  "memory_after": {
+    "recon": {
+      "name": "recon",
+      "techniques": {
+        "fetch_robots": 0.364,
+        "fetch_index": 0.364,
+        "fetch_route_index": 0.364,
+        "fetch_openapi": 0.667,
+        "probe_common_paths": 0.364,
+        "fingerprint_server": 0.6
+      },
+      "insights": 1,
+      "trials": 8
+    },
+    "surface_mapper": {
+      "name": "surface_mapper",
+      "techniques": {
+        "map_surface": 0.667
+      },
+      "insights": 0,
+      "trials": 2
+    },
+    "hypothesis": {
+      "name": "hypothesis",
+      "techniques": {
+        "generate": 0.75
+      },
+      "insights": 1,
+      "trials": 2
+    },
+    "exploit": {
+      "name": "exploit",
+      "techniques": {
+        "h_open_vocab": 0.364,
+        "h_mass_assign": 0.364,
+        "h_arith_cycle": 0.364,
+        "h_quota_race": 0.364,
+        "h_async": 0.6,
+        "h_coupon": 0.6,
+        "h_fsm": 0.6,
+        "h_idor": 0.6,
+        "h_race": 0.6,
+        "h_refund": 0.6
+      },
+      "insights": 1,
+      "trials": 16
+    },
+    "verify": {
+      "name": "verify",
+      "techniques": {
+        "check:SF-ASYNC-DBL": 0.75,
+        "check:SF-CKOUT-REPLAY": 0.75,
+        "check:SF-IDOR-ORDER": 0.75,
+        "check:SF-NEG-QTY": 0.75,
+        "check:SF-REFUND-CROSS": 0.75,
+        "check:SF-REFUND-REPLAY": 0.75,
+        "check:SF-SHIP-UNPAID": 0.75,
+        "check:SF-STACK-DISC": 0.75,
+        "check:SW-ASYNC": 0.75,
+        "check:SW-IDOR": 0.75,
+        "check:SW-RACE": 0.75,
+        "check:SW-REF-R": 0.75,
+        "check:SW-REF-X": 0.75,
+        "check:SW-STACK": 0.75
+      },
+      "insights": 0,
+      "trials": 28
+    },
+    "access": {
+      "name": "access",
+      "techniques": {
+        "escalate": 0.6
+      },
+      "insights": 0,
+      "trials": 2
+    },
+    "statefuzz_spec": {
+      "name": "statefuzz_spec",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "window_driver": {
+      "name": "window_driver",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "attack_graph": {
+      "name": "attack_graph",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    }
+  },
+  "findings": [
+    {
+      "finding": {
+        "id": "SW-RACE",
+        "title": "Single-use redeem loses check-then-act race",
+        "severity": "high",
+        "invariant": "I5",
+        "operators": [
+          "INTERRUPT"
+        ],
+        "endpoint": "POST /api/coupon/redeem",
+        "evidence": [
+          {
+            "responses": [
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              },
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              },
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              },
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              },
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              },
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              },
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              },
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              }
+            ],
+            "wallet_delta": 400000,
+            "violation": {
+              "invariant": "I5",
+              "assertion": "credited_total == value",
+              "observed": {
+                "value_cents": 50000,
+                "credited_total": 400000,
+                "successful_redeems": 8
+              },
+              "detail": "single-use coupon credited 400000 cents across a 8-request synchronized race (face value 50000)"
+            }
+          }
+        ],
+        "reproduction": [],
+        "preconditions": [
+          "any account",
+          "unredeemed single-use coupon"
+        ],
+        "grants": [
+          "multiply coupon value by race winners"
+        ],
+        "chain_ids": [],
+        "confidence": "high"
+      },
+      "status": "verified-by-transcript",
+      "verification": {
+        "by": "verify",
+        "method": "race artifact consumed; transcript evidence stands (curation weight 0.5)",
+        "independent_principals": []
+      },
+      "provenance": [
+        "exploit"
+      ],
+      "techniques": [
+        "h_race"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0173"
+      ]
+    },
+    {
+      "finding": {
+        "id": "SW-ASYNC",
+        "title": "Async + sync refund double-credit in the deferred window",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "INTERRUPT",
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/refunds/async",
+        "evidence": [
+          {
+            "wallet_before": 870100,
+            "wallet_after": 1129900,
+            "order_total": 129900,
+            "callback": {
+              "marker": "27c6a617606a",
+              "refund_cents": 129900,
+              "status": "done"
+            },
+            "violation": {
+              "invariant": "I1",
+              "detail": "deferred window credited 259800 for a single 129900-cent refund"
+            }
+          }
+        ],
+        "reproduction": [],
+        "preconditions": [
+          "any account",
+          "own paid order"
+        ],
+        "grants": [
+          "2x credit per refund across async/sync seam"
+        ],
+        "chain_ids": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "double refund credited twice",
+        "independent_principals": [
+          "verify-e3475c-15",
+          "verify-e3475c-16"
+        ]
+      },
+      "provenance": [
+        "exploit",
+        "exploit/statefuzz_spec"
+      ],
+      "techniques": [
+        "h_async",
+        "h_fsm"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0175",
+        "SF-EXPLOIT-STATEF-0192"
+      ]
+    },
+    {
+      "finding": {
+        "id": "SW-IDOR",
+        "title": "Any user can read any order (IDOR)",
+        "severity": "high",
+        "invariant": "I3",
+        "operators": [
+          "CROSS-USER"
+        ],
+        "endpoint": "GET /api/orders/{id}",
+        "evidence": [
+          {
+            "method": "GET",
+            "path": "/api/orders/ORD-22b4b8f2",
+            "principal": "atk-e3475c-3",
+            "status": 200,
+            "owner": "own-e3475c-2",
+            "violation": {
+              "invariant": "I3",
+              "assertion": "caller == object.owner",
+              "observed": {
+                "caller": "atk-e3475c-3",
+                "owner": "own-e3475c-2"
+              },
+              "detail": "atk-e3475c-3 accessed order owned by own-e3475c-2"
+            }
+          }
+        ],
+        "reproduction": [],
+        "preconditions": [
+          "any account",
+          "valid order_id"
+        ],
+        "grants": [
+          "read any order"
+        ],
+        "chain_ids": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "fresh cross-user read succeeded",
+        "independent_principals": [
+          "verify-e3475c-11",
+          "verify-e3475c-12"
+        ]
+      },
+      "provenance": [
+        "exploit",
+        "exploit/statefuzz_spec"
+      ],
+      "techniques": [
+        "h_idor",
+        "h_fsm"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0177",
+        "SF-EXPLOIT-STATEF-0189"
+      ]
+    },
+    {
+      "finding": {
+        "id": "SW-REF-X",
+        "title": "Refund credits the CALLER, not the owner",
+        "severity": "critical",
+        "invariant": "I3",
+        "operators": [
+          "CROSS-USER"
+        ],
+        "endpoint": "POST /api/orders/{id}/refund",
+        "evidence": [
+          {
+            "wallet_delta": 259800,
+            "owner": "rowner-e3475c-4",
+            "caller": "ratk-e3475c-5"
+          }
+        ],
+        "reproduction": [],
+        "preconditions": [
+          "any account",
+          "order_id of any paid order"
+        ],
+        "grants": [
+          "withdraw any user's order value to own wallet"
+        ],
+        "chain_ids": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "fresh cross-user refund credited caller",
+        "independent_principals": [
+          "verify-e3475c-13",
+          "verify-e3475c-14"
+        ]
+      },
+      "provenance": [
+        "exploit",
+        "exploit/statefuzz_spec"
+      ],
+      "techniques": [
+        "h_refund",
+        "h_fsm"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0179",
+        "SF-EXPLOIT-STATEF-0190"
+      ]
+    },
+    {
+      "finding": {
+        "id": "SW-REF-R",
+        "title": "Refund is replayable",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/orders/{id}/refund",
+        "evidence": [
+          {
+            "credits": [
+              129900,
+              129900
+            ],
+            "violation": {
+              "invariant": "I1",
+              "assertion": "sum(credits) <= order_total",
+              "observed": {
+                "order_total": 129900,
+                "credits": [
+                  129900,
+                  129900
+                ],
+                "overcredit": 129900
+              },
+              "detail": "refunded ratk-e3475c-5 over price by 129900 cents"
+            }
+          }
+        ],
+        "reproduction": [],
+        "preconditions": [
+          "any account",
+          "any paid order"
+        ],
+        "grants": [
+          "multiply balance by refund count"
+        ],
+        "chain_ids": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "double refund credited twice",
+        "independent_principals": [
+          "verify-e3475c-14",
+          "verify-e3475c-15"
+        ]
+      },
+      "provenance": [
+        "exploit",
+        "exploit/statefuzz_spec"
+      ],
+      "techniques": [
+        "h_refund",
+        "h_fsm"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0180",
+        "SF-EXPLOIT-STATEF-0191"
+      ]
+    },
+    {
+      "finding": {
+        "id": "SW-STACK",
+        "title": "Coupon stacks without cap",
+        "severity": "high",
+        "invariant": "I1",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/coupon/apply",
+        "evidence": [
+          {
+            "cart_after": {
+              "discount_pct": 120,
+              "items": {
+                "SKU-GPU": 1
+              },
+              "subtotal_cents": 129900,
+              "total_cents": -25980,
+              "user": "cpn-e3475c-6"
+            },
+            "violation": {
+              "invariant": "I4",
+              "assertion": "discount_pct <= 100",
+              "observed": {
+                "discount_pct": 120,
+                "total_cents": -25980
+              },
+              "detail": "stacked discount 120% drives total to -25980"
+            }
+          }
+        ],
+        "reproduction": [],
+        "preconditions": [
+          "any account"
+        ],
+        "grants": [
+          "drive total to 0 or negative"
+        ],
+        "chain_ids": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "stacked discount exceeded subtotal",
+        "independent_principals": [
+          "verify-e3475c-7",
+          "verify-e3475c-8"
+        ]
+      },
+      "provenance": [
+        "exploit",
+        "exploit/statefuzz_spec"
+      ],
+      "techniques": [
+        "h_coupon",
+        "h_fsm"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0183",
+        "SF-EXPLOIT-STATEF-0186"
+      ]
+    },
+    {
+      "finding": {
+        "id": "SF-NEG-QTY",
+        "title": "Negative-quantity checkout credits the attacker wallet",
+        "severity": "high",
+        "invariant": "I4",
+        "operators": [
+          "NEGATIVE"
+        ],
+        "endpoint": "POST /api/cart/items",
+        "preconditions": [
+          "any account"
+        ],
+        "grants": [
+          "credit self-balance without payment"
+        ],
+        "evidence": [
+          {
+            "method": "POST",
+            "path": "/api/cart/items",
+            "req_body": {
+              "sku": "SKU-CABLE",
+              "qty": -3
+            },
+            "status": 201,
+            "resp_body": {
+              "cart": {
+                "discount_pct": 0,
+                "items": {
+                  "SKU-CABLE": -3
+                }
+              }
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/checkout/init",
+            "req_body": null,
+            "status": 201,
+            "resp_body": {
+              "order_id": "ORD-17485665",
+              "status": "initiated",
+              "total_cents": -2700
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/checkout/confirm",
+            "req_body": {
+              "order_id": "ORD-17485665"
+            },
+            "status": 200,
+            "resp_body": {
+              "charged_cents": -2700,
+              "order_id": "ORD-17485665",
+              "status": "paid"
+            }
+          },
+          {
+            "wallet_before": 1000000,
+            "wallet_after": 1002700,
+            "order_total_cents": -2700,
+            "violation": {
+              "invariant": "I4",
+              "assertion": "order_total >= 0",
+              "observed": {
+                "order_total": -2700,
+                "wallet_delta": 2700
+              },
+              "detail": "checkout charged -2700 cents (negative) and wallet went UP by 2700"
+            }
+          }
+        ],
+        "reproduction": [
+          "curl -X POST $B/api/cart/items -d '{\"sku\":\"SKU-CABLE\",\"qty\":-3}'",
+          "curl -X POST $B/api/checkout/init",
+          "curl -X POST $B/api/checkout/confirm -d '{\"order_id\":...}'"
+        ],
+        "confidence": "high",
+        "status": "candidate",
+        "chain_ids": []
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "negative-qty checkout credited wallet",
+        "independent_principals": [
+          "verify-e3475c-6",
+          "verify-e3475c-7"
+        ]
+      },
+      "provenance": [
+        "exploit/statefuzz_spec"
+      ],
+      "techniques": [
+        "h_fsm"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-STATEF-0185"
+      ]
+    },
+    {
+      "finding": {
+        "id": "SF-CKOUT-REPLAY",
+        "title": "checkout/init is replayable: one cart snapshot yields duplicate orders",
+        "severity": "medium",
+        "invariant": "I2",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/checkout/init",
+        "preconditions": [
+          "any account",
+          "non-empty cart"
+        ],
+        "grants": [
+          "duplicate paid orders"
+        ],
+        "evidence": [
+          {
+            "method": "POST",
+            "path": "/api/checkout/init",
+            "req_body": null,
+            "status": 201,
+            "resp_body": {
+              "order_id": "ORD-c8252897",
+              "status": "initiated",
+              "total_cents": 1800
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/checkout/init",
+            "req_body": null,
+            "status": 201,
+            "resp_body": {
+              "order_id": "ORD-2f01a4ff",
+              "status": "initiated",
+              "total_cents": 1800
+            }
+          },
+          {
+            "order_ids": [
+              "ORD-c8252897",
+              "ORD-2f01a4ff"
+            ],
+            "violation": {
+              "invariant": "I2",
+              "assertion": "cart snapshot: 1 -> <=1 order",
+              "observed": {
+                "order_ids": [
+                  "ORD-c8252897",
+                  "ORD-2f01a4ff"
+                ]
+              },
+              "detail": "checkout/init replayed from the same cart produced 2 orders with identical item sets"
+            }
+          }
+        ],
+        "reproduction": [
+          "curl -X POST $B/api/checkout/init   # twice, same cart"
+        ],
+        "confidence": "high",
+        "status": "candidate",
+        "chain_ids": []
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "one cart yielded two orders",
+        "independent_principals": [
+          "verify-e3475c-8",
+          "verify-e3475c-9"
+        ]
+      },
+      "provenance": [
+        "exploit/statefuzz_spec"
+      ],
+      "techniques": [
+        "h_fsm"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-STATEF-0187"
+      ]
+    },
+    {
+      "finding": {
+        "id": "SF-SHIP-UNPAID",
+        "title": "Order ships without payment (SKIP confirm)",
+        "severity": "high",
+        "invariant": "I2",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/orders/{id}/ship",
+        "preconditions": [
+          "any account",
+          "order_id of any state"
+        ],
+        "grants": [
+          "fulfil without payment",
+          "seller loss"
+        ],
+        "evidence": [
+          {
+            "method": "POST",
+            "path": "/api/checkout/init",
+            "req_body": null,
+            "status": 201,
+            "resp_body": {
+              "order_id": "ORD-e7681f94",
+              "status": "initiated",
+              "total_cents": 129900
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/orders/ORD-e7681f94/ship",
+            "req_body": null,
+            "status": 200,
+            "resp_body": {
+              "order_id": "ORD-e7681f94",
+              "status": "shipped"
+            }
+          },
+          {
+            "order_id": "ORD-e7681f94",
+            "violation": {
+              "invariant": "I2",
+              "assertion": "action in delta(alpha(s))",
+              "observed": {
+                "from_state": "initiated",
+                "action": "ship",
+                "status": 200
+              },
+              "detail": "ship accepted from state 'initiated' (unmodeled)"
+            }
+          }
+        ],
+        "reproduction": [
+          "curl -X POST $B/api/checkout/init",
+          "curl -X POST $B/api/orders/<oid>/ship   # never confirmed"
+        ],
+        "confidence": "high",
+        "status": "candidate",
+        "chain_ids": [
+          "CH-SF-IDOR-ORDER-SF-SHIP-UNPAID",
+          "CH-SF-REFUND-CROSS-SF-SHIP-UNPAID"
+        ]
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "unpaid order shipped",
+        "independent_principals": [
+          "verify-e3475c-9",
+          "verify-e3475c-10"
+        ]
+      },
+      "provenance": [
+        "exploit/statefuzz_spec"
+      ],
+      "techniques": [
+        "h_fsm"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-STATEF-0188"
+      ]
+    }
+  ],
+  "escalations": [
+    {
+      "chain": {
+        "chain_id": "CH-SW-IDOR-SW-REF-X",
+        "members": [
+          "SW-IDOR",
+          "SW-REF-X"
+        ],
+        "path": "SW-IDOR --(supplies arbitrary order_id)--> SW-REF-X",
+        "severity": "critical",
+        "impact": "Chaining SW-IDOR (grants: read any order) with SW-REF-X yields an unauthenticated-to-financial-integrity path: withdraw any user's order value to own wallet."
+      },
+      "impact": "Chaining SW-IDOR (grants: read any order) with SW-REF-X yields an unauthenticated-to-financial-integrity path: withdraw any user's order value to own wallet.",
+      "severity": "critical"
+    },
+    {
+      "chain": {
+        "chain_id": "CH-SW-IDOR-SF-SHIP-UNPAID",
+        "members": [
+          "SW-IDOR",
+          "SF-SHIP-UNPAID"
+        ],
+        "path": "SW-IDOR --(supplies arbitrary order_id)--> SF-SHIP-UNPAID",
+        "severity": "high",
+        "impact": "Chaining SW-IDOR (grants: read any order) with SF-SHIP-UNPAID yields an unauthenticated-to-financial-integrity path: fulfil without payment, seller loss."
+      },
+      "impact": "Chaining SW-IDOR (grants: read any order) with SF-SHIP-UNPAID yields an unauthenticated-to-financial-integrity path: fulfil without payment, seller loss.",
+      "severity": "high"
+    },
+    {
+      "chain": {
+        "chain_id": "CH-SW-REF-X-SF-SHIP-UNPAID",
+        "members": [
+          "SW-REF-X",
+          "SF-SHIP-UNPAID"
+        ],
+        "path": "SW-REF-X --(grants preconditions)--> SF-SHIP-UNPAID",
+        "severity": "critical",
+        "impact": "Chaining SW-REF-X (grants: withdraw any user's order value to own wallet) with SF-SHIP-UNPAID yields an unauthenticated-to-financial-integrity path: fulfil without payment, seller loss."
+      },
+      "impact": "Chaining SW-REF-X (grants: withdraw any user's order value to own wallet) with SF-SHIP-UNPAID yields an unauthenticated-to-financial-integrity path: fulfil without payment, seller loss.",
+      "severity": "critical"
+    }
+  ]
+}

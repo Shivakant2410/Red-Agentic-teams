@@ -1,0 +1,26 @@
+{
+  "tool": "statefuzz",
+  "version": "0.1.0",
+  "generated": "2026-11-04T07:56:01+0000",
+  "elapsed_s": 0.1,
+  "requests": 73,
+  "invariant_classes": [
+    "I1",
+    "I2",
+    "I3",
+    "I4",
+    "I5"
+  ],
+  "operators": [
+    "SKIP",
+    "REPLAY",
+    "REORDER",
+    "PARTIAL",
+    "NEGATIVE",
+    "CROSS-USER",
+    "INTERRUPT",
+    "IDEMPOTENCE"
+  ],
+  "findings": [],
+  "chains": []
+}

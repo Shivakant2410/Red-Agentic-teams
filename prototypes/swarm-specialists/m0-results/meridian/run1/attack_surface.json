@@ -1,0 +1,269 @@
+{
+  "generated": "2026-11-07T03:34:39+0000",
+  "tool": "attack-graph",
+  "version": "1.0.0-m3",
+  "surface_map": {
+    "nodes": [
+      {
+        "id": "res:accounts",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:audit",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:events",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:me",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:payouts",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": "/api/payouts"
+      },
+      {
+        "id": "res:transfers",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:vaults",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": "/api/vaults"
+      },
+      {
+        "id": "res:vouchers",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "read:/api/audit",
+        "kind": "readback",
+        "layer": "documented"
+      },
+      {
+        "id": "read:/api/me",
+        "kind": "readback",
+        "layer": "documented"
+      }
+    ],
+    "edges": [
+      {
+        "from": "res:payouts",
+        "verb": "cancel",
+        "path": "/api/payouts/{payout_id}/cancel",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "documented"
+      },
+      {
+        "from": "res:transfers",
+        "verb": "transfer",
+        "path": "/api/transfers",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "documented"
+      },
+      {
+        "from": "res:vaults",
+        "verb": "resize",
+        "path": "/api/vaults/{vault_id}/resize",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "verified"
+      },
+      {
+        "from": "res:vaults",
+        "verb": "cancel",
+        "path": "/api/vaults/{vault_id}/cancel",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "verified"
+      },
+      {
+        "from": "res:vouchers",
+        "verb": "claim",
+        "path": "/api/vouchers/claim",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "verified"
+      }
+    ],
+    "doc_suspect": {}
+  },
+  "attack_graph": {
+    "source": "acct:any",
+    "goal": "goal:wallet-credit",
+    "nodes": [
+      {
+        "id": "acct:any",
+        "kind": "capability",
+        "label": "any registered account"
+      },
+      {
+        "id": "goal:wallet-credit",
+        "kind": "goal",
+        "label": "wallet credit (attacker-controlled value)"
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-seam-payouts",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "async-seam",
+        "resource": "payouts",
+        "verb": "settle/async",
+        "requests": 18,
+        "evidence": "probed",
+        "technique": "h_async_seam",
+        "path": "/api/payouts"
+      },
+      {
+        "id": "e-seam-payouts",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "async-seam",
+        "resource": "payouts",
+        "verb": "settle/async",
+        "requests": 18,
+        "evidence": "probed",
+        "technique": "h_async_seam",
+        "path": "/api/payouts"
+      },
+      {
+        "id": "e-seam-payouts",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "async-seam",
+        "resource": "payouts",
+        "verb": "settle/async",
+        "requests": 18,
+        "evidence": "probed",
+        "technique": "h_async_seam",
+        "path": "/api/payouts"
+      },
+      {
+        "id": "e-seam-payouts",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "async-seam",
+        "resource": "payouts",
+        "verb": "settle/async",
+        "requests": 18,
+        "evidence": "probed",
+        "technique": "h_async_seam",
+        "path": "/api/payouts"
+      },
+      {
+        "id": "e-seam-payouts",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "async-seam",
+        "resource": "payouts",
+        "verb": "settle/async",
+        "requests": 18,
+        "evidence": "probed",
+        "technique": "h_async_seam",
+        "path": "/api/payouts"
+      },
+      {
+        "id": "e-seam-payouts",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "async-seam",
+        "resource": "payouts",
+        "verb": "settle/async",
+        "requests": 18,
+        "evidence": "probed",
+        "technique": "h_async_seam",
+        "path": "/api/payouts"
+      },
+      {
+        "id": "e-seam-payouts",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "async-seam",
+        "resource": "payouts",
+        "verb": "settle/async",
+        "requests": 18,
+        "evidence": "probed",
+        "technique": "h_async_seam",
+        "path": "/api/payouts"
+      },
+      {
+        "id": "e-seam-payouts",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "async-seam",
+        "resource": "payouts",
+        "verb": "settle/async",
+        "requests": 18,
+        "evidence": "probed",
+        "technique": "h_async_seam",
+        "path": "/api/payouts"
+      },
+      {
+        "id": "e-seam-payouts",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "async-seam",
+        "resource": "payouts",
+        "verb": "settle/async",
+        "requests": 18,
+        "evidence": "probed",
+        "technique": "h_async_seam",
+        "path": "/api/payouts"
+      },
+      {
+        "id": "e-seam-payouts",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "async-seam",
+        "resource": "payouts",
+        "verb": "settle/async",
+        "requests": 18,
+        "evidence": "probed",
+        "technique": "h_async_seam",
+        "path": "/api/payouts"
+      }
+    ]
+  },
+  "money_paths": [
+    "e-seam-payouts",
+    "e-seam-payouts",
+    "e-seam-payouts",
+    "e-seam-payouts",
+    "e-seam-payouts",
+    "e-seam-payouts",
+    "e-seam-payouts",
+    "e-seam-payouts",
+    "e-seam-payouts",
+    "e-seam-payouts"
+  ],
+  "next_actions": []
+}

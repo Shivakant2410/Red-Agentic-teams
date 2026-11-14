@@ -1,0 +1,763 @@
+{
+  "tool": "hypothesis-ledger",
+  "version": "1.0.0",
+  "generated": "2026-11-04T19:10:59+0000",
+  "stats": {
+    "total": 23,
+    "by_status": {
+      "inconclusive": 4,
+      "tested": 2,
+      "confirmed": 12,
+      "refuted": 3,
+      "confirmed-by-transcript": 2
+    },
+    "by_source": {
+      "swarm-board/run1": 10,
+      "deferred-window/run1": 1,
+      "swarm-board/run2": 10,
+      "deferred-window/run2": 1,
+      "statefuzz-standalone": 1
+    }
+  },
+  "score": 16.5,
+  "entries": [
+    {
+      "id": "H-0001",
+      "source": "swarm-board/run1",
+      "tag": "h_idor",
+      "title": "Parameterised object endpoints may lack ownership checks",
+      "prior": 0.6,
+      "plan": "cross-user read of a fresh order",
+      "derived_from": [
+        "SF-HYPOTHESIS-0008"
+      ],
+      "status": "inconclusive",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1793819456.2143931
+        }
+      ],
+      "evidence": [
+        {
+          "note": "dvlba-shaped probe prerequisites absent on this surface"
+        }
+      ],
+      "created": 1793819456.2142947,
+      "resolved": 1793819456.2143943
+    },
+    {
+      "id": "H-0002",
+      "source": "swarm-board/run1",
+      "tag": "h_fsm",
+      "title": "Order lifecycle is a two-step state machine; transition guards may be missing",
+      "prior": 0.7,
+      "plan": "spawn statefuzz specialist",
+      "derived_from": [
+        "SF-HYPOTHESIS-0009"
+      ],
+      "status": "inconclusive",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "honestly skipped: surface lacks the modeled checkout lifecycle",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1793819456.214418
+        }
+      ],
+      "evidence": [
+        {
+          "note": "FSM spawn skipped on shape mismatch (see CONTROL skip-statefuzz)"
+        }
+      ],
+      "created": 1793819456.2143033,
+      "resolved": 1793819456.214419
+    },
+    {
+      "id": "H-0003",
+      "source": "swarm-board/run1",
+      "tag": "h_hidden_verbs",
+      "title": "Parameterised money resources may expose undocumented ops verbs",
+      "prior": 0.4,
+      "plan": "verb wordlist probe on param paths",
+      "derived_from": [
+        "SF-HYPOTHESIS-0010"
+      ],
+      "status": "tested",
+      "tests": [
+        {
+          "kind": "probe",
+          "detail": "probe produced observations without a violation",
+          "requests_spent": 301,
+          "finding_ids": [],
+          "ts": 1793819456.2144258
+        }
+      ],
+      "evidence": [
+        {
+          "note": "technique ran; observation-only outcome (e.g. hidden verbs enumerated)"
+        }
+      ],
+      "created": 1793819456.2143126,
+      "resolved": 1793819456.2144272
+    },
+    {
+      "id": "H-0004",
+      "source": "swarm-board/run1",
+      "tag": "h_state_guard",
+      "title": "Cancel-terminated resources may leave sibling write verbs open and the dedupe keyed to the body",
+      "prior": 0.55,
+      "plan": "create -> cancel -> replay/mutate -> sibling write",
+      "derived_from": [
+        "SF-HYPOTHESIS-0011"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Cancel dedupe is keyed by the reason string, not the object: a different reason re-credits the full remainder (verified)",
+          "requests_spent": 301,
+          "finding_ids": [
+            "FW-CANCEL-REASON"
+          ],
+          "ts": 1793819456.2143447
+        },
+        {
+          "kind": "finding",
+          "detail": "Write transition accepted on a CANCELED object: resize re-credits the full prorated remainder after cancel already did (verified)",
+          "requests_spent": 301,
+          "finding_ids": [
+            "FW-TERMINAL-RESIZE"
+          ],
+          "ts": 1793819456.2143526
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-CANCEL-REASON",
+          "status": "verified"
+        },
+        {
+          "finding": "FW-TERMINAL-RESIZE",
+          "status": "verified"
+        }
+      ],
+      "created": 1793819456.214315,
+      "resolved": 1793819456.214355
+    },
+    {
+      "id": "H-0005",
+      "source": "swarm-board/run1",
+      "tag": "h_mass_assign",
+      "title": "Undocumented body fields may override pricing or entitlements",
+      "prior": 0.5,
+      "plan": "differential create with injected candidates",
+      "derived_from": [
+        "SF-HYPOTHESIS-0012"
+      ],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1793819456.2144325
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probe ran against the live target and demonstrated no violation"
+        }
+      ],
+      "created": 1793819456.214317,
+      "resolved": 1793819456.2144334
+    },
+    {
+      "id": "H-0006",
+      "source": "swarm-board/run1",
+      "tag": "h_cross_tenant",
+      "title": "Global read-backs may leak other tenants' ids; leaked ids may pay the caller",
+      "prior": 0.5,
+      "plan": "cross-principal readback scan + deputy write",
+      "derived_from": [
+        "SF-HYPOTHESIS-0013"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Cross-tenant object disclosure: a fresh principal reads another tenant's vault identifier from /api/audit (verified)",
+          "requests_spent": 301,
+          "finding_ids": [
+            "FW-AUDIT-LEAK"
+          ],
+          "ts": 1793819456.2143588
+        },
+        {
+          "kind": "finding",
+          "detail": "No ownership check on resize: the proration credit lands in the CALLER's balance \u2014 downgrade any leaked tenant's object for profit (verified)",
+          "requests_spent": 301,
+          "finding_ids": [
+            "FW-DEPUTY-CREDIT"
+          ],
+          "ts": 1793819456.2143633
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-AUDIT-LEAK",
+          "status": "verified"
+        },
+        {
+          "finding": "FW-DEPUTY-CREDIT",
+          "status": "verified"
+        }
+      ],
+      "created": 1793819456.214319,
+      "resolved": 1793819456.2143648
+    },
+    {
+      "id": "H-0007",
+      "source": "swarm-board/run1",
+      "tag": "h_async_toctou",
+      "title": "Async settles may debit without re-checking the balance",
+      "prior": 0.55,
+      "plan": "create async -> drain balance -> await settle",
+      "derived_from": [
+        "SF-HYPOTHESIS-0014"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Async settle debits without a balance re-check: draining the wallet inside the deferred window drives the balance negative (-125000) (verified)",
+          "requests_spent": 301,
+          "finding_ids": [
+            "FW-TOCTOU-SETTLE"
+          ],
+          "ts": 1793819456.214368
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-TOCTOU-SETTLE",
+          "status": "verified"
+        }
+      ],
+      "created": 1793819456.2143211,
+      "resolved": 1793819456.2143693
+    },
+    {
+      "id": "H-0008",
+      "source": "swarm-board/run1",
+      "tag": "h_terminal_credit",
+      "title": "Cancel of a settled async artifact may refund after delivery",
+      "prior": 0.5,
+      "plan": "create async -> settle -> cancel",
+      "derived_from": [
+        "SF-HYPOTHESIS-0015"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered) (verified)",
+          "requests_spent": 301,
+          "finding_ids": [
+            "FW-SETTLED-CANCEL"
+          ],
+          "ts": 1793819456.2143724
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-SETTLED-CANCEL",
+          "status": "verified"
+        }
+      ],
+      "created": 1793819456.214323,
+      "resolved": 1793819456.2143736
+    },
+    {
+      "id": "H-0009",
+      "source": "swarm-board/run1",
+      "tag": "h_arith_cycle",
+      "title": "Value-neutral cycles of a priced transition may accumulate rounding drift",
+      "prior": 0.45,
+      "plan": "cycle 12x, net wallet delta",
+      "derived_from": [
+        "SF-HYPOTHESIS-0016"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Value-neutral resize cycles accumulate balance (+3 cents within 12 round-trips): credit rounds up, charge rounds down (verified)",
+          "requests_spent": 301,
+          "finding_ids": [
+            "FW-ROUND-DRIFT"
+          ],
+          "ts": 1793819456.2143767
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-ROUND-DRIFT",
+          "status": "verified"
+        }
+      ],
+      "created": 1793819456.214325,
+      "resolved": 1793819456.2143779
+    },
+    {
+      "id": "H-0010",
+      "source": "swarm-board/run1",
+      "tag": "h_quota_race",
+      "title": "Quota-limited claims may lose the check-then-act race to distinct principals",
+      "prior": 0.5,
+      "plan": "multi-principal last-byte race",
+      "derived_from": [
+        "SF-HYPOTHESIS-0017"
+      ],
+      "status": "confirmed-by-transcript",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Quota-limited claim loses the check-then-act race: 8 distinct principals claimed past the advertised quota of 3 (verified-by-transcript)",
+          "requests_spent": 301,
+          "finding_ids": [
+            "FW-QUOTA-RACE"
+          ],
+          "ts": 1793819456.2143807
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-QUOTA-RACE",
+          "status": "verified-by-transcript"
+        }
+      ],
+      "created": 1793819456.214327,
+      "resolved": 1793819456.2143824
+    },
+    {
+      "id": "H-0011",
+      "source": "deferred-window/run1",
+      "tag": "deferred-window",
+      "title": "deferred effect via /api/events/EV-0110f7f51f1b;/api/events/EV-1ee5e95cd329;/api/events/EV-2a4199e4c8c3;/api/events/EV-6e05ee8e3648;/api/events/EV-a4109bf37287;/api/events/EV-b7e6a (ttl 6.0s)",
+      "prior": 0.5,
+      "plan": "poll /api/events/EV-0110f7f51f1b;/api/events/EV-1ee5e95cd329;/api/events/EV-2a4199e4c8c3;/api/events/EV-6e05ee8e3648;/api/events/EV-a4109bf37287;/api/events/EV-b7e6a until resolved",
+      "derived_from": [],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "poll",
+          "detail": "12 async settle window(s) opened, 20 event poll(s) issued by the swarm",
+          "requests_spent": 20,
+          "finding_ids": [],
+          "ts": 1793819456.2163956
+        }
+      ],
+      "evidence": [
+        {
+          "note": "settle-window violation (FW-TOCTOU-SETTLE,FW-SETTLED-CANCEL) verified in this run"
+        }
+      ],
+      "created": 1793819456.2163906,
+      "resolved": 1793819456.2166133,
+      "deferred": {
+        "marker": "12 window(s)",
+        "callback_path": "/api/events/EV-0110f7f51f1b;/api/events/EV-1ee5e95cd329;/api/events/EV-2a4199e4c8c3;/api/events/EV-6e05ee8e3648;/api/events/EV-a4109bf37287;/api/events/EV-b7e6a",
+        "expectation": {},
+        "ttl": 6.0
+      }
+    },
+    {
+      "id": "H-0012",
+      "source": "swarm-board/run2",
+      "tag": "h_idor",
+      "title": "Parameterised object endpoints may lack ownership checks",
+      "prior": 0.6,
+      "plan": "cross-user read of a fresh order",
+      "derived_from": [
+        "SF-HYPOTHESIS-0045"
+      ],
+      "status": "inconclusive",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1793819458.9532595
+        }
+      ],
+      "evidence": [
+        {
+          "note": "dvlba-shaped probe prerequisites absent on this surface"
+        }
+      ],
+      "created": 1793819458.9531624,
+      "resolved": 1793819458.9532619
+    },
+    {
+      "id": "H-0013",
+      "source": "swarm-board/run2",
+      "tag": "h_fsm",
+      "title": "Order lifecycle is a two-step state machine; transition guards may be missing",
+      "prior": 0.7,
+      "plan": "spawn statefuzz specialist",
+      "derived_from": [
+        "SF-HYPOTHESIS-0046"
+      ],
+      "status": "inconclusive",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "honestly skipped: surface lacks the modeled checkout lifecycle",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1793819458.9532905
+        }
+      ],
+      "evidence": [
+        {
+          "note": "FSM spawn skipped on shape mismatch (see CONTROL skip-statefuzz)"
+        }
+      ],
+      "created": 1793819458.9531689,
+      "resolved": 1793819458.9532921
+    },
+    {
+      "id": "H-0014",
+      "source": "swarm-board/run2",
+      "tag": "h_hidden_verbs",
+      "title": "Parameterised money resources may expose undocumented ops verbs",
+      "prior": 0.4,
+      "plan": "verb wordlist probe on param paths",
+      "derived_from": [
+        "SF-HYPOTHESIS-0047"
+      ],
+      "status": "tested",
+      "tests": [
+        {
+          "kind": "probe",
+          "detail": "probe produced observations without a violation",
+          "requests_spent": 302,
+          "finding_ids": [],
+          "ts": 1793819458.9532995
+        }
+      ],
+      "evidence": [
+        {
+          "note": "technique ran; observation-only outcome (e.g. hidden verbs enumerated)"
+        }
+      ],
+      "created": 1793819458.9531717,
+      "resolved": 1793819458.9533014
+    },
+    {
+      "id": "H-0015",
+      "source": "swarm-board/run2",
+      "tag": "h_state_guard",
+      "title": "Cancel-terminated resources may leave sibling write verbs open and the dedupe keyed to the body",
+      "prior": 0.55,
+      "plan": "create -> cancel -> replay/mutate -> sibling write",
+      "derived_from": [
+        "SF-HYPOTHESIS-0048"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Cancel dedupe is keyed by the reason string, not the object: a different reason re-credits the full remainder (verified)",
+          "requests_spent": 302,
+          "finding_ids": [
+            "FW-CANCEL-REASON"
+          ],
+          "ts": 1793819458.9532037
+        },
+        {
+          "kind": "finding",
+          "detail": "Write transition accepted on a CANCELED object: resize re-credits the full prorated remainder after cancel already did (verified)",
+          "requests_spent": 302,
+          "finding_ids": [
+            "FW-TERMINAL-RESIZE"
+          ],
+          "ts": 1793819458.953212
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-CANCEL-REASON",
+          "status": "verified"
+        },
+        {
+          "finding": "FW-TERMINAL-RESIZE",
+          "status": "verified"
+        }
+      ],
+      "created": 1793819458.953174,
+      "resolved": 1793819458.953214
+    },
+    {
+      "id": "H-0016",
+      "source": "swarm-board/run2",
+      "tag": "h_mass_assign",
+      "title": "Undocumented body fields may override pricing or entitlements",
+      "prior": 0.5,
+      "plan": "differential create with injected candidates",
+      "derived_from": [
+        "SF-HYPOTHESIS-0049"
+      ],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "dispatch",
+          "detail": "dispatched; produced 0 facts",
+          "requests_spent": 0,
+          "finding_ids": [],
+          "ts": 1793819458.9533083
+        }
+      ],
+      "evidence": [
+        {
+          "note": "probe ran against the live target and demonstrated no violation"
+        }
+      ],
+      "created": 1793819458.953176,
+      "resolved": 1793819458.95331
+    },
+    {
+      "id": "H-0017",
+      "source": "swarm-board/run2",
+      "tag": "h_cross_tenant",
+      "title": "Global read-backs may leak other tenants' ids; leaked ids may pay the caller",
+      "prior": 0.5,
+      "plan": "cross-principal readback scan + deputy write",
+      "derived_from": [
+        "SF-HYPOTHESIS-0050"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Cross-tenant object disclosure: a fresh principal reads another tenant's vault identifier from /api/audit (verified)",
+          "requests_spent": 302,
+          "finding_ids": [
+            "FW-AUDIT-LEAK"
+          ],
+          "ts": 1793819458.9532177
+        },
+        {
+          "kind": "finding",
+          "detail": "No ownership check on resize: the proration credit lands in the CALLER's balance \u2014 downgrade any leaked tenant's object for profit (verified)",
+          "requests_spent": 302,
+          "finding_ids": [
+            "FW-DEPUTY-CREDIT"
+          ],
+          "ts": 1793819458.9532237
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-AUDIT-LEAK",
+          "status": "verified"
+        },
+        {
+          "finding": "FW-DEPUTY-CREDIT",
+          "status": "verified"
+        }
+      ],
+      "created": 1793819458.953178,
+      "resolved": 1793819458.9532254
+    },
+    {
+      "id": "H-0018",
+      "source": "swarm-board/run2",
+      "tag": "h_async_toctou",
+      "title": "Async settles may debit without re-checking the balance",
+      "prior": 0.55,
+      "plan": "create async -> drain balance -> await settle",
+      "derived_from": [
+        "SF-HYPOTHESIS-0051"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Async settle debits without a balance re-check: draining the wallet inside the deferred window drives the balance negative (-125000) (verified)",
+          "requests_spent": 302,
+          "finding_ids": [
+            "FW-TOCTOU-SETTLE"
+          ],
+          "ts": 1793819458.9532294
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-TOCTOU-SETTLE",
+          "status": "verified"
+        }
+      ],
+      "created": 1793819458.9531803,
+      "resolved": 1793819458.953231
+    },
+    {
+      "id": "H-0019",
+      "source": "swarm-board/run2",
+      "tag": "h_terminal_credit",
+      "title": "Cancel of a settled async artifact may refund after delivery",
+      "prior": 0.5,
+      "plan": "create async -> settle -> cancel",
+      "derived_from": [
+        "SF-HYPOTHESIS-0052"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered) (verified)",
+          "requests_spent": 302,
+          "finding_ids": [
+            "FW-SETTLED-CANCEL"
+          ],
+          "ts": 1793819458.9532344
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-SETTLED-CANCEL",
+          "status": "verified"
+        }
+      ],
+      "created": 1793819458.9531822,
+      "resolved": 1793819458.9532366
+    },
+    {
+      "id": "H-0020",
+      "source": "swarm-board/run2",
+      "tag": "h_arith_cycle",
+      "title": "Value-neutral cycles of a priced transition may accumulate rounding drift",
+      "prior": 0.45,
+      "plan": "cycle 12x, net wallet delta",
+      "derived_from": [
+        "SF-HYPOTHESIS-0053"
+      ],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Value-neutral resize cycles accumulate balance (+3 cents within 12 round-trips): credit rounds up, charge rounds down (verified)",
+          "requests_spent": 302,
+          "finding_ids": [
+            "FW-ROUND-DRIFT"
+          ],
+          "ts": 1793819458.9532402
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-ROUND-DRIFT",
+          "status": "verified"
+        }
+      ],
+      "created": 1793819458.9531846,
+      "resolved": 1793819458.953242
+    },
+    {
+      "id": "H-0021",
+      "source": "swarm-board/run2",
+      "tag": "h_quota_race",
+      "title": "Quota-limited claims may lose the check-then-act race to distinct principals",
+      "prior": 0.5,
+      "plan": "multi-principal last-byte race",
+      "derived_from": [
+        "SF-HYPOTHESIS-0054"
+      ],
+      "status": "confirmed-by-transcript",
+      "tests": [
+        {
+          "kind": "finding",
+          "detail": "Quota-limited claim loses the check-then-act race: 8 distinct principals claimed past the advertised quota of 3 (verified-by-transcript)",
+          "requests_spent": 302,
+          "finding_ids": [
+            "FW-QUOTA-RACE"
+          ],
+          "ts": 1793819458.9532456
+        }
+      ],
+      "evidence": [
+        {
+          "finding": "FW-QUOTA-RACE",
+          "status": "verified-by-transcript"
+        }
+      ],
+      "created": 1793819458.953186,
+      "resolved": 1793819458.953248
+    },
+    {
+      "id": "H-0022",
+      "source": "deferred-window/run2",
+      "tag": "deferred-window",
+      "title": "deferred effect via /api/events/EV-077c91564e78;/api/events/EV-1ef04322a10b;/api/events/EV-2b7adc65f21e;/api/events/EV-35fb4e967e35;/api/events/EV-4a9569d2d893;/api/events/EV-56072 (ttl 6.0s)",
+      "prior": 0.5,
+      "plan": "poll /api/events/EV-077c91564e78;/api/events/EV-1ef04322a10b;/api/events/EV-2b7adc65f21e;/api/events/EV-35fb4e967e35;/api/events/EV-4a9569d2d893;/api/events/EV-56072 until resolved",
+      "derived_from": [],
+      "status": "confirmed",
+      "tests": [
+        {
+          "kind": "poll",
+          "detail": "12 async settle window(s) opened, 21 event poll(s) issued by the swarm",
+          "requests_spent": 21,
+          "finding_ids": [],
+          "ts": 1793819458.9552944
+        }
+      ],
+      "evidence": [
+        {
+          "note": "settle-window violation (FW-TOCTOU-SETTLE,FW-SETTLED-CANCEL) verified in this run"
+        }
+      ],
+      "created": 1793819458.9552884,
+      "resolved": 1793819458.9555106,
+      "deferred": {
+        "marker": "12 window(s)",
+        "callback_path": "/api/events/EV-077c91564e78;/api/events/EV-1ef04322a10b;/api/events/EV-2b7adc65f21e;/api/events/EV-35fb4e967e35;/api/events/EV-4a9569d2d893;/api/events/EV-56072",
+        "expectation": {},
+        "ttl": 6.0
+      }
+    },
+    {
+      "id": "H-0023",
+      "source": "statefuzz-standalone",
+      "tag": "dvlba-shaped-probes",
+      "title": "statefuzz's 8 dvlba-shaped probe classes model this target's lifecycle",
+      "prior": 0.3,
+      "plan": "lawful walk + 8 mutant probes + race + deferred",
+      "derived_from": [],
+      "status": "refuted",
+      "tests": [
+        {
+          "kind": "probes",
+          "detail": "0 probe finding(s) fired",
+          "requests_spent": 64,
+          "finding_ids": [],
+          "ts": 1793819459.4909778
+        }
+      ],
+      "evidence": [
+        {
+          "note": "generalization gap: checkout-shaped probes do not model the vault/payout lifecycle"
+        }
+      ],
+      "created": 1793819459.4909656,
+      "resolved": 1793819459.490982
+    }
+  ]
+}

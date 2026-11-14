@@ -1,0 +1,86 @@
+{
+  "bandit": {
+    "fetch_robots": {
+      "alpha": 1.5,
+      "beta": 1.0
+    },
+    "fetch_index": {
+      "alpha": 1.5,
+      "beta": 1.0
+    },
+    "fetch_route_index": {
+      "alpha": 2.0,
+      "beta": 1.0
+    },
+    "fetch_openapi": {
+      "alpha": 1.0,
+      "beta": 1.75
+    },
+    "probe_common_paths": {
+      "alpha": 1.5,
+      "beta": 1.0
+    },
+    "fingerprint_server": {
+      "alpha": 1.5,
+      "beta": 1.0
+    }
+  },
+  "insights": [],
+  "history": [
+    {
+      "technique": "fetch_index",
+      "outcome": "success",
+      "weight": 0.25
+    },
+    {
+      "technique": "fetch_openapi",
+      "outcome": "failure",
+      "weight": 0.75
+    },
+    {
+      "technique": "fetch_robots",
+      "outcome": "success",
+      "weight": 0.25
+    },
+    {
+      "technique": "fetch_route_index",
+      "outcome": "success",
+      "weight": 0.5
+    },
+    {
+      "technique": "fingerprint_server",
+      "outcome": "success",
+      "weight": 0.25
+    },
+    {
+      "technique": "probe_common_paths",
+      "outcome": "success",
+      "weight": 0.25
+    },
+    {
+      "technique": "fetch_index",
+      "outcome": "success",
+      "weight": 0.25
+    },
+    {
+      "technique": "fetch_robots",
+      "outcome": "success",
+      "weight": 0.25
+    },
+    {
+      "technique": "fetch_route_index",
+      "outcome": "success",
+      "weight": 0.5
+    },
+    {
+      "technique": "fingerprint_server",
+      "outcome": "success",
+      "weight": 0.25
+    },
+    {
+      "technique": "probe_common_paths",
+      "outcome": "success",
+      "weight": 0.25
+    }
+  ]
+}

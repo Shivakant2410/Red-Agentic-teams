@@ -1,0 +1,228 @@
+{
+  "generated": "2026-11-07T03:34:49+0000",
+  "tool": "attack-graph",
+  "version": "1.0.0-m3",
+  "surface_map": {
+    "nodes": [
+      {
+        "id": "res:callbacks",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:cart",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:catalog",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:checkout",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:coupon",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:ledger",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:login",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": "/api/login"
+      },
+      {
+        "id": "res:orders",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:refunds",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:register",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": "/api/register"
+      },
+      {
+        "id": "res:wallet",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "read:/api/callbacks/{marker}",
+        "kind": "readback",
+        "layer": "documented"
+      },
+      {
+        "id": "read:/api/cart",
+        "kind": "readback",
+        "layer": "documented"
+      },
+      {
+        "id": "read:/api/cart/items",
+        "kind": "readback",
+        "layer": "documented"
+      },
+      {
+        "id": "read:/api/ledger",
+        "kind": "readback",
+        "layer": "documented"
+      },
+      {
+        "id": "read:/api/orders/{order_id}",
+        "kind": "readback",
+        "layer": "documented"
+      },
+      {
+        "id": "read:/api/orders/{order_id}/refund",
+        "kind": "readback",
+        "layer": "documented"
+      },
+      {
+        "id": "read:/api/orders/{order_id}/ship",
+        "kind": "readback",
+        "layer": "documented"
+      },
+      {
+        "id": "read:/api/wallet",
+        "kind": "readback",
+        "layer": "documented"
+      }
+    ],
+    "edges": [
+      {
+        "from": "res:callbacks",
+        "verb": "read",
+        "path": "/api/callbacks/{marker}",
+        "method": "GET",
+        "layer": "documented",
+        "evidence": "documented"
+      },
+      {
+        "from": "res:cart",
+        "verb": "items",
+        "path": "/api/cart/items",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "verified"
+      },
+      {
+        "from": "res:checkout",
+        "verb": "confirm",
+        "path": "/api/checkout/confirm",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "documented"
+      },
+      {
+        "from": "res:checkout",
+        "verb": "init",
+        "path": "/api/checkout/init",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "verified"
+      },
+      {
+        "from": "res:coupon",
+        "verb": "apply",
+        "path": "/api/coupon/apply",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "verified"
+      },
+      {
+        "from": "res:coupon",
+        "verb": "redeem",
+        "path": "/api/coupon/redeem",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "verified"
+      },
+      {
+        "from": "res:orders",
+        "verb": "read",
+        "path": "/api/orders/{order_id}",
+        "method": "GET",
+        "layer": "documented",
+        "evidence": "documented"
+      },
+      {
+        "from": "res:orders",
+        "verb": "refund",
+        "path": "/api/orders/{order_id}/refund",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "verified"
+      },
+      {
+        "from": "res:orders",
+        "verb": "ship",
+        "path": "/api/orders/{order_id}/ship",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "verified"
+      },
+      {
+        "from": "res:refunds",
+        "verb": "async",
+        "path": "/api/refunds/async",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "verified"
+      }
+    ],
+    "doc_suspect": {}
+  },
+  "attack_graph": {
+    "source": "acct:any",
+    "goal": "goal:wallet-credit",
+    "nodes": [
+      {
+        "id": "acct:any",
+        "kind": "capability",
+        "label": "any registered account"
+      },
+      {
+        "id": "goal:wallet-credit",
+        "kind": "goal",
+        "label": "wallet credit (attacker-controlled value)"
+      }
+    ],
+    "edges": []
+  },
+  "money_paths": [],
+  "next_actions": []
+}

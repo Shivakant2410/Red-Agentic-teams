@@ -1,0 +1,323 @@
+{
+  "generated": "2026-11-07T03:34:08+0000",
+  "tree": "/home/z/my-project/ra-work/prototypes/swarm-specialists",
+  "exit": {
+    "gv_hits": [
+      "GV-1",
+      "GV-2",
+      "GV-3",
+      "GV-4",
+      "GV-5",
+      "GV-6",
+      "GV-7",
+      "GV-8"
+    ],
+    "per_run": {
+      "run1": [
+        "GV-1:verified",
+        "GV-2:verified",
+        "GV-2:verified",
+        "GV-2:verified",
+        "GV-3:verified",
+        "GV-4:verified",
+        "GV-5:verified",
+        "GV-6:verified",
+        "GV-7:verified",
+        "GV-8:verified"
+      ],
+      "run2": [
+        "GV-1:verified",
+        "GV-2:verified",
+        "GV-2:verified",
+        "GV-2:verified",
+        "GV-3:verified",
+        "GV-4:verified",
+        "GV-5:verified",
+        "GV-6:verified",
+        "GV-7:verified",
+        "GV-8:verified"
+      ]
+    },
+    "decoy_false_positives": [],
+    "state_skip_evidence": {
+      "resource": "shipments",
+      "verb": "settle",
+      "from_state": "booked",
+      "after_state": "settled",
+      "wallet_delta": 3998,
+      "payout_response": {
+        "payout_cents": 3998,
+        "status": "settled"
+      },
+      "gated_siblings": [
+        {
+          "verb": "pickup",
+          "state_before": "picked_up",
+          "status": 409,
+          "state_after": null,
+          "gated": true
+        },
+        {
+          "verb": "pickup",
+          "state_before": "delivered",
+          "status": 409,
+          "state_after": null,
+          "gated": true
+        },
+        {
+          "verb": "deliver",
+          "state_before": "delivered",
+          "status": 409,
+          "state_after": null,
+          "gated": true
+        }
+      ],
+      "induced_probes": 13,
+      "unmodeled_transition": "booked --settle--> credited (order skipped)",
+      "discovered_via": "open-vocab verb fact"
+    },
+    "ambient_watch": {
+      "events": 13,
+      "unexplained": 5,
+      "deltas": [
+        {
+          "tag": "h_open_vocab",
+          "delta": 60399,
+          "attributed": false
+        },
+        {
+          "tag": "h_hidden_verbs",
+          "delta": -3998,
+          "attributed": false
+        },
+        {
+          "tag": "h_mass_assign",
+          "delta": 38005,
+          "attributed": true
+        },
+        {
+          "tag": "h_cross_tenant",
+          "delta": -3998,
+          "attributed": true
+        },
+        {
+          "tag": "h_cross_tenant",
+          "delta": 798,
+          "attributed": true
+        },
+        {
+          "tag": "h_arith_cycle",
+          "delta": -3995,
+          "attributed": true
+        },
+        {
+          "tag": "h_quota_race",
+          "delta": 500,
+          "attributed": false
+        },
+        {
+          "tag": "h_quota_race",
+          "delta": 500,
+          "attributed": false
+        },
+        {
+          "tag": "h_quota_race",
+          "delta": 500,
+          "attributed": false
+        },
+        {
+          "tag": "h_state_skip",
+          "delta": -3998,
+          "attributed": true
+        },
+        {
+          "tag": "h_value_replay",
+          "delta": 60000,
+          "attributed": true
+        },
+        {
+          "tag": "h_value_replay",
+          "delta": -3200,
+          "attributed": true
+        }
+      ]
+    },
+    "ambient_escalations": 3,
+    "attack_graph_money_paths": [
+      "e-credit-shipments-rebook",
+      "e-credit-shipments-settle",
+      "e-credit-vouchers-consume",
+      "e-credit-vouchers-release",
+      "e-follow-shipments-settle",
+      "e-seam-payouts",
+      "e-seam-payouts",
+      "e-xu-readbacks"
+    ],
+    "attack_graph_next_actions": [],
+    "markers_registered": 2,
+    "requests_run1": 616,
+    "requests_run2": 607,
+    "llm_seam_calls": 0
+  },
+  "labs": {
+    "freightlane": {
+      "gv_hits": [
+        "GV-1",
+        "GV-2",
+        "GV-3",
+        "GV-4",
+        "GV-5",
+        "GV-6",
+        "GV-7",
+        "GV-8"
+      ],
+      "per_run": {
+        "run1": [
+          "GV-1:verified",
+          "GV-2:verified",
+          "GV-2:verified",
+          "GV-2:verified",
+          "GV-3:verified",
+          "GV-4:verified",
+          "GV-5:verified",
+          "GV-6:verified",
+          "GV-7:verified",
+          "GV-8:verified"
+        ],
+        "run2": [
+          "GV-1:verified",
+          "GV-2:verified",
+          "GV-2:verified",
+          "GV-2:verified",
+          "GV-3:verified",
+          "GV-4:verified",
+          "GV-5:verified",
+          "GV-6:verified",
+          "GV-7:verified",
+          "GV-8:verified"
+        ]
+      },
+      "decoy_false_positives": [],
+      "state_skip_evidence": {
+        "resource": "shipments",
+        "verb": "settle",
+        "from_state": "booked",
+        "after_state": "settled",
+        "wallet_delta": 3998,
+        "payout_response": {
+          "payout_cents": 3998,
+          "status": "settled"
+        },
+        "gated_siblings": [
+          {
+            "verb": "pickup",
+            "state_before": "picked_up",
+            "status": 409,
+            "state_after": null,
+            "gated": true
+          },
+          {
+            "verb": "pickup",
+            "state_before": "delivered",
+            "status": 409,
+            "state_after": null,
+            "gated": true
+          },
+          {
+            "verb": "deliver",
+            "state_before": "delivered",
+            "status": 409,
+            "state_after": null,
+            "gated": true
+          }
+        ],
+        "induced_probes": 13,
+        "unmodeled_transition": "booked --settle--> credited (order skipped)",
+        "discovered_via": "open-vocab verb fact"
+      },
+      "ambient_watch": {
+        "events": 13,
+        "unexplained": 5,
+        "deltas": [
+          {
+            "tag": "h_open_vocab",
+            "delta": 60399,
+            "attributed": false
+          },
+          {
+            "tag": "h_hidden_verbs",
+            "delta": -3998,
+            "attributed": false
+          },
+          {
+            "tag": "h_mass_assign",
+            "delta": 38005,
+            "attributed": true
+          },
+          {
+            "tag": "h_cross_tenant",
+            "delta": -3998,
+            "attributed": true
+          },
+          {
+            "tag": "h_cross_tenant",
+            "delta": 798,
+            "attributed": true
+          },
+          {
+            "tag": "h_arith_cycle",
+            "delta": -3995,
+            "attributed": true
+          },
+          {
+            "tag": "h_quota_race",
+            "delta": 500,
+            "attributed": false
+          },
+          {
+            "tag": "h_quota_race",
+            "delta": 500,
+            "attributed": false
+          },
+          {
+            "tag": "h_quota_race",
+            "delta": 500,
+            "attributed": false
+          },
+          {
+            "tag": "h_state_skip",
+            "delta": -3998,
+            "attributed": true
+          },
+          {
+            "tag": "h_value_replay",
+            "delta": 60000,
+            "attributed": true
+          },
+          {
+            "tag": "h_value_replay",
+            "delta": -3200,
+            "attributed": true
+          }
+        ]
+      },
+      "ambient_escalations": 3,
+      "attack_graph_money_paths": [
+        "e-credit-shipments-rebook",
+        "e-credit-shipments-settle",
+        "e-credit-vouchers-consume",
+        "e-credit-vouchers-release",
+        "e-follow-shipments-settle",
+        "e-seam-payouts",
+        "e-seam-payouts",
+        "e-xu-readbacks"
+      ],
+      "attack_graph_next_actions": [],
+      "markers_registered": 2,
+      "requests_run1": 616,
+      "requests_run2": 607,
+      "llm_seam_calls": 0
+    }
+  },
+  "pass": true
+}
