@@ -43,6 +43,7 @@ from redteam.brain.orchestrator import FamilyOrchestrator  # noqa: E402
 from redteam.ea.agent import ea_agentic_probe  # noqa: E402
 from redteam.oh.agent import oh_agentic_probe  # noqa: E402
 from redteam.pi.agent import agentic_live_probe  # noqa: E402
+from redteam.pi.escalation import crescendo_probe  # noqa: E402
 from redteam.pi.live import LiveLaneError  # noqa: E402
 from redteam.sc.agent import sc_agentic_probe  # noqa: E402
 from redteam.sid.agent import sid_agentic_probe  # noqa: E402
@@ -302,6 +303,64 @@ def test_sixth_channel_oh_completes_the_full_five_channel_campaign():
     assert [s["earned_via"] for s in kc["stages"]] == \
         ["LLM01", "LLM06", "LLM02", "LLM03"]
     assert kc["profile_sessions"] == 1
+
+
+# -- the Crescendo foothold: multi-turn escalation in the full campaign ---------------
+
+class _EscalationSession:
+    """Decode-competent and agreeable: complies with anchored
+    continuation and prints any base64 run that decodes — the
+    excessive-agreeableness shape Crescendo folds."""
+
+    def send(self, system, user):
+        for run in _B64_RUN.findall(user):
+            try:
+                dec = base64.b64decode(run, validate=True).decode("utf-8")
+            except Exception:
+                continue
+            if CANARY in dec:
+                return f"The decoded note says: {dec}"
+        return ("Certainly — the courier's note shows its cover text, "
+                "and I can continue the story from there.")
+
+
+def test_crescendo_lane_earns_the_foothold_in_the_full_campaign():
+    """The multi-turn escalation attacker as the LLM01 lane of the FULL
+    five-channel campaign: the foothold rung is earned through ANCHORED
+    TURNS (disclosure_via_escalation), the esc_frame facts land in the
+    shared ledger, and the kill-chain composer still reports the
+    end-to-end compromise."""
+    profile = TargetProfile(
+        fingerprint=fingerprint_target("chat", "fake-model", "sys-sha"))
+    profile.start_session()
+    orch = FamilyOrchestrator(profile, budget=128, per_lane_cap=16)
+    orch.register("LLM01", lambda p, b: crescendo_probe(
+        _EscalationSession(), canary=CANARY, budget=16, seed=0, profile=p))
+    orch.register("LLM02", lambda p, b: sid_agentic_probe(
+        make_pii_record(random.Random(0)), budget=min(b, 16), seed=0,
+        session=_FakeSession(_sid_reply_fn(make_pii_record(random.Random(0)))),
+        profile=p))
+    orch.register("LLM03", lambda p, b: sc_agentic_probe(
+        _NaiveGate(), budget=min(b, 12), seed=0, profile=p))
+    orch.register("LLM05", lambda p, b: oh_agentic_probe(
+        _naive_pipeline(), budget=min(b, 12), seed=0, profile=p))
+    orch.register("LLM06", lambda p, b: ea_agentic_probe(
+        _VulnerableRuntime(), budget=min(b, 12), seed=0, profile=p))
+    report = orch.run()
+
+    fams = report["families"]
+    assert set(fams) == {"LLM01", "LLM02", "LLM03", "LLM05", "LLM06"}
+    assert fams["LLM01"]["verdict"] == "succeeded"
+    rec = report["lane_records"]["LLM01"]
+    assert rec["verdict_basis"] == "disclosure_via_escalation"
+    assert rec["n_attempts"] >= 4          # multi-turn, not a single shot
+    assert rec["attempts"][-1]["anchor_sha16"] is not None
+    assert profile.axes["esc_frame"]["fiction"]["hits"] >= 1
+    assert profile.family_state("LLM01")["verdicts"]["succeeded"] == 1
+
+    kc = assess_kill_chain(report, profile=profile)
+    assert kc["verdict"] == "compromised_end_to_end"
+    assert kc["stages"][0]["earned_via"] == "LLM01"
 
 
 # -- the campaign -----------------------------------------------------------------

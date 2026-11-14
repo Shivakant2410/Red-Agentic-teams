@@ -294,6 +294,11 @@ def main(argv=None) -> int:
     ap.add_argument("--pi-endpoint", default=None,
                     help="live base URL for the LLM01 channel "
                          "(e.g. https://host:port)")
+    ap.add_argument("--pi-escalation", action="store_true",
+                    help="run the LLM01 channel with the multi-turn "
+                         "Crescendo escalation attacker (anchored "
+                         "ladders) instead of the single-turn grammar "
+                         "brain")
     ap.add_argument("--pi-style", default="openai",
                     choices=("openai", "anthropic"))
     ap.add_argument("--sid-endpoint", default=None,
@@ -331,16 +336,22 @@ def main(argv=None) -> int:
                           "needs a live target (offline channel: LLM03)"})
         else:
             try:
-                from ..pi.agent import agentic_live_probe
                 from ..pi.live import LiveSession, LiveTarget
                 env = _live_env(args.pi_endpoint, args.pi_style,
                                 args.model, lane_env)
                 target = LiveTarget.from_env(env)
                 session = LiveSession(target, env,
-                                      max_requests=args.per_lane_cap)
-                orch.register("LLM01", lambda p, b: agentic_live_probe(
-                    target, budget=min(b, args.per_lane_cap),
-                    seed=args.seed, session=session, profile=p))
+                                      max_requests=args.per_lane_cap * 4)
+                if args.pi_escalation:
+                    from ..pi.escalation import crescendo_probe
+                    orch.register("LLM01", lambda p, b: crescendo_probe(
+                        session, budget=min(b * 4, args.per_lane_cap * 4),
+                        seed=args.seed, profile=p))
+                else:
+                    from ..pi.agent import agentic_live_probe
+                    orch.register("LLM01", lambda p, b: agentic_live_probe(
+                        target, budget=min(b, args.per_lane_cap),
+                        seed=args.seed, session=session, profile=p))
                 registered.append("LLM01")
             except Exception as e:            # loud skip, never a crash
                 skipped.append({"lane": "LLM01",
@@ -419,6 +430,8 @@ def main(argv=None) -> int:
         "gate": args.gate if "LLM03" in registered else None,
         "executor": args.executor if "LLM06" in registered else None,
         "pipeline": args.pipeline if "LLM05" in registered else None,
+        "pi_attacker": ("crescendo" if args.pi_escalation else "grammar")
+        if "LLM01" in registered else None,
         "skipped": skipped,
         "profile_path": str(path),
     }
