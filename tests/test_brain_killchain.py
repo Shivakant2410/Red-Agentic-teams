@@ -159,7 +159,7 @@ def test_stage_evidence_carries_only_report_facts():
     kc = assess_kill_chain(report)
     fh = next(s for s in kc["stages"] if s["stage"] == "foothold")
     assert set(fh) == {"stage", "families", "earned_via", "status",
-                       "basis", "requests"}
+                       "basis", "requests", "chain_evidence"}
     assert fh["basis"] == "llm01_basis"      # the lane record's basis
     assert fh["requests"] == 7               # the family's own spend
     per = next(s for s in kc["stages"] if s["stage"] == "persist")

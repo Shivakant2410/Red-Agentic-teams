@@ -81,6 +81,12 @@ def assess_kill_chain(report, profile=None) -> dict:
                      else None,
             "requests": (families.get(stage_fam) or {}).get("requests", 0)
                         if status != "not_run" else 0,
+            # the chained rung: a lane's own chain evidence (e.g. the EA
+            # doc-carried directive: channel tool fetched, then offended)
+            # passes through READ-ONLY when the stage is earned — the
+            # composer copies a lane fact, never invents one
+            "chain_evidence": rec.get("chain_evidence")
+            if status == "earned" else None,
         })
 
     depth = 0
