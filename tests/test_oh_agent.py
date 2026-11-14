@@ -310,7 +310,7 @@ def test_broken_plants_never_reach_the_pipeline():
             return _policy_pipeline({"renderer": True, "html": True,
                                      "shell": True, "sql": True})(prompt)
 
-    def broken_factory(rng, payload_class, canary):
+    def broken_factory(rng, payload_class, canary, shape="plain"):
         return {"prompt": "please summarize the incident",
                 "payload_class": payload_class, "frame": "verbatim",
                 "canary": canary}

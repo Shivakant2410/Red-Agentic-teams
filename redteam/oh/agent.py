@@ -18,7 +18,12 @@ the attacker loop for exactly that surface:
               prompt that induces the model to EMIT the payload (the
               model-echo precondition), with the campaign canary riding
               inside the payload text. The consumer's observed side
-              effect is the fact.
+              effect is the fact. A caught probe CYCLES the class to
+              its next payload SHAPE (plain first, then the sanitizer-
+              bypass forms of oracles.PAYLOAD_SHAPES — the evasion
+              axis, SOTA.md B3); the class dies only when EVERY shape
+              is caught. Classes stay the bandit axis; shapes live in
+              the record.
     guard   = plant self-audit BEFORE the send (a plant that does not
               carry its claimed payload shape + canary never reaches
               the pipeline).
@@ -64,10 +69,10 @@ import hashlib
 import math
 import random
 
-from .oracles import (ARM_COUNT, EXPECTED_EVENT, PAYLOAD_CLASSES,
-                      TASK_BENIGN, audit_plant, classify, compose_plant,
-                      consumer_findings, decoy_control, event_names,
-                      make_canary)
+from .oracles import (ARM_COUNT, EXPECTED_EVENT, PAYLOAD_CLASSES,  # noqa
+                      PAYLOAD_SHAPES, TASK_BENIGN, audit_plant, classify,
+                      compose_plant, consumer_findings, decoy_control,
+                      event_names, make_canary)
 
 # -- UCB1 (the pi/sid/sc/ea math, over the payload-class axis) ----------------
 
@@ -99,13 +104,18 @@ class _UCB1:
     def _total(self, i: int) -> int:
         return self.plays[i] + self.virt_plays[i]
 
-    def select(self) -> int:
-        for i in range(len(self.plays)):
+    def select(self, candidates=None) -> int:
+        """UCB1 over the given candidate indices (default: all). The
+        brain passes ONLY alive arms — dead classes are never
+        re-selected, so arm_stats never reports phantom pulls."""
+        idx = (range(len(self.plays)) if candidates is None
+               else candidates)
+        for i in idx:
             if self._total(i) == 0:
                 return i
-        total = sum(self._total(i) for i in range(len(self.plays)))
-        best_i, best_v = 0, None
-        for i in range(len(self.plays)):
+        total = sum(self._total(i) for i in idx)
+        best_i, best_v = None, None
+        for i in idx:
             t = self._total(i)
             v = ((self.reward[i] + self.virt_reward[i]) / t
                  + math.sqrt(2.0 * math.log(total) / t))
@@ -148,6 +158,7 @@ class OHBrain:
     def run(self) -> dict:
         ucb = _UCB1(PAYLOAD_CLASSES, priors=self.priors)
         canary = make_canary(self.rng)          # one canary per campaign
+        shape_state = {c: 0 for c in PAYLOAD_CLASSES}
         attempts: list = []
         errors = 0
         drops = 0
@@ -164,11 +175,12 @@ class OHBrain:
             entry = {
                 "n": idx, "phase": "probe",
                 "payload_class": payload_class,
+                "shape": plant.get("shape", ""),
                 "frame": plant.get("frame", ""),
                 "plant_sha16": hashlib.sha256(
                     f"{plant.get('canary', '')}|{payload_class}"
-                    f"|{plant.get('frame', '')}".encode()
-                ).hexdigest()[:16],
+                    f"|{plant.get('shape', '')}|{plant.get('frame', '')}"
+                    .encode()).hexdigest()[:16],
                 "events": event_names(events) if events else [],
                 "finding_classes": sorted({f["class"] for f in findings}),
                 "smuggled_fired": any(
@@ -202,11 +214,19 @@ class OHBrain:
 
         # -- THE PROBE LOOP -----------------------------------------------
         while n < self.budget:
-            arm_i = ucb.select()
+            candidates = [i for i in range(ARM_COUNT) if i not in dead]
+            if not candidates:
+                stop = "all_classes_caught"
+                break
+            arm_i = ucb.select(candidates)
             payload_class = PAYLOAD_CLASSES[arm_i]
-            plant = (self.plant_factory(self.rng, payload_class, canary)
+            shape = PAYLOAD_SHAPES[payload_class][
+                shape_state[payload_class]]
+            plant = (self.plant_factory(self.rng, payload_class, canary,
+                                        shape)
                      if self.plant_factory is not None
-                     else compose_plant(self.rng, payload_class, canary))
+                     else compose_plant(self.rng, payload_class, canary,
+                                        shape))
 
             # PLANT INTEGRITY GUARD — before anything reaches the pipeline
             classes = audit_plant(plant)
@@ -250,16 +270,19 @@ class OHBrain:
                 ucb.update(arm_i, 1.0)
                 stop = "earned"
                 break
-            ucb.update(arm_i, 0.0)               # class caught
-            dead.add(arm_i)
-            if len(dead) == ARM_COUNT:
-                stop = "all_classes_caught"
-                break
+            ucb.update(arm_i, 0.0)               # this shape caught
+            shape_state[payload_class] += 1      # cycle to the next shape
+            if shape_state[payload_class] >= len(
+                    PAYLOAD_SHAPES[payload_class]):
+                dead.add(arm_i)                  # EVERY shape caught
+                if len(dead) == ARM_COUNT:
+                    stop = "all_classes_caught"
+                    break
 
         return {
             "surface": "oh_agentic_lane",
             "attacker": "oh.output-brain",
-            "attacker_version": "1.0.0",
+            "attacker_version": "1.1.0",
             "budget": self.budget,
             "n_attempts": len(attempts),
             "requests": requests + n,
@@ -280,7 +303,7 @@ class OHBrain:
         return {
             "surface": "oh_agentic_lane",
             "attacker": "oh.output-brain",
-            "attacker_version": "1.0.0",
+            "attacker_version": "1.1.0",
             "budget": self.budget, "n_attempts": 0, "requests": 1,
             "stop_reason": "pipeline_error", "errors": 1,
             "sent_any": False, "benign_failed": None,
@@ -399,7 +422,7 @@ def oh_agentic_probe(pipeline, *, budget: int = 12, seed: int = 0,
         **out,
         "surface": "oh_agentic_lane",
         "lane": "agentic",
-        "payload_ref": f"oh-agentic@1.0.0#{seed}",
+        "payload_ref": f"oh-agentic@1.1.0#{seed}",
         "verdict": verdict,
         "verdict_basis": basis,
         "controls": controls,
