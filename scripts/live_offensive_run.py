@@ -112,7 +112,17 @@ def run_target(target, run_dir: Path) -> dict:
         if not wait_alive(target.base_url):
             return {"target": target.name, "status": "target-not-reachable"}
         ctx = build_ctx(eng, run_dir)
-        engine = OffensiveEngine(eng, ctx=ctx)
+        chat_fn = None
+        if os.environ.get("REDTEAM_LLM") == "1":
+            # opt-in model amplifier: absent/failed provider == no model,
+            # the run stays deterministic (same discipline either way)
+            from redteam.config import LlmConfig
+            from redteam.llm.planner import make_chat_fn
+            chat_fn = make_chat_fn(LlmConfig(), ctx.audit)
+            print("  [llm] planner:",
+                  "live provider wired" if chat_fn
+                  else "no provider/key configured -> deterministic")
+        engine = OffensiveEngine(eng, ctx=ctx, llm_chat=chat_fn)
         engine._base_override = target.base_url
         summary = engine.run()
         findings = [asdict(f) for f in ctx.findings.all()]

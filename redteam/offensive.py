@@ -886,10 +886,22 @@ class OffensiveEngine:
             if l.believed() and l.method == "POST"
             and re.search(r"import|fetch|url|upload|proxy", (l.url or "").lower())]
         ran: list[str] = []
+        deferred: list[str] = []
 
         def _drain():
             while brain.queue and len(ran) < budget:
                 hyp = brain.queue.pop(0)
+                remaining = getattr(getattr(self._ctx, "limiter", None),
+                                    "remaining", None)
+                if isinstance(remaining, int) and hyp.horizon > remaining:
+                    # horizon-aware budgeting: a bet that cannot FINISH before
+                    # the request budget dies is deferred, never half-executed
+                    # — a proof that cannot complete is the most expensive
+                    # kind of waste (the survey's "context exhaustion before
+                    # chain completion", translated to request budgets).
+                    deferred.append(f"{hyp.id} (horizon {hyp.horizon} > "
+                                    f"{remaining} left)")
+                    continue
                 try:
                     confirmed, learned = self._execute_hypothesis(hyp)
                 except Exception as exc:  # a bad bet must never kill the run
@@ -898,6 +910,7 @@ class OffensiveEngine:
                 ran.append(f"{hyp.id}{'*' if confirmed else ''}")
                 self._audit("brain.hypothesis.executed", id=hyp.id,
                             kind=hyp.kind, source=hyp.source,
+                            horizon=hyp.horizon,
                             confirmed=confirmed, learned=learned[:160])
                 brain.generate()  # chaining: each result may mint the next bet
 
@@ -915,6 +928,9 @@ class OffensiveEngine:
             except Exception as exc:  # amplifier failure == no model at all
                 self._log(f"[planner] unavailable: {exc}")
             _drain()
+        if deferred:
+            self._audit("brain.horizon.deferral", bets=deferred[:10],
+                        count=len(deferred))
         return ran
 
     def _execute_hypothesis(self, hyp: Hypothesis) -> tuple[bool, str]:

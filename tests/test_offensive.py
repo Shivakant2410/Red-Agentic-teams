@@ -374,6 +374,95 @@ def test_planner_admits_through_the_same_discipline(workflow_lab):
         "one bug, one finding — the model must not double-count")
 
 
+def test_make_chat_fn_production_adapter(monkeypatch):
+    """The real provider path: a configured key builds a client and the
+    adapter returns its message content; NOTHING configured returns None —
+    the engine's exact 'no model' state. A factory that explodes also
+    degrades to None, never a crash. No network: the client is faked at the
+    factory seam; the ADAPTER is what is under test."""
+    import redteam.llm.planner as planner
+    from redteam.config import LlmConfig
+
+    class FakeResult:
+        message = {"content": '{"hypotheses": []}'}
+
+    class FakeClient:
+        def chat(self, messages, tools=None, role="plan"):
+            assert role == "plan"
+            return FakeResult()
+
+    monkeypatch.setattr(planner, "build_llm_client",
+                        lambda cfg, audit=None: FakeClient())
+    # no key in the env -> no model, by contract
+    assert planner.make_chat_fn(LlmConfig(api_key_env="UNIT_TEST_KEY")) is None
+    monkeypatch.setenv("UNIT_TEST_KEY", "k" * 20)
+    chat_fn = planner.make_chat_fn(LlmConfig(api_key_env="UNIT_TEST_KEY"))
+    assert chat_fn is not None
+    assert chat_fn([{"role": "user", "content": "digest"}]) == \
+        '{"hypotheses": []}'
+    monkeypatch.setattr(planner, "build_llm_client",
+                        lambda cfg, audit=None: (_ for _ in ()).throw(
+                            RuntimeError("discovery failed")))
+    assert planner.make_chat_fn(LlmConfig(api_key_env="UNIT_TEST_KEY")) is None
+
+
+def test_horizon_defers_bets_that_cannot_finish(workflow_lab):
+    """Horizon-aware budgeting (the survey's TDA steal): with a nearly-spent
+    request budget, bets whose horizon exceeds what is left are DEFERRED —
+    the proof pipeline is never asked to complete a chain it cannot finish,
+    and nothing half-executes."""
+    engine, ctx = workflow_lab.engine()
+
+    class DyingLimiter:
+        remaining = 3          # enough for recon, not for any proof chain
+        def acquire(self):
+            pass
+        def allow(self, *a, **k):
+            return True
+
+    ctx.limiter = DyingLimiter()
+    summary = engine.run()
+    assert summary["hypotheses"] == [], summary["hypotheses"]
+    events = [json.loads(l) for l in open(workflow_lab.dir / "audit.log.jsonl")]
+    assert any(e.get("event") == "brain.horizon.deferral" for e in events), \
+        "the deferral must be audited, not silent"
+
+
+def test_killed_bets_reactivate_when_material_arrives(tmp_path):
+    """Reactivation — the survey's branch-reactivation steal: a killed bet
+    whose fate depends on held material comes back ONCE when that material
+    grows (a service account logs in). Not blind retry: only material-shaped
+    growth re-opens bets, each bet at most once."""
+    import types
+    from redteam.audit import AuditLog
+    from redteam.hypothesize import Brain, Hypothesis
+
+    ctx = types.SimpleNamespace(audit=AuditLog(tmp_path / "audit.jsonl"))
+    brain = Brain(ctx, "http://127.0.0.1:1", creds={})
+    # the unit under test is the reactivation loop, not principal discovery:
+    # refresh_principals() recomputes from live sessions every generate() and
+    # would wipe hand-set state, so it is neutralized here
+    brain.refresh_principals = lambda: None
+    hyp = Hypothesis(id="cross-principal-read#1", kind="cross-principal-read",
+                     statement="object ids may not be ownership-checked",
+                     prediction="another principal reads the object",
+                     probes={"resource": "/api/items", "id": "7",
+                             "low": "a", "other": "b"})
+    brain.note_hypothesis_result(hyp, False, "401/401 — no ownership gap here")
+    brain.generate()                       # nothing grew -> no reactivation
+    assert not [h for h in brain.queue
+                if h.source.startswith("reactivated")]
+    brain.state.principals = ["a", "b", "svc"]   # a third principal arrives
+    brain.generate()
+    react = [h for h in brain.queue if h.source.startswith("reactivated")]
+    assert len(react) == 1 and react[0].kind == "cross-principal-read", (
+        [h.id for h in brain.queue])
+    assert react[0].probes == hyp.probes   # same bet, new lease on life
+    brain.generate()                       # and never twice
+    assert len([h for h in brain.queue
+                if h.source.startswith("reactivated")]) == 1
+
+
 def test_brain_generalizes_to_an_untemplated_target(ledger_lab):
     """The generalization contract: a target NO workflow template covers is
     confirmed through signal-driven hypotheses only — shape of the error

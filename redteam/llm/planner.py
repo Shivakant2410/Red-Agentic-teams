@@ -18,7 +18,10 @@ model failure, is logged and the run continues exactly as without a model.
 from __future__ import annotations
 
 import json
+import os
 import re
+
+from .gateway import build_llm_client
 
 PLANNER_SYSTEM = """You are the hypothesis proposer in an authorized red-team engagement. \
 You receive a factual, credential-free digest of what the deterministic attack brain \
@@ -40,6 +43,28 @@ the digest does not imply. If nothing in the digest suggests a test, return \
 """
 
 _JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
+
+
+def make_chat_fn(cfg, audit=None):
+    """Production adapter: the real provider stack, wrapped into the engine's
+    chat_fn contract. Returns None when nothing is configured (no provider
+    set, no API key) — the engine treats None exactly like a failing model
+    and the run stays deterministic. Opt-in at the call site (REDTEAM_LLM=1),
+    never a dependency."""
+    has_provider = bool(getattr(cfg, "providers", None))
+    has_key = bool(os.environ.get(getattr(cfg, "api_key_env", "") or ""))
+    if not (has_provider or has_key):
+        return None
+    try:
+        client = build_llm_client(cfg, audit)
+    except Exception:
+        return None
+
+    def chat_fn(messages: list[dict]) -> str:
+        result = client.chat(messages, tools=None, role="plan")
+        return (getattr(result, "message", None) or {}).get("content") or ""
+
+    return chat_fn
 
 
 def build_digest(brain) -> dict:

@@ -31,7 +31,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable
 
 ROLEISH_COOKIE = re.compile(r"(?i)\b(role|is[_-]?admin|admin|priv|level|grp|group)\b")
@@ -58,6 +58,22 @@ WORKFLOW_LINK = re.compile(
     r"(?i)(?:href|url|action|link)[\"']?\s*[:=]\s*[\"']"
     r"(/[^\"'\s]*(?:cart|coupon|redeem|checkout|payment|order|apply|purchase|"
     r"transfer|withdraw|gift)[^\"'\s]*\?[^\"'\s]+)[\"']")
+
+# horizon: ESTIMATED http requests a bet of this kind spends end-to-end
+# (preobservations plus its proof pipeline). Estimates, not contracts — they
+# exist so the budget check can DEFER bets that cannot finish, the survey's
+# "context exhaustion before chain completion" translated to request budgets.
+HORIZON_EST = {"surface-probe": 6, "cookie-forge": 6, "cross-principal-read": 18,
+               "graphql-schema-map": 4, "graphql-cross-tenant": 14,
+               "internal-pivot": 8, "unauth-access": 12, "bearer-pivot": 14,
+               "workflow-chain": 16}
+
+# reactivation: which killed bets may be re-queued when the MATERIAL they
+# depend on grows (the survey's branch-reactivation mechanism — credential
+# propagation re-opens pruned branches). Dim = what must have grown.
+REACTIVATE_ON = {"cross-principal-read": "principals",
+                 "workflow-chain": "principals",
+                 "bearer-pivot": "tokens"}
 GRAPHQL_SHAPE = re.compile(r"\"errors\"\s*:.*?(query|graphql|Must provide)",
                            re.S)
 STACKISH = re.compile(r"(?i)(Traceback|at [\w.$]+\(|\.py\", line \d+|"
@@ -96,6 +112,7 @@ class Hypothesis:
     rank: float = 0.0
     cost: int = 6
     probes: dict = field(default_factory=dict)   # executor-dispatched payload
+    horizon: int = 6  # ESTIMATED requests end-to-end (see HORIZON_EST)
     kill: str = ""     # when to drop without spending more budget
     source: str = ""   # which signals generated it (audit trail)
 
@@ -134,6 +151,7 @@ class Brain:
         self.state = AttackState()
         self.queue: list[Hypothesis] = []
         self._seen_hyp: set[str] = set()
+        self._reactivatable: list = []   # (killed bet, tokens@kill, principals@kill)
         self._seq = 0
 
     # -- observation: pure first-party parsing --------------------------------
@@ -267,6 +285,7 @@ class Brain:
                 id=hid, kind=kind, statement=statement, prediction=prediction,
                 severity=severity, cwe=cwe, cost=cost,
                 rank=round(_SEV[severity] * strength / max(cost, 1), 4),
+                horizon=HORIZON_EST.get(kind, 6),
                 probes=probes, kill=kill, source=source))
 
         # R0 — walk the doors recon found but the run never opened. Observations
@@ -423,6 +442,23 @@ class Brain:
                         kill="repeat rejected like the control -> one-shot enforced")
 
         out.sort(key=lambda h: -h.rank)
+        # reactivation — a killed bet comes back ONCE when the material it
+        # depends on has GROWN since the kill (a third principal logs in, a
+        # token is harvested). Not blind retry: only material-shaped growth
+        # re-opens bets, and each bet reacts at most once.
+        for rhyp, tok, prin in self._reactivatable:
+            dim = REACTIVATE_ON.get(rhyp.kind)
+            grown = (len(self.state.tokens) > tok if dim == "tokens"
+                     else len(self.state.principals) > prin)
+            if grown and not getattr(rhyp, "reactivated", False):
+                rhyp.reactivated = True
+                self._seq += 1
+                out.append(replace(
+                    rhyp, id=f"reactivated:{rhyp.id}#{self._seq}",
+                    source=f"reactivated:{rhyp.id}"))
+                self._ctx.audit.record("brain.hypothesis.reactivated",
+                                       of=rhyp.id, kind=rhyp.kind)
+                out.sort(key=lambda h: -h.rank)
         self.queue.extend(out)
         self.queue.sort(key=lambda h: -h.rank)
         return out
@@ -470,6 +506,10 @@ class Brain:
         except (TypeError, ValueError):
             return False, "cost must be an integer"
         strength = min(0.9, max(0.0, float(spec.get("strength", 0.5))))
+        try:
+            horizon = int(spec.get("horizon") or HORIZON_EST.get(kind, 6))
+        except (TypeError, ValueError):
+            horizon = HORIZON_EST.get(kind, 6)
         self._seq += 1
         hid = f"llm-{kind}#{self._seq}"
         hyp = Hypothesis(
@@ -477,6 +517,7 @@ class Brain:
             statement=spec["statement"], prediction=spec["prediction"],
             severity=severity, cwe=str(spec.get("cwe", "")), cost=cost,
             rank=round(_SEV[severity] * strength / cost, 4),
+            horizon=horizon,
             probes=probes, kill=str(spec.get("kill", "")),
             source="admitted: " + str(spec.get("source", "llm"))[:120])
         self._seen_hyp.add(hid)
@@ -493,3 +534,10 @@ class Brain:
         self._ctx.audit.record("brain.hypothesis.resolved", id=hyp.id,
                                kind=hyp.kind, confirmed=confirmed,
                                learned=learned[:200])
+        # killed executable bets whose fate depends on MATERIAL (sessions,
+        # harvested tokens) are archived for reactivation: if that material
+        # grows later in the run, generate() re-queues them once.
+        if not confirmed and hyp.kind in REACTIVATE_ON \
+                and len(self._reactivatable) < 12:
+            self._reactivatable.append(
+                (hyp, len(self.state.tokens), len(self.state.principals)))
