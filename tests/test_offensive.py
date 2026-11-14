@@ -589,9 +589,21 @@ def test_engine_never_needs_a_model():
 @pytest.fixture(scope="module")
 def modelhub_lab(tmp_path_factory):
     gt = [GroundTruthVuln("modelhub-ai-unauth", "access_control", "CWE-306",
-                          "/api/generate", "critical")]
+                          "/api/generate", "critical"),
+          GroundTruthVuln("modelhub-admin-exposure", "sensitive_data",
+                          "CWE-200", "/metrics", "high"),
+          GroundTruthVuln("modelhub-prompt-leak", "sensitive_data",
+                          "CWE-200", "/api/generate", "high")]
+    # one process, two services: the lab binds its admin console on port+1
+    # by default (single-arg start) — only the RoE needs widening before the
+    # engine loads the engagement. No restart: a restart race was the flake.
     lab = _Lab(tmp_path_factory.mktemp("modelhub"), "modelhub.py",
                {"MODELHUB_GENERATE_PROFILE": "open"}, {}, gt)
+    import yaml as _yaml
+    doc_path = lab.dir / "engagement.yaml"
+    doc = _yaml.safe_load(doc_path.read_text())
+    doc["scope"]["allowed_ports"] = [lab.port, lab.port + 1, 80, 443]
+    doc_path.write_text(_yaml.safe_dump(doc))
     yield lab
     lab.stop()
 
@@ -609,7 +621,12 @@ def test_engine_proves_exposed_ai_infra_model_free(modelhub_lab):
     assert summary["pending"] == 0
     score = score_run("modelhub", [asdict(f) for f in ctx.findings.all()],
                       modelhub_lab.ground_truth)
-    assert score.true_positives == 1 and score.false_positives == 0
+    # the full chain now: CWE-306 unauth invoke + CWE-200 admin service
+    # exposure + CWE-200 prompt-leak post-exploit
+    assert score.true_positives == 3 and score.false_positives == 0, (
+        score.true_positives, score.false_positives)
+    cwes = {f.cwe for f in confirmed}
+    assert cwes == {"CWE-306", "CWE-200"}
 
 
 def test_sensors_fingerprint_tech_and_ai_surface(tmp_path):
@@ -649,5 +666,50 @@ def test_ai_infra_bet_admission_requires_observed_surface(tmp_path):
     ok, why = brain.admit_hypothesis(spec)
     assert not ok and "observed AI surface" in why, (ok, why)
     brain.state.ai_surface = ["/api/generate"]
+    ok, why = brain.admit_hypothesis(spec)
+    assert ok, why
+
+
+# ---- multi-service: port scan -> service discovery -> exposure proof -------
+
+def test_brain_tags_service_origin_and_banner_doors(tmp_path):
+    """A fetch of a second origin is tagged in service_of_path; a banner
+    advertising endpoints feeds api_paths (the same evidence class as an
+    api index)."""
+    import types
+    from redteam.audit import AuditLog
+    from redteam.hypothesize import Brain
+
+    brain = Brain(types.SimpleNamespace(audit=AuditLog(tmp_path / "a.jsonl")),
+                  "http://127.0.0.1:8897", creds={})
+    brain.observe("http://127.0.0.1:8898/", 200,
+                  "MODELHUB ADMIN SERVICE\nEndpoints: /admin/queue /metrics\n")
+    assert brain.state.service_of_path.get("/") == "http://127.0.0.1:8898"
+    assert "/admin/queue" in brain.state.api_paths
+    assert "/metrics" in brain.state.api_paths
+    # the primary base is never tagged as a foreign service
+    brain.observe("http://127.0.0.1:8897/api", 200, "{}")
+    assert "/" in brain.state.service_of_path
+    assert brain.state.service_of_path["/"] != "http://127.0.0.1:8897" or \
+        brain.state.service_of_path.get("/api") is None
+
+
+def test_ai_prompt_leak_admission_needs_confirmed_postcondition(tmp_path):
+    """R9 chains ONLY from the postcondition ledger: no confirmed CWE-306 ->
+    refused even with the path evidenced; ledger set + evidenced path ->
+    admitted."""
+    import types
+    from redteam.audit import AuditLog
+    from redteam.hypothesize import Brain
+
+    brain = Brain(types.SimpleNamespace(audit=AuditLog(tmp_path / "a.jsonl")),
+                  "http://127.0.0.1:1", creds={})
+    brain.state.ai_surface = ["/api/generate"]
+    spec = {"kind": "ai-prompt-leak", "statement": "owned gateway may leak config",
+            "prediction": "extraction prompt returns system prompt",
+            "probes": {"path": "/api/generate"}, "cost": 6}
+    ok, why = brain.admit_hypothesis(spec)
+    assert not ok and "postcondition" in why, (ok, why)
+    brain.state.confirmed_kinds = ["CWE-306"]
     ok, why = brain.admit_hypothesis(spec)
     assert ok, why

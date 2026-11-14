@@ -79,6 +79,17 @@ _AI_INVOKE_PATH = re.compile(
 _AI_LIST_BODY = re.compile(
     r'"(models|data)"\s*:\s*\[|ai-plugin|"object"\s*:\s*"list"')
 _AI_MODEL_ID = re.compile(r'"(?:model|id|name)"\s*:\s*"([^"\s]{2,60})"')
+# service banners advertise their own endpoints ("Endpoints: /admin/queue
+# /metrics") — a second service handing over its doors
+_BANNER_PATHS = re.compile(r"(?im)^endpoints?\s*:\s*(.+)$")
+# post-exploit prompt injection: extraction attempts against a model the run
+# can already invoke unauthenticated; the OUTPUT side of the same regex also
+# detects config-shaped model responses (identity statements, config keys)
+_PROMPT_LEAK = re.compile(r"(?i)(system prompt|initial instructions|"
+                          r"repeat (your|the) (instructions|prompt|config)|"
+                          r"print (your|the) (config|environment)|"
+                          r"you are \"?[A-Z]|configuration\s*[:=]|"
+                          r"admin[_-]?token\s*[=:])")
 
 # the app's own action links: href/url/action pointing at a workflow surface
 # WITH parameters (a redeem/apply/coupon link with a code in it)
@@ -94,7 +105,7 @@ WORKFLOW_LINK = re.compile(
 HORIZON_EST = {"surface-probe": 6, "cookie-forge": 6, "cross-principal-read": 18,
                "graphql-schema-map": 4, "graphql-cross-tenant": 14,
                "internal-pivot": 8, "unauth-access": 12, "bearer-pivot": 14,
-               "workflow-chain": 16, "ai-infra-abuse": 8}
+               "workflow-chain": 16, "ai-infra-abuse": 8, "ai-prompt-leak": 6}
 
 # reactivation: which killed bets may be re-queued when the MATERIAL they
 # depend on grows (the survey's branch-reactivation mechanism — credential
@@ -164,6 +175,8 @@ class AttackState:
     technologies: dict = field(default_factory=dict)    # tech name -> evidence
     ai_surface: list = field(default_factory=list)      # observed AI paths (200)
     ai_models: list = field(default_factory=list)       # model ids the AI named
+    service_of_path: dict = field(default_factory=dict)  # path -> origin serving it
+    confirmed_kinds: list = field(default_factory=list)  # postcondition ledger
     observed_urls: set = field(default_factory=set)     # urls the run has read
     unexplored: list = field(default_factory=list)      # believed, never opened
     signals: list = field(default_factory=list)
@@ -196,7 +209,14 @@ class Brain:
         # canonical key: the same resource with different query strings is ONE
         # observation target (a killed probe must not mint a duplicate bet);
         # stored as a PATH so executors can join with base exactly once
-        url = _url_path(url.split("?")[0])
+        full = (url or "").split("?")[0]
+        url = _url_path(full)
+        # multi-service map: port scanning (or any fetch) may reach a SECOND
+        # origin on the same host; record which origin serves each path so
+        # executors join the right service instead of assuming the base
+        m_origin = re.match(r"^(https?://[^/]+)", full)
+        if m_origin and m_origin.group(1) != self._base:
+            self.state.service_of_path.setdefault(url, m_origin.group(1))
         self.state.observed_urls.add(url)
 
         for name in set(ROLEISH_COOKIE.findall(text) or []):
@@ -285,6 +305,18 @@ class Brain:
                     self.state.api_paths.extend(fresh)
                     sigs.append(Signal("api-index", ",".join(fresh[:4]), url,
                                        0.75, "index enumerates API surface"))
+        # service banners advertise their own doors ("Endpoints: /admin/queue
+        # /metrics") — same evidence class as an api index: the app said so
+        if status == 200:
+            for m_banner in _BANNER_PATHS.finditer(text):
+                doors = re.findall(r"(/[\w\-/]{1,40}(?:/[\w\-/]{1,40})?)",
+                                   m_banner.group(1))
+                fresh = [p for p in dict.fromkeys(doors)
+                         if p not in self.state.api_paths]
+                if fresh:
+                    self.state.api_paths.extend(fresh)
+                    sigs.append(Signal("api-index", ",".join(fresh[:4]), url,
+                                       0.7, "service banner lists endpoints"))
         if STACKISH.search(text):
             sigs.append(Signal("stack-detail", "", url, 0.7, "stack/verbose error"))
 
@@ -516,6 +548,31 @@ class Brain:
                 "medium", "CWE-200", 4, 0.7, f"ai-infra@{listing}",
                 kill="401/403 on list -> not exposed")
 
+        # R9 — POST-EXPLOITATION, postcondition-driven: a CONFIRMED unauth
+        # invocation is not a finding to file, it is an ASSET to mine. The
+        # classic next move against an owned model gateway is prompt-injection
+        # extraction: the model's system prompt / config is now readable, and
+        # it mints only from the postcondition ledger (state.confirmed_kinds).
+        if "CWE-306" in st.confirmed_kinds:
+            leak_target = invoke or next(
+                (p for p in ai_paths if _AI_INVOKE_PATH.search(p)), "")
+            if not leak_target:
+                leak_target = next((p for p in st.api_paths
+                                    if _AI_INVOKE_PATH.search(p)), "")
+            if leak_target:
+                add("ai-prompt-leak",
+                    f"{leak_target} invokes unauthenticated (CONFIRMED) — "
+                    f"post-exploit: extraction prompts may read the model's "
+                    f"system prompt/configuration out of it",
+                    "extraction prompt returns config-shaped text (identity, "
+                    "instructions, environment)",
+                    {"path": leak_target,
+                     "model": (st.ai_models[0] if st.ai_models else "")},
+                    "high", "CWE-200", 6, 0.85,
+                    f"postexploit:CWE-306@{leak_target}",
+                    kill="model answers but no config-shaped content -> "
+                         "hardened extraction")
+
         # R6 — harvest -> re-aim: a credential-shaped string the run obtained
         # from ANY of its own responses, pointed at every realm the signals
         # revealed. The operator's core move: a token's ISSUING surface is not
@@ -605,7 +662,7 @@ class Brain:
     EXECUTABLE_KINDS = {"surface-probe", "cookie-forge", "cross-principal-read",
                         "graphql-cross-tenant", "internal-pivot",
                         "unauth-access", "bearer-pivot", "workflow-chain",
-                        "ai-infra-abuse"}
+                        "ai-infra-abuse", "ai-prompt-leak"}
 
     def admit_hypothesis(self, spec: dict) -> tuple[bool, str]:
         """A model (or any external planner) proposes a bet. It enters THE SAME
@@ -660,6 +717,18 @@ class Brain:
             if path not in observed and not (observed and path in documented):
                 return False, ("ai-infra-abuse needs an observed AI surface "
                                f"(observed: {self.state.ai_surface[:5]})")
+        # post-exploit bets are postcondition-gated twice over: the exploit
+        # they chain from must be CONFIRMED (the ledger), and the target must
+        # be real evidence (same rule as ai-infra-abuse).
+        if kind == "ai-prompt-leak":
+            if "CWE-306" not in self.state.confirmed_kinds:
+                return False, ("ai-prompt-leak chains from a CONFIRMED "
+                               "unauth-invocation — postcondition not held")
+            path = _url_path(str(probes.get("path", "")).split("?")[0])
+            known = ({_url_path(a) for a in self.state.ai_surface}
+                     | {_url_path(a) for a in self.state.api_paths})
+            if path not in known:
+                return False, "ai-prompt-leak needs an evidenced invoke path"
         try:
             horizon = int(spec.get("horizon") or HORIZON_EST.get(kind, 6))
         except (TypeError, ValueError):

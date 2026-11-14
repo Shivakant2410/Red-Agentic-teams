@@ -220,25 +220,37 @@ LAB_FORUM = BenchTarget(
 # internal discovery -> token disclosure -> token-bearing SSRF read of an in-memory FLAG).
 
 LAB_MODELHUB = BenchTarget(
-    name="LLM Lab: Modelhub (unauthenticated AI generation)",
+    name="LLM Lab: Modelhub (exposed AI gateway + forgotten admin service)",
     container_port=8897, host_port=8897,
     base_url="http://127.0.0.1:8897",
-    cmd=[sys.executable, str(_LAB_DIR / "modelhub.py"), "8897"],
+    extra_ports=[8898],
+    cmd=[sys.executable, str(_LAB_DIR / "modelhub.py"), "8897", "8898"],
     env={"MODELHUB_GENERATE_PROFILE": "open"},
     ground_truth=[
         GroundTruthVuln("modelhub-ai-unauth", "access_control", "CWE-306",
                         "/api/generate", "critical"),
+        GroundTruthVuln("modelhub-admin-exposure", "sensitive_data", "CWE-200",
+                        "/metrics", "high"),
+        GroundTruthVuln("modelhub-prompt-leak", "sensitive_data", "CWE-200",
+                        "/api/generate", "high"),
     ],
     objective={
         "name": "Modelhub exposed AI gateway",
         "description": "A private model gateway whose generation endpoint "
-                       "skips authentication. Prove the model invokes for "
-                       "an unauthenticated caller.",
+                       "skips authentication, an ops service on a second "
+                       "port leaking its admin token, and a model that "
+                       "parrots its system prompt. Chain them.",
         "success_criteria": [
             {"id": "ai_invoke", "kind": "host_access", "target": "/api/generate",
              "description": "An unauthenticated POST to /api/generate "
                             "returns model output that processed the "
                             "probe prompt"},
+            {"id": "admin_service", "kind": "data_access", "target": "/metrics",
+             "description": "The admin service on the second port answers "
+                            "with credential-shaped material unauthenticated"},
+            {"id": "prompt_leak", "kind": "data_access", "target": "/api/generate",
+             "description": "Prompt injection makes the model disclose its "
+                            "system prompt/config"},
         ],
     },
 )

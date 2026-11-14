@@ -26,6 +26,7 @@ ground truth is the unauthenticated invocation.
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import re
 import sys
 from urllib.parse import urlsplit
 
@@ -102,6 +103,12 @@ class Handler(BaseHTTPRequestHandler):
             # FLAW (CWE-306): no auth check at all — and the response echoes
             # the prompt, which is the content proof that OUR input was
             # processed into model output
+            # FLAW 2 (CWE-200, post-exploit): the toy model parrots its
+            # system prompt (which embeds the admin token) when asked — the
+            # classic prompt-injection extraction on an owned gateway
+            if re.search(r"system prompt|configuration", prompt, re.I):
+                return self._json(200, {"response": SYSTEM_PROMPT,
+                                        "model": MODEL})
             return self._json(200, {"response": f"{prompt} -- {MODEL} output",
                                     "model": MODEL})
         return self._json(405, {"error": "method not allowed"})
@@ -110,6 +117,63 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
+ADMIN_TOKEN = "mh_admin_tok_9f3c1b7e42"
+SYSTEM_PROMPT = ("You are ModelHub gateway, a PRIVATE internal model proxy. "
+                 "Configuration: admin_token=" + ADMIN_TOKEN +
+                 ", realm=modelhub-admin, upstream=10.20.0.51:11434.")
+
+
+class AdminHandler(BaseHTTPRequestHandler):
+    """The SECOND service: an ops/admin console bound to a second port —
+    exactly the forgotten service port scanning exists to find. Its root
+    banner advertises its own endpoints (fetcher-style), /metrics leaks the
+    admin token, /admin/queue dumps the internal job queue — all with NO
+    authentication (FLAW: CWE-200, the port-scan proof)."""
+
+    def _send(self, status: int, body: bytes, ctype: str):
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        path = urlsplit(self.path).path
+        if path == "/":
+            body = (b"MODELHUB ADMIN SERVICE\n"
+                    b"Endpoints: /admin/queue /metrics\n"
+                    b"Access: internal staff only (unimplemented)\n")
+            return self._send(200, body, "text/plain; charset=utf-8")
+        if path == "/metrics":
+            return self._send(200, (
+                "modelhub_requests_total=8412\n"
+                "modelhub_admin_token=" + ADMIN_TOKEN + "\n"
+                "modelhub_upstream=10.20.0.51:11434\n").encode(),
+                              "text/plain; charset=utf-8")
+        if path == "/admin/queue":
+            return self._send(200, json.dumps({
+                "queue": [{"job": "reindex-vectors", "state": "running"},
+                          {"job": "purge-tenant-demo", "state": "queued"}],
+                "admin_token": ADMIN_TOKEN,
+                "note": "admin console -- auth not implemented"}).encode(),
+                              "application/json")
+        body = b'{"error": "not found"}'
+        self.send_response(404)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        return
+
+
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8897
+    admin_port = int(sys.argv[2]) if len(sys.argv) > 2 else port + 1
+    import threading
+    threading.Thread(
+        target=ThreadingHTTPServer(("127.0.0.1", admin_port),
+                                   AdminHandler).serve_forever,
+        daemon=True).start()
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
