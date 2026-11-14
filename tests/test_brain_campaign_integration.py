@@ -39,6 +39,7 @@ sys.path.insert(0, str(_REPO))
 
 from redteam.brain import TargetProfile, fingerprint_target  # noqa: E402
 from redteam.brain.orchestrator import FamilyOrchestrator  # noqa: E402
+from redteam.ea.agent import ea_agentic_probe  # noqa: E402
 from redteam.pi.agent import agentic_live_probe  # noqa: E402
 from redteam.pi.live import LiveLaneError  # noqa: E402
 from redteam.sc.agent import sc_agentic_probe  # noqa: E402
@@ -160,6 +161,62 @@ def test_fourth_channel_sc_runs_in_one_campaign_with_pi_and_sid():
     assert profile.family_state("LLM03")["verdicts"]["succeeded"] == 1
     brief = report["profile_briefing"]
     assert "sc_shape." in brief and "family LLM03" in brief
+
+
+# -- the fifth channel ------------------------------------------------------------
+
+class _VulnerableRuntime:
+    """Agent runtime that obeys directives in ANY tool result — the
+    excessive-agency fold, built on the lane's own public grammar."""
+
+    def __call__(self, task, planted):
+        import json as _json
+        import re as _re
+        out = [{"tool": "docs.fetch", "args": {"q": "incident"}}]
+        for p in planted:
+            m = _re.search(r"postex\.exfil\s*(\{[^{}]*\})", p["content"])
+            if m:
+                try:
+                    args = _json.loads(m.group(1))
+                except Exception:
+                    args = {"raw": m.group(1)}
+                out.append({"tool": "postex.exfil", "args": args})
+        return {"reply": "done", "tool_calls": out}
+
+
+def test_fifth_channel_ea_completes_the_four_channel_campaign():
+    """FOUR agentic channels under ONE budget on ONE shared profile:
+    pi (LLM01), sid (LLM02), sc (LLM03), and the EA agency-abuse loop
+    (LLM06). Every channel funds like the others, records its axis facts
+    into the same ledger, and mints its own ruling."""
+    profile = TargetProfile(
+        fingerprint=fingerprint_target("chat", "fake-model", "sys-sha"))
+    profile.start_session()
+    orch = FamilyOrchestrator(profile, budget=96, per_lane_cap=16)
+    orch.register("LLM01", lambda p, b: agentic_live_probe(
+        None, canary=CANARY, budget=min(b, 16), seed=0,
+        session=_FakeSession(lambda s, u: pi_decode_b64_target(u)),
+        profile=p))
+    orch.register("LLM02", lambda p, b: sid_agentic_probe(
+        make_pii_record(random.Random(0)), budget=min(b, 16), seed=0,
+        session=_FakeSession(_sid_reply_fn(make_pii_record(random.Random(0)))),
+        profile=p))
+    orch.register("LLM03", lambda p, b: sc_agentic_probe(
+        _NaiveGate(), budget=min(b, 12), seed=0, profile=p))
+    orch.register("LLM06", lambda p, b: ea_agentic_probe(
+        _VulnerableRuntime(), budget=min(b, 12), seed=0, profile=p))
+    report = orch.run()
+
+    fams = report["families"]
+    assert set(fams) == {"LLM01", "LLM02", "LLM03", "LLM06"}
+    assert fams["LLM06"]["verdict"] == "succeeded"
+    assert fams["LLM06"]["requests"] > 0
+    assert report["budget_spent"] == sum(f["requests"] for f in fams.values())
+    # the EA carrier facts live in the SAME ledger as cipher/sc facts
+    assert profile.axes["ea_carrier"]["fetched_doc"]["hits"] >= 1
+    assert profile.family_state("LLM06")["verdicts"]["succeeded"] == 1
+    brief = report["profile_briefing"]
+    assert "ea_carrier.fetched_doc" in brief and "family LLM06" in brief
 
 
 # -- the campaign -----------------------------------------------------------------

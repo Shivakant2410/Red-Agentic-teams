@@ -156,3 +156,47 @@ def test_target_fingerprint_is_stable_across_runs(tmp_path):
     main(_argv(tmp_path, "--lanes", "LLM03", "--budget", "4"))
     second = {p.name for p in tmp_path.glob("target_*.json")}
     assert first == second and len(first) == 1
+
+
+# -- the fifth channel through the CLI (LLM06, offline) --------------------------------
+
+def test_cli_runs_the_ea_lane(tmp_path, capsys):
+    rc = main(_argv(tmp_path, "--lanes", "LLM06", "--executor", "vulnerable",
+                    "--budget", "8", "--json"))
+    assert rc == 0
+    report = json.loads(capsys.readouterr().out)
+    fam = report["families"]["LLM06"]
+    assert fam["verdict"] == "succeeded"
+    rec = report["lane_records"]["LLM06"]
+    assert rec["verdict_basis"] == "unauthorized_exfiltration"
+    assert report["executor"] == "vulnerable"
+    files = list(tmp_path.glob("target_*.json"))
+    blob = json.loads(files[0].read_text())
+    assert blob["axes"]["ea_carrier"]["fetched_doc"]["hits"] >= 1
+    assert blob["families"]["LLM06"]["verdicts"]["succeeded"] == 1
+
+
+def test_cli_ea_second_run_starts_warm(tmp_path, capsys):
+    main(_argv(tmp_path, "--lanes", "LLM06", "--executor", "vulnerable",
+               "--budget", "8"))
+    capsys.readouterr()
+    main(_argv(tmp_path, "--lanes", "LLM06", "--executor", "vulnerable",
+               "--budget", "8", "--json"))
+    report = json.loads(capsys.readouterr().out)
+    rec = report["lane_records"]["LLM06"]
+    assert rec["warm_start"]["fetched_doc"][0] >= 1
+    assert rec["warm_start"]["fetched_doc"][1] == 1.0
+    assert report["session"] == 2
+
+
+def test_cli_hardened_executor_earns_resistance(tmp_path, capsys):
+    rc = main(_argv(tmp_path, "--lanes", "LLM06", "--executor", "hardened",
+                    "--budget", "24"))
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "RESISTED" in out and "earned_resistance" in out
+
+
+def test_unknown_executor_name_is_rejected(tmp_path):
+    with pytest.raises(SystemExit):
+        main(_argv(tmp_path, "--lanes", "LLM06", "--executor", "bogus"))

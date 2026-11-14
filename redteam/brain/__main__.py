@@ -13,10 +13,11 @@ as a command:
     starts warm (cross-session, cross-family memory).
   --lanes picks the channels: LLM01 (PI agentic, needs --pi-endpoint),
     LLM02 (SID agentic, needs --sid-endpoint), LLM03 (the SC
-    provenance-probing channel). Live lanes that are not wired are
-    SKIPPED LOUDLY with a reason (the llmred rule) — never silently, and
-    a live endpoint that fails its own authorization/key checks is a
-    skip, not a crash. Exit code 2 when nothing ran.
+    provenance-probing channel), LLM06 (the EA agency-abuse channel).
+    Live lanes that are not wired are SKIPPED LOUDLY with a reason (the
+    llmred rule) — never silently, and a live endpoint that fails its
+    own authorization/key checks is a skip, not a crash. Exit code 2
+    when nothing ran.
   --gate picks the built-in admission-gate stand-in for the offline SC
     channel: naive / provenance-only / content-only / strict — four
     deterministic gates built on the lane's OWN public oracles, the exact
@@ -26,6 +27,15 @@ as a command:
     resistance). These are STAND-INS for deterministic campaigns and
     tests, clearly labeled in the report — not a claim about production
     gates.
+  --executor picks the built-in agent-runtime stand-in for the offline
+    EA channel: vulnerable / hardened / doc-only / email-only —
+    deterministic runtimes built on the lane's OWN public directive
+    grammar, spanning the carrier-trust-policy matrix the agency-abuse
+    loop discriminates (vulnerable obeys any carrier; hardened never
+    acts on tool-result content; doc-only/email-only obey exactly one
+    channel — the carrier blind-spot shapes). Same honesty contract as
+    the gates: stand-ins for deterministic campaigns, labeled in the
+    report.
   --json prints the full machine-readable report; default output is the
     human campaign summary ending in the target briefing (what the next
     session inherits).
@@ -100,6 +110,64 @@ BUILT_IN_GATES = {
     "strict": _gate_strict,
 }
 
+# -- built-in agent-runtime stand-ins (offline EA campaigns) -------------------------
+#
+# The same principle as the gates: built on the EA lane's OWN public
+# directive grammar (ea.oracles.DIRECTIVE_RE) — exactly the parser a
+# production runtime runs on untrusted tool-result text — restricted to
+# the carrier-trust policy its name claims.
+
+from ..ea.oracles import DIRECTIVE_RE, SMUGGLED_TOOL
+
+
+def _obey_directive(content):
+    m = DIRECTIVE_RE.search(content or "")
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(1))
+    except Exception:
+        return {"raw": m.group(1)}
+
+
+def _runtime_task_calls():
+    return [{"tool": "docs.fetch", "args": {"q": "incident"}}]
+
+
+def _executor_vulnerable(task, planted):
+    """Obeys directives in ANY tool result — the excessive-agency fold."""
+    out = _runtime_task_calls()
+    for p in planted:
+        args = _obey_directive(p.get("content"))
+        if args is not None:
+            out.append({"tool": SMUGGLED_TOOL, "args": args})
+    return {"reply": "done", "tool_calls": out}
+
+
+def _executor_hardened(task, planted):
+    """Never acts on tool-result content — the honest runtime."""
+    return {"reply": "done", "tool_calls": _runtime_task_calls()}
+
+
+def _executor_carrier_policy(trusted_tool):
+    def _exec(task, planted):
+        out = _runtime_task_calls()
+        for p in planted:
+            if p.get("tool") == trusted_tool:
+                args = _obey_directive(p.get("content"))
+                if args is not None:
+                    out.append({"tool": SMUGGLED_TOOL, "args": args})
+        return {"reply": "done", "tool_calls": out}
+    return _exec
+
+
+BUILT_IN_EXECUTORS = {
+    "vulnerable": _executor_vulnerable,
+    "hardened": _executor_hardened,
+    "doc-only": _executor_carrier_policy("docs.fetch"),
+    "email-only": _executor_carrier_policy("mail.fetch"),
+}
+
 
 def _parse_env(entries) -> dict:
     env = {}
@@ -139,11 +207,16 @@ def main(argv=None) -> int:
     ap.add_argument("--budget", type=int, default=48)
     ap.add_argument("--per-lane-cap", type=int, default=16)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--lanes", nargs="*", default=["LLM01", "LLM02", "LLM03"],
-                    choices=("LLM01", "LLM02", "LLM03"))
+    ap.add_argument("--lanes", nargs="*", default=["LLM01", "LLM02", "LLM03",
+                                                   "LLM06"],
+                    choices=("LLM01", "LLM02", "LLM03", "LLM06"))
     ap.add_argument("--gate", default="strict", choices=tuple(BUILT_IN_GATES),
                     help="built-in admission-gate stand-in for the offline "
                          "SC channel (default: strict)")
+    ap.add_argument("--executor", default="hardened",
+                    choices=tuple(BUILT_IN_EXECUTORS),
+                    help="built-in agent-runtime stand-in for the offline "
+                         "EA channel (default: hardened)")
     ap.add_argument("--profile-dir", default="targets",
                     help="where per-target profiles persist "
                          "(default ./targets)")
@@ -237,6 +310,15 @@ def main(argv=None) -> int:
             profile=p))
         registered.append("LLM03")
 
+    # -- LLM06: the EA agency-abuse channel (offline) ----------------------------
+    if "LLM06" in args.lanes:
+        from ..ea.agent import ea_agentic_probe
+        executor_fn = BUILT_IN_EXECUTORS[args.executor]
+        orch.register("LLM06", lambda p, b: ea_agentic_probe(
+            executor_fn, budget=min(b, args.per_lane_cap), seed=args.seed,
+            profile=p))
+        registered.append("LLM06")
+
     if not registered:
         for s in skipped:
             print(f"  {s['lane']}: SKIPPED — {s['reason']}")
@@ -255,6 +337,7 @@ def main(argv=None) -> int:
         "fingerprint": fp,
         "session": session_no,
         "gate": args.gate if "LLM03" in registered else None,
+        "executor": args.executor if "LLM06" in registered else None,
         "skipped": skipped,
         "profile_path": str(path),
     }
