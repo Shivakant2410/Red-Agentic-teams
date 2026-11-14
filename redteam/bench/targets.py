@@ -278,6 +278,37 @@ LAB_TRACKR = BenchTarget(
     },
 )
 
+LAB_LEDGER = BenchTarget(
+    name="L4 Adaptive: Ledger (GraphQL introspection -> cross-tenant read)",
+    container_port=8891, host_port=8891,
+    base_url="http://127.0.0.1:8891",
+    cmd=[sys.executable, str(_LAB_DIR / "ledger.py"), "8891"],
+    env={"LEDGER_AUTHZ_PROFILE": "open",
+         "LEDGER_INTROSPECTION_PROFILE": "open"},
+    credentials={"alice": {"password": "pw-alice", "login_url": "/login",
+                           "token_field": "token"},
+                 "bob": {"password": "pw-bob", "login_url": "/login",
+                         "token_field": "token"}},
+    ground_truth=[
+        GroundTruthVuln("ledger-graphql-introspection", "sensitive_data",
+                        "CWE-200", "/graphql", "medium"),
+        GroundTruthVuln("ledger-graphql-cross-tenant", "idor", "CWE-639",
+                        "/graphql", "critical"),
+    ],
+    objective={
+        "name": "Ledger: introspection-mapped cross-tenant ledger read",
+        "description": "A GraphQL endpoint with no docs and no robots hint. "
+                       "The shape of its error response is the only signal. "
+                       "Map the schema, find the id-arg query, and prove a "
+                       "cross-tenant read as a low-privilege principal.",
+        "success_criteria": [
+            {"id": "cross_tenant_ledger", "kind": "data_access", "target": "ledger",
+             "description": "alice reads bob's transactions through "
+                            "transactions(userId:) with no ownership check"},
+        ],
+    },
+)
+
 LAB_FETCHER = BenchTarget(
     name="L3 Hard: Fetcher (SSRF chain -> internal secret)",
     container_port=8893, host_port=8893,

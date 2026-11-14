@@ -43,8 +43,15 @@ from pathlib import Path
 from typing import Callable
 
 from .config import Engagement, load_engagement
+from .hypothesize import Brain, Hypothesis, ID_SHAPE
 from .tools import Tool, ToolContext, build_registry
 from .tools.http import fetch_once
+
+_INTROSPECTION_Q = ("{ __schema { queryType { fields { name "
+                    "args { name type { name kind ofType { name kind } } } "
+                    "type { name kind ofType { name kind } } } } "
+                    "mutationType { fields { name args { name "
+                    "type { name kind ofType { name kind } } } } } } }")
 
 
 # ----------------------------------------------------------------------------
@@ -97,6 +104,7 @@ class OffensiveEngine:
         self._log = log
         self._leads: list[Lead] = []
         self._base: str = ""
+        self._brain: Brain | None = None
         self.rounds: list[dict] = []
 
     # -- plumbing -------------------------------------------------------------
@@ -118,7 +126,15 @@ class OffensiveEngine:
         return out
 
     def _fetch(self, req: dict, tool: str = "offensive") -> tuple[int, str]:
-        status, body, _elapsed, _hdrs = fetch_once(self._ctx, req, tool=tool)
+        status, body, _elapsed, headers = fetch_once(self._ctx, req, tool=tool)
+        # EVERY response the run obtains is an observation for the Brain — the
+        # adaptive loop rides on material we already hold (first-party only).
+        if self._brain is not None:
+            try:
+                self._brain.observe(req.get("url", ""), status, body,
+                                    headers, req.get("method", "GET"))
+            except Exception:  # the brain must never break the run
+                pass
         return status, body
 
     def _preobserve(self, req: dict) -> tuple[int, str]:
@@ -158,29 +174,34 @@ class OffensiveEngine:
             raise RuntimeError("no base URL: the caller pins the target explicitly "
                                "(engine._base_override / --base-url)")
         self._base = base.rstrip("/")
+        self._brain = Brain(self._ctx, self._base, creds=self._creds,
+                            log=self._log)
         self._audit("offensive.run.start", base=self._base, creds=sorted(self._creds))
 
         summary: dict = {"base": self._base, "rounds": [], "leads": 0,
                          "crosschecked": 0, "findings": 0, "pending": 0,
-                         "confirmed": 0}
+                         "confirmed": 0, "hypotheses": []}
         for rnd in range(1, self._max_rounds + 1):
             rlog: dict = {"round": rnd}
             if rnd == 1:
                 rlog["recon"] = self._round_recon()
                 rlog["workflows"] = self._round_exploit()
+                # The Brain: signal-driven bets over the template workflows —
+                # this is what finds bugs the templates were never written for.
+                rlog["hypotheses"] = self._brain_rounds()
             else:
-                # Later rounds: workflows already fired; the round is the
-                # pipeline's verdict over whatever is still pending.
-                rlog["verify"] = self._verify_pass()
-            if "verify" not in rlog:
-                rlog["verify"] = self._verify_pass()
+                # Later rounds: workflows fired once; the round is chaining
+                # (results mint new bets) plus the pipeline's verdict.
+                rlog["hypotheses"] = self._brain_rounds()
+            rlog["verify"] = self._verify_pass()
             summary["rounds"].append(rlog)
+            summary["hypotheses"].extend(rlog.get("hypotheses", []))
             obj = self._eng.objective
             if obj is not None and getattr(obj, "achieved", False):
                 rlog["objective"] = "achieved"
                 break
-            if not self._ctx.findings.pending():
-                rlog["halt"] = "nothing pending — pipeline has ruled"
+            if not self._ctx.findings.pending() and not self._brain.queue:
+                rlog["halt"] = "nothing pending, no bets left — pipeline has ruled"
                 break
         fstore = self._ctx.findings
         summary["leads"] = len(self._leads)
@@ -257,7 +278,8 @@ class OffensiveEngine:
         for path in ("/robots.txt", "/openapi.json", "/swagger.json", "/sitemap.xml",
                      "/docs", "/api", "/api/", "/admin", "/admin/", "/login",
                      "/debug/", "/backup/", "/actuator", "/server-status",
-                     "/.env", "/.git/HEAD", "/.env.bak", "/config.json"):
+                     "/.env", "/.git/HEAD", "/.env.bak", "/config.json",
+                     "/graphql", "/api/graphql", "/graphiql"):
             st, body = self._fetch({"method": "GET", "url": self._base + path},
                                    tool="http_probe")
             if st == 200 and (body or "").strip():
@@ -481,22 +503,29 @@ class OffensiveEngine:
         if not self._creds:
             return False
         login = self._login_lead()
+        ok_any = False
         for label, pack in sorted(self._creds.items()):
             if pack.get("token"):
                 self._run_tool("set_session", label=label,
                                headers={"Authorization": f"Bearer {pack['token']}"},
                                note="RoE-seeded principal")
+                ok_any = True
                 continue
-            if login is None or not pack.get("password"):
+            # the door: a discovered login endpoint, or the RoE creds block's
+            # own login_url (the operator hands you the accounts AND the door)
+            login_url = (login.url if login is not None
+                         else pack.get("login_url") or "")
+            if not login_url or not pack.get("password"):
                 continue
-            url = self._base + login.url if login.url.startswith("/") else login.url
+            url = self._base + login_url if login_url.startswith("/") else login_url
             body = json.dumps({"user": label, "password": pack["password"]})
             res = self._run_tool("authenticate", label=label, url=url,
-                                 method=login.method or "POST", body=body,
+                                 method=(login.method if login else "POST"),
+                                 body=body,
                                  token_json_path=pack.get("token_field", "token"))
             self._audit("offensive.principal", label=label, ok=res.get("ok"))
-        return any(self._ctx.sessions and self._ctx.sessions.get(label)
-                   for label in self._creds)
+            ok_any = ok_any or bool(res.get("ok"))
+        return ok_any and bool(self._ctx.sessions)
 
     # ---- workflow: two-principal access differential (a01) -------------------
 
@@ -834,6 +863,305 @@ class OffensiveEngine:
                 if res_v.get("recorded"):
                     hit = True
         return hit
+
+    # -- Brain rounds: signal-driven bets over the executor's hands -----------
+
+    def _brain_rounds(self, budget: int = 10) -> list[str]:
+        brain = self._brain
+        assert brain is not None
+        # seed the state hypotheses consume: principals + url-bearing endpoints
+        brain.refresh_principals()
+        brain.state.url_bearers = [
+            l.url for l in self._leads
+            if l.believed() and l.method == "POST"
+            and re.search(r"import|fetch|url|upload|proxy", (l.url or "").lower())]
+        ran: list[str] = []
+        brain.generate()
+        while brain.queue and len(ran) < budget:
+            hyp = brain.queue.pop(0)
+            try:
+                confirmed, learned = self._execute_hypothesis(hyp)
+            except Exception as exc:  # a bad bet must never kill the run
+                confirmed, learned = False, f"executor error: {exc}"
+            brain.note_hypothesis_result(hyp, confirmed, learned)
+            ran.append(f"{hyp.id}{'*' if confirmed else ''}")
+            self._audit("brain.hypothesis.executed", id=hyp.id, kind=hyp.kind,
+                        confirmed=confirmed, learned=learned[:160])
+            brain.generate()  # chaining: each result may mint the next bet
+        return ran
+
+    def _execute_hypothesis(self, hyp: Hypothesis) -> tuple[bool, str]:
+        dispatch = {
+            "graphql-schema-map": self._exec_graphql_map,
+            "graphql-cross-tenant": self._exec_graphql_cross_tenant,
+            "cookie-forge": self._exec_cookie_forge,
+            "cross-principal-read": self._exec_cross_principal_read,
+            "unauth-access": self._exec_unauth_access,
+            "internal-pivot": lambda h: (
+                self._workflow_ssrf(), "delegated to ssrf-callback-map"),
+        }
+        fn = dispatch.get(hyp.kind)
+        if fn is None:
+            return False, f"no executor for kind {hyp.kind}"
+        return fn(hyp)
+
+    # -- executor: graphql schema map (the chaining example) -------------------
+
+    def _exec_graphql_map(self, hyp: Hypothesis) -> tuple[bool, str]:
+        ep = hyp.probes.get("endpoint", "/graphql")
+        url = self._base + ep if ep.startswith("/") else ep
+        # 0) the deterministic checklist (lead only, 4 benign requests)
+        check = self._run_tool("graphql_inspect", url=url,
+                               reason="shape signal -> schema mapping")
+        intros_open = any("introspection" in (l.get("kind") or "")
+                          for l in check.get("leads", []))
+        # 1) first-party introspection pull — the schema IS the attack map.
+        #    An authenticated API needs a principal: try none, then each held
+        #    session (the RoE hands us the door; the executor walks through it).
+        payload = {"method": "POST", "url": url,
+                   "body": json.dumps({"query": _INTROSPECTION_Q})}
+        control = {"method": "POST", "url": url,
+                   "body": json.dumps({"query": "{ __nonsense_probe { a } }"})}
+        st_p, body_p = self._preobserve(payload)
+        if st_p in (401, 403):
+            for p in sorted(self._creds):
+                if self._ctx.sessions and self._ctx.sessions.get(p):
+                    auth = dict(self._ctx.sessions.get(p).headers)
+                    payload["headers"] = dict(auth)
+                    control["headers"] = dict(auth)
+                    st_p, body_p = self._preobserve(payload)
+                    if st_p == 200:
+                        break
+        st_c, body_c = self._preobserve(control)
+        if st_p != 200 or "queryType" not in (body_p or ""):
+            return False, ("introspection disabled or unreachable "
+                           f"(payload {st_p}) — hypothesis killed, as predicted")
+        res_v = self._run_tool(
+            "verify_vulnerability",
+            title=f"GraphQL introspection open at {ep}",
+            severity="medium", target=ep,
+            summary=f"{ep} answers a full __schema introspection query with the "
+                    f"schema graph while a nonsense field query is rejected "
+                    f"({st_c}) — schema disclosure to any authenticated caller "
+                    f"(CWE-200).",
+            requests={"payload": payload, "control": control},
+            conditions=[{"type": "status", "request": "payload", "equals": 200},
+                        {"type": "body_regex", "request": "payload",
+                         "pattern": "queryType", "present": True},
+                        {"type": "body_regex", "request": "control",
+                         "pattern": "queryType", "present": False}],
+            negative_control=control, cwe="CWE-200",
+            recommendation="Disable introspection outside development; gate "
+                           "schema exposure.")
+        confirmed = bool(res_v.get("recorded"))
+        # 2) CHAINING: id-arg queries mint the cross-tenant bets
+        schema = _parse_json_loose(body_p) or {}
+        fields = (((schema.get("data") or {}).get("__schema") or {})
+                  .get("queryType") or {}).get("fields") or []
+        id_args = [f for f in fields
+                   if any(re.search(r"(?i)^(id|user[_-]?id|uid|account|acct)$",
+                                    (a.get("name") or "")) for a in f.get("args", []))]
+        for f in id_args:
+            arg = next((a for a in f.get("args", [])
+                        if re.search(r"(?i)^(id|user[_-]?id|uid|account|acct)$",
+                                     a.get("name") or "")), None)
+            if not arg:
+                continue
+            self._brain.state.graphql_endpoints.append(ep)
+            self._brain._seen_hyp.add("graphql-cross-tenant:" + f["name"])
+            self._brain.queue.append(Hypothesis(
+                id=f"graphql-cross-tenant#{f['name']}",
+                kind="graphql-cross-tenant",
+                statement=f"{ep} exposes {f['name']}({arg['name']}:) — if the "
+                          f"owner check is missing, any token reads any ledger",
+                prediction="low principal querying another principal's id "
+                           "receives THAT principal's records",
+                severity="critical", cwe="CWE-639",
+                rank=9.0, cost=6,
+                probes={"endpoint": ep, "field": f["name"], "arg": arg["name"]},
+                source=f"introspection@{ep}"))
+            self._log(f"    chain: {f['name']}({arg['name']}:) -> cross-tenant bet")
+        return confirmed, (f"introspection open; {len(fields)} fields mapped; "
+                          f"{len(id_args)} id-arg queries minted")
+
+    # -- executor: graphql cross-tenant read -----------------------------------
+
+    def _exec_graphql_cross_tenant(self, hyp: Hypothesis) -> tuple[bool, str]:
+        ep = hyp.probes.get("endpoint", "/graphql")
+        field, arg = hyp.probes.get("field", ""), hyp.probes.get("arg", "userId")
+        url = self._base + ep if ep.startswith("/") else ep
+        principals = [p for p in sorted(self._creds)
+                      if self._ctx.sessions and self._ctx.sessions.get(p)]
+        if len(principals) < 2:
+            return False, "needs two RoE principals; none held"
+        low = next((p for p in principals
+                    if not re.search(r"admin|root|super", p)), principals[0])
+        other = next((p for p in principals if p != low), "")
+        hdrs_for = lambda p: dict(self._ctx.sessions.get(p).headers)
+
+        def gq(uid: str, hdrs: dict) -> dict:
+            q = f'{{ {field}({arg}: "{uid}") {{ id user merchant amount card }} }}'
+            return {"method": "POST", "url": url, "headers": hdrs,
+                    "body": json.dumps({"query": q})}
+
+        # 1) who am I: each principal's own id (the differential's coordinates)
+        own_ids = {}
+        for p in principals:
+            me = {"method": "POST", "url": url, "headers": hdrs_for(p),
+                  "body": json.dumps({"query": "{ me { id user role } }"})}
+            st_m, body_m = self._preobserve(me)
+            m = ID_SHAPE.search(body_m or "")
+            if st_m == 200 and m:
+                own_ids[p] = m.group(1)
+        if low not in own_ids or other not in own_ids:
+            return False, f"could not resolve own ids: {own_ids}"
+        # 2) the bet: low principal asks for OTHER's ledger
+        payload = gq(own_ids[other], hdrs_for(low))
+        control = gq(own_ids[low], hdrs_for(low))
+        st_p, body_p = self._preobserve(payload)
+        st_c, body_c = self._preobserve(control)
+        if st_p != 200:
+            return False, f"cross-tenant query returned {st_p} — bet dead"
+        # 3) reference: OTHER's own view (their token) — the material that
+        #    must appear in the leak and NOWHERE in low's own view
+        st_o, body_o = self._preobserve(gq(own_ids[other], hdrs_for(other)))
+        distinctive = [t for t in dict.fromkeys(
+            re.findall(r"[\w\-]{8,}", body_o or ""))
+            if t not in (body_c or "")][:3]
+        if not distinctive or distinctive[0] not in (body_p or ""):
+            return False, ("no other-principal material in the response — "
+                           "authorization held")
+        marker = distinctive[0]
+        res_v = self._run_tool(
+            "verify_vulnerability",
+            title=f"Cross-tenant {field} read via {arg} (no ownership check) "
+                  f"({ep})",
+            severity="critical", target=ep,
+            summary=f"Principal '{low}' queries {field}({arg}: "
+                    f"\"{own_ids[other]}\") and receives '{other}''s ledger "
+                    f"(marker '{marker[:8]}...' — absent from '{low}''s own "
+                    f"view); the schema came from open introspection. The "
+                    f"owner is never checked against the caller (CWE-639).",
+            requests={"payload": payload, "control": control},
+            conditions=[{"type": "status", "request": "payload", "equals": 200},
+                        {"type": "body_regex", "request": "payload",
+                         "pattern": re.escape(marker), "present": True},
+                        {"type": "body_regex", "request": "control",
+                         "pattern": re.escape(marker), "present": False}],
+            negative_control=control, cwe="CWE-639",
+            recommendation="Resolve the object owner from the token and check "
+                           "it on every field resolver.")
+        return bool(res_v.get("recorded")), (
+            f"{low} read {other}'s ledger — pipeline owns the verdict")
+
+    # -- executor: cookie forgery from signals ---------------------------------
+
+    def _exec_cookie_forge(self, hyp: Hypothesis) -> tuple[bool, str]:
+        gate = hyp.probes.get("gate", "")
+        gate_status = hyp.probes.get("gate_status", 403)
+        path = gate if gate.startswith("/") else "/" + gate
+        principals = [p for p in sorted(self._creds)
+                      if self._ctx.sessions and self._ctx.sessions.get(p)]
+        low = next((p for p in principals
+                    if not re.search(r"admin|root|super", p)), None)
+        if not low:
+            return False, "no low-privilege principal held"
+        low_hdrs = dict(self._ctx.sessions.get(low).headers)
+        for variant in hyp.probes.get("variants", []):
+            payload = {"method": "GET", "url": self._base + path,
+                       "headers": {**low_hdrs, "Cookie": variant}}
+            control = {"method": "GET", "url": self._base + path,
+                       "headers": dict(low_hdrs)}
+            st_p, _ = self._preobserve(payload)
+            st_c, _ = self._preobserve(control)
+            if st_p != 200 or st_c == 200:
+                continue
+            res_v = self._run_tool(
+                "verify_vulnerability",
+                title=f"Client-controlled role cookie bypasses the gate ({path})",
+                severity="high", target=path,
+                summary=f"{path} denies '{low}' ({st_c}) but accepts the same "
+                        f"token with client-supplied Cookie '{variant}' — "
+                        f"authorization from client state (CWE-284).",
+                requests={"payload": payload, "control": control},
+                conditions=[{"type": "status", "request": "payload",
+                             "equals": 200},
+                            {"type": "status", "request": "control",
+                             "equals": st_c}],
+                negative_control=control, cwe="CWE-284",
+                recommendation="Derive authorization from the token.")
+            return bool(res_v.get("recorded")), f"variant {variant} -> {st_p}/{st_c}"
+        return False, "no variant passed the gate — hypothesis killed"
+
+    # -- executor: cross-principal HTTP read from observed ids -----------------
+
+    def _exec_cross_principal_read(self, hyp: Hypothesis) -> tuple[bool, str]:
+        probes = hyp.probes
+        resource, other_id = probes.get("resource", ""), probes.get("id", "")
+        low, other = probes.get("low", ""), probes.get("other", "")
+        if not (resource and other_id and low and other):
+            return False, "incomplete probes"
+        low_hdrs = dict(self._ctx.sessions.get(low).headers)
+        # signals key by full URL; the executor speaks in paths
+        if resource.startswith("http"):
+            resource = "/" + resource.split("//", 1)[1].split("/", 1)[-1]
+        # inject the other principal's id into the observed id position
+        m = re.search(r"(?i)(id|userId|user_id|uid|account|acct)[=/]", resource)
+        payload_url = re.sub(r"(?i)((?:id|userId|user_id|uid|account|acct)[=/])"
+                             r"[A-Za-z0-9_\-]+", rf"\g<1>{other_id}", resource)
+        if payload_url == resource:
+            payload_url = (resource + ("&" if "?" in resource else "?")
+                           + f"id={other_id}")
+        payload = {"method": "GET", "url": self._base + payload_url,
+                   "headers": dict(low_hdrs)}
+        control = {"method": "GET", "url": self._base + payload_url}
+        st_p, body_p = self._preobserve(payload)
+        st_c, _ = self._preobserve(control)
+        if st_p != 200 or st_c == 200:
+            return False, f"{st_p}/{st_c} — no ownership gap here"
+        res_v = self._run_tool(
+            "verify_vulnerability",
+            title=f"Cross-principal object read at {payload_url}",
+            severity="critical", target=payload_url,
+            summary=f"Observed id shape ({other_id}) replayed by '{low}' "
+                    f"returns 200 while unauthenticated is denied ({st_c}) — "
+                    f"object lookup without an owner check (CWE-639).",
+            requests={"payload": payload, "control": control},
+            conditions=[{"type": "status", "request": "payload", "equals": 200},
+                        {"type": "status", "request": "control",
+                         "equals": st_c}],
+            negative_control=control, cwe="CWE-639",
+            recommendation="Enforce object-level authorization.")
+        return bool(res_v.get("recorded")), f"{st_p}/{st_c}"
+
+    # -- executor: missing function level auth ----------------------------------
+
+    def _exec_unauth_access(self, hyp: Hypothesis) -> tuple[bool, str]:
+        gate = hyp.probes.get("gate", "")
+        path = gate if gate.startswith("/") else "/" + gate
+        for method, body in (("GET", None), ("POST", "{}"), ("PUT", "{}")):
+            payload = {"method": method, "url": self._base + path, "body": body}
+            st, body_p = self._preobserve(payload)
+            if st == 200 and len(body_p or "") > 16:
+                ctrl = {"method": method,
+                        "url": self._base + f"/no-such-{int(time.time())}"}
+                st_c, _ = self._preobserve(ctrl)
+                res_v = self._run_tool(
+                    "verify_vulnerability",
+                    title=f"{method} {path} answers without authentication",
+                    severity="high", target=path,
+                    summary=f"{path} was UI-gated ({hyp.probes.get('status')}) "
+                            f"but the API answers {method} unauthenticated "
+                            f"(CWE-285).",
+                    requests={"payload": payload, "control": ctrl},
+                    conditions=[{"type": "status", "request": "payload",
+                                 "equals": 200},
+                                {"type": "status", "request": "control",
+                                 "equals": st_c}],
+                    negative_control=ctrl, cwe="CWE-285",
+                    recommendation="Server-side authorization on every API path.")
+                return bool(res_v.get("recorded")), f"{method} -> {st}"
+        return False, "gate is a real API check — hypothesis killed"
 
     # -- verify pass (the pipeline's verdict, not the engine's) -----------------
 

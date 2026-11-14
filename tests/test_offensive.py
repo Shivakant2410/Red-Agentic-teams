@@ -165,6 +165,57 @@ def blogment_lab(tmp_path_factory):
     lab.stop()
 
 
+@pytest.fixture(scope="module")
+def ledger_lab(tmp_path_factory):
+    # NO engine template targets Ledger: no robots hint, no openapi, no backup
+    # convention, no SSRF sink, no search param. GraphQL-shaped errors are the
+    # only signal. If the engine confirms these bugs, the BRAIN generalized.
+    creds = {"alice": {"password": "pw-alice", "login_url": "/login",
+                       "token_field": "token"},
+             "bob": {"password": "pw-bob", "login_url": "/login",
+                     "token_field": "token"}}
+    gt = [GroundTruthVuln("ledger-graphql-introspection", "sensitive_data",
+                          "CWE-200", "/graphql", "medium"),
+          GroundTruthVuln("ledger-graphql-cross-tenant", "idor", "CWE-639",
+                          "/graphql", "critical")]
+    lab = _Lab(tmp_path_factory.mktemp("ledger"), "ledger.py",
+               {"LEDGER_AUTHZ_PROFILE": "open",
+                "LEDGER_INTROSPECTION_PROFILE": "open"},
+               creds, gt)
+    yield lab
+    lab.stop()
+
+
+def test_brain_generalizes_to_an_untemplated_target(ledger_lab):
+    """The generalization contract: a target NO workflow template covers is
+    confirmed through signal-driven hypotheses only — shape of the error
+    response -> schema pull -> id-arg query -> cross-tenant differential."""
+    engine, ctx = ledger_lab.engine()
+    summary = engine.run()
+    confirmed = [f for f in ctx.findings.all() if f.confidence == "confirmed"]
+    cwes = {f.cwe for f in confirmed}
+    assert {"CWE-200", "CWE-639"} <= cwes, (
+        f"brain must confirm both bugs on an untemplated target; got {cwes}")
+    # the wins must come from the BRAIN's chain: the minted cross-tenant bet
+    # executed AND confirmed (marked with * in the run's hypothesis list)
+    assert any(h.startswith("graphql-cross-tenant") and h.endswith("*")
+               for h in summary["hypotheses"]), summary["hypotheses"]
+    assert summary["pending"] == 0
+    score = score_run("ledger", [asdict(f) for f in ctx.findings.all()],
+                      ledger_lab.ground_truth)
+    assert score.false_positives == 0
+
+
+def test_brain_kills_bets_that_do_not_apply(trackr_lab):
+    """Budget discipline: the graphql bet runs where the signal appeared and is
+    killed cheaply (no proof-pipeline spend) where it did not."""
+    engine, ctx = trackr_lab.engine()
+    summary = engine.run()
+    assert summary["confirmed"] >= 2  # trackr bugs unaffected by the brain
+    assert not any(f.cwe == "CWE-200" and "GraphQL" in f.title
+                   for f in ctx.findings.all())
+
+
 def test_engine_confirms_both_trackr_bugs_model_free(trackr_lab):
     engine, ctx = trackr_lab.engine()
     summary = engine.run()
