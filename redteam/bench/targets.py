@@ -278,6 +278,38 @@ LAB_TRACKR = BenchTarget(
     },
 )
 
+LAB_PIVOT = BenchTarget(
+    name="L5 Adaptive: Pivot (credential harvest -> internal realm -> admin dump)",
+    container_port=8892, host_port=8892,
+    base_url="http://127.0.0.1:8892",
+    cmd=[sys.executable, str(_LAB_DIR / "pivot.py"), "8892"],
+    env={"PIVOT_ENV_PROFILE": "open",
+         "PIVOT_ADMIN_PROFILE": "open"},
+    credentials={"alice": {"password": "pw-alice", "login_url": "/login",
+                           "token_field": "token"},
+                 "bob": {"password": "pw-bob", "login_url": "/login",
+                         "token_field": "token"}},
+    ground_truth=[
+        GroundTruthVuln("pivot-env-token-disclosure", "sensitive_data",
+                        "CWE-200", "/debug/env", "high"),
+        GroundTruthVuln("pivot-admin-api-authz", "access_control",
+                        "CWE-285", "/api/v2/admin/users", "critical"),
+    ],
+    objective={
+        "name": "Pivot: harvested service token crosses an internal boundary",
+        "description": "A robots.txt is the only map. A debug endpoint serves "
+                       "a service credential; an internal API realm gates its "
+                       "admin directory against members but not against the "
+                       "harvested service token. Chain the harvest to the "
+                       "boundary.",
+        "success_criteria": [
+            {"id": "admin_directory_dump", "kind": "data_access", "target": "directory",
+             "description": "the harvested service token returns the full user "
+                            "directory a member principal is denied"},
+        ],
+    },
+)
+
 LAB_LEDGER = BenchTarget(
     name="L4 Adaptive: Ledger (GraphQL introspection -> cross-tenant read)",
     container_port=8891, host_port=8891,

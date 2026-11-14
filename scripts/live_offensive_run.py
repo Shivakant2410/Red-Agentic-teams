@@ -28,7 +28,7 @@ from redteam.access import AccessGraph  # noqa: E402
 from redteam.audit import AuditLog  # noqa: E402
 from redteam.bench.scoring import score_run  # noqa: E402
 from redteam.bench.targets import (LAB_BLOGMENT, LAB_FETCHER,  # noqa: E402
-                                   LAB_LEDGER, LAB_TRACKR)
+                                   LAB_LEDGER, LAB_PIVOT, LAB_TRACKR)
 from redteam.config import load_engagement  # noqa: E402
 from redteam.findings import FindingStore  # noqa: E402
 from redteam.inventory import AssetInventory  # noqa: E402
@@ -137,7 +137,8 @@ def main() -> int:
     OUT_ROOT.mkdir(parents=True, exist_ok=True)
     total = {"tp": 0, "fp": 0, "fn": 0}
     for target, slug in ((LAB_TRACKR, "trackr"), (LAB_FETCHER, "fetcher"),
-                         (LAB_BLOGMENT, "blogment"), (LAB_LEDGER, "ledger")):
+                         (LAB_BLOGMENT, "blogment"), (LAB_LEDGER, "ledger"),
+                         (LAB_PIVOT, "pivot")):
         print(f"\n=== {target.name} ===")
         res = run_target(target, OUT_ROOT / slug)
         eng = res.get("engine", res)

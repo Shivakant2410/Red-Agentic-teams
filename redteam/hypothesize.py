@@ -42,8 +42,11 @@ SEQ_ID = re.compile(r"\b(?:u|user|t|txn|task|order|rec|item)-?(\d{1,6})\b")
 INTERNAL_REF = re.compile(r"(?i)(internal|admin|ops|svc|auth)[\w.\-]*\s+(?:service|host)?"
                           r"\s*(?:on\s*)?[:\s](\d{2,5})|(?:http://127\.0\.0\.1|"
                           r"http://localhost|http://internal)(:\d{2,5})?")
-TOKENISH = re.compile(r"(?i)\b(bearer|token|api[_-]?key|secret)\b[^A-Za-z0-9]{0,4}"
-                      r"([A-Za-z0-9_\-./]{8,64})")
+# credential-shaped assignment: the KEY may be underscore-joined
+# (INTERNAL_TOKEN, API_SECRET_KEY...) — \btoken\b would never see it
+TOKENISH = re.compile(
+    r"(?i)\b\w*(token|secret|api[_-]?key|bearer|credential)\w*\b"
+    r"[\"']?\s*[:=]\s*[\"']?([A-Za-z0-9_\-./]{8,64})")
 GRAPHQL_SHAPE = re.compile(r"\"errors\"\s*:.*?(query|graphql|Must provide)",
                            re.S)
 STACKISH = re.compile(r"(?i)(Traceback|at [\w.$]+\(|\.py\", line \d+|"
@@ -90,6 +93,10 @@ class AttackState:
     graphql_endpoints: list = field(default_factory=list)
     internal_ports: list = field(default_factory=list)
     url_bearers: list = field(default_factory=list)     # POST endpoints taking url=
+    tokens: list = field(default_factory=list)          # (value, url) harvested
+    api_paths: list = field(default_factory=list)       # paths an index revealed
+    observed_urls: set = field(default_factory=set)     # urls the run has read
+    unexplored: list = field(default_factory=list)      # believed, never opened
     signals: list = field(default_factory=list)
 
 
@@ -115,6 +122,10 @@ class Brain:
         sigs: list[Signal] = []
         text = body or ""
         low = text.lower()
+        # canonical key: the same resource with different query strings is ONE
+        # observation target (a killed probe must not mint a duplicate bet)
+        url = url.split("?")[0]
+        self.state.observed_urls.add(url)
 
         for name in set(ROLEISH_COOKIE.findall(text) or []):
             if headers and any(n.lower() == "set-cookie" for n in headers):
@@ -168,6 +179,19 @@ class Brain:
         for value in set(v for _, v in TOKENISH.findall(text)):
             sigs.append(Signal("token-shape", value[:16], url, 0.65,
                                "credential-shaped string"))
+            if (value, url) not in self.state.tokens:
+                self.state.tokens.append((value, url))
+        # a service index is a map handed over by the app itself: every path
+        # it lists is a door the run has not opened yet
+        if status == 200:
+            found = [p for p in dict.fromkeys(re.findall(r'"(/[\w\-/{}]+)"', text))
+                     if p.count("/") >= 2 and len(p) < 80]
+            if len(found) >= 2:
+                fresh = [p for p in found if p not in self.state.api_paths]
+                if fresh:
+                    self.state.api_paths.extend(fresh)
+                    sigs.append(Signal("api-index", ",".join(fresh[:4]), url,
+                                       0.75, "index enumerates API surface"))
         if STACKISH.search(text):
             sigs.append(Signal("stack-detail", "", url, 0.7, "stack/verbose error"))
 
@@ -200,6 +224,19 @@ class Brain:
                 severity=severity, cwe=cwe, cost=cost,
                 rank=round(_SEV[severity] * strength / max(cost, 1), 4),
                 probes=probes, kill=kill, source=source))
+
+        # R0 — walk the doors recon found but the run never opened. Observations
+        # are the Brain's diet; an unexplored lead is unspent signal, so this
+        # bet is pure yield: open it, let observe() speak.
+        fresh = [p for p in st.unexplored
+                 if p not in st.observed_urls][:12]
+        if fresh:
+            add("surface-probe",
+                f"{len(fresh)} discovered paths were never opened — their "
+                f"responses may carry the signals every other bet consumes",
+                "each GET yields signals (gates, tokens, shapes) or dies cheap",
+                {"paths": fresh}, "low", "", max(len(fresh), 1), 0.5,
+                "recon leads", kill="paths opened; nothing further to mint")
 
         # R1 — GraphQL: the shape alone opens the whole schema-mapping branch.
         # Chaining: schema-map emits the sub-bets (introspection exposure,
@@ -287,10 +324,96 @@ class Brain:
                     "high", "CWE-285", 4, 0.6, f"auth-gate@{gate_url}",
                     kill="401/403 consistent across shapes -> real API check")
 
+        # R6 — harvest -> re-aim: a credential-shaped string the run obtained
+        # from ANY of its own responses, pointed at every realm the signals
+        # revealed. The operator's core move: a token's ISSUING surface is not
+        # its AUTHORITY surface. Targets are normalized to PATHS (gates carry
+        # full urls) so one boundary mints ONE bet.
+        if st.tokens:
+            def _norm(p: str) -> str:
+                return ("/" + p.split("//", 1)[1].split("/", 1)[1]
+                        if p.startswith("http") else p)
+            targets = sorted({p for p in st.api_paths
+                              if re.search(r"(?i)admin|internal|private|ops|"
+                                           r"manage|export", p)}
+                             | {_norm(g) for g, _s in st.gates})
+            if targets:
+                add("bearer-pivot",
+                    f"a service credential is harvestable and the signals "
+                    f"reveal gated surface {targets[:2]} — if the realm trusts "
+                    f"the token beyond its intended scope, that gate is the "
+                    f"next read",
+                    "the harvested token passes a gate that denies BOTH the "
+                    "unauthenticated caller AND a member principal",
+                    {"targets": targets[:5],
+                     "tokens": [t for t, _u in st.tokens][:3]},
+                    "critical", "CWE-285", 6, 0.85,
+                    f"token-shape x gate/index@{targets[0]}",
+                    kill="401/403 uniform across principals -> realm checks roles")
+
         out.sort(key=lambda h: -h.rank)
         self.queue.extend(out)
         self.queue.sort(key=lambda h: -h.rank)
         return out
+
+    # -- ingestion + the model-authoring interface -----------------------------
+
+    def ingest_paths(self, paths: list[str]) -> int:
+        """Recon's believed path leads become the Brain's unexplored doors."""
+        fresh = [p for p in dict.fromkeys(paths)
+                 if p and p not in self.state.observed_urls
+                 and p not in self.state.unexplored]
+        self.state.unexplored.extend(fresh)
+        return len(fresh)
+
+    EXECUTABLE_KINDS = {"surface-probe", "cookie-forge", "cross-principal-read",
+                        "graphql-cross-tenant", "internal-pivot",
+                        "unauth-access", "bearer-pivot"}
+
+    def admit_hypothesis(self, spec: dict) -> tuple[bool, str]:
+        """A model (or any external planner) proposes a bet. It enters THE SAME
+        queue under THE SAME discipline — ranked, falsifiable, kill-able — or
+        it is rejected with the reason. Nothing bypasses the proof pipeline."""
+        if not isinstance(spec, dict):
+            return False, "spec must be an object"
+        kind = spec.get("kind", "")
+        if kind not in self.EXECUTABLE_KINDS:
+            return False, f"kind '{kind}' has no executor"
+        for req in ("statement", "prediction"):
+            v = spec.get(req)
+            if not isinstance(v, str) or not (8 <= len(v) <= 400):
+                return False, f"'{req}' must be a string 8..400 chars"
+        probes = spec.get("probes")
+        if not isinstance(probes, dict) or not probes:
+            return False, "probes must be a non-empty object"
+        for k, v in probes.items():
+            if not isinstance(k, str):
+                return False, "probes keys must be strings"
+            if not isinstance(v, (str, int, float, bool, list)):
+                return False, f"probes['{k}'] must be primitive"
+        severity = spec.get("severity", "medium")
+        if severity not in _SEV:
+            return False, f"severity must be one of {sorted(_SEV)}"
+        try:
+            cost = max(1, min(40, int(spec.get("cost", 6))))
+        except (TypeError, ValueError):
+            return False, "cost must be an integer"
+        strength = min(0.9, max(0.0, float(spec.get("strength", 0.5))))
+        self._seq += 1
+        hid = f"llm-{kind}#{self._seq}"
+        hyp = Hypothesis(
+            id=hid, kind=kind,
+            statement=spec["statement"], prediction=spec["prediction"],
+            severity=severity, cwe=str(spec.get("cwe", "")), cost=cost,
+            rank=round(_SEV[severity] * strength / cost, 4),
+            probes=probes, kill=str(spec.get("kill", "")),
+            source="admitted: " + str(spec.get("source", "llm"))[:120])
+        self._seen_hyp.add(hid)
+        self.queue.append(hyp)
+        self.queue.sort(key=lambda h: -h.rank)
+        self._ctx.audit.record("brain.hypothesis.admitted", id=hid, kind=kind,
+                               rank=hyp.rank)
+        return True, hid
 
     # -- the loop hook: every observation may mint the next bet ---------------
 

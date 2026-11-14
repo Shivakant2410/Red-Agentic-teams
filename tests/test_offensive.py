@@ -186,6 +186,81 @@ def ledger_lab(tmp_path_factory):
     lab.stop()
 
 
+@pytest.fixture(scope="module")
+def pivot_lab(tmp_path_factory):
+    # NO template covers Pivot. The chain it demands is the harvest -> re-aim
+    # organ: an unauthenticated disclosure hands over a SERVICE token; a
+    # member principal is DENIED at the internal admin gate; the service token
+    # is NOT. Finding it requires connecting a harvested string to a gate the
+    # run walked past — pure signal combination, no bug recipe exists.
+    creds = {"alice": {"password": "pw-alice", "login_url": "/login",
+                       "token_field": "token"},
+             "bob": {"password": "pw-bob", "login_url": "/login",
+                     "token_field": "token"}}
+    gt = [GroundTruthVuln("pivot-env-token-disclosure", "sensitive_data",
+                          "CWE-200", "/debug/env", "high"),
+          GroundTruthVuln("pivot-admin-api-authz", "access_control",
+                          "CWE-285", "/api/v2/admin/users", "critical")]
+    lab = _Lab(tmp_path_factory.mktemp("pivot"), "pivot.py",
+               {"PIVOT_ENV_PROFILE": "open",
+                "PIVOT_ADMIN_PROFILE": "open"},
+               creds, gt)
+    yield lab
+    lab.stop()
+
+
+def test_brain_pivots_a_harvested_credential_across_realms(pivot_lab):
+    """The harvest->re-aim contract: disclosure signal -> token in state ->
+    bearer-pivot bet -> the service token crosses a boundary that DENIES a
+    member principal. Both flaws confirmed, chain visible in the run."""
+    engine, ctx = pivot_lab.engine()
+    summary = engine.run()
+    confirmed = [f for f in ctx.findings.all() if f.confidence == "confirmed"]
+    cwes = {f.cwe for f in confirmed}
+    assert {"CWE-200", "CWE-285"} <= cwes, (
+        f"brain must chain the harvest to the boundary; got {cwes}")
+    assert any(h.startswith("bearer-pivot") and h.endswith("*")
+               for h in summary["hypotheses"]), summary["hypotheses"]
+    assert summary["pending"] == 0
+    score = score_run("pivot", [asdict(f) for f in ctx.findings.all()],
+                      pivot_lab.ground_truth)
+    assert score.false_positives == 0
+
+
+def test_admit_hypothesis_validates_before_queueing(pivot_lab):
+    """The model-authoring interface: a well-formed proposal enters THE SAME
+    queue under THE SAME discipline; malformed ones are rejected with a
+    reason, never executed."""
+    engine, ctx = pivot_lab.engine()
+    from redteam.hypothesize import Brain
+    brain = Brain(ctx, pivot_lab.base, creds={"alice": {"password": "x"}})
+    ok, hid = brain.admit_hypothesis({
+        "kind": "bearer-pivot",
+        "statement": "a token seen in an earlier response may authorize the "
+                     "admin directory",
+        "prediction": "harvested token passes the gate members are denied at",
+        "probes": {"targets": ["/api/v2/admin/users"],
+                   "tokens": ["int-tok-7741-kx92qd"]},
+        "severity": "critical", "cost": 6, "strength": 0.85, "cwe": "CWE-285",
+        "source": "unit-test planner"})
+    assert ok and hid in [h.id for h in brain.queue]
+    bad = [
+        ({"kind": "no-such-executor", "statement": "x" * 12,
+          "prediction": "y" * 12, "probes": {"a": "b"}}, "kind"),
+        ({"kind": "bearer-pivot", "statement": "short",
+          "prediction": "y" * 12, "probes": {"a": "b"}}, "statement"),
+        ({"kind": "bearer-pivot", "statement": "x" * 12,
+          "prediction": "y" * 12, "probes": {"a": {"nested": "dict"}}},
+         "probes"),
+        ({"kind": "bearer-pivot", "statement": "x" * 12,
+          "prediction": "y" * 12, "probes": {"a": "b"},
+          "severity": "apocalyptic"}, "severity"),
+    ]
+    for spec, why in bad:
+        ok, reason = brain.admit_hypothesis(spec)
+        assert not ok, f"should reject on {why}: {reason}"
+
+
 def test_brain_generalizes_to_an_untemplated_target(ledger_lab):
     """The generalization contract: a target NO workflow template covers is
     confirmed through signal-driven hypotheses only — shape of the error

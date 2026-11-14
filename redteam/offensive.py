@@ -185,6 +185,11 @@ class OffensiveEngine:
             rlog: dict = {"round": rnd}
             if rnd == 1:
                 rlog["recon"] = self._round_recon()
+                # believed path leads become the Brain's unexplored doors —
+                # the recon/exploit bridge the adaptive loop feeds on
+                self._brain.ingest_paths(sorted(
+                    {l.url for l in self._leads
+                     if l.believed() and l.url and l.kind == "path"}))
                 rlog["workflows"] = self._round_exploit()
                 # The Brain: signal-driven bets over the template workflows —
                 # this is what finds bugs the templates were never written for.
@@ -892,11 +897,13 @@ class OffensiveEngine:
 
     def _execute_hypothesis(self, hyp: Hypothesis) -> tuple[bool, str]:
         dispatch = {
+            "surface-probe": self._exec_surface_probe,
             "graphql-schema-map": self._exec_graphql_map,
             "graphql-cross-tenant": self._exec_graphql_cross_tenant,
             "cookie-forge": self._exec_cookie_forge,
             "cross-principal-read": self._exec_cross_principal_read,
             "unauth-access": self._exec_unauth_access,
+            "bearer-pivot": self._exec_bearer_pivot,
             "internal-pivot": lambda h: (
                 self._workflow_ssrf(), "delegated to ssrf-callback-map"),
         }
@@ -904,6 +911,132 @@ class OffensiveEngine:
         if fn is None:
             return False, f"no executor for kind {hyp.kind}"
         return fn(hyp)
+
+    # -- executor: surface probe (R0 — the recon/exploit bridge) --------------
+
+    def _exec_surface_probe(self, hyp: Hypothesis) -> tuple[bool, str]:
+        paths = hyp.probes.get("paths", [])
+        before = len(self._brain.state.signals)
+        for path in paths:
+            url = self._base + path if path.startswith("/") else path
+            self._fetch({"method": "GET", "url": url}, tool="http_probe")
+        new = len(self._brain.state.signals) - before
+        # exploratory by design: never 'confirms', always feeds observe()
+        return False, f"opened {len(paths)} paths, {new} fresh signals"
+
+    # -- executor: bearer pivot (R6 — harvest -> re-aim) -----------------------
+
+    def _exec_bearer_pivot(self, hyp: Hypothesis) -> tuple[bool, str]:
+        targets = hyp.probes.get("targets", [])
+        tokens = hyp.probes.get("tokens", [])
+        principals = [p for p in sorted(self._creds)
+                      if self._ctx.sessions and self._ctx.sessions.get(p)]
+        low = next((p for p in principals
+                    if not re.search(r"admin|root|super", p)), None)
+        hit = False
+        learned = []
+        for tok in tokens:
+            hdrs = {"Authorization": f"Bearer {tok}"}
+            for path in targets:
+                # one boundary proving is enough: same realm, same flaw
+                if any(f.cwe == "CWE-285" and (path in (f.target or "")
+                                               or (f.target or "") in path)
+                       for f in self._ctx.findings.all()):
+                    learned.append(f"{path}: boundary already proven")
+                    continue
+                url = self._base + path if path.startswith("/") else path
+                payload = {"method": "GET", "url": url, "headers": dict(hdrs)}
+                st_p, body_p = self._preobserve(payload)
+                if st_p != 200:
+                    learned.append(f"{path}: token rejected ({st_p})")
+                    continue
+                st_u, _ = self._preobserve({"method": "GET", "url": url})
+                # the honest boundary: a MEMBER principal must be denied too —
+                # otherwise the endpoint is open to everyone (a different bug)
+                member_status, member_body = None, ""
+                if low:
+                    mh = dict(self._ctx.sessions.get(low).headers)
+                    member_status, member_body = self._preobserve(
+                        {"method": "GET", "url": url, "headers": mh})
+                if member_status == 200:
+                    learned.append(f"{path}: open to all members — not a "
+                                   f"privilege boundary")
+                    continue
+                # over-reach marker: material the member view cannot produce
+                structural = re.search(r"password_hash|salary|api_key|secret",
+                                       body_p or "")
+                marker = next((t for t in dict.fromkeys(
+                    re.findall(r"[\w$.\-/]{10,}", body_p or ""))
+                    if t not in (member_body or "") and t not in tok), "")
+                cond_pat = (structural.group(0) if structural
+                            else re.escape(marker))
+                if not cond_pat:
+                    learned.append(f"{path}: 200 but no over-reach material")
+                    continue
+                self._ctx.sessions.set("internal-api", dict(hdrs))
+                self._record_pivot_disclosure(tok)
+                res_v = self._run_tool(
+                    "verify_vulnerability",
+                    title=f"Harvested service token crosses the privilege "
+                          f"boundary at {path}",
+                    severity="critical", target=path,
+                    summary=f"A service credential disclosed at harvest time "
+                            f"(first-party) authenticates to {path} and "
+                            f"returns material "
+                            f"({'structural: ' + cond_pat if structural else 'marker ' + cond_pat[:16]})"
+                            f" that a member principal is DENIED"
+                            f"{' (' + str(member_status) + ')' if member_status else ''}"
+                            f" and the unauthenticated caller cannot get "
+                            f"({st_u}) — the realm's role check does not run "
+                            f"for service tokens (CWE-285).",
+                    requests={"payload": payload,
+                              "control": {"method": "GET", "url": url}},
+                    conditions=[
+                        {"type": "status", "request": "payload", "equals": 200},
+                        {"type": "body_regex", "request": "payload",
+                         "pattern": cond_pat, "present": True},
+                        {"type": "status", "request": "control",
+                         "equals": st_u}],
+                    negative_control={"method": "GET", "url": url},
+                    cwe="CWE-285",
+                    recommendation="Scope service tokens to their service; run "
+                                   "the same role check for every token class.")
+                recorded = bool(res_v.get("recorded"))
+                hit = hit or recorded
+                learned.append(f"{path}: boundary crossed, pipeline owns verdict")
+        return hit, "; ".join(learned)[:200]
+
+    def _record_pivot_disclosure(self, tok: str) -> None:
+        """The harvest itself is a finding: a credential served unauthenticated
+        (once per run)."""
+        if getattr(self, "_pivot_disclosure_done", False):
+            return
+        src = next((u for t, u in self._brain.state.tokens if t == tok), "")
+        if not src:
+            return
+        self._pivot_disclosure_done = True
+        path = ("/" + src.split("//", 1)[1].split("/", 1)[1]
+                if src.startswith("http") else src)
+        ctrl = {"method": "GET",
+                "url": self._base + f"/no-such-{int(time.time())}"}
+        st_c, _ = self._preobserve(ctrl)
+        self._run_tool(
+            "verify_vulnerability",
+            title=f"Service credential disclosed at {path}",
+            severity="high", target=path,
+            summary=f"{path} serves a live service token to unauthenticated "
+                    f"callers; re-aimed at the internal realm it crosses a "
+                    f"privilege boundary (chained separately).",
+            requests={"payload": {"method": "GET", "url": self._base + path},
+                      "control": ctrl},
+            conditions=[{"type": "status", "request": "payload", "equals": 200},
+                        {"type": "body_regex", "request": "payload",
+                         "pattern": re.escape(tok), "present": True},
+                        {"type": "status", "request": "control",
+                         "equals": st_c}],
+            negative_control=ctrl, cwe="CWE-200",
+            recommendation="Require auth for debug/config endpoints; rotate "
+                           "the exposed credential.")
 
     # -- executor: graphql schema map (the chaining example) -------------------
 
