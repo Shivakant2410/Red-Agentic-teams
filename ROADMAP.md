@@ -8,24 +8,38 @@ Gen-2 built).
 ## Where the project already leads
 
 Most public "autonomous pentest" projects are prompt scaffolds around a single model.
-This project's differentiators, built in Gen-1 and preserved in Gen-2, remain rare:
+This project's differentiators, built in Gen-1 and preserved in Gen-2, remain rare.
+Positioning note (`docs/offense-core.md`): differentiators are ATTACK capability;
+containment is deployability plumbing and is listed last for that reason.
 
-1. **Deterministic scope enforcement at the network layer.** The Kali egress firewall
-   (default-DROP, RoE-derived allowlist, self-test that tears the sandbox down if a
-   probe escapes) does not depend on the model behaving. Few systems have anything
-   stronger than prompt-level "stay in scope".
-2. **Proof-first finding pipeline.** `pending_verification` → independent re-check in a
+1. **Recon with a stopping rule, not a wordlist.** Frequency-ordered priors
+   (Nmap/SecLists, 9 buckets) + STADS missing-mass stop rule: a Beta-posterior bucket
+   model and Good–Turing species discovery decide when the content hunt is done
+   (`recon/discovery.py`). Public autonomous pentesters enumerate until the wordlist
+   ends or the budget burns; this one stops when the math says more probing buys
+   nothing.
+2. **Competitive-intel asset radar.** The typed-edge asset graph answers one question
+   first — what is this org building that it has not announced: CT freshness diffing,
+   codename extraction + triangulation with verdicts, codename-seeded DNS fanout,
+   version-ahead-of-live edges, feature-flag leaks, staging mirrors
+   (`recon/assetgraph.py`, `tools/asset_radar.py`). None of the public pentest agents
+   does this; it is a recon weapon, not an asset list.
+3. **Proof-first finding pipeline.** `pending_verification` → independent re-check in a
    fresh context → confirmed. Nothing credits the objective from a scanner match or a
    model's claim. False-positive discipline is the #1 credibility problem for
    autonomous pentesters; this architecture treats it as a first-class constraint.
-3. **Cross-run learning that compounds.** Bandit-selected techniques per endpoint-shape,
+4. **Cross-run learning that compounds.** Bandit-selected techniques per endpoint-shape,
    distilled tradecraft lessons, app-shape patterns, and a persistent skill library —
    the system gets better per target class, not just per run.
-4. **Fail-safe degradation everywhere.** Reflection, semantic memory, telemetry, and
-   gateway failover are amplifiers: each one returns to deterministic Gen-1 behavior on
-   failure. Nothing new is load-bearing.
-5. **Auditability.** Append-only hash-chained audit log, per-run event stream, reproducible
-   reports. An operator can reconstruct every action and every decision.
+5. **LLM-target attack campaigns.** `llmred/` runs structured strategies, multiseed
+   seeding, objective grading, and regression against LLM surfaces — the offense stack
+   covers the model as a target, not only the web app behind it.
+6. **Deterministic containment at the network layer (plumbing, not the pitch).** The
+   Kali egress firewall (default-DROP, RoE-derived allowlist, escape-rippling self-test)
+   does not depend on the model behaving — and that is exactly why it is hygiene: it
+   makes the weapon deployable, it is not the reason to choose it. Fail-safe
+   degradation, the append-only hash-chained audit, and per-run event replay share the
+   same tier.
 
 ## Gen-2: what this release added (shipped)
 

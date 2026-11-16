@@ -1,83 +1,132 @@
-# Red-Team Agent — Kali sandbox + Playwright, multi-provider LLMs, live mission control
+# Red-Team Agent — autonomous offensive operations on authorized targets
 
-An agentic red-team assistant for **authorized** web-application / API security testing.
-Instead of a handful of narrow tools, the agent gets two full execution surfaces:
+An agentic red-team system that attacks web applications, APIs, and LLM surfaces
+end to end: it reconnoiters with stopping rules, builds an asset graph, plans an
+attack tree, executes the chain through a full Kali toolset and a real browser,
+exploits, proves every finding independently, and reports — against targets you
+are authorized to test.
 
-- **A Kali Linux sandbox in Docker** — the whole offensive toolset (nmap, ffuf, sqlmap,
-  nikto, gobuster, curl, nuclei, …) available via `kali_exec`.
-- **Playwright browser automation** — a real headless browser for anything that needs a
-  DOM and JavaScript.
+The product is the attack. Containment and audit exist so real teams can deploy
+it; they are plumbing, not the pitch (`docs/offense-core.md` settles this
+positioning module by module).
 
-Model backends: **OpenRouter** (free-pool rotation, the zero-config default) or the
-**Gen-2 multi-provider gateway** (OpenAI, Anthropic, Z.ai, Groq, Ollama, vLLM — role-routed
-with cross-provider failover). Runs are observable in real time from the bundled
-**mission-control dashboard** (see Gen-2 below).
+## What the agent does to a target
 
-> **Authorized use only.** Run this only against systems you own or have **written
-> permission** to test (a signed SOW/engagement, or a bug-bounty program within its
-> published scope), or an isolated lab. The engagement file is your authorization
-> boundary.
+**1. Recon until the math says stop, not until the wordlist ends.**
+Content discovery runs on frequency-ordered priors (Nmap/SecLists-derived, 9
+buckets, 143 seeded paths) with a STADS missing-mass stop rule: a Beta-posterior
+bucket model plus Good–Turing species discovery (`recon/discovery.py`) decides
+when further probing buys nothing — the agent stops when the estimated unseen
+mass collapses, exactly like serious fuzzers do. Recursion into confirmed
+directories is budget-aware; soft-404 baselines keep the statistics honest.
 
-## How "give it all of Kali" stays safe
+**2. Maps what the org is building in secret.**
+The asset radar (`recon/assetgraph.py` + `tools/asset_radar.py`) is a
+competitive-intel instrument, not an asset list: CT-freshness diffing catches
+certificates issued in the last 45 days before the product is announced;
+codename extraction triangulated across independent sources ranks each leaked
+label strong/likely/watchlist; codename-seeded DNS permutations verify
+environment fanout; version-ahead-of-live edges (`/api/v3` referenced while
+`/api/v1` is deployed) expose the roadmap the production site won't admit to;
+feature-flag leaks and staging-mirror inference fill in the rest. Output is a
+typed-edge graph (announces/projects/resolves_to/references/precedes/mirrors)
+with a ranked `secret_builds()` report — leads, never findings.
 
-When the agent can run arbitrary tools, you can't enforce scope by inspecting commands.
-So scope is enforced at the **network layer**:
+**3. Plans like an attacker, learns like one too.**
+`attack_tree.py` ranks techniques per endpoint shape; a Thompson-sampling bandit
+learns win rates across engagements and specializes selection over time
+(`memory/bandit.json` persists). In swarm mode the orchestrator runs the chain —
+recon → exploit → verify → access → logic — with specialists, distilled skills,
+and a strategist reflection pass that may only re-rank the tree.
 
-- **Sandbox egress firewall** — the Kali container runs `default-DROP` on OUTPUT. Only
-  IPs/CIDRs derived from the RoE (`redteam/sandbox/egress.py`) are reachable; the
-  entrypoint installs the rules before any tool runs and the container **refuses to
-  start** if it can't (fail closed). Off-scope hosts are simply unreachable. On top of
-  that, `KaliSandbox.start()` runs an **egress self-test**: it probes a destination that
-  should never be in scope (TEST-NET-1) and tears the sandbox down if that probe
-  succeeds, rather than trusting the entrypoint's "ready" log line alone — a log line
-  only proves the script ran, not that the firewall rules actually took effect.
-- **No self-unlocking** — tools run as a non-root user, the container drops all
-  capabilities except `NET_ADMIN`/`NET_RAW`, sets `no-new-privileges`, and `kali_exec`
-  refuses commands that touch iptables/ipset/routing/`sudo`/namespaces.
-- **Browser scope interception** — every request the browser makes (page + every
-  subresource) is checked against the scope guard; out-of-scope requests are aborted.
-- **Approval gates** — destructive/DoS-shaped commands require an interactive human "yes".
-- **Rate limit + request budget**, **append-only JSONL audit log**, and an
-  **engagement window** the agent won't run outside of.
+**4. Executes with the whole offensive toolset.**
+`kali_exec` puts nmap, ffuf, sqlmap, gobuster, nikto, nuclei and the rest of
+Kali inside a sandboxed container; a Playwright browser handles anything needing
+a DOM; `spa_recon` extracts the API surface of login-gated SPAs; `jwt_inspect`
+runs the deterministic JWT checklist; `postex.py` carries post-exploitation;
+`llmred/` runs structured attack campaigns against LLM targets.
+
+**5. Proves everything, claims nothing it can't show.**
+Findings enter `pending_verification` and only become CONFIRMED after an
+independent re-check in a fresh context. Nothing credits the objective from a
+scanner match or a model's claim; the creditor converts confirmed findings into
+objective credit only when proof is on the wire. False-positive discipline is
+what makes an autonomous attacker trustworthy, so it is architecture, not a
+filter.
+
+**6. Compounds across engagements.**
+`memory.py` persists tradecraft (which CWE classes proved out, which oracles
+work), app-shape patterns, and per-shape bandit win rates — the system attacks
+the next target class better, not just the next run. Local semantic recall is
+zero-dependency; HelixDB is opt-in.
+
+## Authorization & containment (plumbing that makes it deployable)
+
+Authorized use only — a signed SOW/engagement, a bug-bounty program within its
+published scope, or an isolated lab. The engagement file is the boundary, and it
+is enforced without trusting the model:
+
+- **Egress firewall** — the Kali container runs `default-DROP` on OUTPUT; only
+  IPs/CIDRs derived from the RoE are reachable, rules install before any tool
+  runs, and a TEST-NET-1 self-test tears the sandbox down if a probe escapes.
+- **No self-unlocking** — non-root user, all capabilities dropped except
+  `NET_ADMIN`/`NET_RAW`, `no-new-privileges`, and `kali_exec` refuses
+  iptables/routing/sudo/namespace commands.
+- **Browser scope interception** — every page and subresource request is checked
+  against the scope guard; out-of-scope requests abort.
+- **Approval gates** — destructive/DoS-shaped commands require an interactive
+  human "yes"; a STOP kill file auto-denies and halts (fail closed).
+- **Rate limit + budget**, **append-only hash-chained JSONL audit**, **engagement
+  window** the agent won't run outside of, and **swarm envelope integrity +
+  quarantine** on the multi-agent bus.
+- **Asset-feed sync is an intersection, never a merge** — out-of-scope entries
+  are dropped and counted; the feed cannot widen scope.
 
 ## Layout
 
 ```text
 redteam/
-  config.py          RoE + LLM config (OpenRouter default / multi-provider gateway) + sandbox
-  scope.py           ScopeGuard — SSRF-aware target boundary
-  ratelimit.py       Token-bucket limiter + request budget
-  audit.py           Append-only JSONL audit log
-  findings.py        Finding model + JSON store
-  report.py          Markdown + HTML report
+  recon/             offense-core: discovery.py (frequency priors + STADS stop rule),
+                     assetgraph.py (competitive-intel radar), passive.py, static_source.py
+  attack_tree.py     technique ranking + Thompson-sampling bandit (learned win rates)
+  bandit.py          contextual bandit store
+  orchestrator.py    multi-agent swarm: recon -> exploit -> verify -> access -> logic
+  killchain.py       attack-chain state
+  llmred/            LLM-target attack campaigns: strategies, multiseed, objectives,
+                     detectors, regression
   agent.py           OpenAI-style tool-use loop (owned explicitly)
-  orchestrator.py    Multi-agent swarm: recon -> exploit -> verify -> access -> logic
   run.py             execute_run() — the ONE run assembly line shared by CLI and API
   cli.py             Terminal entrypoint: preflight, console output, interactive approvals
+  findings.py        Finding model + JSON store (pending_verification -> CONFIRMED)
+  verify.py          Independent proof pipeline (fresh-context re-check)
+  credit.py, proof.py, falsify.py   objective credit from confirmed proof only
+  access.py, capabilities.py, objective.py   held access, capability accounting, scoring
+  inventory.py       Attack-surface map (host -> port -> service/banner/title)
+  memory.py          ExperienceStore — cross-run tradecraft + app-shape patterns
+  memory_backend/    Semantic recall: local_semantic.py (zero deps) / HelixDB (opt-in)
+  bandit memory      memory/bandit.json — per-(technique, endpoint-shape) win rates
+  skills.py, specialists.py   distilled technique packs + specialist swarm
+  reflection.py      strategist self-critique between rounds (re-rank only)
+  intel/             EPSS + KEV snapshots for exploit prioritization
+  tools/             kali_exec, browser_*, nuclei_scan (leads only), jwt_inspect,
+                     spa_recon, postex, surface, asset_radar, http, authsession,
+                     logic, template/skill tools, ...
+  traffic.py         per-run wire evidence (traffic.jsonl) — masked, cursor-served
+  graph_view.py      layered attack graph: asset -> endpoint -> access -> finding
+  scope.py           ScopeGuard — SSRF-aware target boundary (hygiene)
+  sandbox/           Kali container: egress firewall, self-test, lifecycle (hygiene)
+  ratelimit.py       Token-bucket limiter + request budget (hygiene)
+  audit.py           Append-only hash-chained JSONL audit log (hygiene)
+  swarmguard.py      Bus envelope integrity + content quarantine (hygiene)
+  events.py          EventBus + JSONL sink — the live telemetry the dashboard consumes
   server.py          Headless control plane (FastAPI): runs lifecycle, SSE, approvals,
                      static dashboard hosting
-  events.py          EventBus + JSONL sink: the live telemetry the dashboard consumes
-  traffic.py         TrafficRecorder — per-run wire evidence (traffic.jsonl), credential
-                     headers masked both ways, bodies truncatable/droppable
-  inventory.py       AssetInventory — attack-surface map (host -> port -> service/
-                     banner/title), built passively from every response + surface_scan
-  importers/assets.py  ScopeSentry-style asset-feed sync (CSV/JSON/JSONL) — FAIL-CLOSED:
-                     feed entries outside the RoE are dropped; the feed can never widen scope
-  reflection.py      LLM strategist self-critique between orchestrator rounds (re-rank only)
-  llm/openrouter.py  Free-model discovery + rotation/fallback (default backend)
-  llm/providers.py   OpenAI-compatible + Anthropic providers (Gen-2)
-  llm/gateway.py     Multi-provider role-routed gateway with cross-provider failover
-  memory.py          ExperienceStore — persistent cross-run tradecraft lessons
-  memory_backend/    Semantic recall backends: local_semantic.py (zero dependencies,
-                      JSON + on-device/hashing embeddings) and HelixDB (Docker, opt-in)
-  sandbox/           Kali container: egress firewall, self-test, lifecycle
-  tools/             kali_exec, browser_*, record_finding, request_approval,
-                     verify_vulnerability, verify_finding_independently, jwt_inspect,
-                     nuclei_scan (leads only), template/skill tools, postex, ...
 dashboard/           Next.js mission-control UI (static export, served by server.py)
 config/engagement.example.yaml
+docs/offense-arsenal.md   skills-first build order with per-technique adoption evidence
+docs/offense-core.md      positioning: offense-core / offense-enabling / hygiene
 GEN2-ARCHITECTURE.md Gen-2 design doc — how the pieces fit and which invariants hold
-ROADMAP.md           Gap analysis vs CAI / PentestGPT / Nebula + the path forward
+ROADMAP.md           gap analysis vs CAI / PentestGPT / Nebula + the path forward
 tests/
 ```
 
@@ -109,7 +158,7 @@ Flags: `--no-sandbox`, `--no-browser`, `--yes-to-all` (isolated labs only), `--m
 recall), `--helix-memory` (HelixDB backend, needs Docker), `--events` (write the live
 event stream to the run directory).
 
-## Gen-2: dashboard + headless control plane
+## Mission control (dashboard + headless control plane)
 
 The CLI and the API drive the **same** `execute_run()`. To run with the live dashboard:
 
@@ -125,13 +174,13 @@ Then open `http://127.0.0.1:8000`:
   the RoE is validated before anything starts.
 - **Watch the attack live**: every agent turn, tool call/result, finding, phase change,
   model rotation, and reflection streams over SSE into the mission-control page.
-- **Approve sensitive actions** in one click (`request_approval` blocks the agent until
-  you decide; a STOP kill file auto-denies and halts — fail closed).
-- **Stop runs, read reports**, and inspect the objective score, kill chain, attack tree,
-  and per-round strategist reflections.
+- **Approve sensitive actions** in one click, **stop runs, read reports**, and inspect
+  the objective score, kill chain, attack tree, wire traffic
+  (`GET /api/runs/{id}/traffic`), the surface inventory, and the layered attack graph
+  (`GET /api/runs/{id}/graph`).
 
-The API (same origin as the dashboard): `POST /api/runs`, `GET /api/runs`,
-`GET /api/runs/{id}`, `GET /api/runs/{id}/events`, `GET /api/runs/{id}/stream` (SSE),
+Full API: `POST /api/runs`, `GET /api/runs`, `GET /api/runs/{id}`,
+`GET /api/runs/{id}/events`, `GET /api/runs/{id}/stream` (SSE),
 `POST /api/runs/{id}/stop`, `GET /api/runs/{id}/report`, `GET /api/runs/{id}/approvals`,
 `POST /api/approvals/{id}`, `GET /api/health`. Telemetry lives in each run directory as
 `events.jsonl` — replay, live-tail, and post-mortems all read the same bytes the engine
@@ -161,93 +210,15 @@ Candidates interleave round-robin by priority (A best, B best, A second, …); t
 consecutive 429s demote a pair to the back of the queue. With no `providers:` block,
 behavior is byte-identical to Gen-1.
 
-### Strategist reflection (multi-agent mode)
+## Build order: what gets more offensive next
 
-After every orchestrator round, a strong-role LLM receives a deterministic digest of
-the run (objective progress, findings, tree state, failure signals) and returns a
-JSON critique. It may only **re-rank existing attack-tree techniques** (+25/-25) — it
-cannot create targets, authorize gated actions, or override the proof pipeline. Any
-failure skips reflection silently; the deterministic plan always stands.
-
-## Attack-surface evidence (ARTEX-inspired)
-
-Three capabilities ported from ARTEX (mhtsec/ARTEX — an autonomous pentesting platform;
-note it was recently abused in the wild, which is exactly why our ports keep the
-authorization-first discipline):
-
-- **Traffic recording** (`traffic.py`) — every in-scope exchange on the shared fetch
-  path (probes, proofs, verify passes, surface sweeps) lands in `traffic.jsonl` as
-  wire evidence: method, URL, status, timing, headers both ways. Credential-adjacent
-  headers (Authorization, Cookie, Set-Cookie, API keys) are masked in BOTH directions;
-  bodies are truncated (16 KB) and can be dropped entirely with `--no-traffic-bodies`.
-  Scope-denied attempts are recorded too — the log shows the boundary holding.
-  Served at `GET /api/runs/{id}/traffic?after=<seq>` with the same cursor contract
-  as the event stream.
-- **Asset inventory** (`inventory.py` + `surface_scan`) — a per-run map of which
-  in-scope hosts answered, on which ports, with which server banner, page title, and
-  auth challenge. It builds itself passively from every response, and the RECON
-  specialist's `surface_scan` tool fills it actively by knocking once on every
-  host:port the RoE already allows (never widens scope, never records findings,
-  stops honestly at budget exhaustion). Served at `GET /api/runs/{id}/inventory`.
-- **Asset-feed sync** (`importers/assets.py`) — `--asset-feed feeds.csv` (or JSON /
-  JSONL, ScopeSentry-style columns `host|domain|ip, port, scheme, service`) seeds the
-  inventory before the run starts. It is an INTERSECTION, not a merge: each record is
-  re-checked against the RoE by the ScopeGuard itself, out-of-scope entries are
-  dropped and counted with samples, and `scope.check()` still refuses them afterwards.
-  The server validates the feed at launch (400 on unreadable files).
-
-```bash
-# operator view of what the team actually put on the wire
-curl -s localhost:8000/api/runs/<id>/traffic | jq '.traffic[-1]'
-curl -s localhost:8000/api/runs/<id>/inventory | jq '.summary'
-```
-
-## Semantic memory (optional)
-
-`memory.py`'s `ExperienceStore` persists cross-run tradecraft (which CWE classes proved
-out, which proof oracles work) as flat JSON by default, recalled by tag/keyword overlap.
-Two semantic backends upgrade recall from shared vocabulary to *meaning* — "broken
-object reference" matching a lesson phrased around "IDOR" — and add a second kind of
-fact, **app-shape patterns** ("this app uses a two-step login," "sequential numeric IDs,
-worth enumerating"), distilled from each run's knowledge graph so a brand-new target
-isn't started blind:
-
-- **`--semantic-memory` (local, default):** one JSON file, embeddings from the on-device
-  `all-MiniLM-L6-v2` when installed, otherwise a built-in hashing embedder (stopword-
-  filtered words + character trigrams). Zero dependencies, zero Docker, deterministic.
-- **`--helix-memory` (opt-in):** HelixDB graph+vector backend in Docker with a persistent
-  named volume (see the notes in `memory_backend/helix_server.py`). Deepest semantic
-  quality; needs Docker.
-
-```bash
-python -m redteam.cli ... --semantic-memory      # no extra install
-pip install -e .[semantic-memory]                # optional: real transformer embeddings
-python -m redteam.cli ... --helix-memory         # Docker path
-```
-
-Both paths degrade gracefully: if the embedder or the container fails, the store falls
-back to plain tag-matched memory and the run continues.
-
-## Learned technique selection (bandit, optional)
-
-`attack_tree.py` ranks techniques (SQLi, IDOR, XSS, ...) for the swarm to try next by a
-fixed, hand-set priority table — the same order against every target, with no memory of
-what's actually confirmed before. `bandit.py` adds a contextual multi-armed bandit
-(Thompson sampling) that learns a per-(technique, endpoint-shape) win rate across runs and
-nudges that static order, without ever overriding the priority tiers outright (chained
-follow-ups always still outrank fresh entry techniques).
-
-The "context" is a coarse, reusable endpoint-shape bucket (`numeric-id`, `auth-wall`,
-`workflow-shaped`, ...) — the same vocabulary `memory_backend/app_patterns.py` already
-derives for cross-run pattern recall. The reward is 1.0 when a technique confirms on that
-shape, 0.0 when the swarm marks it `FAILED` having found nothing — both already happen in
-`attack_tree.py`'s existing control flow; the bandit just tallies them instead of
-discarding them. Learned win rates persist to `memory/bandit.json`, so technique selection
-keeps specializing across engagements, not resetting every run.
-
-This is wired on by default (`cli.py` always attaches a `BanditStore` to `AttackTree`) and
-needs no flag — with no evidence yet, it samples around neutral and leaves the static
-order effectively unchanged; it only pays off once there's a track record to learn from.
+`docs/offense-arsenal.md` §7 is the active roadmap. Week 1 is shipped (recon:
+frequency priors, STADS stop rule, asset radar). Next: stage-machine planning
+(§5.4), cheapest-path consumers over the radar's typed edges (§3.1), bandit-armed
+payload scheduling (§4.1), then TAP/MAP-Elites loops and postex validation +
+recovery (§4.2–§5.3). Every technique in the arsenal carries per-technique
+adoption evidence from real tools and papers; the math-arsenal guard sections
+are deferred behind the offense build.
 
 ## Tests
 
