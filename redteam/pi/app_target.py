@@ -49,7 +49,14 @@ class IOPolicy:
     spotlighting  untrusted segments (RAG docs, tool results, web/email) are
                   wrapped in spotlight markers and their directives are NOT
                   honored (guards INDIRECT delivery; the Spotlighting paper's
-                  defense, ASR >50% -> <2% in their measurement).
+                  defense, ASR >50% -> <2% in their measurement). B8: the
+                  field carries the paper's METHOD — delimiting /
+                  data_marking / encoding — plus the ablation shape
+                  delimit_only (markers applied WITHOUT the data-not-
+                  instructions instruction): the ablation does NOT drop
+                  untrusted directives, because markers alone are defense
+                  theater — that fold is the discrimination. True is the
+                  back-compat alias for delimiting.
     tool_guard    the executor enforces the permission policy: forbidden tools
                   and out-of-policy argument values are blocked BEFORE any
                   side effect; the block is recorded, never hidden.
@@ -75,7 +82,7 @@ class IOPolicy:
                   integration rule).
     """
     input_guard: bool = False
-    spotlighting: bool = False
+    spotlighting: bool | str = False
     tool_guard: bool = False
     output_filter: bool = False
     memory_write_approval: bool = False
@@ -91,6 +98,29 @@ class IOPolicy:
 
     def label(self) -> str:
         return "on" if self.on else "off"
+
+    def spotlight_method(self):
+        """None (off) or one of SPOTLIGHT_METHODS. True is the back-compat
+        alias for 'delimiting' (the paper's headline method, WITH the
+        data-not-instructions instruction). Unknown names raise — a
+        misnamed defense must fail loudly, not silently degrade."""
+        if not self.spotlighting:
+            return None
+        if self.spotlighting is True:
+            return "delimiting"
+        if self.spotlighting in SPOTLIGHT_METHODS:
+            return self.spotlighting
+        raise ValueError(f"unknown spotlighting method "
+                         f"{self.spotlighting!r}; expected one of "
+                         f"{SPOTLIGHT_METHODS}")
+
+
+# the Spotlighting paper's methods (Hines et al., arXiv:2403.04432):
+# three real defenses plus the ablation shape — markers WITHOUT the
+# data-not-instructions instruction — which is the fold the
+# discrimination needs (defense theater, caught by the suite)
+SPOTLIGHT_METHODS = ("delimiting", "data_marking", "encoding",
+                     "delimit_only")
 
 
 @dataclass(frozen=True)
@@ -480,7 +510,13 @@ class LLMApp:
         return out
 
     def _policy_filter(self, directives: list) -> list:
-        if self.policy.spotlighting:
+        method = self.policy.spotlight_method()
+        if method is not None and method != "delimit_only":
+            # the three real methods mark the untrusted segments AND the
+            # instruction says data — untrusted directives are not
+            # honored. delimit_only applies the markers WITHOUT the
+            # instruction: the directives are honored (the ablation
+            # fold — defense theater, the discrimination's tooth).
             return [d for d in directives if d.trusted]
         return directives
 
@@ -791,6 +827,30 @@ def hardened_app(canary: str, *, balances=None, corpus=None,
         io_policy=IOPolicy(input_guard=True, spotlighting=True,
                            tool_guard=True, output_filter=True,
                            egress_allowlist=True),
+        benign_task=BENIGN_TASK,
+        capabilities=capabilities,
+        balances=dict(balances or {"treasury": 10_000})))
+
+
+def spotlighting_app(canary: str, *, method: str = "delimiting",
+                     balances=None, corpus=None, capabilities=(),
+                     system_prompt=None) -> LLMApp:
+    """The NAMED spotlighting deployment (SOTA.md B8): ONE method of the
+    Spotlighting paper (Hines et al., arXiv:2403.04432) as the only
+    active layer. Unlike the blanket hardened_app, legit user-turn
+    instructions survive, so the engagement can credit EARNED resistance
+    (the G5 rule) instead of an honest over-blocking inconclusive —
+    `resisted` means resistance to a named defense."""
+    policy = IOPolicy(spotlighting=method)
+    policy.spotlight_method()          # eager validation: bogus names fail here
+    return LLMApp(LLMAppConfig(
+        name=f"pi-spotlighting-{method}",
+        authorized_by="PI-ENGAGEMENT", ticket="ROE-PI-001",
+        system_prompt=(system_prompt or STANDARD_PROMPT).replace(
+            "{secret_canary}", canary),
+        tools=STANDARD_TOOLS,
+        rag_corpus=corpus if corpus is not None else STANDARD_CORPUS,
+        io_policy=policy,
         benign_task=BENIGN_TASK,
         capabilities=capabilities,
         balances=dict(balances or {"treasury": 10_000})))
