@@ -489,6 +489,14 @@ class OffensiveEngine:
                 inv.observe_http(name, 0, "osint", 0, source="osint-candidate")
         out["osint_candidates"] = uniq[:20]
 
+    def _tool_resolver(self):
+        """Lazily-built read-only binary resolver (PATH -> toolbox venv)."""
+        if getattr(self, "_resolver", None) is None:
+            from .sandbox.provision import ToolProvisioner
+            audit = getattr(self._ctx, "audit", None) if self._ctx else None
+            self._resolver = ToolProvisioner(audit=audit)
+        return self._resolver
+
     def _workflow_portscan(self, out: dict) -> None:
         """TCP service discovery on the in-scope host: nmap -sV when the
         binary exists, bounded connect-scan otherwise (portscan.scan picks).
@@ -499,6 +507,9 @@ class OffensiveEngine:
         from urllib.parse import urlsplit
 
         from .portscan import scan as _scan
+        # the resolver is read-only (no mid-scan installs): PATH first, then
+        # the on-requirement toolbox venv; requirement-driven installs happen
+        # via tool_provision / sandbox extra_tools, never silently mid-scan
         host = (urlsplit(self._base).hostname or "").lower()
         known_port = urlsplit(self._base).port or (
             443 if self._base.startswith("https") else 80)
@@ -508,7 +519,8 @@ class OffensiveEngine:
         if not candidates:
             self._audit("recon.portscan", skipped="no additional RoE ports")
             return
-        found = _scan(host, candidates, timeout=1.0)
+        found = _scan(host, candidates, timeout=1.0,
+                      resolve=self._tool_resolver().resolve)
         self._audit("recon.portscan", host=host, scanned=len(candidates),
                     open=sorted(found))
         out["portscan"] = {

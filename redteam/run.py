@@ -424,6 +424,13 @@ def execute_run(opts: RunOptions) -> dict:
             from .sandbox.docker_kali import KaliSandbox, SandboxError
             sandbox = KaliSandbox(engagement, audit=audit)
             try:
+                # requirement-driven tool layer BEFORE start: the container's
+                # egress is default-DROP, so packages must arrive via the
+                # image build (host network), not at runtime
+                extra = engagement.sandbox.extra_tools
+                if extra:
+                    tag, pkgs = sandbox.ensure_tools(list(extra))
+                    say(f"Tool layer: {', '.join(pkgs)} -> {tag}")
                 say("\nStarting Kali sandbox (this can take a while on first build)...")
                 plan = sandbox.start(
                     proxy_url=proxy.url_for("host.docker.internal") if proxy else "",

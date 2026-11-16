@@ -60,18 +60,23 @@ def _clamp(value, default, low, high):
 
 
 def _exec(command: str, ctx: ToolContext) -> tuple[int, str, str, str]:
-    """Run through the sandbox, else the local binary. Returns (exit, out, err, surface)."""
+    """Run through the sandbox, else the local/provisioned binary.
+    Returns (exit, out, err, surface)."""
     if ctx.sandbox is not None:
         result = ctx.sandbox.exec(f"{command} ; true", timeout=_MAX_RUNTIME_S)
         return result.exit_code, result.stdout, result.stderr, "sandbox"
     binary = command.split()[0]
-    if shutil.which(binary) is None:
+    from ..sandbox.provision import resolve_binary
+    where = resolve_binary(binary)
+    if not where:
         raise FileNotFoundError(
-            f"no sandbox running and no local {binary} binary found. Start the "
-            f"sandbox (ships in the Kali image) or install {binary} locally.")
+            f"no sandbox running and {binary} not provisioned. Run the "
+            f"tool_provision tool (downloads on requirement into .tools/venv), "
+            f"add it to the engagement sandbox.extra_tools (Kali image layer), "
+            f"or start the Kali sandbox (ships kali-linux-headless).")
     import subprocess
-    proc = subprocess.run(command, shell=True, capture_output=True, text=True,
-                          timeout=_MAX_RUNTIME_S)
+    proc = subprocess.run(where + command[len(binary):], shell=True,
+                          capture_output=True, text=True, timeout=_MAX_RUNTIME_S)
     return proc.returncode, proc.stdout, proc.stderr, "local"
 
 

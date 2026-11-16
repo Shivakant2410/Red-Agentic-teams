@@ -55,18 +55,23 @@ def _clamp(value, default, low, high):
 
 
 def _exec(command: str, ctx: ToolContext) -> tuple[int, str, str, str]:
-    """Run through the sandbox, else the local binary. Returns (exit, out, err, surface)."""
+    """Run through the sandbox, else the local/provisioned binary.
+    Returns (exit, out, err, surface)."""
     if ctx.sandbox is not None:
         result = ctx.sandbox.exec(f"{command} ; true", timeout=_MAX_RUNTIME_S)
         return result.exit_code, result.stdout, result.stderr, "sandbox"
     binary = command.split()[0]
-    if shutil.which(binary) is None:
+    from ..sandbox.provision import resolve_binary
+    where = resolve_binary(binary)
+    if not where:
         raise FileNotFoundError(
-            f"no sandbox running and no local {binary} binary found. Start the "
-            f"sandbox (ships in the Kali image) or install {binary} locally.")
+            f"no sandbox running and {binary} not provisioned. Run the "
+            f"tool_provision tool (downloads on requirement into .tools/venv), "
+            f"add it to the engagement sandbox.extra_tools (Kali image layer), "
+            f"or start the Kali sandbox (ships kali-linux-headless).")
     import subprocess
-    proc = subprocess.run(command, shell=True, capture_output=True, text=True,
-                          timeout=_MAX_RUNTIME_S)
+    proc = subprocess.run(where + command[len(binary):], shell=True,
+                          capture_output=True, text=True, timeout=_MAX_RUNTIME_S)
     return proc.returncode, proc.stdout, proc.stderr, "local"
 
 
@@ -309,7 +314,46 @@ class CrawlTool:
 
 # -- param_discovery (arjun) ------------------------------------------------------
 
-def _build_arjun_command(target: str, rate: int, timeout: int) -> str:
+_ARJUN_STYLE: dict = {}   # one CLI probe per process, cached
+
+
+def _arjun_style(ctx: ToolContext) -> str:
+    """Detect the arjun CLI generation once: Kali's 1.x (--stable, -T, -rate)
+    vs the pip distribution's 2.x (-d, -t, -o). The provisioned toolbox may
+    deliver either, and the flag sets are incompatible."""
+    if "style" in _ARJUN_STYLE:
+        return _ARJUN_STYLE["style"]
+    style = "pip"
+    try:
+        if ctx.sandbox is not None:
+            out = ctx.sandbox.exec("arjun -h 2>&1", timeout=15).stdout
+        else:
+            from ..sandbox.provision import resolve_binary
+            where = resolve_binary("arjun")
+            if where:
+                import subprocess as _sp
+                proc = _sp.run(f"{where} -h 2>&1", shell=True, capture_output=True,
+                               text=True, timeout=15)
+                out = (proc.stdout or "") + (proc.stderr or "")
+        if "--rate-limit" in (out or ""):
+            style = "pip"   # pip 2.x long flag; kali 1.x uses single-dash -rate
+        else:
+            style = "kali"
+    except Exception:
+        style = "pip"   # default to the pip CLI; a Kali arjun without -h is rare
+    _ARJUN_STYLE["style"] = style
+    return style
+
+
+def _build_arjun_command(target: str, rate: int, timeout: int,
+                         ctx: ToolContext | None = None) -> str:
+    if ctx is not None and _arjun_style(ctx) == "pip":
+        # pip arjun 2.x: -t threads, -d delay; the JSON file appears only on
+        # hits. Shell operators are real here (engine-authored template; only
+        # the target is agent-influenced, so only it gets quoted).
+        return (f"arjun -u {shlex.quote(target)} -o /tmp/arjun_out.json "
+                f"-t 5 -d 0.25 >/dev/null 2>&1 ; "
+                f"cat /tmp/arjun_out.json 2>/dev/null ; true")
     rate = _clamp(rate, 20, 1, _MAX_RATE)
     timeout = _clamp(timeout, 5, 1, _MAX_TIMEOUT)
     parts = ["arjun", "-u", target, "-oJ", "/tmp/arjun_out.json", "-rate", str(rate),
@@ -377,7 +421,7 @@ class ParamDiscoveryTool:
                              cause="out_of_scope")
             return f"BLOCKED (out of scope): {exc}"
 
-        command = _build_arjun_command(target, rate_limit, 5)
+        command = _build_arjun_command(target, rate_limit, 5, ctx=ctx)
         try:
             exit_code, stdout, stderr, surface = _exec(command, ctx)
         except FileNotFoundError as exc:

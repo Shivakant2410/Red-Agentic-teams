@@ -45,17 +45,23 @@ def nmap_available() -> bool:
     return shutil.which("nmap") is not None
 
 
-def nmap_scan(host: str, ports, timeout: float = NMAP_TIMEOUT) -> dict | None:
+def nmap_scan(host: str, ports, timeout: float = NMAP_TIMEOUT,
+              binary: str = "nmap") -> dict | None:
     """`nmap -Pn -sV` service scan parsed from XML: {port: {'service', 'product',
-    'version', 'extrainfo'}}. None when nmap is missing or fails — the caller
-    falls back to tcp_connect_scan. -Pn because a scoped lab host may drop
+    'version', 'extrainfo'}}. None when the binary is missing or fails — the
+    caller falls back to tcp_connect_scan. -Pn because a scoped lab host may drop
     ICMP; -sV because a port number is not a service."""
-    if not nmap_available() or not ports:
+    import os
+    if binary != "nmap" and not os.path.exists(binary):
+        return None
+    if binary == "nmap" and not nmap_available():
+        return None
+    if not ports:
         return None
     port_spec = ",".join(str(int(p)) for p in ports)
     try:
         proc = subprocess.run(
-            ["nmap", "-Pn", "-sV", "--version-light", "-oX", "-",
+            [binary, "-Pn", "-sV", "--version-light", "-oX", "-",
              "-p", port_spec, host],
             capture_output=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired):
@@ -78,13 +84,21 @@ def nmap_scan(host: str, ports, timeout: float = NMAP_TIMEOUT) -> dict | None:
     return services
 
 
-def scan(host: str, ports, timeout: float = 1.0) -> dict:
-    """The one entry point the engine calls. nmap first, connect-scan fallback;
-    the contract is {port: detail} either way (detail is a fingerprint dict for
-    nmap, 'open/connect' for the stdlib scan)."""
+def scan(host: str, ports, timeout: float = 1.0, resolve=None) -> dict:
+    """The one entry point the engine calls. nmap first (PATH, or a
+    provisioned binary via the `resolve` hook — the on-requirement toolbox),
+    connect-scan fallback; the contract is {port: detail} either way (detail
+    is a fingerprint dict for nmap, 'open/connect' for the stdlib scan)."""
     hosts = [p for p in ports]
-    res = nmap_scan(host, hosts)
-    if res is not None:
-        return {p: (rec or {}) for p, rec in res.items()}
+    nmap_bin = ""
+    if resolve is not None:
+        st = resolve("nmap")
+        nmap_bin = st.path if st.available else ""
+    elif nmap_available():
+        nmap_bin = "nmap"
+    if nmap_bin:
+        res = nmap_scan(host, hosts, binary=nmap_bin)
+        if res is not None:
+            return {p: (rec or {}) for p, rec in res.items()}
     return {p: {"name": "open/connect"} for p in tcp_connect_scan(host, hosts,
                                                                  timeout=timeout)}

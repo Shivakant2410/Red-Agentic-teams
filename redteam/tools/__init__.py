@@ -80,6 +80,7 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     from .nuclei import NucleiScanTool
     from .peer_traces import SearchPeerTracesTool
     from .probe import HttpProbeTool
+    from .provision import ToolProvisionTool
     from .skill_tools import ApplySkillTool
     from .spa_recon import SpaReconTool
     from .surface import SurfaceScanTool
@@ -109,6 +110,10 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # login-gated SPA with bootstrap mocks (ARTEX api-recon port) to reveal the runtime
     # API surface. None record findings.
     tools += [JwtInspectTool(), NucleiScanTool(), SurfaceScanTool(), SpaReconTool()]
+    # The on-requirement toolbox: downloads a catalog tool when the agent needs
+    # it (image layer with a sandbox, project venv without) — provisioning
+    # places binaries only; execution stays under RoE via the other tools.
+    tools.append(ToolProvisionTool())
     # Phase W1 discovery (docs/tool-integration-plan.md): ffuf/katana/arjun as
     # structured, rate-capped LEAD generators — endpoints fold into the graph,
     # parameters ride lead payloads into verify hints. None record findings.

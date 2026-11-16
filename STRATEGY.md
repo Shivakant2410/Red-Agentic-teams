@@ -17,11 +17,16 @@ Every sense is first-party where possible and passive where it cannot be:
 | AI-infra shapes | `observe()` sensors | no (parses held responses) | `ai_surface`, `ai_models` |
 | Service banners + api indexes | `observe()` sensors | no | `api_paths` |
 | **Port scan (nmap → connect-scan fallback)** | `portscan.py` | yes (TCP connect, RoE ports only) | `_services` → service discovery |
+| **Kali toolbox (provisioned arjun/nmap/…)** | `sandbox/provision.py` + `tool_provision` | binaries only; execution via scoped tools | resolved binaries for param_discovery / port_scan |
 | crt.sh / DNS / cert SAN | `osint.py` | **never** (passive) | inventory candidates |
 
 Rule: OSINT and fingerprints never cost an attack packet; active discovery
 never exceeds RoE ports/hosts; **every fetch — including fetches of
 port-scan-discovered services — passes the ScopeGuard and the rate limiter.**
+Provisioning is requirement-driven but **traffic-separated**: the Kali image
+layer builds on the host network (the container's default-DROP egress must
+stay that way), the sandbox-less mode installs into a project venv, and
+`resolve()` — the lookup the engine calls mid-run — never downloads.
 
 ## 2. Exploit = signal-combination falsification (not payloads)
 

@@ -228,8 +228,12 @@ def test_all_tools_block_out_of_scope(tool):
 
 
 @pytest.mark.parametrize("tool", [ContentDiscoveryTool(), CrawlTool(), ParamDiscoveryTool()])
-def test_all_tools_clear_error_without_sandbox_or_binary(tool, monkeypatch):
+def test_all_tools_clear_error_without_sandbox_or_binary(tool, monkeypatch, tmp_path):
     monkeypatch.setattr("shutil.which", lambda name: None)
+    # also hide the on-requirement toolbox venv — it may legitimately contain
+    # provisioned binaries (hermetic: no sandbox, no PATH, no venv)
+    monkeypatch.setattr("redteam.sandbox.provision._DEFAULT_VENV",
+                        tmp_path / "empty-venv")
     out = tool.run(ctx=_mk_ctx(), target="https://t.example", reason="r")
     assert out.startswith("ERROR")
 

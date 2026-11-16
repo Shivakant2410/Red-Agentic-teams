@@ -31,3 +31,4 @@ data/*
 
 # Runtime state (catalog, usage sqlite) — local to this machine
 .state/
+.tools/
