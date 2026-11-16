@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         python3 \
         jq \
+        seclists \
     && rm -rf /var/lib/apt/lists/*
 
 # Requirement-driven tool layer: the egress firewall blocks package downloads
