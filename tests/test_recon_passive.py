@@ -220,3 +220,20 @@ def test_malformed_schema_fields_fail_soft():
     assert summary["endpoints_discovered"] == 2
     node = next(n for n in graph.nodes(ENDPOINT) if n.key.endswith("/ok"))
     assert node.attrs["doc"] == "fine"
+
+
+def test_unreachable_base_is_probed_once_then_skipped():
+    """A base nothing listens on (e.g. a Docker container IP from a Windows host) must
+    not wait out the connect timeout once per path."""
+    import requests
+
+    calls = []
+
+    def _get(url, timeout=None, allow_redirects=None, headers=None):
+        calls.append(url)
+        raise requests.ConnectTimeout("no route")
+
+    with patch("redteam.recon.passive.requests.get", side_effect=_get):
+        summary = run_passive_recon(_engagement(), KnowledgeGraph())
+    assert calls == ["https://example.com/robots.txt"]
+    assert summary["endpoints_discovered"] == 0

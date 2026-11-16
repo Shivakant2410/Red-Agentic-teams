@@ -16,9 +16,10 @@ environment to the run's EvidenceProxy — HTTP(S)_PROXY env so HTTP-speaking to
 (nuclei, bandit, curl, requests, ...) route their traffic through the recording proxy,
 and the run CA installed into the container trust store so TLS interception is trusted
 there. The proxy host is reachable via host.docker.internal (mapped to the bridge
-gateway by `--add-host ... host-gateway`); that gateway /32 is appended to the egress
-allowlist — a deliberate, documented exception: the evidence plane is part of the
-trusted control path, everything else stays default-DROP.
+gateway by `--add-host ... host-gateway`); the proxy's TCP port on that gateway (passed
+as ALLOWED_PROXY, never the whole address) is the one deliberate, documented exception
+to the egress allowlist: the evidence plane is part of the trusted control path,
+everything else stays default-DROP.
 """
 
 from __future__ import annotations
@@ -26,8 +27,10 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from ..config import Engagement
 from .egress import EgressPlan, build_egress_plan
@@ -42,6 +45,8 @@ class SandboxError(Exception):
 # self-test's canary: if the sandbox can reach it, the firewall did not actually apply,
 # regardless of what the entrypoint log claims.
 _EGRESS_CANARY = "192.0.2.1"
+# How long the entrypoint gets to install the firewall and print "ready".
+_READY_TIMEOUT_S = 30
 
 
 @dataclass
@@ -95,6 +100,10 @@ class KaliSandbox:
             raise SandboxError(f"docker build failed:\n{proc.stderr[-2000:]}")
         self._log("sandbox.build.done", image=self._cfg.image)
 
+    def _running(self) -> bool:
+        proc = _run(["docker", "inspect", "-f", "{{.State.Running}}", self._cfg.container_name])
+        return proc.stdout.strip() == "true"
+
     def _ensure_network(self) -> None:
         proc = _run(["docker", "network", "inspect", self._cfg.network_name])
         if proc.returncode != 0:
@@ -124,20 +133,23 @@ class KaliSandbox:
             self.build()
 
         self._plan = build_egress_plan(self._eng)
+        proxy_allow = ""
         if proxy_url:
             # The evidence proxy runs host-side; the container reaches it through the
-            # bridge gateway. Open exactly that /32 — the ONE deliberate exception to
-            # the default-DROP egress, for the control path itself.
+            # bridge gateway. Open exactly the proxy's TCP port on that address — the ONE
+            # deliberate exception to the default-DROP egress, for the control path
+            # itself. Opening the whole gateway address would expose every service the
+            # host listens on (its own control plane, other containers' published ports).
             gw = self._network_gateway()
-            if gw:
-                gw_cidr = f"{gw}/32" if ":" not in gw else f"{gw}/128"
-                if gw_cidr not in self._plan.allowed_cidrs:
-                    self._plan.allowed_cidrs.append(gw_cidr)
+            port = urlsplit(proxy_url).port
+            if gw and port and ":" not in gw:
+                proxy_allow = f"{gw}:{port}"
             else:
                 self._log("sandbox.egress.warning",
-                          message="proxy requested but bridge gateway unknown; "
-                                  "sandbox will start WITHOUT proxy env (tools bypass "
-                                  "the evidence plane; the firewall still bounds them)")
+                          message="proxy requested but the bridge gateway or proxy port is "
+                                  "unknown (or the gateway is IPv6); sandbox will start "
+                                  "WITHOUT proxy env (tools bypass the evidence plane; the "
+                                  "firewall still bounds them)")
                 proxy_url = ""
         for w in self._plan.warnings:
             self._log("sandbox.egress.warning", message=w)
@@ -167,6 +179,7 @@ class KaliSandbox:
         cmd += [
             "-e", f"ALLOWED_CIDRS={allowed}",
             "-e", f"DNS_SERVERS={dns}",
+            "-e", f"ALLOWED_PROXY={proxy_allow}",
         ]
         if proxy_url:
             for var in ("HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"):
@@ -183,12 +196,22 @@ class KaliSandbox:
             self._install_ca(ca_cert)
 
         # Confirm the entrypoint reached "ready" (egress installed) before we proceed.
-        logs = _run(["docker", "logs", self._cfg.container_name], timeout=30)
-        if "ready" not in (logs.stdout + logs.stderr):
+        # `docker run -d` returns as soon as the container starts, before the firewall
+        # script finishes, so wait for the line — but stop waiting the moment the
+        # container exits (the script failed closed).
+        text = ""
+        deadline = time.monotonic() + _READY_TIMEOUT_S
+        while True:
+            logs = _run(["docker", "logs", self._cfg.container_name], timeout=30)
+            text = logs.stdout + logs.stderr
+            if "ready" in text or time.monotonic() >= deadline or not self._running():
+                break
+            time.sleep(0.5)
+        if "ready" not in text:
             self.stop()
             raise SandboxError(
                 "sandbox did not confirm egress lockdown; refusing to run tools.\n"
-                + (logs.stdout + logs.stderr)[-1500:]
+                + text[-1500:]
             )
         self._started = True
 
@@ -201,20 +224,29 @@ class KaliSandbox:
         return self._plan
 
     def _verify_egress_blocks_canary(self) -> None:
-        probe = (f"curl -s -m 3 -o /dev/null -w '%{{http_code}}' "
+        # --noproxy: with the evidence proxy on, HTTP_PROXY would send this probe to the
+        # proxy (which refuses it with a 403) and the firewall would never be tested.
+        probe = (f"curl -s -m 3 -o /dev/null -w '%{{http_code}}' --noproxy '*' "
                 f"--connect-timeout 2 http://{_EGRESS_CANARY}/ || echo BLOCKED")
         result = self.exec(probe, timeout=10)
-        reached = not result.timed_out and "BLOCKED" not in result.stdout and result.exit_code == 0
+        # Only a probe that RAN and reported BLOCKED proves the block. A probe that failed
+        # to run at all (exec error, missing user, timeout) proves nothing, so it counts
+        # as reached: fail closed.
+        reached = result.timed_out or result.exit_code != 0 or "BLOCKED" not in result.stdout
         self._log("sandbox.egress_selftest", canary=_EGRESS_CANARY,
                   reached=reached, stdout=result.stdout[:200])
         if reached:
             self.stop()
+            ran = not result.timed_out and result.exit_code == 0
+            what = (f"the sandbox reached {_EGRESS_CANARY} (a destination that should "
+                    "never be in scope), meaning the egress firewall did not actually apply "
+                    "despite the entrypoint reporting ready" if ran else
+                    f"the canary probe could not run (exit {result.exit_code}: "
+                    f"{result.stderr.strip()[:300]}), so the block is unproven")
             raise SandboxError(
-                f"EGRESS SELF-TEST FAILED: the sandbox reached {_EGRESS_CANARY} "
-                "(a destination that should never be in scope), meaning the egress "
-                "firewall did not actually apply despite the entrypoint reporting ready. "
-                "Refusing to run any tool against a sandbox with unconfirmed scope "
-                "enforcement — this is fail-closed, not a false alarm to work around."
+                f"EGRESS SELF-TEST FAILED: {what}. Refusing to run any tool against a "
+                "sandbox with unconfirmed scope enforcement — this is fail-closed, not a "
+                "false alarm to work around."
             )
 
     def _install_ca(self, ca_cert: Path) -> None:

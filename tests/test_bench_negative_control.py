@@ -193,3 +193,21 @@ def test_end_to_end_negative_control_records_nothing(tmp_path, lab):
     findings = _attack(tmp_path, lab("safe"))
     assert findings == []
     assert score_run("lab", findings, [], negative_control=True).control_passed
+
+
+def test_a_crashed_agent_run_is_never_scored(tmp_path, monkeypatch):
+    """An agent that dies on startup leaves no findings, which would otherwise score as a
+    perfectly clean negative control."""
+    from types import SimpleNamespace
+
+    import redteam.bench.runner as runner
+
+    def fake_run(cmd, *args, **kwargs):
+        crashed = "redteam.cli" in cmd
+        return SimpleNamespace(returncode=2 if crashed else 0, stdout="172.18.0.5", stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    monkeypatch.setattr(runner, "_wait_for", lambda *a, **k: True)
+    with pytest.raises(RuntimeError, match="not scored"):
+        runner.run("lab-authz-safe", str(tmp_path), LAB_OBJECTIVE_PROMPT)
+    assert not (tmp_path / "scorecard.md").exists()

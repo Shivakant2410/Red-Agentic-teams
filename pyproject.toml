@@ -11,7 +11,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "httpx>=0.27", "fastapi>=0.110", "uvicorn>=0.29", "cryptography>=42"]
+# redteam/server.py (dashboard API) — imported unconditionally there.
+server = ["fastapi>=0.110", "uvicorn>=0.29"]
+# redteam/proxy.py TLS interception (run-scoped CA); without it the evidence proxy
+# degrades to passthrough tunnels with metadata-only records.
+proxy = ["cryptography>=42"]
 # --semantic-memory (redteam/memory_backend/): HelixDB graph+vector recall instead of
 # plain tag matching. Requires Docker (ghcr.io/helixdb/helixdb) for the server, not
 # vendored here. See memory_backend/__init__.py for the persistence caveat.

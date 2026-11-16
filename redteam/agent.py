@@ -16,6 +16,7 @@ from .llm.routing import PLAN
 from .runtime import Halt, RepetitionGuard, compact_messages, looks_failed
 from .tools import ToolContext, Tool
 from .events import coerce_payload
+from .tools.independent_verify import settle_new_findings
 
 # A parallel exploit swarm (orchestrator.py) can have several RedTeamAgent instances in
 # different threads all writing the SAME RunManifest object/file concurrently. RunManifest
@@ -304,6 +305,11 @@ class RedTeamAgent:
                                      "name": name, "content": blocked})
                     continue
                 tool_out = self._dispatch(name, args)
+                # Re-check what this call recorded right away and tell the model the
+                # outcome, so a proven bug isn't re-proven for the rest of the round.
+                settled = settle_new_findings(self._ctx)
+                if settled:
+                    tool_out = f"{tool_out}\n\n{settled}"
                 guard.record_result(signature, looks_failed(tool_out))
                 messages.append({"role": "tool", "tool_call_id": tc.get("id"),
                                  "name": name, "content": tool_out})

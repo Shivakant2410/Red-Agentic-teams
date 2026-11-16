@@ -17,8 +17,11 @@ needs: the preflight consent prompt, console output, and interactive approvals.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
+
+from dotenv import find_dotenv, load_dotenv
 
 from .config import ConfigError, load_engagement
 from .run import RunOptions, execute_run, interactive_approver
@@ -46,6 +49,7 @@ def _preflight(engagement, auto_yes: bool) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv(find_dotenv(usecwd=True), override=False)   # .env keys; shell env wins
     parser = argparse.ArgumentParser(description="Authorized red-team agent (Kali sandbox + OpenRouter)")
     parser.add_argument("--engagement", required=True, help="Path to the engagement YAML (RoE).")
     parser.add_argument("--objective", required=True, help="What the agent should accomplish.")
@@ -53,6 +57,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-steps", type=int, default=40)
     parser.add_argument("--no-sandbox", action="store_true", help="Disable the Kali sandbox.")
     parser.add_argument("--no-browser", action="store_true", help="Disable browser automation.")
+    parser.add_argument("--headed", action="store_true",
+                        help="Show the browser window (slowed down) to watch the run live.")
     parser.add_argument("--multi-agent", action="store_true",
                         help="Use the orchestrator + specialist swarm (recon + exploit) instead of one agent.")
     parser.add_argument("--yes-to-all", action="store_true",
@@ -82,6 +88,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Record HTTP traffic headers only (traffic.jsonl); omit "
                              "request/response bodies. Use under strict data-handling RoE.")
     args = parser.parse_args(argv)
+    if args.headed:
+        os.environ["REDTEAM_HEADED"] = "1"   # read by tools/browser.py at launch
 
     try:
         engagement = load_engagement(args.engagement)

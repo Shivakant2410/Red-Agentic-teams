@@ -33,11 +33,13 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 import time
 import urllib.request
 from pathlib import Path
 
 import yaml
+from dotenv import find_dotenv, load_dotenv
 
 from ..config import SandboxConfig
 from .scoring import score_pair, score_run
@@ -217,7 +219,9 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -
         _write_engagement(target, eng_path, container_ip)
 
         started = time.time()
-        cmd = ["python", "-m", "redteam.cli", "--engagement", str(eng_path),
+        # sys.executable, not "python": PATH can resolve to an interpreter without this
+        # project's dependencies, and the agent then dies on import.
+        cmd = [sys.executable, "-m", "redteam.cli", "--engagement", str(eng_path),
                "--objective", objective, "--out", str(out_dir),
                "--yes-to-all", "--max-steps", "70"]
         # engagement.yaml's sandbox.enable already reflects whether we got a container_ip
@@ -230,7 +234,7 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -
             cmd += ["--source-dir", target.compose_dir]
         if multi_agent:
             cmd.append("--multi-agent")
-        subprocess.run(cmd, check=False)
+        exit_code = subprocess.run(cmd, check=False).returncode
         elapsed = time.time() - started
     finally:
         if target_proc is not None:
@@ -239,6 +243,11 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -
             _stop_compose(target)
         else:
             subprocess.run(["docker", "rm", "-f", container], capture_output=True)
+
+    if exit_code != 0:
+        # Never score a run the agent didn't make: an empty findings file reads as a
+        # perfectly clean negative control and would certify a false-positive rate of 0.
+        raise RuntimeError(f"agent exited with code {exit_code}; {target_name} not scored")
 
     findings_path = out_dir / "findings.json"
     findings = json.loads(findings_path.read_text(encoding="utf-8")) if findings_path.exists() else []
@@ -329,6 +338,7 @@ def default_objective(target_or_pair: str) -> str:
 
 
 def main(argv=None) -> int:
+    load_dotenv(find_dotenv(usecwd=True), override=False)   # .env keys; shell env wins
     ap = argparse.ArgumentParser(description="Run the agent against a benchmark target and score it.")
     ap.add_argument("--target", required=True,
                     help=f"a target ({', '.join(REGISTRY)}) or a paired run with a "
@@ -336,9 +346,13 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="runs/bench")
     ap.add_argument("--objective", default=None,
                     help="defaults to a target-appropriate prompt")
+    ap.add_argument("--headed", action="store_true",
+                    help="Show the agent's browser window to watch the run live.")
     ap.add_argument("--multi-agent", action="store_true",
                     help="Drive the run with the orchestrator + specialist swarm.")
     args = ap.parse_args(argv)
+    if args.headed:
+        os.environ["REDTEAM_HEADED"] = "1"   # inherited by the agent subprocess
     objective = args.objective or default_objective(args.target)
     if args.target in PAIRS:
         run_pair(args.target, args.out, objective, multi_agent=args.multi_agent)

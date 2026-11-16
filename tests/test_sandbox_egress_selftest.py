@@ -85,3 +85,109 @@ def test_egress_selftest_fails_closed_when_canary_is_reachable(monkeypatch):
     except SandboxError as exc:
         assert "EGRESS SELF-TEST FAILED" in str(exc)
     assert stopped["called"]       # must tear down rather than leave a falsely-trusted sandbox up
+
+
+def _logs_then(monkeypatch, sb, log_lines: list[str], running: bool = True):
+    """Each `docker logs` call returns the next entry: the entrypoint printing over time."""
+    feed = iter(log_lines)
+    last = {"text": ""}
+
+    def fake_run(cmd, timeout=None):
+        if cmd[:2] == ["docker", "logs"]:
+            last["text"] = next(feed, last["text"])
+            return FakeProc(stdout=last["text"])
+        if cmd[:2] == ["docker", "inspect"]:
+            return FakeProc(stdout="true\n" if running else "false\n")
+        return FakeProc()
+
+    monkeypatch.setattr(dk, "_run", fake_run)
+    monkeypatch.setattr(dk.time, "sleep", lambda s: None)
+
+
+def test_start_waits_for_the_entrypoint_to_print_ready(monkeypatch):
+    """`docker run -d` returns before the firewall script finishes; reading the log once
+    right away raced it and refused every sandbox."""
+    sb = _make_sandbox(monkeypatch, canary_reached=False)
+    _logs_then(monkeypatch, sb, ["[sandbox] applying egress allowlist...\n",
+                                 "[sandbox] applying egress allowlist...\n[sandbox] ready.\n"])
+    assert sb.start() is not None and sb._started
+
+
+def test_start_fails_closed_at_once_when_the_container_exits(monkeypatch):
+    sb = _make_sandbox(monkeypatch, canary_reached=False)
+    _logs_then(monkeypatch, sb, ["[sandbox] FATAL: cannot manage iptables\n"], running=False)
+    try:
+        sb.start()
+        assert False, "expected SandboxError"
+    except SandboxError as exc:
+        assert "did not confirm egress lockdown" in str(exc)
+    assert not sb._started
+
+
+def test_egress_selftest_fails_closed_when_the_probe_cannot_run(monkeypatch):
+    """An exec error (e.g. the non-root user missing from the image) used to read as
+    'canary blocked' and pass the self-test with scope enforcement unproven."""
+    sb = _make_sandbox(monkeypatch, canary_reached=False)
+    failed = ExecResult(exit_code=1, stdout="",
+                        stderr="unable to find user operator", timed_out=False)
+    monkeypatch.setattr(KaliSandbox, "exec", lambda self, command, timeout=None: failed)
+    monkeypatch.setattr(sb, "stop", lambda: None)
+    try:
+        sb.start()
+        assert False, "expected SandboxError"
+    except SandboxError as exc:
+        assert "could not run" in str(exc)
+
+
+def _capture_run(monkeypatch):
+    """Record every docker CLI call; logs say ready, the container is running."""
+    calls = []
+
+    def fake_run(cmd, timeout=None):
+        calls.append(cmd)
+        if cmd[:2] == ["docker", "logs"]:
+            return FakeProc(stdout="[sandbox] ready.\n")
+        if cmd[:2] == ["docker", "inspect"]:
+            return FakeProc(stdout="true\n")
+        return FakeProc()
+
+    monkeypatch.setattr(dk, "_run", fake_run)
+    return calls
+
+
+def _env_of(run_cmd: list[str]) -> dict:
+    return dict(run_cmd[i + 1].split("=", 1) for i, a in enumerate(run_cmd) if a == "-e")
+
+
+def test_evidence_proxy_opens_one_port_not_the_whole_gateway(monkeypatch):
+    """Opening the gateway /32 exposed every service the host listens on (its own
+    control plane, other containers' published ports) to sandbox tools."""
+    sb = _make_sandbox(monkeypatch, canary_reached=False)
+    calls = _capture_run(monkeypatch)
+    monkeypatch.setattr(sb, "_network_gateway", lambda: "172.18.0.1")
+    sb.start(proxy_url="http://host.docker.internal:8877")
+    env = _env_of(next(c for c in calls if c[:2] == ["docker", "run"]))
+    assert env["ALLOWED_PROXY"] == "172.18.0.1:8877"
+    assert "172.18.0.1" not in env["ALLOWED_CIDRS"]
+    assert env["HTTP_PROXY"] == "http://host.docker.internal:8877"
+
+
+def test_proxy_without_a_port_starts_without_the_proxy(monkeypatch):
+    sb = _make_sandbox(monkeypatch, canary_reached=False)
+    calls = _capture_run(monkeypatch)
+    monkeypatch.setattr(sb, "_network_gateway", lambda: "172.18.0.1")
+    sb.start(proxy_url="http://host.docker.internal")
+    env = _env_of(next(c for c in calls if c[:2] == ["docker", "run"]))
+    assert env["ALLOWED_PROXY"] == "" and "HTTP_PROXY" not in env
+
+
+def test_egress_canary_probe_bypasses_the_proxy(monkeypatch):
+    """With HTTP_PROXY set, the canary curl would hit the proxy (a scope 403) and never
+    test the firewall at all."""
+    sb = _make_sandbox(monkeypatch, canary_reached=False)
+    probes = []
+    monkeypatch.setattr(KaliSandbox, "exec", lambda self, command, timeout=None: (
+        probes.append(command) or ExecResult(exit_code=0, stdout="BLOCKED", stderr="",
+                                             timed_out=False)))
+    sb.start()
+    assert probes and "--noproxy '*'" in probes[0]

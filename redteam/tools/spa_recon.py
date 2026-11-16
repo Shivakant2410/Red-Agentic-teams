@@ -305,15 +305,22 @@ class SpaReconTool:
             max_pages = 8
 
         controller = ctx.browser
-        try:
-            controller._ensure()
-        except Exception as exc:
-            return f"BROWSER ERROR: {exc}"
+        # Playwright objects only work on the thread that created them, and swarm
+        # workers call tools from their own threads: run the whole walk on the
+        # controller's browser thread when it has one.
+        run_exclusive = getattr(controller, "run_exclusive", None)
+        if run_exclusive is None:
+            try:
+                controller._ensure()
+            except Exception as exc:
+                return f"BROWSER ERROR: {exc}"
 
         try:
-            result = spa_walk(controller, entry_url,
-                              stub_patterns=stub_patterns, max_pages=max_pages,
-                              audit=ctx.audit, scope=ctx.scope, limiter=ctx.limiter)
+            walk_kwargs = dict(stub_patterns=stub_patterns, max_pages=max_pages,
+                               audit=ctx.audit, scope=ctx.scope, limiter=ctx.limiter)
+            result = (run_exclusive(spa_walk, controller, entry_url, **walk_kwargs)
+                      if run_exclusive is not None
+                      else spa_walk(controller, entry_url, **walk_kwargs))
         except ScopeViolation as exc:
             return f"BLOCKED (out of scope): {exc}"
         except RequestBudgetExceeded as exc:
