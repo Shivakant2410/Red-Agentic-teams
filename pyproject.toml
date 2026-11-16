@@ -34,3 +34,8 @@ packages = ["redteam", "redteam.tools", "redteam.llm", "redteam.llmred", "redtea
             "redteam.bench", "redteam.importers", "redteam.memory_backend", "redteam.swarm",
             "redteam.recon", "agentic_setup"]
 package-dir = {"agentic_setup" = "src/agentic_setup"}
+
+[tool.pytest.ini_options]
+# prototypes/ holds frozen copies of statefuzz and lab experiments whose test files share
+# basenames with the real ones; collecting both makes pytest abort with import mismatches.
+testpaths = ["tests", "statefuzz/tests"]
