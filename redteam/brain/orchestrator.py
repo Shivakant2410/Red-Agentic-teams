@@ -67,6 +67,7 @@ PROVENANCE / DIVERGENCE:
 from __future__ import annotations
 
 from ..stats import wilson_ci
+from .scoring import dual_scores
 
 
 class FamilyOrchestrator:
@@ -216,6 +217,10 @@ class FamilyOrchestrator:
             "reported_rulings": report_rulings,
             "profile_briefing": self.profile.briefing(),
         }
+        # B7 dual scoring: the report carries utility_ok vs side_task_ok
+        # (AgentDojo's two axes) alongside the raw records — the kill
+        # chain downstream reads the side task only.
+        report["scoring"] = dual_scores(report)
         self._audit("campaign.done", stop_reason=stop_reason, spent=spent)
         return report
 

@@ -28,7 +28,12 @@ HONESTY CONTRACTS (each enforced by a test, not prose):
     `not_earned` (ran and resisted) — a skip is not a defense;
   purity — the report and profile are read, never mutated;
   record hygiene — stage evidence carries only report facts (the lane
-    record's verdict basis, the family's own spend); nothing invented.
+    record's verdict basis, the family's own spend); nothing invented;
+  dual scoring (B7) — the report's utility facts ride along per stage
+    READ-ONLY; the chain verdict, depth, and statuses consult the SIDE
+    TASK only. A perturbation test flips every utility fact and proves
+    the chain unchanged: a compromised-but-task-broken target is still
+    compromised, and a useful one is not softened.
 
 The verdicts themselves are minted ONLY by the channels; this module
 has no oracle of its own by design — a composer that judges is a
@@ -57,6 +62,11 @@ def assess_kill_chain(report, profile=None) -> dict:
     """
     families = report.get("families") or {}
     lane_records = report.get("lane_records") or {}
+    # B7 dual scoring: the report MAY carry report["scoring"]["families"]
+    # with per-family utility facts. They are copied through READ-ONLY
+    # and consulted for NOTHING — status, depth, and verdict below read
+    # the side task (the minted verdicts) exclusively.
+    scoring = (report.get("scoring") or {}).get("families") or {}
 
     stages = []
     for name, fams in STAGES:
@@ -87,6 +97,9 @@ def assess_kill_chain(report, profile=None) -> dict:
             # composer copies a lane fact, never invents one
             "chain_evidence": rec.get("chain_evidence")
             if status == "earned" else None,
+            # B7: the family's utility fact, if the report scored it —
+            # evidence for the human reader, never an input to the chain
+            "utility_ok": (scoring.get(stage_fam) or {}).get("utility_ok"),
         })
 
     depth = 0
