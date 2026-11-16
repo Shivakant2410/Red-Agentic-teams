@@ -27,3 +27,6 @@ data/
 
 # Runtime state (catalog, usage sqlite) — local to this machine
 .state/
+
+# Rust kernel build artifacts
+kernel/target/

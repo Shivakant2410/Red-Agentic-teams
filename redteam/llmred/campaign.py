@@ -5,6 +5,11 @@ strategy) pair to try, (2) executes its turn flow against the target, (3) scores
 the reply deterministically, (4) feeds the outcome back. It stops when the
 attempt budget is spent, when every cell hit its per-objective cap, or when the
 request budget trips (fail-closed, the ratelimit.py circuit breaker).
+A CampaignConfig.profile (a campaign-brain TargetProfile) warm-starts the
+bandit's VIRGIN arms from the per-target dossier and receives the facts
+back at the end (redteam/brain/warmstart.py) — the same warm-start assist
+the pi/sid/sc family bands get as virtual pulls, now at the bandit level;
+without a profile the behavior is byte-identical to before.
 
 How the next pair is CHOSEN — the part no vendor in the teardown documents:
 attempts are allocated by the Thompson-sampling bandit from `bandit.py`, with
@@ -122,6 +127,13 @@ class CampaignConfig:
     # Optional factory override (tests / embedding): factory(target_config) -> target.
     # Production leaves it None and gets target_from_config().
     target_factory: Callable | None = None
+    # Optional campaign-brain bridge (redteam/brain/warmstart.py): a
+    # TargetProfile whose family tallies become informative Beta priors on
+    # VIRGIN (strategy, family) arms (the same warm-start assist the
+    # pi/sid/sc bands get as virtual pulls), and which receives the
+    # campaign's oracle facts back at the end. None -> legacy behavior,
+    # byte-identical summaries.
+    profile: object | None = None
 
 
 class Campaign:
@@ -383,6 +395,25 @@ class Campaign:
         attempts_per_obj: dict[str, int] = {o.id: 0 for o in cfg.objectives}
 
         bandit = BanditStore(path=out_dir / "llmred_bandit.json", discount=cfg.discount)
+
+        # Warm-start assist (the brain bridge): the per-target dossier
+        # seeds VIRGIN (strategy, family) arms; data-wins and no-certainty
+        # are the BanditStore.seed contract. None profile -> None warm.
+        warm = None
+        writeback = None
+        if cfg.profile is not None:
+            from ..brain.warmstart import (seed_bandit_from_profile,
+                                           writeback_profile_from_summary)
+            writeback = writeback_profile_from_summary
+            seeded = seed_bandit_from_profile(
+                bandit, cfg.profile,
+                [(strat_id, bucket, bucket.split(":")[0])
+                 for strat_id, bucket, _cost, _meta in cands])
+            warm = {"source": "target-profile", "seeded": seeded}
+            _audit(cfg.audit, "llmred.campaign.warm_start",
+                   seeded=len(seeded),
+                   buckets=sorted({s["bucket"] for s in seeded}))
+
         jsonl = (out_dir / "campaign.jsonl").open("a", encoding="utf-8")
 
         counters = {"leaked": 0, "blocked": 0, "undetermined": 0, "error": 0}
@@ -524,6 +555,12 @@ class Campaign:
             agg["successes"] += st["successes"]
             agg["decided"] += st["successes"] + st["blocked"]
 
+        # WRITE-back: the campaign's oracle facts land in the ledger, so
+        # the next brain campaign inherits them (one writer per fact —
+        # the bandit keeps its own store).
+        if writeback is not None:
+            writeback(cfg.profile, {"objectives": objectives_out})
+
         summary = {
             "schema": "llmred.summary.v1",
             "target": {"name": cfg.target.name, "kind": cfg.target.kind,
@@ -540,6 +577,8 @@ class Campaign:
             "owasp": owasp_out,
             "skipped": skipped,
         }
+        if warm is not None:
+            summary["warm_start"] = warm
         (out_dir / "summary.json").write_text(
             json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
         _audit(cfg.audit, "llmred.campaign.end", attempts=attempts_total,
