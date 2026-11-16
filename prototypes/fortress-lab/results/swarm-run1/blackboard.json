@@ -1,0 +1,1665 @@
+[
+  {
+    "id": "F-001",
+    "kind": "CONTROL",
+    "source": "orchestrator",
+    "ts": 1793778961.894686,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "engage",
+      "target": "http://127.0.0.1:8413"
+    },
+    "derived_from": []
+  },
+  {
+    "id": "SF-RECON-0001",
+    "kind": "OBSERVATION",
+    "source": "recon",
+    "ts": 1793778961.8981392,
+    "confidence": 1.0,
+    "tags": [
+      "openapi"
+    ],
+    "payload": {
+      "openapi_paths": [
+        "/api/audit",
+        "/api/credits/transfer",
+        "/api/events/{event_id}",
+        "/api/invoices/{invoice_id}",
+        "/api/invoices/{invoice_id}/pay",
+        "/api/login",
+        "/api/payouts",
+        "/api/payouts/{payout_id}",
+        "/api/payouts/{payout_id}/cancel",
+        "/api/plans",
+        "/api/promo/claim",
+        "/api/register",
+        "/api/subscriptions",
+        "/api/subscriptions/{subscription_id}",
+        "/api/subscriptions/{subscription_id}/cancel",
+        "/api/subscriptions/{subscription_id}/seats",
+        "/api/wallet",
+        "/health"
+      ],
+      "openapi_doc": {
+        "/api/audit": {
+          "get": {
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "readback"
+          }
+        },
+        "/api/credits/transfer": {
+          "post": {
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "amount_cents": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "to_account": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "to_account",
+                    "amount_cents"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "state-write"
+          }
+        },
+        "/api/events/{event_id}": {
+          "get": {
+            "parameters": [
+              {
+                "in": "path",
+                "name": "event_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "callback"
+          }
+        },
+        "/api/invoices/{invoice_id}": {
+          "get": {
+            "parameters": [
+              {
+                "in": "path",
+                "name": "invoice_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "readback"
+          }
+        },
+        "/api/invoices/{invoice_id}/pay": {
+          "post": {
+            "parameters": [
+              {
+                "in": "path",
+                "name": "invoice_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "state-write"
+          }
+        },
+        "/api/login": {
+          "post": {
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "password": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "username",
+                    "password"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "bootstrap"
+          }
+        },
+        "/api/payouts": {
+          "post": {
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "amount_cents": {
+                      "minimum": 100,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                }
+              }
+            },
+            "responses": {
+              "202": {}
+            },
+            "x-kind": "state-write-async"
+          }
+        },
+        "/api/payouts/{payout_id}": {
+          "get": {
+            "parameters": [
+              {
+                "in": "path",
+                "name": "payout_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "readback"
+          }
+        },
+        "/api/payouts/{payout_id}/cancel": {
+          "post": {
+            "parameters": [
+              {
+                "in": "path",
+                "name": "payout_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "state-write"
+          }
+        },
+        "/api/plans": {
+          "get": {
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "meta"
+          }
+        },
+        "/api/promo/claim": {
+          "post": {
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                }
+              }
+            },
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "state-write"
+          }
+        },
+        "/api/register": {
+          "post": {
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "password": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "username",
+                    "password"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "responses": {
+              "201": {}
+            },
+            "x-kind": "bootstrap"
+          }
+        },
+        "/api/subscriptions": {
+          "post": {
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "plan": {
+                      "enum": [
+                        "enterprise",
+                        "pro",
+                        "starter"
+                      ],
+                      "type": "string"
+                    },
+                    "seats": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                }
+              }
+            },
+            "responses": {
+              "201": {}
+            },
+            "x-kind": "state-write"
+          }
+        },
+        "/api/subscriptions/{subscription_id}": {
+          "get": {
+            "parameters": [
+              {
+                "in": "path",
+                "name": "subscription_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "readback"
+          }
+        },
+        "/api/subscriptions/{subscription_id}/cancel": {
+          "post": {
+            "parameters": [
+              {
+                "in": "path",
+                "name": "subscription_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                }
+              }
+            },
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "state-write"
+          }
+        },
+        "/api/subscriptions/{subscription_id}/seats": {
+          "post": {
+            "parameters": [
+              {
+                "in": "path",
+                "name": "subscription_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "seats": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                }
+              }
+            },
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "state-write"
+          }
+        },
+        "/api/wallet": {
+          "get": {
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "readback"
+          }
+        },
+        "/health": {
+          "get": {
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "meta"
+          }
+        }
+      },
+      "count": 18
+    },
+    "derived_from": [
+      "F-001"
+    ]
+  },
+  {
+    "id": "SF-RECON-0002",
+    "kind": "OBSERVATION",
+    "source": "recon",
+    "ts": 1793778961.901884,
+    "confidence": 1.0,
+    "tags": [
+      "fingerprint"
+    ],
+    "payload": {
+      "status": 200,
+      "server": "Werkzeug/3.1.9 Python/3.12.16"
+    },
+    "derived_from": [
+      "F-001"
+    ]
+  },
+  {
+    "id": "SF-SURFACE_MAPPER-0003",
+    "kind": "SURFACE",
+    "source": "surface_mapper",
+    "ts": 1793778961.913412,
+    "confidence": 1.0,
+    "tags": [
+      "surface"
+    ],
+    "payload": {
+      "path_count": 18,
+      "endpoints": [
+        "/api/audit",
+        "/api/credits/transfer",
+        "/api/events/{event_id}",
+        "/api/invoices/{invoice_id}",
+        "/api/invoices/{invoice_id}/pay",
+        "/api/login",
+        "/api/payouts",
+        "/api/payouts/{payout_id}",
+        "/api/payouts/{payout_id}/cancel",
+        "/api/plans",
+        "/api/promo/claim",
+        "/api/register",
+        "/api/subscriptions",
+        "/api/subscriptions/{subscription_id}",
+        "/api/subscriptions/{subscription_id}/cancel",
+        "/api/subscriptions/{subscription_id}/seats",
+        "/api/wallet",
+        "/health"
+      ],
+      "auth_model": "bearer-required",
+      "stateful_flows": [
+        "payouts: create -> read,cancel",
+        "subscriptions: create -> read,cancel,seats"
+      ],
+      "resource_actions": {
+        "audit": {
+          "create": null,
+          "actions": [],
+          "param": null,
+          "param_name": null
+        },
+        "credits": {
+          "create": null,
+          "actions": [
+            {
+              "verb": "transfer",
+              "path": "/api/credits/transfer",
+              "method": "POST",
+              "schema": {
+                "amount_cents": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "to_account": {
+                  "type": "string"
+                }
+              },
+              "kind": "state-write"
+            }
+          ],
+          "param": null,
+          "param_name": null
+        },
+        "events": {
+          "create": null,
+          "actions": [
+            {
+              "verb": "read",
+              "path": "/api/events/{event_id}",
+              "method": "GET",
+              "schema": {},
+              "kind": "callback"
+            }
+          ],
+          "param": "/api/events/{event_id}",
+          "param_name": "event_id"
+        },
+        "invoices": {
+          "create": null,
+          "actions": [
+            {
+              "verb": "read",
+              "path": "/api/invoices/{invoice_id}",
+              "method": "GET",
+              "schema": {},
+              "kind": "readback"
+            },
+            {
+              "verb": "pay",
+              "path": "/api/invoices/{invoice_id}/pay",
+              "method": "POST",
+              "schema": {},
+              "kind": "state-write"
+            }
+          ],
+          "param": "/api/invoices/{invoice_id}",
+          "param_name": "invoice_id"
+        },
+        "login": {
+          "create": "/api/login",
+          "actions": [],
+          "param": null,
+          "param_name": null,
+          "create_schema": {
+            "password": {
+              "type": "string"
+            },
+            "username": {
+              "type": "string"
+            }
+          }
+        },
+        "payouts": {
+          "create": "/api/payouts",
+          "actions": [
+            {
+              "verb": "read",
+              "path": "/api/payouts/{payout_id}",
+              "method": "GET",
+              "schema": {},
+              "kind": "readback"
+            },
+            {
+              "verb": "cancel",
+              "path": "/api/payouts/{payout_id}/cancel",
+              "method": "POST",
+              "schema": {},
+              "kind": "state-write"
+            }
+          ],
+          "param": "/api/payouts/{payout_id}",
+          "param_name": "payout_id",
+          "create_schema": {
+            "amount_cents": {
+              "minimum": 100,
+              "type": "integer"
+            }
+          }
+        },
+        "plans": {
+          "create": null,
+          "actions": [],
+          "param": null,
+          "param_name": null
+        },
+        "promo": {
+          "create": null,
+          "actions": [
+            {
+              "verb": "claim",
+              "path": "/api/promo/claim",
+              "method": "POST",
+              "schema": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "kind": "state-write"
+            }
+          ],
+          "param": null,
+          "param_name": null
+        },
+        "register": {
+          "create": "/api/register",
+          "actions": [],
+          "param": null,
+          "param_name": null,
+          "create_schema": {
+            "password": {
+              "type": "string"
+            },
+            "username": {
+              "type": "string"
+            }
+          }
+        },
+        "subscriptions": {
+          "create": "/api/subscriptions",
+          "actions": [
+            {
+              "verb": "read",
+              "path": "/api/subscriptions/{subscription_id}",
+              "method": "GET",
+              "schema": {},
+              "kind": "readback"
+            },
+            {
+              "verb": "cancel",
+              "path": "/api/subscriptions/{subscription_id}/cancel",
+              "method": "POST",
+              "schema": {
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "kind": "state-write"
+            },
+            {
+              "verb": "seats",
+              "path": "/api/subscriptions/{subscription_id}/seats",
+              "method": "POST",
+              "schema": {
+                "seats": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "kind": "state-write"
+            }
+          ],
+          "param": "/api/subscriptions/{subscription_id}",
+          "param_name": "subscription_id",
+          "create_schema": {
+            "plan": {
+              "enum": [
+                "enterprise",
+                "pro",
+                "starter"
+              ],
+              "type": "string"
+            },
+            "seats": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        },
+        "wallet": {
+          "create": null,
+          "actions": [],
+          "param": null,
+          "param_name": null
+        }
+      },
+      "param_objects": [],
+      "coupon": [],
+      "refund": [],
+      "redeem": [],
+      "async": [],
+      "state_writes": [],
+      "readback": [
+        "/api/audit",
+        "/api/events/{event_id}",
+        "/api/wallet"
+      ],
+      "other": []
+    },
+    "derived_from": [
+      "SF-RECON-0001"
+    ]
+  },
+  {
+    "id": "SF-SURFACE_MAPPER-0004",
+    "kind": "OBSERVATION",
+    "source": "surface_mapper",
+    "ts": 1793778961.9134169,
+    "confidence": 1.0,
+    "tags": [
+      "auth-boundary"
+    ],
+    "payload": {
+      "auth_model": "bearer-required",
+      "evidence": "anon GET /api/wallet -> 401"
+    },
+    "derived_from": [
+      "SF-RECON-0001"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0005",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793778961.913507,
+    "confidence": 0.7,
+    "tags": [
+      "h_fsm"
+    ],
+    "payload": {
+      "tag": "h_fsm",
+      "title": "Order lifecycle is a two-step state machine; transition guards may be missing",
+      "prior": 0.7,
+      "test_plan": "spawn statefuzz specialist",
+      "origin": "rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0003"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0006",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793778961.9135103,
+    "confidence": 0.4,
+    "tags": [
+      "h_hidden_verbs"
+    ],
+    "payload": {
+      "tag": "h_hidden_verbs",
+      "title": "Parameterised money resources may expose undocumented ops verbs",
+      "prior": 0.4,
+      "test_plan": "verb wordlist probe on param paths",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0003"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0007",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793778961.9135127,
+    "confidence": 0.55,
+    "tags": [
+      "h_state_guard"
+    ],
+    "payload": {
+      "tag": "h_state_guard",
+      "title": "Cancel-terminated resources may leave sibling write verbs open and the dedupe keyed to the body",
+      "prior": 0.55,
+      "test_plan": "create -> cancel -> replay/mutate -> sibling write",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0003"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0008",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793778961.9135149,
+    "confidence": 0.5,
+    "tags": [
+      "h_mass_assign"
+    ],
+    "payload": {
+      "tag": "h_mass_assign",
+      "title": "Undocumented body fields may override pricing or entitlements",
+      "prior": 0.5,
+      "test_plan": "differential create with injected candidates",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0003"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0009",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793778961.9135168,
+    "confidence": 0.5,
+    "tags": [
+      "h_cross_tenant"
+    ],
+    "payload": {
+      "tag": "h_cross_tenant",
+      "title": "Global read-backs may leak other tenants' ids; leaked ids may pay the caller",
+      "prior": 0.5,
+      "test_plan": "cross-principal readback scan + deputy write",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0003"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0010",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793778961.9135191,
+    "confidence": 0.55,
+    "tags": [
+      "h_async_toctou"
+    ],
+    "payload": {
+      "tag": "h_async_toctou",
+      "title": "Async settles may debit without re-checking the balance",
+      "prior": 0.55,
+      "test_plan": "create async -> drain balance -> await settle",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0003"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0011",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793778961.9135208,
+    "confidence": 0.5,
+    "tags": [
+      "h_terminal_credit"
+    ],
+    "payload": {
+      "tag": "h_terminal_credit",
+      "title": "Cancel of a settled async artifact may refund after delivery",
+      "prior": 0.5,
+      "test_plan": "create async -> settle -> cancel",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0003"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0012",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793778961.913523,
+    "confidence": 0.45,
+    "tags": [
+      "h_arith_cycle"
+    ],
+    "payload": {
+      "tag": "h_arith_cycle",
+      "title": "Value-neutral cycles of a priced transition may accumulate rounding drift",
+      "prior": 0.45,
+      "test_plan": "cycle 12x, net wallet delta",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0003"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0013",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793778961.9135244,
+    "confidence": 0.5,
+    "tags": [
+      "h_quota_race"
+    ],
+    "payload": {
+      "tag": "h_quota_race",
+      "title": "Quota-limited claims may lose the check-then-act race to distinct principals",
+      "prior": 0.5,
+      "test_plan": "multi-principal last-byte race",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0003"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0014",
+    "kind": "CONTROL",
+    "source": "exploit",
+    "ts": 1793778961.9135945,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "skip-statefuzz",
+      "reason": "surface has no checkout lifecycle; statefuzz_run probes are dvlba-shaped (generalization gap)"
+    },
+    "derived_from": []
+  },
+  {
+    "id": "SF-EXPLOIT-0015",
+    "kind": "OBSERVATION",
+    "source": "exploit",
+    "ts": 1793778961.9613566,
+    "confidence": 1.0,
+    "tags": [
+      "h_hidden_verbs"
+    ],
+    "payload": {
+      "hidden_endpoints": [
+        {
+          "verb": "release",
+          "probe_status": 200,
+          "resource": "payouts"
+        }
+      ]
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0006"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0016",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793778961.9878564,
+    "confidence": 0.9,
+    "tags": [
+      "h_state_guard",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-CANCEL-REASON",
+        "title": "Cancel dedupe is keyed by the reason string, not the object: a different reason re-credits the full remainder",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/subscriptions/{subscription_id}/cancel",
+        "evidence": [
+          {
+            "lawful_cancel_credit": 216234,
+            "identical_replay_status": 409,
+            "mutated_cancel_status": 200,
+            "second_credit_cents": 216234,
+            "mutated_body": {
+              "reason": "moving-abroad"
+            }
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own active subscription"
+        ],
+        "grants": [
+          "credit the same subscription's remainder repeatedly"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_state_guard",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0007"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0017",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793778961.9878619,
+    "confidence": 0.9,
+    "tags": [
+      "h_state_guard",
+      "I2"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-TERMINAL-RESIZE",
+        "title": "Write transition accepted on a CANCELED object: seats re-credits the full prorated remainder after cancel already did",
+        "severity": "high",
+        "invariant": "I2",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/subscriptions/{subscription_id}/seats (terminal-state)",
+        "evidence": [
+          {
+            "canceled_object": "SUB-1af527cb3554",
+            "verb": "seats",
+            "status": 200,
+            "credit_after_terminal": 194610,
+            "unmodeled_transition": "canceled --seats--> credited"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own canceled subscription"
+        ],
+        "grants": [
+          "double every cancel by mutating afterwards"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_state_guard",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0007"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0018",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793778962.0162082,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-CANCEL-REASON",
+      "status": "verified",
+      "technique": "h_state_guard"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0016"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0019",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793778962.0435295,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-TERMINAL-RESIZE",
+      "status": "verified",
+      "technique": "h_state_guard"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0017"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0020",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793778962.0639024,
+    "confidence": 0.9,
+    "tags": [
+      "h_mass_assign",
+      "I4"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-MASS-PRICE",
+        "title": "Mass assignment: client-supplied unit_cents overrides server-side pricing (differential: lawful totals vs injected totals)",
+        "severity": "high",
+        "invariant": "I4",
+        "operators": [
+          "PARTIAL"
+        ],
+        "endpoint": "POST /api/subscriptions (mass-assign:price)",
+        "evidence": [
+          {
+            "candidate_field": "unit_cents",
+            "lawful": {
+              "seats": 10,
+              "total_cents": 499000,
+              "unit_cents": 49900
+            },
+            "injected": {
+              "seats": 10,
+              "total_cents": 10,
+              "unit_cents": 1
+            },
+            "differing_fields": [
+              "total_cents",
+              "unit_cents"
+            ]
+          }
+        ],
+        "preconditions": [
+          "any account"
+        ],
+        "grants": [
+          "name the price of any future invoice"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_mass_assign",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0008"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0021",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793778962.0639074,
+    "confidence": 0.9,
+    "tags": [
+      "h_mass_assign",
+      "I4"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-MASS-PLAN",
+        "title": "Mass assignment: undocumented plan field on seats switches the entitlement tier without repricing",
+        "severity": "medium",
+        "invariant": "I4",
+        "operators": [
+          "PARTIAL"
+        ],
+        "endpoint": "POST /api/subscriptions/{subscription_id}/seats (mass-assign:plan)",
+        "evidence": [
+          {
+            "field": "plan",
+            "escalated_to": "pro",
+            "baseline_delta": 172987,
+            "escalated_delta": 172987,
+            "readback_plan": "pro"
+          }
+        ],
+        "preconditions": [
+          "any account"
+        ],
+        "grants": [
+          "upgrade tiers at the old price"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_mass_assign",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0008"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0022",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793778962.0917904,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-MASS-PRICE",
+      "status": "verified",
+      "technique": "h_mass_assign"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0020"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0023",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793778962.1136007,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-MASS-PLAN",
+      "status": "verified",
+      "technique": "h_mass_assign"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0021"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0024",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793778962.1350584,
+    "confidence": 0.9,
+    "tags": [
+      "h_cross_tenant",
+      "I3"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-AUDIT-LEAK",
+        "title": "Cross-tenant object disclosure: a fresh principal reads another tenant's subscription identifier from /api/audit",
+        "severity": "medium",
+        "invariant": "I3",
+        "operators": [
+          "CROSS-USER"
+        ],
+        "endpoint": "GET /api/audit",
+        "evidence": [
+          {
+            "victim": "xtv-127-962113",
+            "leaked_id": "SUB-4e45390b802b",
+            "leak_path": "/api/audit"
+          }
+        ],
+        "preconditions": [
+          "any account"
+        ],
+        "grants": [
+          "knowledge of any subscription identifier"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_cross_tenant",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0009"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0025",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793778962.1350627,
+    "confidence": 0.9,
+    "tags": [
+      "h_cross_tenant",
+      "I3"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-DEPUTY-CREDIT",
+        "title": "No ownership check on seats: the proration credit lands in the CALLER's balance \u2014 downgrade any leaked tenant's object for profit",
+        "severity": "critical",
+        "invariant": "I3",
+        "operators": [
+          "CROSS-USER"
+        ],
+        "endpoint": "POST /api/subscriptions/{subscription_id}/seats (cross-tenant)",
+        "evidence": [
+          {
+            "victim": "xtv-127-962113",
+            "attacker": "xta-131-962120",
+            "object": "SUB-4e45390b802b",
+            "attacker_gain": 194610,
+            "obtained_via": "/api/audit"
+          }
+        ],
+        "preconditions": [
+          "knowledge of any subscription identifier"
+        ],
+        "grants": [
+          "drain any tenant's paid period into your own balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_cross_tenant",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0009"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0026",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793778962.156663,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-AUDIT-LEAK",
+      "status": "verified",
+      "technique": "h_cross_tenant"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0024"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0027",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793778962.1780953,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-DEPUTY-CREDIT",
+      "status": "verified",
+      "technique": "h_cross_tenant"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0025"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0028",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793778962.8201973,
+    "confidence": 0.9,
+    "tags": [
+      "h_async_toctou",
+      "I4"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-TOCTOU-SETTLE",
+        "title": "Async settle debits without a balance re-check: draining the wallet inside the deferred window drives the balance negative (-500000)",
+        "severity": "critical",
+        "invariant": "I4",
+        "operators": [
+          "INTERRUPT"
+        ],
+        "endpoint": "POST /api/payouts",
+        "evidence": [
+          {
+            "balance_before": 1000000,
+            "drained_during_window": 1000000,
+            "settled_amount": 500000,
+            "final_balance": -500000,
+            "event": "/api/events/EVT-c1451dc2c3ad"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "recipient account"
+        ],
+        "grants": [
+          "double-spend the prepaid balance across the async seam"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_async_toctou",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0010"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0029",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793778963.4607847,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-TOCTOU-SETTLE",
+      "status": "verified",
+      "technique": "h_async_toctou"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0028"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0030",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793778963.482386,
+    "confidence": 0.9,
+    "tags": [
+      "h_terminal_credit",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{payout_id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-a89aea61abb7",
+            "amount": 333333,
+            "settled_debit": 333333,
+            "cancel_credit": 333333,
+            "net_position": 0,
+            "settled_via": "hidden release"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_terminal_credit",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0011"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0031",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793778964.1190205,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-SETTLED-CANCEL",
+      "status": "verified",
+      "technique": "h_terminal_credit"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0030"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0032",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793778964.1522748,
+    "confidence": 0.9,
+    "tags": [
+      "h_arith_cycle",
+      "I4"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-ROUND-DRIFT",
+        "title": "Value-neutral resize cycles accumulate balance (+3 cents within 12 round-trips): credit rounds up, charge rounds down",
+        "severity": "medium",
+        "invariant": "I4",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/subscriptions/{subscription_id}/seats (resize-cycle)",
+        "evidence": [
+          {
+            "cycles": 12,
+            "net_delta_cents": 3,
+            "expect": "0: down->up returns to the same state at the same price",
+            "credit_seen": true
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own active subscription"
+        ],
+        "grants": [
+          "farm sub-cent proration drift into unlimited credit"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_arith_cycle",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0012"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0033",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793778964.184597,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-ROUND-DRIFT",
+      "status": "verified",
+      "technique": "h_arith_cycle"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0032"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0034",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793778964.264104,
+    "confidence": 0.9,
+    "tags": [
+      "h_quota_race",
+      "I5"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-QUOTA-RACE",
+        "title": "Quota-limited claim loses the check-then-act race: 8 distinct principals claimed past the advertised quota of 3",
+        "severity": "high",
+        "invariant": "I5",
+        "operators": [
+          "INTERRUPT",
+          "CROSS-USER"
+        ],
+        "endpoint": "POST /api/promo/claim",
+        "evidence": [
+          {
+            "race_n": 8,
+            "successful_claims": 8,
+            "advertised_quota": 3,
+            "winning_principals": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "last_byte_sync": true
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "campaign artifact from the engagement brief"
+        ],
+        "grants": [
+          "claim the artifact once per concurrent identity, multiplying its value past the quota"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified-by-transcript",
+      "technique": "h_quota_race",
+      "verification": {
+        "by": "verify",
+        "method": "single-use artifact consumed by the finder; transcript evidence stands (weight 0.5)",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0013"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0035",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793778964.3052304,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-QUOTA-RACE",
+      "status": "verified-by-transcript",
+      "technique": "h_quota_race"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0034"
+    ]
+  },
+  {
+    "id": "SF-ACCESS-0036",
+    "kind": "ESCALATION",
+    "source": "access",
+    "ts": 1793778964.3053765,
+    "confidence": 1.0,
+    "tags": [
+      "chain",
+      "critical"
+    ],
+    "payload": {
+      "chain": {
+        "chain_id": "CH-FW-AUDIT-LEAK-FW-DEPUTY-CREDIT",
+        "members": [
+          "FW-AUDIT-LEAK",
+          "FW-DEPUTY-CREDIT"
+        ],
+        "path": "FW-AUDIT-LEAK --(grants preconditions)--> FW-DEPUTY-CREDIT",
+        "severity": "critical",
+        "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any subscription identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's paid period into your own balance."
+      },
+      "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any subscription identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's paid period into your own balance.",
+      "severity": "critical",
+      "members": [
+        "FW-AUDIT-LEAK",
+        "FW-DEPUTY-CREDIT"
+      ]
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0024",
+      "SF-EXPLOIT-0025"
+    ]
+  },
+  {
+    "id": "F-002",
+    "kind": "CONTROL",
+    "source": "router",
+    "ts": 1793778964.3061328,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "stall-escalate",
+      "round": 33
+    },
+    "derived_from": []
+  }
+]

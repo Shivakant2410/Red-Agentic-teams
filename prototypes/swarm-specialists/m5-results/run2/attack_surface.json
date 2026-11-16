@@ -1,0 +1,238 @@
+{
+  "generated": "2026-11-07T07:20:52+0000",
+  "tool": "attack-graph",
+  "version": "1.0.0-m3",
+  "surface_map": {
+    "nodes": [
+      {
+        "id": "res:credits",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:shipments",
+        "kind": "resource",
+        "layer": "mixed",
+        "money": true,
+        "create": "/api/shipments"
+      },
+      {
+        "id": "res:wallet",
+        "kind": "resource",
+        "layer": "documented",
+        "money": false,
+        "create": null
+      },
+      {
+        "id": "res:vouchers",
+        "kind": "resource",
+        "layer": "discovered",
+        "money": true,
+        "create": "/api/vouchers"
+      },
+      {
+        "id": "res:payouts",
+        "kind": "resource",
+        "layer": "discovered",
+        "money": false,
+        "create": "/api/payouts"
+      },
+      {
+        "id": "read:/api/wallet",
+        "kind": "readback",
+        "layer": "documented"
+      },
+      {
+        "id": "read:/api/shipments/recent",
+        "kind": "readback",
+        "layer": "documented"
+      }
+    ],
+    "edges": [
+      {
+        "from": "res:credits",
+        "verb": "claim",
+        "path": "/api/credits/claim",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "documented"
+      },
+      {
+        "from": "res:shipments",
+        "verb": "read",
+        "path": "/api/shipments/{shipment_id}",
+        "method": "GET",
+        "layer": "documented",
+        "evidence": "documented"
+      },
+      {
+        "from": "res:shipments",
+        "verb": "rerate",
+        "path": "/api/shipments/{shipment_id}/rerate",
+        "method": "POST",
+        "layer": "documented",
+        "evidence": "verified"
+      },
+      {
+        "from": "res:shipments",
+        "verb": "settle",
+        "path": "/api/shipments/SHP-7ef633fd6f/settle",
+        "method": "POST",
+        "layer": "discovered",
+        "evidence": "verified"
+      },
+      {
+        "from": "res:shipments",
+        "verb": "rebook",
+        "path": "/api/shipments/SHP-7ef633fd6f/rebook",
+        "method": "POST",
+        "layer": "discovered",
+        "evidence": "verified"
+      },
+      {
+        "from": "res:vouchers",
+        "verb": "release",
+        "path": "/api/vouchers/VCH-f83545cc1e/release",
+        "method": "POST",
+        "layer": "discovered",
+        "evidence": "verified"
+      },
+      {
+        "from": "res:vouchers",
+        "verb": "consume",
+        "path": "/api/vouchers/VCH-f83545cc1e/consume",
+        "method": "POST",
+        "layer": "discovered",
+        "evidence": "discovered"
+      }
+    ],
+    "doc_suspect": {}
+  },
+  "attack_graph": {
+    "source": "acct:any",
+    "goal": "goal:wallet-credit",
+    "nodes": [
+      {
+        "id": "acct:any",
+        "kind": "capability",
+        "label": "any registered account"
+      },
+      {
+        "id": "goal:wallet-credit",
+        "kind": "goal",
+        "label": "wallet credit (attacker-controlled value)"
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-credit-shipments-rebook",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "credit-verb",
+        "resource": "shipments",
+        "verb": "rebook",
+        "requests": 6,
+        "evidence": "verified",
+        "technique": "h_value_replay",
+        "path": "POST /api/shipments/{id}/rebook (replay)"
+      },
+      {
+        "id": "e-credit-shipments-settle",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "credit-verb",
+        "resource": "shipments",
+        "verb": "settle",
+        "requests": 6,
+        "evidence": "verified",
+        "technique": "h_value_replay",
+        "path": "POST /api/shipments/{id}/settle (from booked)"
+      },
+      {
+        "id": "e-credit-vouchers-consume",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "credit-verb",
+        "resource": "vouchers",
+        "verb": "consume",
+        "requests": 7,
+        "evidence": "probed",
+        "technique": "h_value_replay",
+        "path": "/api/vouchers/{id}/consume"
+      },
+      {
+        "id": "e-credit-vouchers-release",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "credit-verb",
+        "resource": "vouchers",
+        "verb": "release",
+        "requests": 7,
+        "evidence": "verified",
+        "technique": "h_value_replay",
+        "path": "POST /api/vouchers/{id}/release (race x8)"
+      },
+      {
+        "id": "e-follow-shipments-settle",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "terminal-followup",
+        "resource": "shipments",
+        "verb": "settle",
+        "requests": 24,
+        "evidence": "credit-only",
+        "technique": "h_state_skip",
+        "path": "/api/shipments/{id}/settle"
+      },
+      {
+        "id": "e-seam-payouts",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "async-seam",
+        "resource": "payouts",
+        "verb": "settle/async",
+        "requests": 18,
+        "evidence": "probed",
+        "technique": "h_async_seam",
+        "path": "/api/payouts"
+      },
+      {
+        "id": "e-seam-payouts",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "async-seam",
+        "resource": "payouts",
+        "verb": "settle/async",
+        "requests": 18,
+        "evidence": "probed",
+        "technique": "h_async_seam",
+        "path": "/api/payouts"
+      },
+      {
+        "id": "e-xu-readbacks",
+        "from": "acct:any",
+        "to": "goal:wallet-credit",
+        "kind": "cross-user-read",
+        "resource": "readbacks",
+        "verb": "GET",
+        "requests": 8,
+        "evidence": "verified",
+        "technique": "h_cross_tenant",
+        "path": "readback scan"
+      }
+    ]
+  },
+  "money_paths": [
+    "e-credit-shipments-rebook",
+    "e-credit-shipments-settle",
+    "e-credit-vouchers-consume",
+    "e-credit-vouchers-release",
+    "e-follow-shipments-settle",
+    "e-seam-payouts",
+    "e-seam-payouts",
+    "e-xu-readbacks"
+  ],
+  "next_actions": []
+}

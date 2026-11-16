@@ -1,0 +1,49 @@
+{"ts": 1794024282.0034597, "principal": "-", "method": "ENGAGE", "path": "http://127.0.0.1:8491", "allow": true, "rule": "scope:loopback-testnet1", "reason": ""}
+{"ts": 1794024282.0040374, "principal": "anon", "method": "GET", "path": "/", "allow": true, "rule": "read", "reason": ""}
+{"ts": 1794024282.0063212, "principal": "anon", "method": "GET", "path": "/openapi.json", "allow": true, "rule": "read", "reason": ""}
+{"ts": 1794024282.008197, "principal": "anon", "method": "GET", "path": "/robots.txt", "allow": true, "rule": "read", "reason": ""}
+{"ts": 1794024282.0100613, "principal": "anon", "method": "GET", "path": "/api", "allow": true, "rule": "read", "reason": ""}
+{"ts": 1794024282.0117326, "principal": "anon", "method": "GET", "path": "/health", "allow": true, "rule": "read", "reason": ""}
+{"ts": 1794024282.0132987, "principal": "anon", "method": "GET", "path": "/admin", "allow": true, "rule": "read", "reason": ""}
+{"ts": 1794024282.0151937, "principal": "anon", "method": "GET", "path": "/api/admin", "allow": true, "rule": "read", "reason": ""}
+{"ts": 1794024282.0168633, "principal": "anon", "method": "GET", "path": "/.git/HEAD", "allow": true, "rule": "read", "reason": ""}
+{"ts": 1794024282.018549, "principal": "anon", "method": "GET", "path": "/backup.zip", "allow": true, "rule": "read", "reason": ""}
+{"ts": 1794024282.0203178, "principal": "anon", "method": "GET", "path": "/.env", "allow": true, "rule": "read", "reason": ""}
+{"ts": 1794024282.0222087, "principal": "anon", "method": "GET", "path": "/api/debug", "allow": true, "rule": "read", "reason": ""}
+{"ts": 1794024282.0238564, "principal": "anon", "method": "GET", "path": "/api/wallet", "allow": true, "rule": "read", "reason": ""}
+{"ts": 1794024282.0256608, "principal": "anon", "method": "POST", "path": "/api/register", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0257387, "principal": "anon", "method": "POST", "path": "/api/login", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0258737, "principal": "ov-12-282025", "method": "GET", "path": "/api/wallet", "allow": true, "rule": "read", "reason": ""}
+{"ts": 1794024282.0275135, "principal": "ov-12-282025", "method": "GET", "path": "/api/wallet", "allow": true, "rule": "read", "reason": ""}
+{"ts": 1794024282.0290654, "principal": "anon", "method": "POST", "path": "/api/register", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0291417, "principal": "anon", "method": "POST", "path": "/api/login", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0292313, "principal": "hdv-14-282029", "method": "POST", "path": "/api/shipments", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0293071, "principal": "anon", "method": "POST", "path": "/api/register", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.029348, "principal": "anon", "method": "POST", "path": "/api/login", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0294092, "principal": "mas-14-282029", "method": "POST", "path": "/api/shipments", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0294752, "principal": "anon", "method": "POST", "path": "/api/register", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0295131, "principal": "anon", "method": "POST", "path": "/api/login", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.029589, "principal": "xtv-14-282029", "method": "POST", "path": "/api/shipments", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.029653, "principal": "anon", "method": "POST", "path": "/api/register", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0296917, "principal": "anon", "method": "POST", "path": "/api/login", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0297484, "principal": "cyc-14-282029", "method": "POST", "path": "/api/shipments", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.029856, "principal": "anon", "method": "POST", "path": "/api/register", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.029897, "principal": "anon", "method": "POST", "path": "/api/login", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0299535, "principal": "anon", "method": "POST", "path": "/api/register", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.029994, "principal": "anon", "method": "POST", "path": "/api/login", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0300484, "principal": "anon", "method": "POST", "path": "/api/register", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0300865, "principal": "anon", "method": "POST", "path": "/api/login", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0301375, "principal": "anon", "method": "POST", "path": "/api/register", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0301712, "principal": "anon", "method": "POST", "path": "/api/login", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0302193, "principal": "anon", "method": "POST", "path": "/api/register", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.030256, "principal": "anon", "method": "POST", "path": "/api/login", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0303035, "principal": "anon", "method": "POST", "path": "/api/register", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.03034, "principal": "anon", "method": "POST", "path": "/api/login", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0303879, "principal": "anon", "method": "POST", "path": "/api/register", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0304239, "principal": "anon", "method": "POST", "path": "/api/login", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0304759, "principal": "anon", "method": "POST", "path": "/api/register", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0305102, "principal": "anon", "method": "POST", "path": "/api/login", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0305598, "principal": "qrc0-14-282029,qrc1-14-282029,qrc2-14-282030,qrc3-14-282030,qrc4-14-282030,qrc5-14-282030,qrc6-14-282030,qrc7-14-282030", "method": "POST", "path": "/api/credits/claim", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.030626, "principal": "anon", "method": "POST", "path": "/api/register", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.030662, "principal": "anon", "method": "POST", "path": "/api/login", "allow": false, "rule": "approval:none", "reason": "write mutant denied (approvals=none)"}
+{"ts": 1794024282.0307171, "principal": "seam-14-282030", "method": "GET", "path": "/api/wallet", "allow": true, "rule": "read", "reason": ""}

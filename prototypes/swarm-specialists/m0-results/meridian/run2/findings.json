@@ -1,0 +1,747 @@
+{
+  "tool": "swarm",
+  "version": "0.6.0-m3",
+  "generated": "2026-11-07T03:34:43+0000",
+  "elapsed_s": 3.5,
+  "requests": 477,
+  "statefuzz_sub_budget_requests": null,
+  "rounds": 40,
+  "roster": [
+    "recon",
+    "surface_mapper",
+    "hypothesis",
+    "exploit",
+    "verify",
+    "access",
+    "statefuzz_spec",
+    "window_driver",
+    "attack_graph"
+  ],
+  "spawn_events": [],
+  "llm_seam_calls": [],
+  "markers_registered": 6,
+  "attack_graph": {
+    "surface_nodes": 10,
+    "surface_edges": 5,
+    "money_paths": 5,
+    "next_actions": []
+  },
+  "ambient_watch": {
+    "events": 13,
+    "unexplained": 3,
+    "deltas": [
+      {
+        "tag": "h_open_vocab",
+        "delta": -500,
+        "attributed": false
+      },
+      {
+        "tag": "h_hidden_verbs",
+        "delta": -100,
+        "attributed": false
+      },
+      {
+        "tag": "h_hidden_verbs",
+        "delta": -100,
+        "attributed": false
+      },
+      {
+        "tag": "h_state_guard",
+        "delta": 200,
+        "attributed": true
+      },
+      {
+        "tag": "h_cross_tenant",
+        "delta": -100,
+        "attributed": true
+      },
+      {
+        "tag": "h_cross_tenant",
+        "delta": 99,
+        "attributed": true
+      },
+      {
+        "tag": "h_async_toctou",
+        "delta": -500,
+        "attributed": true
+      },
+      {
+        "tag": "h_async_toctou",
+        "delta": -375000,
+        "attributed": true
+      },
+      {
+        "tag": "h_async_toctou",
+        "delta": 250000,
+        "attributed": true
+      },
+      {
+        "tag": "h_arith_cycle",
+        "delta": -97,
+        "attributed": true
+      },
+      {
+        "tag": "h_quota_race",
+        "delta": 5000,
+        "attributed": true
+      },
+      {
+        "tag": "h_quota_race",
+        "delta": 5000,
+        "attributed": true
+      }
+    ]
+  },
+  "ledger": {
+    "facts": 53,
+    "by_kind": {
+      "CONTROL": 11,
+      "OBSERVATION": 15,
+      "SURFACE": 1,
+      "HYPOTHESIS": 11,
+      "ESCALATION": 3,
+      "FINDING": 12
+    },
+    "by_source": {
+      "orchestrator": 1,
+      "recon": 5,
+      "surface_mapper": 3,
+      "hypothesis": 11,
+      "exploit": 12,
+      "attack_graph": 2,
+      "verify": 8,
+      "access": 1,
+      "router": 1,
+      "window_driver": 9
+    }
+  },
+  "hypothesis_ledger": {
+    "stats": {
+      "total": 18,
+      "by_status": {
+        "confirmed": 10,
+        "refuted": 4,
+        "inconclusive": 2,
+        "tested": 1,
+        "confirmed-by-transcript": 1
+      },
+      "by_source": {
+        "window-driver/scan": 5,
+        "window-driver/fresh": 1,
+        "swarm-board/d4fd53": 11,
+        "deferred-window/d4fd53": 1
+      },
+      "by_tag": {
+        "marker": 6,
+        "h_idor": 1,
+        "h_fsm": 1,
+        "h_open_vocab": 1,
+        "h_hidden_verbs": 1,
+        "h_state_guard": 1,
+        "h_mass_assign": 1,
+        "h_cross_tenant": 1,
+        "h_async_toctou": 1,
+        "h_terminal_credit": 1,
+        "h_arith_cycle": 1,
+        "h_quota_race": 1,
+        "deferred-window": 1
+      }
+    },
+    "score": 14.75
+  },
+  "memory_before": {
+    "recon": {
+      "name": "recon",
+      "techniques": {
+        "fetch_robots": 0.556,
+        "fetch_index": 0.556,
+        "fetch_route_index": 0.6,
+        "fetch_openapi": 0.364,
+        "probe_common_paths": 0.556,
+        "fingerprint_server": 0.556
+      },
+      "insights": 0,
+      "trials": 6
+    },
+    "surface_mapper": {
+      "name": "surface_mapper",
+      "techniques": {
+        "map_surface": 0.6
+      },
+      "insights": 0,
+      "trials": 1
+    },
+    "hypothesis": {
+      "name": "hypothesis",
+      "techniques": {
+        "generate": 0.667
+      },
+      "insights": 1,
+      "trials": 1
+    },
+    "exploit": {
+      "name": "exploit",
+      "techniques": {
+        "h_open_vocab": 0.556,
+        "h_hidden_verbs": 0.556,
+        "h_state_guard": 0.556,
+        "h_mass_assign": 0.364,
+        "h_cross_tenant": 0.556,
+        "h_async_toctou": 0.556,
+        "h_terminal_credit": 0.556,
+        "h_arith_cycle": 0.556,
+        "h_quota_race": 0.556,
+        "h_fsm": 0.556,
+        "h_idor": 0.364
+      },
+      "insights": 1,
+      "trials": 11
+    },
+    "verify": {
+      "name": "verify",
+      "techniques": {
+        "check:FW-AUDIT-LEAK": 0.667,
+        "check:FW-CANCEL-REASON": 0.667,
+        "check:FW-DEPUTY-CREDIT": 0.667,
+        "check:FW-QUOTA-RACE": 0.667,
+        "check:FW-ROUND-DRIFT": 0.667,
+        "check:FW-SETTLED-CANCEL": 0.667,
+        "check:FW-TERMINAL-RESIZE": 0.667,
+        "check:FW-TOCTOU-SETTLE": 0.667
+      },
+      "insights": 0,
+      "trials": 8
+    },
+    "access": {
+      "name": "access",
+      "techniques": {
+        "escalate": 0.556
+      },
+      "insights": 0,
+      "trials": 1
+    },
+    "statefuzz_spec": {
+      "name": "statefuzz_spec",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "window_driver": {
+      "name": "window_driver",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "attack_graph": {
+      "name": "attack_graph",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    }
+  },
+  "memory_after": {
+    "recon": {
+      "name": "recon",
+      "techniques": {
+        "fetch_robots": 0.6,
+        "fetch_index": 0.6,
+        "fetch_route_index": 0.667,
+        "fetch_openapi": 0.364,
+        "probe_common_paths": 0.6,
+        "fingerprint_server": 0.6
+      },
+      "insights": 0,
+      "trials": 11
+    },
+    "surface_mapper": {
+      "name": "surface_mapper",
+      "techniques": {
+        "map_surface": 0.667
+      },
+      "insights": 0,
+      "trials": 2
+    },
+    "hypothesis": {
+      "name": "hypothesis",
+      "techniques": {
+        "generate": 0.75
+      },
+      "insights": 1,
+      "trials": 2
+    },
+    "exploit": {
+      "name": "exploit",
+      "techniques": {
+        "h_open_vocab": 0.6,
+        "h_hidden_verbs": 0.6,
+        "h_state_guard": 0.6,
+        "h_mass_assign": 0.364,
+        "h_cross_tenant": 0.6,
+        "h_async_toctou": 0.6,
+        "h_terminal_credit": 0.6,
+        "h_arith_cycle": 0.6,
+        "h_quota_race": 0.6,
+        "h_fsm": 0.6,
+        "h_idor": 0.286
+      },
+      "insights": 1,
+      "trials": 21
+    },
+    "verify": {
+      "name": "verify",
+      "techniques": {
+        "check:FW-AUDIT-LEAK": 0.75,
+        "check:FW-CANCEL-REASON": 0.75,
+        "check:FW-DEPUTY-CREDIT": 0.75,
+        "check:FW-QUOTA-RACE": 0.75,
+        "check:FW-ROUND-DRIFT": 0.75,
+        "check:FW-SETTLED-CANCEL": 0.75,
+        "check:FW-TERMINAL-RESIZE": 0.75,
+        "check:FW-TOCTOU-SETTLE": 0.75
+      },
+      "insights": 0,
+      "trials": 16
+    },
+    "access": {
+      "name": "access",
+      "techniques": {
+        "escalate": 0.6
+      },
+      "insights": 0,
+      "trials": 2
+    },
+    "statefuzz_spec": {
+      "name": "statefuzz_spec",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "window_driver": {
+      "name": "window_driver",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    },
+    "attack_graph": {
+      "name": "attack_graph",
+      "techniques": {},
+      "insights": 0,
+      "trials": 0
+    }
+  },
+  "findings": [
+    {
+      "finding": {
+        "id": "FW-CANCEL-REASON",
+        "title": "Cancel dedupe is keyed by the reason string, not the object: a different reason re-credits the full remainder",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/vaults/{vault_id}/cancel",
+        "evidence": [
+          {
+            "lawful_cancel_credit": 100,
+            "identical_replay_status": 409,
+            "mutated_cancel_status": 200,
+            "second_credit_cents": 100,
+            "mutated_body": {
+              "reason": "moving-abroad"
+            }
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own active subscription"
+        ],
+        "grants": [
+          "credit the same subscription's remainder repeatedly"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      },
+      "provenance": [
+        "exploit"
+      ],
+      "techniques": [
+        "h_state_guard"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0086"
+      ]
+    },
+    {
+      "finding": {
+        "id": "FW-TERMINAL-RESIZE",
+        "title": "Write transition accepted on a CANCELED object: resize re-credits the full prorated remainder after cancel already did",
+        "severity": "high",
+        "invariant": "I2",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/vaults/{vault_id}/resize (terminal-state)",
+        "evidence": [
+          {
+            "canceled_object": "VLT-da4aafd5b5",
+            "verb": "resize",
+            "status": 200,
+            "credit_after_terminal": 100,
+            "unmodeled_transition": "canceled --resize--> credited"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own canceled subscription"
+        ],
+        "grants": [
+          "double every cancel by mutating afterwards"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      },
+      "provenance": [
+        "exploit"
+      ],
+      "techniques": [
+        "h_state_guard"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0087"
+      ]
+    },
+    {
+      "finding": {
+        "id": "FW-AUDIT-LEAK",
+        "title": "Cross-tenant object disclosure: a fresh principal reads another tenant's vault identifier from /api/audit",
+        "severity": "medium",
+        "invariant": "I3",
+        "operators": [
+          "CROSS-USER"
+        ],
+        "endpoint": "GET /api/audit",
+        "evidence": [
+          {
+            "victim": "xtv-173-480536",
+            "leaked_id": "VLT-c23ff4fa4c",
+            "leak_path": "/api/audit"
+          }
+        ],
+        "preconditions": [
+          "any account"
+        ],
+        "grants": [
+          "knowledge of any vault identifier"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      },
+      "provenance": [
+        "exploit"
+      ],
+      "techniques": [
+        "h_cross_tenant"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0090"
+      ]
+    },
+    {
+      "finding": {
+        "id": "FW-DEPUTY-CREDIT",
+        "title": "No ownership check on resize: the credit lands in the CALLER's balance \u2014 monetize any leaked tenant's object ",
+        "severity": "critical",
+        "invariant": "I3",
+        "operators": [
+          "CROSS-USER"
+        ],
+        "endpoint": "POST /api/vaults/{vault_id}/resize (cross-tenant)",
+        "evidence": [
+          {
+            "victim": "xtv-173-480536",
+            "attacker": "xta-177-480542",
+            "object": "VLT-c23ff4fa4c",
+            "attacker_gain": 99,
+            "verb": "resize",
+            "body": {
+              "target_cents": 1
+            },
+            "discovered_verb": false,
+            "obtained_via": "/api/audit"
+          }
+        ],
+        "preconditions": [
+          "knowledge of any vault identifier"
+        ],
+        "grants": [
+          "drain any tenant's object value into your own balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      },
+      "provenance": [
+        "exploit"
+      ],
+      "techniques": [
+        "h_cross_tenant"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0091"
+      ]
+    },
+    {
+      "finding": {
+        "id": "FW-TOCTOU-SETTLE",
+        "title": "Async settle debits without a balance re-check: draining the wallet inside the deferred window drives the balance negative (-125000)",
+        "severity": "critical",
+        "invariant": "I4",
+        "operators": [
+          "INTERRUPT"
+        ],
+        "endpoint": "POST /api/payouts",
+        "evidence": [
+          {
+            "balance_before": 250000,
+            "drained_during_window": 250000,
+            "settled_amount": 125000,
+            "final_balance": -125000,
+            "event": "/api/events/EV-0a8331a4c5e4"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "recipient account"
+        ],
+        "grants": [
+          "double-spend the prepaid balance across the async seam"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      },
+      "provenance": [
+        "exploit"
+      ],
+      "techniques": [
+        "h_async_toctou"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0094"
+      ]
+    },
+    {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{payout_id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-88732f803b",
+            "amount": 83333,
+            "settled_debit": 83333,
+            "cancel_credit": 83333,
+            "net_position": 0,
+            "settled_via": "hidden release"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      },
+      "provenance": [
+        "exploit",
+        "window_driver"
+      ],
+      "techniques": [
+        "h_terminal_credit",
+        "h_window_driver"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0096",
+        "SF-WINDOW_DRIVER-0109",
+        "SF-WINDOW_DRIVER-0110",
+        "SF-WINDOW_DRIVER-0111",
+        "SF-WINDOW_DRIVER-0112"
+      ]
+    },
+    {
+      "finding": {
+        "id": "FW-ROUND-DRIFT",
+        "title": "Value-neutral resize cycles accumulate balance (+3 cents within 12 round-trips): credit rounds up, charge rounds down",
+        "severity": "medium",
+        "invariant": "I4",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/vaults/{vault_id}/resize (resize-cycle)",
+        "evidence": [
+          {
+            "cycles": 12,
+            "net_delta_cents": 3,
+            "expect": "0: down->up returns to the same state at the same price",
+            "credit_seen": true
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own active subscription"
+        ],
+        "grants": [
+          "farm sub-cent proration drift into unlimited credit"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      },
+      "provenance": [
+        "exploit"
+      ],
+      "techniques": [
+        "h_arith_cycle"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0098"
+      ]
+    },
+    {
+      "finding": {
+        "id": "FW-QUOTA-RACE",
+        "title": "Quota-limited claim loses the check-then-act race: 8 distinct principals claimed past the advertised quota of 3",
+        "severity": "high",
+        "invariant": "I5",
+        "operators": [
+          "INTERRUPT",
+          "CROSS-USER"
+        ],
+        "endpoint": "POST /api/vouchers/claim",
+        "evidence": [
+          {
+            "race_n": 8,
+            "successful_claims": 8,
+            "advertised_quota": 3,
+            "winning_principals": [
+              "qrc0-369-482968",
+              "qrc1-372-482972",
+              "qrc2-375-482977",
+              "qrc3-378-482982",
+              "qrc4-380-482985",
+              "qrc5-382-482989",
+              "qrc6-384-482992",
+              "qrc7-386-482995"
+            ],
+            "last_byte_sync": true
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "campaign artifact from the engagement brief"
+        ],
+        "grants": [
+          "claim the artifact once per concurrent identity, multiplying its value past the quota"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified-by-transcript",
+      "verification": {
+        "by": "verify",
+        "method": "single-use artifact consumed by the finder; transcript evidence stands (weight 0.5)",
+        "independent_principals": []
+      },
+      "provenance": [
+        "exploit"
+      ],
+      "techniques": [
+        "h_quota_race"
+      ],
+      "fact_ids": [
+        "SF-EXPLOIT-0100"
+      ]
+    }
+  ],
+  "escalations": [
+    {
+      "chain": [
+        "technique:h_open_vocab",
+        "ambient-wallet-delta",
+        "unattributed-value-movement"
+      ],
+      "impact": "discovery moved value with no finding: ov-18-480281 -500",
+      "severity": "medium"
+    },
+    {
+      "chain": [
+        "technique:h_hidden_verbs",
+        "ambient-wallet-delta",
+        "unattributed-value-movement"
+      ],
+      "impact": "discovery moved value with no finding: hdv-90-480401 -100; hdv-104-480424 -100",
+      "severity": "medium"
+    },
+    {
+      "chain": {
+        "chain_id": "CH-FW-AUDIT-LEAK-FW-DEPUTY-CREDIT",
+        "members": [
+          "FW-AUDIT-LEAK",
+          "FW-DEPUTY-CREDIT"
+        ],
+        "path": "FW-AUDIT-LEAK --(grants preconditions)--> FW-DEPUTY-CREDIT",
+        "severity": "critical",
+        "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance."
+      },
+      "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any vault identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance.",
+      "severity": "critical"
+    }
+  ]
+}

@@ -1,0 +1,262 @@
+{
+  "generated": "2026-11-07T07:20:32+0000",
+  "tree": "/home/z/my-project/ra-work/prototypes/swarm-specialists",
+  "predictions": {
+    "P1_preex_evidence_loop": {
+      "pass": true,
+      "matrix_fact": "SF-PREEX-0016",
+      "bola_hits": 2,
+      "evidence_raised": true,
+      "hypothesis_fact": "SF-PREEX-0018",
+      "prior": 0.85,
+      "dispatched_to_exploit": true,
+      "cross_tenant_class_verified": true
+    },
+    "P2_recon_discovery": {
+      "pass": true,
+      "discovered": [
+        {
+          "path": "/api/shipments/{shipment_id}/settle",
+          "status": 405,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/{shipment_id}/rebook",
+          "status": 405,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/{shipment_id}/pickup",
+          "status": 405,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/{shipment_id}/deliver",
+          "status": 405,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/recent",
+          "status": 401,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/history",
+          "status": 401,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/all",
+          "status": 401,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/list",
+          "status": 401,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/export",
+          "status": 401,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/audit",
+          "status": 401,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/internal",
+          "status": 401,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        }
+      ],
+      "probe_on_wire": [
+        {
+          "path": "/api/shipments/{shipment_id}/settle",
+          "status": 405,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/{shipment_id}/rebook",
+          "status": 405,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/{shipment_id}/pickup",
+          "status": 405,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/{shipment_id}/deliver",
+          "status": 405,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/recent",
+          "status": 401,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/history",
+          "status": 401,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/all",
+          "status": 401,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/list",
+          "status": 401,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/export",
+          "status": 401,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/audit",
+          "status": 401,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        },
+        {
+          "path": "/api/shipments/internal",
+          "status": 401,
+          "signal": "walled",
+          "origin": "derived-content-discovery"
+        }
+      ]
+    },
+    "P3_preex_budget": {
+      "pass": true,
+      "preex_requests": 24,
+      "total_requests": 693,
+      "budget_cap": 900,
+      "ceiling": 831
+    },
+    "P4_postex_amplification": {
+      "pass": true,
+      "amplifications": [
+        {
+          "technique": "px_amplify",
+          "victims_reached": 3,
+          "aggregate_delta_cents": 150000,
+          "variant": "negative-probe",
+          "rows": [
+            {
+              "victim": "pxv0-661-44921",
+              "resource": "payouts",
+              "object_id": "PAY-951ef4b8f3",
+              "status": 201,
+              "delta_cents": 50000,
+              "records_exposed": 0
+            },
+            {
+              "victim": "pxv1-664-44927",
+              "resource": "payouts",
+              "object_id": "PAY-7cd00f26dd",
+              "status": 201,
+              "delta_cents": 50000,
+              "records_exposed": 0
+            },
+            {
+              "victim": "pxv2-667-44933",
+              "resource": "payouts",
+              "object_id": "PAY-0af5ea4a97",
+              "status": 201,
+              "delta_cents": 50000,
+              "records_exposed": 0
+            }
+          ]
+        }
+      ]
+    },
+    "P5_nonregression": {
+      "pass": true,
+      "parts": {
+        "gv_run1": true,
+        "gv_run2": true,
+        "no_decoy_fp": true,
+        "llm_seam_zero": true,
+        "markers_ge_2": true,
+        "schema_identity": true,
+        "dvlba_b1_b8": true
+      },
+      "dvlba": {
+        "seeds_hit": [
+          "B1",
+          "B2",
+          "B3",
+          "B4",
+          "B5",
+          "B6",
+          "B7",
+          "B8"
+        ],
+        "unmatched": [],
+        "false_positives": {},
+        "requests": {
+          "run1": 315,
+          "run2": 209
+        },
+        "b1_b8_all": true
+      }
+    }
+  },
+  "runs": {
+    "freightlane_run1": {
+      "requests": 693,
+      "findings": 10,
+      "markers": 2,
+      "gv": {
+        "GV-3": "verified",
+        "GV-2": "verified",
+        "GV-7": "verified",
+        "GV-5": "verified",
+        "GV-4": "verified",
+        "GV-8": "verified",
+        "GV-1": "verified",
+        "GV-6": "verified"
+      }
+    },
+    "freightlane_run2": {
+      "requests": 683,
+      "findings": 10,
+      "gv": {
+        "GV-3": "verified",
+        "GV-2": "verified",
+        "GV-7": "verified",
+        "GV-5": "verified",
+        "GV-4": "verified",
+        "GV-8": "verified",
+        "GV-1": "verified",
+        "GV-6": "verified"
+      }
+    }
+  },
+  "pass": true
+}

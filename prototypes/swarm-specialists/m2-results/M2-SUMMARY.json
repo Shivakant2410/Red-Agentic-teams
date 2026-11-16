@@ -1,0 +1,166 @@
+{
+  "generated": "2026-11-07T02:55:01+0000",
+  "tree": "/home/z/my-project/ra-work/prototypes/swarm-specialists",
+  "exit": {
+    "gv_hits": [
+      "GV-1",
+      "GV-2",
+      "GV-3",
+      "GV-4",
+      "GV-5",
+      "GV-6",
+      "GV-7"
+    ],
+    "per_run": {
+      "run1": [
+        "GV-1:verified",
+        "GV-2:verified",
+        "GV-2:verified",
+        "GV-3:verified",
+        "GV-4:verified",
+        "GV-5:verified",
+        "GV-6:verified",
+        "GV-7:verified"
+      ],
+      "run2": [
+        "GV-1:verified",
+        "GV-2:verified",
+        "GV-2:verified",
+        "GV-3:verified",
+        "GV-4:verified",
+        "GV-5:verified",
+        "GV-6:verified",
+        "GV-7:verified"
+      ]
+    },
+    "decoy_false_positives": [],
+    "undocumented_verbs": [
+      "shipments/rebook",
+      "shipments/settle",
+      "vouchers/consume",
+      "vouchers/release"
+    ],
+    "surface_facts": {
+      "grounded": true,
+      "readback_added": [
+        "/api/shipments/recent"
+      ],
+      "mined_fields": {
+        "vouchers": [
+          "face_cents"
+        ],
+        "shipments": [
+          "rate_cents"
+        ]
+      },
+      "undocumented_resources": [
+        {
+          "noun": "vouchers",
+          "path": "/api/vouchers",
+          "open_kind": "object",
+          "open_status": 201
+        },
+        {
+          "noun": "payouts",
+          "path": "/api/payouts",
+          "open_kind": "error",
+          "open_status": 400
+        }
+      ]
+    },
+    "markers_registered": 2,
+    "requests_run1": 385,
+    "requests_run2": 325,
+    "llm_seam_calls": 0
+  },
+  "labs": {
+    "freightlane": {
+      "gv_hits": [
+        "GV-1",
+        "GV-2",
+        "GV-3",
+        "GV-4",
+        "GV-5",
+        "GV-6",
+        "GV-7"
+      ],
+      "per_run": {
+        "run1": [
+          "GV-1:verified",
+          "GV-2:verified",
+          "GV-2:verified",
+          "GV-3:verified",
+          "GV-4:verified",
+          "GV-5:verified",
+          "GV-6:verified",
+          "GV-7:verified"
+        ],
+        "run2": [
+          "GV-1:verified",
+          "GV-2:verified",
+          "GV-2:verified",
+          "GV-3:verified",
+          "GV-4:verified",
+          "GV-5:verified",
+          "GV-6:verified",
+          "GV-7:verified"
+        ]
+      },
+      "decoy_false_positives": [],
+      "undocumented_verbs": [
+        "shipments/rebook",
+        "shipments/settle",
+        "vouchers/consume",
+        "vouchers/release"
+      ],
+      "surface_facts": {
+        "grounded": true,
+        "readback_added": [
+          "/api/shipments/recent"
+        ],
+        "mined_fields": {
+          "vouchers": [
+            "face_cents"
+          ],
+          "shipments": [
+            "rate_cents"
+          ]
+        },
+        "undocumented_resources": [
+          {
+            "noun": "vouchers",
+            "path": "/api/vouchers",
+            "open_kind": "object",
+            "open_status": 201
+          },
+          {
+            "noun": "payouts",
+            "path": "/api/payouts",
+            "open_kind": "error",
+            "open_status": 400
+          }
+        ]
+      },
+      "markers_registered": 2,
+      "requests_run1": 385,
+      "requests_run2": 325,
+      "llm_seam_calls": 0
+    },
+    "dvlba": {
+      "seeds_hit": [
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "B5",
+        "B6",
+        "B7",
+        "B8"
+      ],
+      "false_positives": {},
+      "requests_run1": 255,
+      "requests_run2": 181
+    }
+  },
+  "pass": true
+}

@@ -1,0 +1,49 @@
+{
+  "ok": true,
+  "requests": 73,
+  "budget": 200,
+  "elapsed_s": 0.1,
+  "walk": [
+    [
+      "cart_add",
+      404
+    ],
+    [
+      "init",
+      404
+    ],
+    [
+      "confirm",
+      404
+    ],
+    [
+      "ship",
+      404
+    ],
+    [
+      "cart_add_2",
+      404
+    ],
+    [
+      "init_2",
+      404
+    ],
+    [
+      "confirm_2",
+      404
+    ],
+    [
+      "refund",
+      404
+    ]
+  ],
+  "findings": [],
+  "by_invariant": {},
+  "chains": [],
+  "artifacts": {
+    "findings": "/home/z/my-project/download/hard-lab/freightlane/results/statefuzz-v1/findings.json",
+    "traffic": "/home/z/my-project/download/hard-lab/freightlane/results/statefuzz-v1/traffic.jsonl"
+  },
+  "wall_s": 0.1,
+  "deferred_phase_requests": 0
+}
