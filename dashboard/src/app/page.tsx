@@ -8,6 +8,7 @@ import {
   cx,
 } from "@/components/Bits";
 import { LaunchRunPanel } from "@/components/LaunchRunPanel";
+import { NewEngagementPanel } from "@/components/NewEngagementPanel";
 import { BenchmarkBoard } from "@/components/BenchmarkBoard";
 import { RunsTable } from "@/components/RunsTable";
 import { StatCard } from "@/components/StatCard";
@@ -107,7 +108,10 @@ export default function RunsOverviewPage() {
             )}
             <RunsTable runs={runs} />
           </div>
-          <LaunchRunPanel className="xl:sticky xl:top-4" />
+          <div className="space-y-3 xl:sticky xl:top-4">
+            <NewEngagementPanel />
+            <LaunchRunPanel />
+          </div>
         </section>
       </main>
 

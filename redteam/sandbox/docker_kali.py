@@ -69,6 +69,10 @@ class KaliSandbox:
         self._plan: EgressPlan | None = None
         self._started = False
 
+    @property
+    def target_aliases(self) -> tuple[tuple[str, str], ...]:
+        return tuple(getattr(self._cfg, "target_aliases", ()) or ())
+
     # -- helpers ---------------------------------------------------------------
 
     def _log(self, event: str, **f) -> None:

@@ -37,7 +37,10 @@ _MAX_LEADS = 100
 
 def _build_command(target: str, templates: str, severity: str,
                    rate_limit: int, timeout: int, concurrency: int) -> str:
-    parts = ["nuclei", "-u", target, "-silent", "-json",
+    # -jsonl: nuclei v3 removed -json (it errors out). -duc: the template update check
+    # would hit GitHub, which the sandbox firewall blocks; templates are baked into the
+    # image instead (see sandbox/Dockerfile).
+    parts = ["nuclei", "-u", target, "-silent", "-jsonl", "-duc",
              "-rl", str(rate_limit), "-c", str(concurrency),
              "-timeout", str(timeout)]
     if severity:

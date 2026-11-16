@@ -82,7 +82,12 @@ tools/surface.py       surface_scan: knocks once on every allowed host x port (c
 reflection.py          Per-round strategist self-critique; re-ranks attack_tree only
 server.py              FastAPI control plane: POST/GET /api/runs, SSE stream, REST
                        approvals (run.py: HeadlessApprover/resolve_approval), static
-dashboard hosting
+                       dashboard hosting; POST /api/engagements/{check,launch} for the
+                       dashboard's "New engagement" (client URL) form
+engagement_builder.py  Form -> engagement YAML. Scope = exactly the typed hosts/ports/
+                       schemes (no wildcard/CIDR); authorized_by + ticket + end date
+                       required; preflight() = the Check button (scope preview, DNS,
+                       one GET per URL via ScopeGuard, only once authorization filled)
 cli.py                 Entrypoint: preflight, sandbox/browser lifecycle, approvals
 parsers.py             Output parsing helpers
 llm/
@@ -106,12 +111,17 @@ llmred/                LLM-as-TARGET red teaming — a DIFFERENT module from llm
   report.py             Markdown report with OWASP rollup and evidence pointers
   __main__.py           python -m redteam.llmred --target t.yaml --out dir [--gate]
 sandbox/
-  Dockerfile            Kali rolling + tools + firewall deps
-  entrypoint.sh         Installs the egress allowlist, then idles (fail closed)
+  Dockerfile            Kali rolling + kali-linux-headless + modern recon (nuclei with
+                        templates baked in, subfinder, katana, dnsx, naabu,
+                        httpx-toolkit, feroxbuster, dirsearch, arjun, getallurls,
+                        testssl.sh, seclists) + firewall deps
+  entrypoint.sh         Installs the egress allowlist (+ ALLOWED_PROXY: one TCP port
+                        for the evidence proxy), then idles (fail closed)
   egress.py             RoE scope -> allowed CIDRs
-  docker_kali.py        Build/start/exec/stop the container
+  docker_kali.py        Build/start/exec/stop the container; self-test fails closed
 tools/
-  kali.py                kali_exec (firewall-tamper + destructive guards)
+  kali.py                kali_exec (firewall-tamper + destructive guards; rewrites
+                         sandbox.target_aliases host:port pairs, see Conventions)
   browser.py             browser_navigate/content/click/fill/screenshot
   workflow.py            record_finding, request_approval
   jwt.py                 jwt_inspect — deterministic JWT checklist (offline, leads only)
@@ -213,6 +223,13 @@ assuming behavior isn't covered.
 - Wildcard scope (`*.example.com`) works for the browser tool (checks request host by
   name) but **not** for Kali tools (firewall is IP/CIDR-based) — covering CIDR must
   also be listed in `scope.allowed_hosts`.
+- `localhost` inside Kali is Kali itself. Lab targets published on the host are
+  reachable from Kali only via their redteam-net address: the bench runner joins the
+  lab container to redteam-net and writes `sandbox.target_aliases`
+  (`localhost:<host_port>` -> `<container_ip>:<container_port>`), which kali_exec
+  rewrites before exec. `load_engagement` refuses an alias whose host isn't in
+  `scope.allowed_hosts`. A target running directly on the host (not in Docker) is
+  unreachable from Kali by design; browser/HTTP tools still reach it.
 - To add a new agent tool: implement `schema()` + `run(ctx, ...)` in `redteam/tools/`
   and register it in `build_registry` (see `redteam/tools/__init__.py`).
 - **Gen-2 additions to respect:**
@@ -262,5 +279,10 @@ pip install "fastapi>=0.110" "uvicorn[standard]"
 npm --prefix dashboard install && npm --prefix dashboard run build
 python -m redteam.server --runs-root runs --port 8000   # dashboard at http://127.0.0.1:8000
 ```
+
+In the dashboard, "New engagement" takes the client URL(s) + authorization and writes
+the engagement to `runs/_engagements/` (gitignored with `runs/`) and a copy into the
+run folder. Anything wider than exact hosts (wildcards, CIDRs, exclusions) still needs
+a hand-written file via "Launch from engagement file".
 
 Docker must be running for the Kali sandbox. First run builds the (large) Kali image.

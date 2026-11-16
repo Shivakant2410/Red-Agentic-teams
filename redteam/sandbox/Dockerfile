@@ -22,10 +22,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         jq \
     && rm -rf /var/lib/apt/lists/*
 
+# Modern recon set that kali-linux-headless leaves out. nuclei backs our nuclei_scan
+# tool (it failed on every call without it). httpx-toolkit is ProjectDiscovery's probe;
+# plain `httpx` in this image is the unrelated Python HTTP client. seclists adds ~1.9 GB
+# but is the wordlist set every content-discovery tool here expects.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        nuclei \
+        subfinder \
+        katana \
+        dnsx \
+        naabu \
+        httpx-toolkit \
+        feroxbuster \
+        dirsearch \
+        arjun \
+        getallurls \
+        testssl.sh \
+        seclists \
+    && rm -rf /var/lib/apt/lists/*
+
 # Non-root user for running tools; firewall setup still needs root via the entrypoint.
 # Debian already ships an "operator" group (gid 37), so join it explicitly; no `|| true`,
 # a missing user must break the build (every kali_exec runs as this user).
 RUN useradd -m -s /bin/bash -g operator operator
+
+# nuclei downloads its templates on first use, which the egress firewall blocks at run
+# time (GitHub is never in scope). Fetch them now, into the operator user's home, so
+# scans work offline; nuclei_scan passes -duc so it never tries to update mid-run.
+RUN su operator -s /bin/bash -c "nuclei -update-templates -silent" \
+    && test -n "$(ls -A /home/operator/.local/nuclei-templates)"
 
 # The container runs with no-new-privileges, which refuses to exec any binary carrying
 # file capabilities ("Operation not permitted"). Strip them so nmap runs unprivileged

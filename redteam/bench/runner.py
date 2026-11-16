@@ -116,6 +116,13 @@ def _write_engagement(target, path: Path, container_ip: str | None = None) -> No
         # put the target and Kali on the same Docker network yet (see module docstring).
         "sandbox": {"enable": bool(container_ip)},
     }
+    if container_ip:
+        # The agent is briefed with the host-side URL (localhost:<host_port>); inside
+        # Kali that is Kali's own loopback, so every kali_exec against it failed with
+        # curl exit 7. Map it onto the container's address on redteam-net.
+        dst = f"{container_ip}:{target.container_port}"
+        doc["sandbox"]["target_aliases"] = {f"localhost:{target.host_port}": dst,
+                                            f"127.0.0.1:{target.host_port}": dst}
     path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
 
 

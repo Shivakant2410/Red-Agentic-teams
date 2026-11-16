@@ -69,6 +69,11 @@ class SandboxConfig:
     container_name: str = "redteam-kali-run"
     memory: str = "2g"
     cpus: str = "2"
+    # Host-side address -> address the sandbox must use for the SAME in-scope service,
+    # e.g. ("localhost:8090", "172.18.0.3:8080") for a lab container published on the
+    # host. Inside Kali "localhost" is Kali itself, so kali_exec rewrites these before
+    # running a command. Both sides must already be in scope (checked at load).
+    target_aliases: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -195,7 +200,39 @@ def _load_sandbox(data: dict) -> SandboxConfig:
         container_name=str(d.get("container_name", defaults.container_name)),
         memory=str(d.get("memory", defaults.memory)),
         cpus=str(d.get("cpus", defaults.cpus)),
+        target_aliases=_load_target_aliases(d.get("target_aliases")),
     )
+
+
+def _load_target_aliases(raw: object) -> tuple[tuple[str, str], ...]:
+    """sandbox.target_aliases: {"localhost:8090": "172.18.0.3:8080", ...}. Each side
+    must be a bare host:port (no scheme/path) so the rewrite can't smuggle anything."""
+    if not raw:
+        return ()
+    if not isinstance(raw, dict):
+        raise ConfigError("sandbox.target_aliases must be a mapping of host:port -> host:port")
+    out = []
+    for src, dst in raw.items():
+        src, dst = str(src).strip(), str(dst).strip()
+        for side in (src, dst):
+            host, sep, port = side.rpartition(":")
+            if not sep or not host or not port.isdigit() or "/" in side or "@" in side:
+                raise ConfigError(f"sandbox.target_aliases entry {side!r} must be host:port")
+        out.append((src, dst))
+    return tuple(out)
+
+
+def _check_aliases_in_scope(allowed_hosts: tuple[str, ...], aliases) -> None:
+    """Fail closed: an alias may only map one in-scope host onto another in-scope host.
+    The firewall still bounds the sandbox, but a config that points the agent at an
+    unlisted host is a scope mistake and must stop the run."""
+    listed = {h.lower() for h in allowed_hosts}
+    for src, dst in aliases:
+        for side in (src, dst):
+            host = side.rpartition(":")[0].strip("[]").lower()
+            if host not in listed:
+                raise ConfigError(
+                    f"sandbox.target_aliases host {host!r} is not in scope.allowed_hosts")
 
 
 def load_engagement(path: str | Path) -> Engagement:
@@ -224,6 +261,9 @@ def load_engagement(path: str | Path) -> Engagement:
     if ends < starts:
         raise ConfigError("engagement 'ends' is before 'starts'")
 
+    sandbox = _load_sandbox(data)
+    _check_aliases_in_scope(allowed_hosts, sandbox.target_aliases)
+
     return Engagement(
         name=str(_require(data, "name")),
         client=str(_require(data, "client")),
@@ -246,6 +286,6 @@ def load_engagement(path: str | Path) -> Engagement:
         enable_reflection=bool(limits.get("enable_reflection", True)),
         objective=load_objective(data.get("objective")),
         llm=_load_llm(data),
-        sandbox=_load_sandbox(data),
+        sandbox=sandbox,
         raw=data,
     )

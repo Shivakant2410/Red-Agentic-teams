@@ -6,8 +6,10 @@
 import type {
   EventsPage,
   Health,
+  EngagementForm,
   LaunchRequest,
   LaunchResponse,
+  PreflightResult,
   PendingApproval,
   RunDetail,
   RunSummary,
@@ -77,6 +79,18 @@ export const api = {
 
   launchRun: (body: LaunchRequest) =>
     request<LaunchResponse>("/api/runs", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  checkEngagement: (body: EngagementForm) =>
+    request<PreflightResult>("/api/engagements/check", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  launchEngagement: (body: EngagementForm) =>
+    request<LaunchResponse>("/api/engagements/launch", {
       method: "POST",
       body: JSON.stringify(body),
     }),

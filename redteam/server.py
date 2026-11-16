@@ -64,6 +64,26 @@ class LaunchBody(BaseModel):
     asset_feed: str = ""
 
 
+class EngagementFormBody(BaseModel):
+    """Dashboard "New engagement" form. Scope is derived from `targets` only — see
+    engagement_builder for exactly how narrow that is."""
+    client: str = Field(default="", max_length=200)
+    targets: list[str] = Field(default_factory=list, max_length=20)
+    authorized_by: str = Field(default="", max_length=200)
+    ticket: str = Field(default="", max_length=500)
+    ends: str = Field(default="", max_length=10)
+    objective: str = Field(default="", max_length=20000)
+    allow_private_ranges: bool = False
+    sandbox: bool = True
+    max_requests_per_second: float = Field(default=3.0, ge=0.5, le=20)
+    max_total_requests: int = Field(default=2000, ge=50, le=20000)
+    max_run_seconds: int = Field(default=3600, ge=60, le=6 * 3600)
+    multi_agent: bool = True
+    max_steps: int = Field(default=40, ge=1, le=1000)
+    probe: bool = False                # Check button: also send one GET per URL
+    confirm_authorized: bool = False   # launch only: operator attests written authorization
+
+
 class ApprovalBody(BaseModel):
     approve: bool
 
@@ -192,6 +212,63 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
 
     @app.post("/api/runs", status_code=202)
     def launch_run(body: LaunchBody) -> dict:
+        return arm(body)
+
+    # -- API: engagement from a form (client URL + authorization) ---------------
+
+    def form_of(body: "EngagementFormBody"):
+        from .engagement_builder import EngagementForm
+        return EngagementForm(
+            client=body.client, targets=body.targets, authorized_by=body.authorized_by,
+            ticket=body.ticket, ends=body.ends, objective=body.objective,
+            allow_private_ranges=body.allow_private_ranges, sandbox=body.sandbox,
+            max_requests_per_second=body.max_requests_per_second,
+            max_total_requests=body.max_total_requests,
+            max_run_seconds=body.max_run_seconds)
+
+    @app.post("/api/engagements/check")
+    def check_engagement(body: EngagementFormBody) -> dict:
+        from .engagement_builder import http_probe, preflight
+        # The one request per URL goes out only once the authorization is on record.
+        return preflight(form_of(body), fetch=http_probe if body.probe else None,
+                         control_plane=control_plane)
+
+    @app.post("/api/engagements/launch", status_code=202)
+    def launch_from_form(body: EngagementFormBody) -> dict:
+        import shutil
+
+        import yaml
+
+        from .engagement_builder import FormError, build_engagement_doc
+        if not body.confirm_authorized:
+            raise HTTPException(400, "confirm you hold written authorization for these targets")
+        if not body.objective.strip():
+            raise HTTPException(400, "objective is required")
+        try:
+            doc = build_engagement_doc(form_of(body))
+        except FormError as exc:
+            raise HTTPException(400, str(exc))
+        objective = body.objective.strip()
+        missing = [u for u in doc["targets"] if u not in objective]
+        if missing:
+            objective = f"Targets: {', '.join(doc['targets'])}\n\n{objective}"
+
+        eng_dir = runs_root / "_engagements"
+        eng_dir.mkdir(parents=True, exist_ok=True)
+        slug = re.sub(r"[^a-z0-9]+", "-", doc["client"].lower()).strip("-")[:32] or "client"
+        stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+        eng_path = eng_dir / f"{stamp}-{slug}.yaml"
+        eng_path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+        try:
+            result = arm(LaunchBody(engagement_path=str(eng_path), objective=objective,
+                                    multi_agent=body.multi_agent, max_steps=body.max_steps))
+        except HTTPException:
+            eng_path.unlink(missing_ok=True)
+            raise
+        shutil.copy(eng_path, Path(result["out_dir"]) / "engagement.yaml")
+        return {**result, "engagement_path": str(eng_path), "scope": doc["scope"]}
+
+    def arm(body: LaunchBody) -> dict:
         from .config import ConfigError, load_engagement
         try:
             engagement = load_engagement(body.engagement_path)

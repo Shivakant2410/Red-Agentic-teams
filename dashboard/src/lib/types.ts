@@ -200,6 +200,54 @@ export interface LaunchRequest {
   yes_to_all?: boolean;
 }
 
+/** POST /api/engagements/{check,launch} — scope is derived from `targets` only. */
+export interface EngagementForm {
+  client: string;
+  targets: string[];
+  authorized_by: string;
+  ticket: string;
+  ends: string;
+  objective: string;
+  allow_private_ranges: boolean;
+  sandbox: boolean;
+  max_requests_per_second: number;
+  multi_agent: boolean;
+  max_steps: number;
+  probe?: boolean;
+  confirm_authorized?: boolean;
+}
+
+export interface EngagementScope {
+  allowed_hosts: string[];
+  allowed_ports: number[];
+  allowed_schemes: string[];
+  allow_private_ranges: boolean;
+}
+
+export interface PreflightTarget {
+  url: string;
+  ips: string[];
+  in_scope: boolean;
+  error?: string;
+  reachable?: {
+    ok: boolean;
+    status?: number;
+    server?: string;
+    title?: string;
+    location?: string;
+    elapsed_ms?: number;
+    error?: string;
+  } | null;
+}
+
+export interface PreflightResult {
+  ok: boolean;
+  errors: string[];
+  warnings: string[];
+  scope: EngagementScope | null;
+  targets: PreflightTarget[];
+}
+
 export interface LaunchResponse {
   run_id: string;
   out_dir: string;

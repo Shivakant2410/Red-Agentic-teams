@@ -46,7 +46,9 @@ function Field({
  */
 export function LaunchRunPanel({ className }: { className?: string }) {
   const router = useRouter();
-  const [open, setOpen] = useState(true);
+  // Collapsed by default: the URL form above is the primary path; this one takes a
+  // hand-written engagement file (wildcards, CIDRs, exclusions).
+  const [open, setOpen] = useState(false);
   const [engagementPath, setEngagementPath] = useState("");
   const [objective, setObjective] = useState("");
   const [sourceDir, setSourceDir] = useState("");
@@ -99,7 +101,7 @@ export function LaunchRunPanel({ className }: { className?: string }) {
             !open && "rotate-180",
           )}
         />
-        <Micro>LAUNCH RUN</Micro>
+        <Micro>LAUNCH FROM ENGAGEMENT FILE</Micro>
         <span className="ml-auto font-mono text-[9px] tracking-[0.14em] text-muted/60">
           POST /API/RUNS
         </span>
