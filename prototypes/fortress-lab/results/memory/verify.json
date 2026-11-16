@@ -1,0 +1,147 @@
+{
+  "bandit": {
+    "check:FW-AUDIT-LEAK": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:FW-CANCEL-REASON": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:FW-DEPUTY-CREDIT": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:FW-MASS-PLAN": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:FW-MASS-PRICE": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:FW-QUOTA-RACE": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:FW-ROUND-DRIFT": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:FW-SETTLED-CANCEL": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:FW-TERMINAL-RESIZE": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "check:FW-TOCTOU-SETTLE": {
+      "alpha": 3.0,
+      "beta": 1.0
+    }
+  },
+  "insights": [],
+  "history": [
+    {
+      "technique": "check:FW-AUDIT-LEAK",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-CANCEL-REASON",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-DEPUTY-CREDIT",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-MASS-PLAN",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-MASS-PRICE",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-QUOTA-RACE",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-ROUND-DRIFT",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-SETTLED-CANCEL",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-TERMINAL-RESIZE",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-TOCTOU-SETTLE",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-AUDIT-LEAK",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-CANCEL-REASON",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-DEPUTY-CREDIT",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-MASS-PLAN",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-MASS-PRICE",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-QUOTA-RACE",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-ROUND-DRIFT",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-SETTLED-CANCEL",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-TERMINAL-RESIZE",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "check:FW-TOCTOU-SETTLE",
+      "outcome": "success",
+      "weight": 1.0
+    }
+  ]
+}

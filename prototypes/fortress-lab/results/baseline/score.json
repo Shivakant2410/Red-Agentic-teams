@@ -1,0 +1,7 @@
+{
+  "tool": "statefuzz-baseline",
+  "requests": 73,
+  "discovered": 0,
+  "total": 10,
+  "hits": {}
+}

@@ -1,0 +1,23 @@
+{
+  "bandit": {
+    "generate": {
+      "alpha": 3.0,
+      "beta": 1.0
+    }
+  },
+  "insights": [
+    "Multi-step stateful flows (e.g. checkout init->confirm) warrant FSM-mutation probing before endpoint-level fuzzing."
+  ],
+  "history": [
+    {
+      "technique": "generate",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "generate",
+      "outcome": "success",
+      "weight": 1.0
+    }
+  ]
+}

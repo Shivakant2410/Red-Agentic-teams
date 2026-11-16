@@ -1,0 +1,28 @@
+{
+  "gv5": {
+    "settled": true,
+    "wallet_before": 100000,
+    "after_settle": 70000,
+    "after_cancel": 100000,
+    "cancel_status": 200,
+    "cancel_refund_cents": 30000,
+    "ledger_violation": {
+      "invariant": "I1",
+      "assertion": "wallet_delta == order_total",
+      "observed": {
+        "callback_refund_cents": null,
+        "order_total": -30000,
+        "wallet_delta": 0
+      },
+      "detail": "deferred window credited 0 cents total for a single -30000-cent refund (delta observed after callback resolution)"
+    },
+    "markers_registered": 1
+  },
+  "gv4": {
+    "balance_before": 100000,
+    "final_balance": -19955,
+    "negative": true,
+    "settled_status": "settled"
+  },
+  "requests": 34
+}

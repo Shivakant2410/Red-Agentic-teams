@@ -1,0 +1,91 @@
+{
+  "bandit": {
+    "px_amplify": {
+      "alpha": 1.0,
+      "beta": 3.0
+    },
+    "px_persist_replay": {
+      "alpha": 1.0,
+      "beta": 3.0
+    },
+    "px_scope_traverse": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "postex_ladder": {
+      "alpha": 2.5,
+      "beta": 1.0
+    },
+    "escalate": {
+      "alpha": 1.0,
+      "beta": 1.5
+    },
+    "postex": {
+      "alpha": 1.0,
+      "beta": 1.5
+    }
+  },
+  "insights": [],
+  "history": [
+    {
+      "technique": "px_amplify",
+      "outcome": "failure",
+      "weight": 1.0
+    },
+    {
+      "technique": "px_persist_replay",
+      "outcome": "failure",
+      "weight": 1.0
+    },
+    {
+      "technique": "px_scope_traverse",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "postex_ladder",
+      "outcome": "success",
+      "weight": 0.75
+    },
+    {
+      "technique": "escalate",
+      "outcome": "failure",
+      "weight": 0.25
+    },
+    {
+      "technique": "postex",
+      "outcome": "failure",
+      "weight": 0.25
+    },
+    {
+      "technique": "px_amplify",
+      "outcome": "failure",
+      "weight": 1.0
+    },
+    {
+      "technique": "px_persist_replay",
+      "outcome": "failure",
+      "weight": 1.0
+    },
+    {
+      "technique": "px_scope_traverse",
+      "outcome": "success",
+      "weight": 1.0
+    },
+    {
+      "technique": "postex_ladder",
+      "outcome": "success",
+      "weight": 0.75
+    },
+    {
+      "technique": "escalate",
+      "outcome": "failure",
+      "weight": 0.25
+    },
+    {
+      "technique": "postex",
+      "outcome": "failure",
+      "weight": 0.25
+    }
+  ]
+}

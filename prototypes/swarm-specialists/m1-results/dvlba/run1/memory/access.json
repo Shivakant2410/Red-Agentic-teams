@@ -1,0 +1,21 @@
+{
+  "bandit": {
+    "escalate": {
+      "alpha": 1.5,
+      "beta": 1.0
+    }
+  },
+  "insights": [],
+  "history": [
+    {
+      "technique": "escalate",
+      "outcome": "success",
+      "weight": 0.25
+    },
+    {
+      "technique": "escalate",
+      "outcome": "success",
+      "weight": 0.25
+    }
+  ]
+}

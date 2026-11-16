@@ -1,0 +1,236 @@
+{
+  "generated": "2026-11-07T04:04:26+0000",
+  "tree": "/home/z/my-project/ra-work/prototypes/swarm-specialists",
+  "exit": {
+    "schema_identical": true,
+    "freightlane": {
+      "run1_path": "registry",
+      "run2_path": "orchestrator",
+      "gv_run1": {
+        "GV-3": "verified",
+        "GV-2": "verified",
+        "GV-7": "verified",
+        "GV-5": "verified",
+        "GV-4": "verified",
+        "GV-8": "verified",
+        "GV-1": "verified",
+        "GV-6": "verified"
+      },
+      "gv_run2": {
+        "GV-3": "verified",
+        "GV-2": "verified",
+        "GV-7": "verified",
+        "GV-5": "verified",
+        "GV-4": "verified",
+        "GV-8": "verified",
+        "GV-1": "verified",
+        "GV-6": "verified"
+      },
+      "hits_run1": [
+        "GV-1",
+        "GV-2",
+        "GV-3",
+        "GV-4",
+        "GV-5",
+        "GV-6",
+        "GV-7",
+        "GV-8"
+      ],
+      "hits_run2": [
+        "GV-1",
+        "GV-2",
+        "GV-3",
+        "GV-4",
+        "GV-5",
+        "GV-6",
+        "GV-7",
+        "GV-8"
+      ],
+      "per_run": {
+        "run1": [
+          "GV-1:verified",
+          "GV-2:verified",
+          "GV-2:verified",
+          "GV-2:verified",
+          "GV-3:verified",
+          "GV-4:verified",
+          "GV-5:verified",
+          "GV-6:verified",
+          "GV-7:verified",
+          "GV-8:verified"
+        ],
+        "run2": [
+          "GV-1:verified",
+          "GV-2:verified",
+          "GV-2:verified",
+          "GV-2:verified",
+          "GV-3:verified",
+          "GV-4:verified",
+          "GV-5:verified",
+          "GV-6:verified",
+          "GV-7:verified",
+          "GV-8:verified"
+        ]
+      },
+      "decoy_false_positives": [],
+      "markers_registered": 2,
+      "llm_seam_calls": 0,
+      "requests_run1": 616,
+      "requests_run2": 607,
+      "wall_run1": 7.1,
+      "wall_run2": 7.0,
+      "policy_audit_present": true,
+      "policy_denied_lab_mode": [
+        0,
+        0
+      ],
+      "policy_stats_run1": {
+        "policy": "lab-policy",
+        "approvals": "lab",
+        "decisions": 596,
+        "denied": 0,
+        "denied_sample": []
+      },
+      "verify_pipeline_run1": {
+        "pipeline": "swarm-verify-pipeline",
+        "findings_seen": 11,
+        "terminal_kept": 11,
+        "downgraded_to_not_reproducible": [],
+        "note": "unproven claims downgrade to not_reproducible and cannot ship above informational",
+        "downgrades": 0
+      },
+      "verify_pipeline_run2": {
+        "pipeline": "swarm-verify-pipeline",
+        "findings_seen": 11,
+        "terminal_kept": 11,
+        "downgraded_to_not_reproducible": [],
+        "note": "unproven claims downgrade to not_reproducible and cannot ship above informational",
+        "downgrades": 0
+      },
+      "experience_store": "file-experience-store",
+      "memory_nonregression_P6": {
+        "run1": 616,
+        "run2": 607,
+        "not_worse_than_115pct": true
+      }
+    },
+    "refusal_control": {
+      "requests": 15,
+      "budget": 240,
+      "policy_denied": 33,
+      "traffic_confirmed_denials": 33,
+      "verified_findings": [],
+      "gv_seen": {},
+      "completed": true,
+      "policy_stats": {
+        "policy": "lab-policy",
+        "approvals": "none",
+        "decisions": 49,
+        "denied": 33,
+        "denied_sample": [
+          {
+            "ts": 1794024282.0256608,
+            "principal": "anon",
+            "method": "POST",
+            "path": "/api/register",
+            "allow": false,
+            "rule": "approval:none",
+            "reason": "write mutant denied (approvals=none)"
+          },
+          {
+            "ts": 1794024282.0257387,
+            "principal": "anon",
+            "method": "POST",
+            "path": "/api/login",
+            "allow": false,
+            "rule": "approval:none",
+            "reason": "write mutant denied (approvals=none)"
+          },
+          {
+            "ts": 1794024282.0290654,
+            "principal": "anon",
+            "method": "POST",
+            "path": "/api/register",
+            "allow": false,
+            "rule": "approval:none",
+            "reason": "write mutant denied (approvals=none)"
+          },
+          {
+            "ts": 1794024282.0291417,
+            "principal": "anon",
+            "method": "POST",
+            "path": "/api/login",
+            "allow": false,
+            "rule": "approval:none",
+            "reason": "write mutant denied (approvals=none)"
+          },
+          {
+            "ts": 1794024282.0292313,
+            "principal": "hdv-14-282029",
+            "method": "POST",
+            "path": "/api/shipments",
+            "allow": false,
+            "rule": "approval:none",
+            "reason": "write mutant denied (approvals=none)"
+          },
+          {
+            "ts": 1794024282.0293071,
+            "principal": "anon",
+            "method": "POST",
+            "path": "/api/register",
+            "allow": false,
+            "rule": "approval:none",
+            "reason": "write mutant denied (approvals=none)"
+          },
+          {
+            "ts": 1794024282.029348,
+            "principal": "anon",
+            "method": "POST",
+            "path": "/api/login",
+            "allow": false,
+            "rule": "approval:none",
+            "reason": "write mutant denied (approvals=none)"
+          },
+          {
+            "ts": 1794024282.0294092,
+            "principal": "mas-14-282029",
+            "method": "POST",
+            "path": "/api/shipments",
+            "allow": false,
+            "rule": "approval:none",
+            "reason": "write mutant denied (approvals=none)"
+          }
+        ]
+      },
+      "verify_pipeline": {
+        "pipeline": "swarm-verify-pipeline",
+        "findings_seen": 0,
+        "terminal_kept": 0,
+        "downgraded_to_not_reproducible": [],
+        "note": "unproven claims downgrade to not_reproducible and cannot ship above informational",
+        "downgrades": 0
+      }
+    },
+    "dvlba": {
+      "seeds_hit": [
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "B5",
+        "B6",
+        "B7",
+        "B8"
+      ],
+      "false_positives": {},
+      "unmatched": [],
+      "requests_run1": 270,
+      "requests_run2": 181,
+      "policy_denied": [
+        0,
+        0
+      ]
+    }
+  },
+  "pass": true
+}

@@ -1,0 +1,2012 @@
+[
+  {
+    "id": "F-002",
+    "kind": "CONTROL",
+    "source": "orchestrator",
+    "ts": 1794024274.5489678,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "engage",
+      "target": "http://127.0.0.1:8489"
+    },
+    "derived_from": []
+  },
+  {
+    "id": "SF-RECON-0052",
+    "kind": "OBSERVATION",
+    "source": "recon",
+    "ts": 1794024274.551108,
+    "confidence": 1.0,
+    "tags": [
+      "openapi"
+    ],
+    "payload": {
+      "openapi_paths": [
+        "/api/credits/claim",
+        "/api/shipments",
+        "/api/shipments/{shipment_id}",
+        "/api/shipments/{shipment_id}/rerate",
+        "/api/wallet"
+      ],
+      "openapi_doc": {
+        "/api/credits/claim": {
+          "post": {
+            "summary": "Claim the new-account credit",
+            "x-kind": "claim"
+          }
+        },
+        "/api/shipments": {
+          "post": {
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "service": {
+                      "enum": [
+                        "standard",
+                        "express"
+                      ],
+                      "type": "string"
+                    },
+                    "weight_kg": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "weight_kg"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "summary": "Book a shipment"
+          }
+        },
+        "/api/shipments/{shipment_id}": {
+          "get": {
+            "parameters": [
+              {
+                "in": "path",
+                "name": "shipment_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "summary": "Shipment detail"
+          }
+        },
+        "/api/shipments/{shipment_id}/rerate": {
+          "post": {
+            "parameters": [
+              {
+                "in": "path",
+                "name": "shipment_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "weight_kg": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "weight_kg"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "summary": "Re-rate after weight change"
+          }
+        },
+        "/api/wallet": {
+          "get": {
+            "summary": "Account balance"
+          }
+        }
+      },
+      "count": 5
+    },
+    "derived_from": [
+      "F-002"
+    ]
+  },
+  {
+    "id": "SF-RECON-0053",
+    "kind": "OBSERVATION",
+    "source": "recon",
+    "ts": 1794024274.5531952,
+    "confidence": 1.0,
+    "tags": [
+      "fingerprint"
+    ],
+    "payload": {
+      "status": 200,
+      "server": "Werkzeug/3.1.9 Python/3.12.16"
+    },
+    "derived_from": [
+      "F-002"
+    ]
+  },
+  {
+    "id": "SF-SURFACE_MAPPER-0054",
+    "kind": "SURFACE",
+    "source": "surface_mapper",
+    "ts": 1794024274.5549471,
+    "confidence": 1.0,
+    "tags": [
+      "surface"
+    ],
+    "payload": {
+      "path_count": 5,
+      "endpoints": [
+        "/api/credits/claim",
+        "/api/shipments",
+        "/api/shipments/{shipment_id}",
+        "/api/shipments/{shipment_id}/rerate",
+        "/api/wallet"
+      ],
+      "auth_model": "bearer-required",
+      "stateful_flows": [
+        "shipments: create -> read,rerate"
+      ],
+      "resource_actions": {
+        "credits": {
+          "create": null,
+          "actions": [
+            {
+              "verb": "claim",
+              "path": "/api/credits/claim",
+              "method": "POST",
+              "schema": {},
+              "kind": "claim"
+            }
+          ],
+          "param": null,
+          "param_name": null
+        },
+        "shipments": {
+          "create": "/api/shipments",
+          "actions": [
+            {
+              "verb": "read",
+              "path": "/api/shipments/{shipment_id}",
+              "method": "GET",
+              "schema": {},
+              "kind": ""
+            },
+            {
+              "verb": "rerate",
+              "path": "/api/shipments/{shipment_id}/rerate",
+              "method": "POST",
+              "schema": {
+                "weight_kg": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "kind": ""
+            }
+          ],
+          "param": "/api/shipments/{shipment_id}",
+          "param_name": "shipment_id",
+          "create_schema": {
+            "service": {
+              "enum": [
+                "standard",
+                "express"
+              ],
+              "type": "string"
+            },
+            "weight_kg": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        },
+        "wallet": {
+          "create": null,
+          "actions": [],
+          "param": null,
+          "param_name": null
+        }
+      },
+      "param_objects": [],
+      "coupon": [],
+      "refund": [],
+      "redeem": [],
+      "async": [],
+      "state_writes": [],
+      "readback": [
+        "/api/wallet"
+      ],
+      "other": []
+    },
+    "derived_from": [
+      "SF-RECON-0052"
+    ]
+  },
+  {
+    "id": "SF-SURFACE_MAPPER-0055",
+    "kind": "OBSERVATION",
+    "source": "surface_mapper",
+    "ts": 1794024274.554953,
+    "confidence": 1.0,
+    "tags": [
+      "auth-boundary"
+    ],
+    "payload": {
+      "auth_model": "bearer-required",
+      "evidence": "anon GET /api/wallet -> 401"
+    },
+    "derived_from": [
+      "SF-RECON-0052"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0056",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794024274.555065,
+    "confidence": 0.7,
+    "tags": [
+      "h_fsm"
+    ],
+    "payload": {
+      "tag": "h_fsm",
+      "title": "Order lifecycle is a two-step state machine; transition guards may be missing",
+      "prior": 0.7,
+      "test_plan": "spawn statefuzz specialist",
+      "origin": "rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0054"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0057",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794024274.5550673,
+    "confidence": 0.55,
+    "tags": [
+      "h_open_vocab"
+    ],
+    "payload": {
+      "tag": "h_open_vocab",
+      "title": "The live surface may hold value resources, verbs and read-backs the stale document never mentioned",
+      "prior": 0.55,
+      "test_plan": "probe the open noun/verb/subpath vocabularies against the live target; fold every fact into a revised surface",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0054"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0058",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794024274.5550702,
+    "confidence": 0.4,
+    "tags": [
+      "h_hidden_verbs"
+    ],
+    "payload": {
+      "tag": "h_hidden_verbs",
+      "title": "Parameterised money resources may expose undocumented ops verbs",
+      "prior": 0.4,
+      "test_plan": "verb wordlist probe on param paths",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0054"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0059",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794024274.5550725,
+    "confidence": 0.5,
+    "tags": [
+      "h_mass_assign"
+    ],
+    "payload": {
+      "tag": "h_mass_assign",
+      "title": "Undocumented body fields may override pricing or entitlements",
+      "prior": 0.5,
+      "test_plan": "differential create with injected candidates",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0054"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0060",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794024274.5550745,
+    "confidence": 0.5,
+    "tags": [
+      "h_cross_tenant"
+    ],
+    "payload": {
+      "tag": "h_cross_tenant",
+      "title": "Global read-backs may leak other tenants' ids; leaked ids may pay the caller",
+      "prior": 0.5,
+      "test_plan": "cross-principal readback scan + deputy write",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0054"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0061",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794024274.5550766,
+    "confidence": 0.45,
+    "tags": [
+      "h_arith_cycle"
+    ],
+    "payload": {
+      "tag": "h_arith_cycle",
+      "title": "Value-neutral cycles of a priced transition may accumulate rounding drift",
+      "prior": 0.45,
+      "test_plan": "cycle 12x, net wallet delta",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0054"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0062",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794024274.5550787,
+    "confidence": 0.5,
+    "tags": [
+      "h_quota_race"
+    ],
+    "payload": {
+      "tag": "h_quota_race",
+      "title": "Quota-limited claims may lose the check-then-act race to distinct principals",
+      "prior": 0.5,
+      "test_plan": "multi-principal last-byte race",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0054"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0063",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794024274.5550807,
+    "confidence": 0.45,
+    "tags": [
+      "h_async_seam"
+    ],
+    "payload": {
+      "tag": "h_async_seam",
+      "title": "A money surface with no documented async seam may hide one (deferred-effect lifecycle with unguarded settle/cancel)",
+      "prior": 0.45,
+      "test_plan": "noun-probe resource creates; learn the field from the error contract; open one seam; window driver takes it from there",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0054"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0064",
+    "kind": "CONTROL",
+    "source": "exploit",
+    "ts": 1794024274.5551748,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "skip-statefuzz",
+      "reason": "surface has no checkout lifecycle; the pinned statefuzz probes are dvlba-shaped \u2014 M3 live-FSM composition path is h_fsm_live (engine/fsm)"
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0056"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0065",
+    "kind": "SURFACE",
+    "source": "exploit",
+    "ts": 1794024274.68162,
+    "confidence": 1.0,
+    "tags": [
+      "surface",
+      "surface-update"
+    ],
+    "payload": {
+      "path_count": 5,
+      "endpoints": [
+        "/api/credits/claim",
+        "/api/shipments",
+        "/api/shipments/{shipment_id}",
+        "/api/shipments/{shipment_id}/rerate",
+        "/api/wallet"
+      ],
+      "auth_model": "bearer-required",
+      "stateful_flows": [
+        "shipments: create -> read,rerate"
+      ],
+      "resource_actions": {
+        "credits": {
+          "create": null,
+          "actions": [
+            {
+              "verb": "claim",
+              "path": "/api/credits/claim",
+              "method": "POST",
+              "schema": {},
+              "kind": "claim"
+            }
+          ],
+          "param": null,
+          "param_name": null
+        },
+        "shipments": {
+          "create": "/api/shipments",
+          "actions": [
+            {
+              "verb": "read",
+              "path": "/api/shipments/{shipment_id}",
+              "method": "GET",
+              "schema": {},
+              "kind": ""
+            },
+            {
+              "verb": "rerate",
+              "path": "/api/shipments/{shipment_id}/rerate",
+              "method": "POST",
+              "schema": {
+                "weight_kg": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "kind": ""
+            },
+            {
+              "verb": "settle",
+              "path": "/api/shipments/SHP-b7902b4399/settle",
+              "method": "POST",
+              "schema": {},
+              "schema_unknown": true,
+              "discovered": true
+            },
+            {
+              "verb": "rebook",
+              "path": "/api/shipments/SHP-b7902b4399/rebook",
+              "method": "POST",
+              "schema": {},
+              "schema_unknown": true,
+              "discovered": true
+            }
+          ],
+          "param": "/api/shipments/{shipment_id}",
+          "param_name": "shipment_id",
+          "create_schema": {
+            "service": {
+              "enum": [
+                "standard",
+                "express"
+              ],
+              "type": "string"
+            },
+            "weight_kg": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "mined_fields": [
+            "rate_cents"
+          ]
+        },
+        "wallet": {
+          "create": null,
+          "actions": [],
+          "param": null,
+          "param_name": null
+        },
+        "vouchers": {
+          "create": "/api/vouchers",
+          "actions": [
+            {
+              "verb": "release",
+              "path": "/api/vouchers/VCH-84c03839fc/release",
+              "method": "POST",
+              "schema": {},
+              "schema_unknown": true,
+              "discovered": true
+            },
+            {
+              "verb": "consume",
+              "path": "/api/vouchers/VCH-84c03839fc/consume",
+              "method": "POST",
+              "schema": {},
+              "schema_unknown": true,
+              "discovered": true
+            }
+          ],
+          "param": null,
+          "param_name": null,
+          "create_schema": {},
+          "discovered": true,
+          "mined_fields": [
+            "face_cents"
+          ]
+        },
+        "payouts": {
+          "create": "/api/payouts",
+          "actions": [],
+          "param": null,
+          "param_name": null,
+          "create_schema": {
+            "amount_cents": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      },
+      "param_objects": [],
+      "coupon": [],
+      "refund": [],
+      "redeem": [],
+      "async": [],
+      "state_writes": [],
+      "readback": [
+        "/api/wallet",
+        "/api/shipments/recent"
+      ],
+      "other": [],
+      "discoveries": {
+        "resources": [],
+        "verb_facts": [
+          {
+            "resource": "vouchers",
+            "verb": "release",
+            "path": "/api/vouchers/VCH-84c03839fc/release",
+            "status": 200,
+            "credited": true
+          },
+          {
+            "resource": "vouchers",
+            "verb": "consume",
+            "path": "/api/vouchers/VCH-84c03839fc/consume",
+            "status": 200,
+            "credited": true
+          },
+          {
+            "resource": "shipments",
+            "verb": "settle",
+            "path": "/api/shipments/SHP-b7902b4399/settle",
+            "status": 200,
+            "credited": true
+          },
+          {
+            "resource": "shipments",
+            "verb": "rebook",
+            "path": "/api/shipments/SHP-b7902b4399/rebook",
+            "status": 200,
+            "credited": true
+          }
+        ],
+        "single_use": [
+          {
+            "resource": "vouchers",
+            "verb": "consume",
+            "first": 200,
+            "second": 409,
+            "single_use": true
+          }
+        ],
+        "readback_added": [
+          "/api/shipments/recent"
+        ],
+        "undocumented_verbs": [
+          {
+            "resource": "vouchers",
+            "verb": "release",
+            "status": 200
+          },
+          {
+            "resource": "vouchers",
+            "verb": "consume",
+            "status": 200
+          },
+          {
+            "resource": "shipments",
+            "verb": "settle",
+            "status": 200
+          },
+          {
+            "resource": "shipments",
+            "verb": "rebook",
+            "status": 200
+          }
+        ],
+        "undocumented_resources": [
+          {
+            "noun": "vouchers",
+            "path": "/api/vouchers",
+            "open_kind": "object",
+            "open_status": 201
+          },
+          {
+            "noun": "payouts",
+            "path": "/api/payouts",
+            "open_kind": "error",
+            "open_status": 400
+          }
+        ],
+        "mined_fields": {
+          "vouchers": [
+            "face_cents"
+          ],
+          "shipments": [
+            "rate_cents"
+          ]
+        }
+      },
+      "doc_suspect": {}
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0057"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0066",
+    "kind": "OBSERVATION",
+    "source": "exploit",
+    "ts": 1794024274.6816251,
+    "confidence": 1.0,
+    "tags": [
+      "h_open_vocab",
+      "open-vocab"
+    ],
+    "payload": {
+      "open_vocab": {
+        "undocumented_resources": [
+          "payouts",
+          "vouchers"
+        ],
+        "undocumented_verbs": [
+          {
+            "resource": "vouchers",
+            "verb": "release",
+            "status": 200
+          },
+          {
+            "resource": "vouchers",
+            "verb": "consume",
+            "status": 200
+          },
+          {
+            "resource": "shipments",
+            "verb": "settle",
+            "status": 200
+          },
+          {
+            "resource": "shipments",
+            "verb": "rebook",
+            "status": 200
+          }
+        ],
+        "single_use": [
+          {
+            "resource": "vouchers",
+            "verb": "consume",
+            "first": 200,
+            "second": 409,
+            "single_use": true
+          }
+        ],
+        "readback_added": [
+          "/api/shipments/recent"
+        ],
+        "mined_fields": {
+          "vouchers": [
+            "face_cents"
+          ],
+          "shipments": [
+            "rate_cents"
+          ]
+        },
+        "doc_suspect": {},
+        "requests_spent": 66
+      },
+      "evidence": "noun/verb/subpath probes over the live target (66 requests): 4 undocumented verbs, readback +['/api/shipments/recent']"
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0057"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0067",
+    "kind": "ESCALATION",
+    "source": "exploit",
+    "ts": 1794024274.6832786,
+    "confidence": 1.0,
+    "tags": [
+      "ambient-credit",
+      "h_open_vocab"
+    ],
+    "payload": {
+      "event": "ambient-credit",
+      "chain": [
+        "technique:h_open_vocab",
+        "ambient-wallet-delta",
+        "unattributed-value-movement"
+      ],
+      "impact": "discovery moved value with no finding: ov-3-274555 +60399",
+      "severity": "medium",
+      "deltas": [
+        {
+          "name": "ov-3-274555",
+          "tag": "h_open_vocab",
+          "before": 100000,
+          "after": 160399,
+          "delta": 60399,
+          "attributed": false
+        }
+      ],
+      "technique": "h_open_vocab"
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0057"
+    ]
+  },
+  {
+    "id": "SF-ATTACK_GRAPH-0068",
+    "kind": "OBSERVATION",
+    "source": "attack_graph",
+    "ts": 1794024274.6839027,
+    "confidence": 1.0,
+    "tags": [
+      "attack-graph"
+    ],
+    "payload": {
+      "attack_graph": {
+        "money_paths": [
+          "e-credit-shipments-rebook",
+          "e-credit-shipments-settle",
+          "e-credit-vouchers-consume",
+          "e-credit-vouchers-release",
+          "e-follow-shipments-settle",
+          "e-xu-readbacks"
+        ],
+        "next_actions": [
+          {
+            "edge": "e-follow-shipments-settle",
+            "resource": "shipments",
+            "verb": "settle",
+            "path": "/api/shipments/{id}/settle",
+            "requests": 24,
+            "technique": "h_state_skip"
+          }
+        ],
+        "surface_nodes": 7,
+        "surface_edges": 7
+      },
+      "artifact": "/home/z/my-project/ra-work/prototypes/swarm-specialists/m4-results/run2/attack_surface.json",
+      "evidence": "attack graph rebuilt from board facts + ambient wallet events (1)"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0067"
+    ]
+  },
+  {
+    "id": "SF-ATTACK_GRAPH-0069",
+    "kind": "HYPOTHESIS",
+    "source": "attack_graph",
+    "ts": 1794024274.6839166,
+    "confidence": 0.45,
+    "tags": [
+      "h_state_skip",
+      "attack-graph"
+    ],
+    "payload": {
+      "tag": "h_state_skip",
+      "title": "attack-graph: untested money edge shipments settle",
+      "prior": 0.45,
+      "test_plan": "graph-guided: cheapest untested edge to the wallet goal (~24 requests)",
+      "origin": "attack-graph",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0067"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0070",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794024274.6840234,
+    "confidence": 0.55,
+    "tags": [
+      "h_value_replay"
+    ],
+    "payload": {
+      "tag": "h_value_replay",
+      "title": "A discovered credit verb may be repeatable per object (the consumed/released state never commits)",
+      "prior": 0.55,
+      "test_plan": "open-vocab verb facts -> replay credited verb x2 on a fresh object",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0065"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0071",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794024274.6840258,
+    "confidence": 0.55,
+    "tags": [
+      "h_credit_race"
+    ],
+    "payload": {
+      "tag": "h_credit_race",
+      "title": "A discovered credit verb without a single-use guard may lose the check-then-act race",
+      "prior": 0.55,
+      "test_plan": "open-vocab verb facts -> last-byte race x8 on a fresh object",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0065"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0072",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1794024274.6840277,
+    "confidence": 0.5,
+    "tags": [
+      "h_fsm_live"
+    ],
+    "payload": {
+      "tag": "h_fsm_live",
+      "title": "The live lifecycle (undocumented transitions) may hide order guards the stale doc never stated",
+      "prior": 0.5,
+      "test_plan": "walk lifecycle verbs across one object's states; publish the induced transition table; flag transitions answered 2xx at two states",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0065"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0073",
+    "kind": "ESCALATION",
+    "source": "exploit",
+    "ts": 1794024274.7098594,
+    "confidence": 1.0,
+    "tags": [
+      "ambient-credit",
+      "h_hidden_verbs"
+    ],
+    "payload": {
+      "event": "ambient-credit",
+      "chain": [
+        "technique:h_hidden_verbs",
+        "ambient-wallet-delta",
+        "unattributed-value-movement"
+      ],
+      "impact": "discovery moved value with no finding: hdv-76-274684 -3998",
+      "severity": "medium",
+      "deltas": [
+        {
+          "name": "hdv-76-274684",
+          "tag": "h_hidden_verbs",
+          "before": 100000,
+          "after": 96002,
+          "delta": -3998,
+          "attributed": false
+        }
+      ],
+      "technique": "h_hidden_verbs"
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0058"
+    ]
+  },
+  {
+    "id": "SF-ATTACK_GRAPH-0074",
+    "kind": "OBSERVATION",
+    "source": "attack_graph",
+    "ts": 1794024274.7103417,
+    "confidence": 1.0,
+    "tags": [
+      "attack-graph"
+    ],
+    "payload": {
+      "attack_graph": {
+        "money_paths": [
+          "e-credit-shipments-rebook",
+          "e-credit-shipments-settle",
+          "e-credit-vouchers-consume",
+          "e-credit-vouchers-release",
+          "e-follow-shipments-settle",
+          "e-xu-readbacks"
+        ],
+        "next_actions": [],
+        "surface_nodes": 7,
+        "surface_edges": 7
+      },
+      "artifact": "/home/z/my-project/ra-work/prototypes/swarm-specialists/m4-results/run2/attack_surface.json",
+      "evidence": "attack graph rebuilt from board facts + ambient wallet events (2)"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0073"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0075",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794024274.733081,
+    "confidence": 0.9,
+    "tags": [
+      "h_mass_assign",
+      "I4"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-MASS-PRICE",
+        "title": "Mass assignment: client-supplied rate_cents overrides server-side pricing (differential: lawful totals vs injected totals); NEGATIVE value CREDITED the wallet (+50000)",
+        "severity": "critical",
+        "invariant": "I4",
+        "operators": [
+          "PARTIAL",
+          "NEGATIVE"
+        ],
+        "endpoint": "POST /api/shipments (mass-assign:price)",
+        "evidence": [
+          {
+            "candidate_field": "rate_cents",
+            "lawful": {
+              "rate_cents": 3998,
+              "weight_kg": 2
+            },
+            "injected": {
+              "rate_cents": 1,
+              "weight_kg": 2
+            },
+            "differing_fields": [
+              "rate_cents"
+            ],
+            "mined_from_echo": true,
+            "negative_probe_credit": 50000
+          }
+        ],
+        "preconditions": [
+          "any account"
+        ],
+        "grants": [
+          "name the price of any future invoice"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_mass_assign",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0059"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0076",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794024274.7592287,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-MASS-PRICE",
+      "status": "verified",
+      "technique": "h_mass_assign"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0075"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0077",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794024274.7925525,
+    "confidence": 0.9,
+    "tags": [
+      "h_cross_tenant",
+      "I3"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-AUDIT-LEAK",
+        "title": "Cross-tenant object disclosure: a fresh principal reads another tenant's shipment identifier from /api/shipments/recent",
+        "severity": "medium",
+        "invariant": "I3",
+        "operators": [
+          "CROSS-USER"
+        ],
+        "endpoint": "GET /api/shipments/recent",
+        "evidence": [
+          {
+            "victim": "xtv-121-274759",
+            "leaked_id": "SHP-f297fcc47a",
+            "leak_path": "/api/shipments/recent"
+          }
+        ],
+        "preconditions": [
+          "any account"
+        ],
+        "grants": [
+          "knowledge of any shipment identifier"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_cross_tenant",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0060"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0078",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794024274.7925565,
+    "confidence": 0.9,
+    "tags": [
+      "h_cross_tenant",
+      "I3"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-DEPUTY-CREDIT",
+        "title": "No ownership check on rebook: the credit lands in the CALLER's balance \u2014 monetize any leaked tenant's object ",
+        "severity": "critical",
+        "invariant": "I3",
+        "operators": [
+          "CROSS-USER"
+        ],
+        "endpoint": "POST /api/shipments/SHP-b7902b4399/rebook (cross-tenant)",
+        "evidence": [
+          {
+            "victim": "xtv-121-274759",
+            "attacker": "xta-125-274765",
+            "object": "SHP-f297fcc47a",
+            "attacker_gain": 399,
+            "verb": "rebook",
+            "body": {},
+            "discovered_verb": true,
+            "obtained_via": "/api/shipments/recent"
+          }
+        ],
+        "preconditions": [
+          "knowledge of any shipment identifier"
+        ],
+        "grants": [
+          "drain any tenant's object value into your own balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_cross_tenant",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0060"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0079",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794024274.8304298,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-AUDIT-LEAK",
+      "status": "verified",
+      "technique": "h_cross_tenant"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0077"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0080",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794024274.860445,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-DEPUTY-CREDIT",
+      "status": "verified",
+      "technique": "h_cross_tenant"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0078"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0081",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794024274.8891594,
+    "confidence": 0.9,
+    "tags": [
+      "h_arith_cycle",
+      "I4"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-ROUND-DRIFT",
+        "title": "Value-neutral resize cycles accumulate balance (+3 cents within 12 round-trips): credit rounds up, charge rounds down",
+        "severity": "medium",
+        "invariant": "I4",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/shipments/{shipment_id}/rerate (resize-cycle)",
+        "evidence": [
+          {
+            "cycles": 12,
+            "net_delta_cents": 3,
+            "expect": "0: down->up returns to the same state at the same price",
+            "credit_seen": true
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own active subscription"
+        ],
+        "grants": [
+          "farm sub-cent proration drift into unlimited credit"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_arith_cycle",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0061"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0082",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794024274.9257355,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-ROUND-DRIFT",
+      "status": "verified",
+      "technique": "h_arith_cycle"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0081"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0083",
+    "kind": "ESCALATION",
+    "source": "exploit",
+    "ts": 1794024275.009872,
+    "confidence": 1.0,
+    "tags": [
+      "ambient-credit",
+      "h_quota_race"
+    ],
+    "payload": {
+      "event": "ambient-credit",
+      "chain": [
+        "technique:h_quota_race",
+        "ambient-wallet-delta",
+        "unattributed-value-movement"
+      ],
+      "impact": "discovery moved value with no finding: qrc0-226-274925 +500; qrc1-229-274930 +500; qrc2-232-274935 +500",
+      "severity": "medium",
+      "deltas": [
+        {
+          "name": "qrc0-226-274925",
+          "tag": "h_quota_race",
+          "before": 100000,
+          "after": 100500,
+          "delta": 500,
+          "attributed": false
+        },
+        {
+          "name": "qrc1-229-274930",
+          "tag": "h_quota_race",
+          "before": 100000,
+          "after": 100500,
+          "delta": 500,
+          "attributed": false
+        },
+        {
+          "name": "qrc2-232-274935",
+          "tag": "h_quota_race",
+          "before": 100000,
+          "after": 100500,
+          "delta": 500,
+          "attributed": false
+        }
+      ],
+      "technique": "h_quota_race"
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0062"
+    ]
+  },
+  {
+    "id": "SF-ATTACK_GRAPH-0084",
+    "kind": "OBSERVATION",
+    "source": "attack_graph",
+    "ts": 1794024275.0104017,
+    "confidence": 1.0,
+    "tags": [
+      "attack-graph"
+    ],
+    "payload": {
+      "attack_graph": {
+        "money_paths": [
+          "e-credit-shipments-rebook",
+          "e-credit-shipments-settle",
+          "e-credit-vouchers-consume",
+          "e-credit-vouchers-release",
+          "e-follow-shipments-settle",
+          "e-xu-readbacks"
+        ],
+        "next_actions": [],
+        "surface_nodes": 7,
+        "surface_edges": 7
+      },
+      "artifact": "/home/z/my-project/ra-work/prototypes/swarm-specialists/m4-results/run2/attack_surface.json",
+      "evidence": "attack graph rebuilt from board facts + ambient wallet events (9)"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0083"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0085",
+    "kind": "OBSERVATION",
+    "source": "exploit",
+    "ts": 1794024275.023323,
+    "confidence": 1.0,
+    "tags": [
+      "h_async_seam",
+      "async-seam",
+      "async-opened"
+    ],
+    "payload": {
+      "async_opened": {
+        "event_path": "/api/payouts/PAY-95d436709a/events",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-95d436709a",
+        "amount": 50000,
+        "amount_field": "amount_cents",
+        "principal": "seam-277-275010",
+        "baseline": 100000
+      },
+      "seam": {
+        "noun": "payouts",
+        "path": "/api/payouts",
+        "field": "amount_cents",
+        "amount": 50000,
+        "baseline": 100000,
+        "principal": "seam-277-275010",
+        "event": "/api/payouts/PAY-95d436709a/events"
+      },
+      "evidence": "POST /api/payouts {} -> 400; POST /api/payouts {amount_cents: 50000} -> 202 /api/payouts/PAY-95d436709a/events"
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0063"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0086",
+    "kind": "OBSERVATION",
+    "source": "window_driver",
+    "ts": 1794024275.0404482,
+    "confidence": 1.0,
+    "tags": [
+      "async-opened",
+      "traffic-scan"
+    ],
+    "payload": {
+      "async_opened": {
+        "event_path": "/api/payouts/PAY-95d436709a/events",
+        "create_path": "/api/payouts",
+        "resource": "payouts",
+        "object_id": "PAY-95d436709a",
+        "amount": 50000,
+        "amount_field": "amount_cents",
+        "principal": "seam-277-275010"
+      },
+      "evidence": "auto-registered from traffic scan (202/event shape)"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0085"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0087",
+    "kind": "FINDING",
+    "source": "window_driver",
+    "ts": 1794024277.5063808,
+    "confidence": 0.9,
+    "tags": [
+      "h_window_driver",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-95d436709a",
+            "amount": 50000,
+            "settled_status": null,
+            "post_settle_wallet": 50000,
+            "cancel_credit": 50000,
+            "event": "/api/payouts/PAY-95d436709a/events",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own settled payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_window_driver",
+      "verification": {
+        "by": "verify",
+        "method": "fresh replay: cancel after settle refunded 50000",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0085"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0088",
+    "kind": "FINDING",
+    "source": "window_driver",
+    "ts": 1794024277.5063853,
+    "confidence": 0.9,
+    "tags": [
+      "h_window_driver",
+      "I4"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-TOCTOU-SETTLE",
+        "title": "Async settle debits without a balance re-check: draining the wallet inside the deferred window drives the balance negative (-3973)",
+        "severity": "critical",
+        "invariant": "I4",
+        "operators": [
+          "INTERRUPT"
+        ],
+        "endpoint": "POST /api/payouts",
+        "evidence": [
+          {
+            "balance_before": 100000,
+            "settled_amount": 50000,
+            "wallet_after_drain": 46027,
+            "final_balance": -3973,
+            "event": "/api/payouts/PAY-9a3c877e3b/events",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "sufficient balance at create time"
+        ],
+        "grants": [
+          "double-spend the prepaid balance across the async seam"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_window_driver",
+      "verification": {
+        "by": "verify",
+        "method": "fresh-principal replay: settle drove the balance negative (-3974)",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0085"
+    ]
+  },
+  {
+    "id": "SF-WINDOW_DRIVER-0089",
+    "kind": "FINDING",
+    "source": "window_driver",
+    "ts": 1794024277.5063872,
+    "confidence": 0.9,
+    "tags": [
+      "h_window_driver",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-SETTLED-CANCEL",
+        "title": "Payout cancel accepted after settlement: the balance is refunded while the external transfer stands (net position restored, value delivered)",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/payouts/{id}/cancel",
+        "evidence": [
+          {
+            "payout": "PAY-9a3c877e3b",
+            "amount": 50000,
+            "settled_status": null,
+            "post_settle_wallet": -3973,
+            "cancel_credit": 50000,
+            "event": "/api/payouts/PAY-9a3c877e3b/events",
+            "resource": "payouts",
+            "create_path": "/api/payouts",
+            "amount_field": "amount_cents"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own settled payout"
+        ],
+        "grants": [
+          "receive the external payout AND keep the balance"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_window_driver",
+      "verification": {
+        "by": "verify",
+        "method": "fresh replay: cancel after settle refunded 50000",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0085"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0090",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794024278.7405,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-SETTLED-CANCEL",
+      "status": "verified",
+      "technique": "h_window_driver"
+    },
+    "derived_from": [
+      "SF-WINDOW_DRIVER-0087"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0091",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794024279.9839578,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-TOCTOU-SETTLE",
+      "status": "verified",
+      "technique": "h_window_driver"
+    },
+    "derived_from": [
+      "SF-WINDOW_DRIVER-0088"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0092",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794024281.215236,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-SETTLED-CANCEL",
+      "status": "verified",
+      "technique": "h_window_driver"
+    },
+    "derived_from": [
+      "SF-WINDOW_DRIVER-0089"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0093",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794024281.2603052,
+    "confidence": 0.9,
+    "tags": [
+      "h_state_skip",
+      "I2"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-STATE-SKIP",
+        "title": "Terminal verb 'settle' on shipments succeeds straight from the pristine create state (booked): the shipments payout lands while the induced lifecycle shows 3 409-gated transition(s) \u2014 the state machine is not enforced on the money path",
+        "severity": "critical",
+        "invariant": "I2",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/shipments/{id}/settle (from booked)",
+        "evidence": [
+          {
+            "resource": "shipments",
+            "verb": "settle",
+            "from_state": "booked",
+            "after_state": "settled",
+            "wallet_delta": 3998,
+            "payout_response": {
+              "payout_cents": 3998,
+              "status": "settled"
+            },
+            "gated_siblings": [
+              {
+                "verb": "pickup",
+                "state_before": "picked_up",
+                "status": 409,
+                "state_after": null,
+                "gated": true
+              },
+              {
+                "verb": "pickup",
+                "state_before": "delivered",
+                "status": 409,
+                "state_after": null,
+                "gated": true
+              },
+              {
+                "verb": "deliver",
+                "state_before": "delivered",
+                "status": 409,
+                "state_after": null,
+                "gated": true
+              }
+            ],
+            "induced_probes": 13,
+            "unmodeled_transition": "booked --settle--> credited (order skipped)",
+            "discovered_via": "open-vocab verb fact"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own shipments object in its pristine state"
+        ],
+        "grants": [
+          "collect the shipments payout without performing the lifecycle"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_state_skip",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-ATTACK_GRAPH-0069"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0094",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794024281.3195815,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-STATE-SKIP",
+      "status": "verified",
+      "technique": "h_state_skip"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0093"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0095",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794024281.3642108,
+    "confidence": 0.9,
+    "tags": [
+      "h_value_replay",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-RELEASE-REPLAY",
+        "title": "Credit verb 'release' on vouchers is repeatable: two further credits (30000 + 30000 cents) on one object \u2014 the consumed/released state is never committed",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/vouchers/{id}/release (replay)",
+        "evidence": [
+          {
+            "object": "VCH-1e179e161b",
+            "face_value": 30000,
+            "replay_credits": [
+              30000,
+              30000
+            ],
+            "wallet": [
+              100000,
+              130000,
+              160000
+            ],
+            "statuses": [
+              200,
+              200
+            ],
+            "discovered_via": "open-vocab verb probe"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own vouchers object"
+        ],
+        "grants": [
+          "multiply the object's value by replay count"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_value_replay",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0070"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0096",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794024281.3642156,
+    "confidence": 0.9,
+    "tags": [
+      "h_value_replay",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-REBOOK-REPLAY",
+        "title": "Credit verb 'rebook' on shipments is repeatable: two further credits (399 + 399 cents) on one object \u2014 the consumed/released state is never committed",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/shipments/{id}/rebook (replay)",
+        "evidence": [
+          {
+            "object": "SHP-48bbdeb3b2",
+            "face_value": 3998,
+            "replay_credits": [
+              399,
+              399
+            ],
+            "wallet": [
+              96002,
+              96401,
+              96800
+            ],
+            "statuses": [
+              200,
+              200
+            ],
+            "discovered_via": "open-vocab verb probe"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own shipments object"
+        ],
+        "grants": [
+          "multiply the object's value by replay count"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_value_replay",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0070"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0097",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794024281.4253168,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-RELEASE-REPLAY",
+      "status": "verified",
+      "technique": "h_value_replay"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0095"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0098",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794024281.4646087,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-REBOOK-REPLAY",
+      "status": "verified",
+      "technique": "h_value_replay"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0096"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0099",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1794024281.4903896,
+    "confidence": 0.9,
+    "tags": [
+      "h_credit_race",
+      "I5"
+    ],
+    "payload": {
+      "finding": {
+        "id": "FW-CREDIT-RACE",
+        "title": "Credit verb 'release' on vouchers has no per-object guard under concurrency: 8 of 8 synchronised requests won, crediting 240000 cents (8x face) on ONE object",
+        "severity": "critical",
+        "invariant": "I5",
+        "operators": [
+          "INTERRUPT",
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/vouchers/{id}/release (race x8)",
+        "evidence": [
+          {
+            "object": "VCH-3fab156b44",
+            "face_value": 30000,
+            "race_n": 8,
+            "winners": 8,
+            "wallet_delta": 240000,
+            "last_byte_sync": true,
+            "statuses": [
+              200,
+              200,
+              200,
+              200,
+              200,
+              200,
+              200,
+              200
+            ],
+            "discovered_via": "open-vocab verb probe"
+          }
+        ],
+        "preconditions": [
+          "any account",
+          "own vouchers object"
+        ],
+        "grants": [
+          "multiply the object's value by race winners"
+        ],
+        "reproduction": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_credit_race",
+      "verification": {
+        "by": "verify",
+        "method": "independent re-execution reproduced the violation with fresh principals",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0071"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0100",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1794024281.5375812,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "FW-CREDIT-RACE",
+      "status": "verified",
+      "technique": "h_credit_race"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0099"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0101",
+    "kind": "OBSERVATION",
+    "source": "exploit",
+    "ts": 1794024281.5617595,
+    "confidence": 1.0,
+    "tags": [
+      "h_fsm_live",
+      "fsm-live"
+    ],
+    "payload": {
+      "induced_fsm": {
+        "resource": "vouchers",
+        "state0": null,
+        "rows": [],
+        "probes": 10,
+        "verbs_absent": 10,
+        "gated": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0072"
+    ]
+  },
+  {
+    "id": "SF-ACCESS-0102",
+    "kind": "ESCALATION",
+    "source": "access",
+    "ts": 1794024281.586422,
+    "confidence": 1.0,
+    "tags": [
+      "chain",
+      "critical"
+    ],
+    "payload": {
+      "chain": {
+        "chain_id": "CH-FW-AUDIT-LEAK-FW-DEPUTY-CREDIT",
+        "members": [
+          "FW-AUDIT-LEAK",
+          "FW-DEPUTY-CREDIT"
+        ],
+        "path": "FW-AUDIT-LEAK --(grants preconditions)--> FW-DEPUTY-CREDIT",
+        "severity": "critical",
+        "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any shipment identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance."
+      },
+      "impact": "Chaining FW-AUDIT-LEAK (grants: knowledge of any shipment identifier) with FW-DEPUTY-CREDIT yields an unauthenticated-to-financial-integrity path: drain any tenant's object value into your own balance.",
+      "severity": "critical",
+      "members": [
+        "FW-AUDIT-LEAK",
+        "FW-DEPUTY-CREDIT"
+      ]
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0077",
+      "SF-EXPLOIT-0078"
+    ]
+  }
+]

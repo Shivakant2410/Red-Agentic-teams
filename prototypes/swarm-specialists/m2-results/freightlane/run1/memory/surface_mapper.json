@@ -1,0 +1,21 @@
+{
+  "bandit": {
+    "map_surface": {
+      "alpha": 2.0,
+      "beta": 1.0
+    }
+  },
+  "insights": [],
+  "history": [
+    {
+      "technique": "map_surface",
+      "outcome": "success",
+      "weight": 0.5
+    },
+    {
+      "technique": "map_surface",
+      "outcome": "success",
+      "weight": 0.5
+    }
+  ]
+}

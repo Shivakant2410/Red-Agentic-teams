@@ -1,0 +1,1141 @@
+{
+  "findings": [
+    {
+      "finding_id": "F-0001",
+      "title": "ResourceConservation violation on T2",
+      "technique_id": "SF-RACE",
+      "mutant_id": "RACE-T2-2855",
+      "invariant_id": "INV-I1",
+      "invariant_class": "ResourceConservation",
+      "detail": "total balance moved -500 but the declared delta is -4000 (8 accepted response(s) on T2 POST /accounts/{id}/withdraw)",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:own"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:ResourceConservation:abusable",
+        "move:funds",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I1",
+          "invariant_class": "ResourceConservation",
+          "transition_id": "T2",
+          "technique_id": "SF-RACE",
+          "detail": "total balance moved -500 but the declared delta is -4000 (8 accepted response(s) on T2 POST /accounts/{id}/withdraw)",
+          "evidence": {
+            "before_total": 1850.0,
+            "after_total": 1350.0,
+            "actual_delta": -500.0,
+            "declared_delta": -4000.0,
+            "accepted": 8,
+            "request": {
+              "method": "POST",
+              "path": "/accounts/acc:A1/withdraw",
+              "body": {
+                "amount": 500
+              },
+              "headers": {},
+              "principal": "A",
+              "timing": "race",
+              "repeat_n": 8,
+              "note": "INTERRUPT::T2:race8",
+              "transition_id": "T2",
+              "technique_id": "SF-RACE"
+            }
+          },
+          "severity_hint": "critical"
+        }
+      },
+      "severity_hint": "critical",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0002",
+      "title": "TransitionLegality violation on T1",
+      "technique_id": "SF-REORDER",
+      "mutant_id": "REORDER-T1-T5-2855",
+      "invariant_id": "INV-I2",
+      "invariant_class": "TransitionLegality",
+      "detail": "illegal transition ('acct:closed', 'T1', 'acct:open') not in delta-hat; machine admits [('acct:open', 'T1', 'acct:open')]",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:own"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:TransitionLegality:abusable",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I2",
+          "invariant_class": "TransitionLegality",
+          "transition_id": "T1",
+          "technique_id": "SF-REORDER",
+          "detail": "illegal transition ('acct:closed', 'T1', 'acct:open') not in delta-hat; machine admits [('acct:open', 'T1', 'acct:open')]",
+          "evidence": {
+            "observed_triple": [
+              "acct:closed",
+              "T1",
+              "acct:open"
+            ],
+            "src_facts": {
+              "account:acc:A1": {
+                "owner": "A",
+                "status": "closed",
+                "balance": 900.0
+              },
+              "account:acc:B1": {
+                "owner": "B",
+                "status": "open",
+                "balance": 450.0
+              }
+            },
+            "tgt_facts": {
+              "account:acc:A1": {
+                "owner": "A",
+                "status": "open",
+                "balance": 1000.0
+              },
+              "account:acc:B1": {
+                "owner": "B",
+                "status": "open",
+                "balance": 450.0
+              }
+            },
+            "request": {
+              "method": "POST",
+              "path": "/accounts/acc:A1/deposit",
+              "body": {
+                "amount": 100
+              },
+              "headers": {},
+              "principal": "A",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "REORDER::T1+T5:second",
+              "transition_id": "T1",
+              "technique_id": "SF-REORDER"
+            }
+          },
+          "severity_hint": "high"
+        }
+      },
+      "severity_hint": "high",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0003",
+      "title": "TransitionLegality violation on T1",
+      "technique_id": "SF-REORDER",
+      "mutant_id": "REORDER-T2-T1-2855",
+      "invariant_id": "INV-I2",
+      "invariant_class": "TransitionLegality",
+      "detail": "illegal transition ('acct:closed', 'T1', 'acct:open') not in delta-hat; machine admits [('acct:open', 'T1', 'acct:open')]",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:own"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:TransitionLegality:abusable",
+        "move:funds",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I2",
+          "invariant_class": "TransitionLegality",
+          "transition_id": "T1",
+          "technique_id": "SF-REORDER",
+          "detail": "illegal transition ('acct:closed', 'T1', 'acct:open') not in delta-hat; machine admits [('acct:open', 'T1', 'acct:open')]",
+          "evidence": {
+            "observed_triple": [
+              "acct:closed",
+              "T1",
+              "acct:open"
+            ],
+            "src_facts": {
+              "account:acc:A1": {
+                "owner": "A",
+                "status": "closed",
+                "balance": 600.0
+              },
+              "account:acc:B1": {
+                "owner": "B",
+                "status": "open",
+                "balance": 450.0
+              }
+            },
+            "tgt_facts": {
+              "account:acc:A1": {
+                "owner": "A",
+                "status": "open",
+                "balance": 700.0
+              },
+              "account:acc:B1": {
+                "owner": "B",
+                "status": "open",
+                "balance": 450.0
+              }
+            },
+            "request": {
+              "method": "POST",
+              "path": "/accounts/acc:A1/deposit",
+              "body": {
+                "amount": 100
+              },
+              "headers": {},
+              "principal": "A",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "REORDER::T2+T1:first",
+              "transition_id": "T1",
+              "technique_id": "SF-REORDER"
+            }
+          },
+          "severity_hint": "high"
+        }
+      },
+      "severity_hint": "high",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0004",
+      "title": "TransitionLegality violation on T3",
+      "technique_id": "SF-REORDER",
+      "mutant_id": "REORDER-T3-T5-2855",
+      "invariant_id": "INV-I2",
+      "invariant_class": "TransitionLegality",
+      "detail": "illegal transition ('acct:closed', 'T3', 'acct:closed') not in delta-hat; machine admits [('acct:open', 'T3', 'acct:open')]",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:other"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:TransitionLegality:abusable",
+        "move:funds",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I2",
+          "invariant_class": "TransitionLegality",
+          "transition_id": "T3",
+          "technique_id": "SF-REORDER",
+          "detail": "illegal transition ('acct:closed', 'T3', 'acct:closed') not in delta-hat; machine admits [('acct:open', 'T3', 'acct:open')]",
+          "evidence": {
+            "observed_triple": [
+              "acct:closed",
+              "T3",
+              "acct:closed"
+            ],
+            "src_facts": {
+              "account:acc:A1": {
+                "owner": "A",
+                "status": "closed",
+                "balance": 200.0
+              },
+              "account:acc:B1": {
+                "owner": "B",
+                "status": "open",
+                "balance": 450.0
+              }
+            },
+            "tgt_facts": {
+              "account:acc:A1": {
+                "owner": "A",
+                "status": "closed",
+                "balance": 150.0
+              },
+              "account:acc:B1": {
+                "owner": "B",
+                "status": "open",
+                "balance": 500.0
+              }
+            },
+            "request": {
+              "method": "POST",
+              "path": "/transfers",
+              "body": {
+                "from": "acc:A1",
+                "to": "acc:B1",
+                "amount": 50
+              },
+              "headers": {},
+              "principal": "A",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "REORDER::T3+T5:second",
+              "transition_id": "T3",
+              "technique_id": "SF-REORDER"
+            }
+          },
+          "severity_hint": "high"
+        }
+      },
+      "severity_hint": "high",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0005",
+      "title": "TransitionLegality violation on T1",
+      "technique_id": "SF-REORDER",
+      "mutant_id": "REORDER-T3-T1-2855",
+      "invariant_id": "INV-I2",
+      "invariant_class": "TransitionLegality",
+      "detail": "illegal transition ('acct:closed', 'T1', 'acct:open') not in delta-hat; machine admits [('acct:open', 'T1', 'acct:open')]",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:other"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:TransitionLegality:abusable",
+        "move:funds",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I2",
+          "invariant_class": "TransitionLegality",
+          "transition_id": "T1",
+          "technique_id": "SF-REORDER",
+          "detail": "illegal transition ('acct:closed', 'T1', 'acct:open') not in delta-hat; machine admits [('acct:open', 'T1', 'acct:open')]",
+          "evidence": {
+            "observed_triple": [
+              "acct:closed",
+              "T1",
+              "acct:open"
+            ],
+            "src_facts": {
+              "account:acc:A1": {
+                "owner": "A",
+                "status": "closed",
+                "balance": 150.0
+              },
+              "account:acc:B1": {
+                "owner": "B",
+                "status": "open",
+                "balance": 500.0
+              }
+            },
+            "tgt_facts": {
+              "account:acc:A1": {
+                "owner": "A",
+                "status": "open",
+                "balance": 250.0
+              },
+              "account:acc:B1": {
+                "owner": "B",
+                "status": "open",
+                "balance": 500.0
+              }
+            },
+            "request": {
+              "method": "POST",
+              "path": "/accounts/acc:A1/deposit",
+              "body": {
+                "amount": 100
+              },
+              "headers": {},
+              "principal": "A",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "REORDER::T3+T1:first",
+              "transition_id": "T1",
+              "technique_id": "SF-REORDER"
+            }
+          },
+          "severity_hint": "high"
+        }
+      },
+      "severity_hint": "high",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0006",
+      "title": "TransitionLegality violation on T1",
+      "technique_id": "SF-NEGATIVE",
+      "mutant_id": "NEG-T1-amount--1-2855",
+      "invariant_id": "INV-I2",
+      "invariant_class": "TransitionLegality",
+      "detail": "illegal transition ('acct:closed', 'T1', 'acct:open') not in delta-hat; machine admits [('acct:open', 'T1', 'acct:open')]",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:own"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:TransitionLegality:abusable",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I2",
+          "invariant_class": "TransitionLegality",
+          "transition_id": "T1",
+          "technique_id": "SF-NEGATIVE",
+          "detail": "illegal transition ('acct:closed', 'T1', 'acct:open') not in delta-hat; machine admits [('acct:open', 'T1', 'acct:open')]",
+          "evidence": {
+            "observed_triple": [
+              "acct:closed",
+              "T1",
+              "acct:open"
+            ],
+            "src_facts": {
+              "account:acc:A1": {
+                "owner": "A",
+                "status": "closed",
+                "balance": 300.0
+              },
+              "account:acc:B1": {
+                "owner": "B",
+                "status": "open",
+                "balance": 550.0
+              }
+            },
+            "tgt_facts": {
+              "account:acc:A1": {
+                "owner": "A",
+                "status": "open",
+                "balance": 299.0
+              },
+              "account:acc:B1": {
+                "owner": "B",
+                "status": "open",
+                "balance": 550.0
+              }
+            },
+            "request": {
+              "method": "POST",
+              "path": "/accounts/acc:A1/deposit",
+              "body": {
+                "amount": -1
+              },
+              "headers": {},
+              "principal": "A",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "NEGATIVE::T1:amount=-1",
+              "transition_id": "T1",
+              "technique_id": "SF-NEGATIVE"
+            }
+          },
+          "severity_hint": "high"
+        }
+      },
+      "severity_hint": "high",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0007",
+      "title": "ArithmeticOrdering violation on T1",
+      "technique_id": "SF-NEGATIVE",
+      "mutant_id": "NEG-T1-amount--1-2855",
+      "invariant_id": "INV-I4",
+      "invariant_class": "ArithmeticOrdering",
+      "detail": "out-of-domain amount=-1 accepted (declared domain [1e-09, 1e+09])",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:own"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:ArithmeticOrdering:abusable",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I4",
+          "invariant_class": "ArithmeticOrdering",
+          "transition_id": "T1",
+          "technique_id": "SF-NEGATIVE",
+          "detail": "out-of-domain amount=-1 accepted (declared domain [1e-09, 1e+09])",
+          "evidence": {
+            "amount": -1.0,
+            "request": {
+              "method": "POST",
+              "path": "/accounts/acc:A1/deposit",
+              "body": {
+                "amount": -1
+              },
+              "headers": {},
+              "principal": "A",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "NEGATIVE::T1:amount=-1",
+              "transition_id": "T1",
+              "technique_id": "SF-NEGATIVE"
+            }
+          },
+          "severity_hint": "high"
+        }
+      },
+      "severity_hint": "high",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0008",
+      "title": "ArithmeticOrdering violation on T1",
+      "technique_id": "SF-NEGATIVE",
+      "mutant_id": "NEG-T1-amount-0-2855",
+      "invariant_id": "INV-I4",
+      "invariant_class": "ArithmeticOrdering",
+      "detail": "out-of-domain amount=0 accepted (declared domain [1e-09, 1e+09])",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:own"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:ArithmeticOrdering:abusable",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I4",
+          "invariant_class": "ArithmeticOrdering",
+          "transition_id": "T1",
+          "technique_id": "SF-NEGATIVE",
+          "detail": "out-of-domain amount=0 accepted (declared domain [1e-09, 1e+09])",
+          "evidence": {
+            "amount": 0.0,
+            "request": {
+              "method": "POST",
+              "path": "/accounts/acc:A1/deposit",
+              "body": {
+                "amount": 0
+              },
+              "headers": {},
+              "principal": "A",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "NEGATIVE::T1:amount=0",
+              "transition_id": "T1",
+              "technique_id": "SF-NEGATIVE"
+            }
+          },
+          "severity_hint": "high"
+        }
+      },
+      "severity_hint": "high",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0009",
+      "title": "IdentityOwnership violation on T1",
+      "technique_id": "SF-CROSSUSER",
+      "mutant_id": "CX-T1-2855",
+      "invariant_id": "INV-I3",
+      "invariant_class": "IdentityOwnership",
+      "detail": "principal 'B' affected owner-checked slot of 'account:acc:A1' owned by 'A'",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:own"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:IdentityOwnership:abusable",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I3",
+          "invariant_class": "IdentityOwnership",
+          "transition_id": "T1",
+          "technique_id": "SF-CROSSUSER",
+          "detail": "principal 'B' affected owner-checked slot of 'account:acc:A1' owned by 'A'",
+          "evidence": {
+            "entity": "account:acc:A1",
+            "owner": "A",
+            "principal": "B",
+            "request": {
+              "method": "POST",
+              "path": "/accounts/acc:A1/deposit",
+              "body": {
+                "amount": 100
+              },
+              "headers": {},
+              "principal": "B",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "CROSS-USER::T1:B-on-A",
+              "transition_id": "T1",
+              "technique_id": "SF-CROSSUSER"
+            }
+          },
+          "severity_hint": "critical"
+        }
+      },
+      "severity_hint": "critical",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0010",
+      "title": "ArithmeticOrdering violation on T2",
+      "technique_id": "SF-NEGATIVE",
+      "mutant_id": "NEG-T2-amount--1-2855",
+      "invariant_id": "INV-I4",
+      "invariant_class": "ArithmeticOrdering",
+      "detail": "out-of-domain amount=-1 accepted (declared domain [1e-09, 1e+09])",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:own"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:ArithmeticOrdering:abusable",
+        "move:funds",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I4",
+          "invariant_class": "ArithmeticOrdering",
+          "transition_id": "T2",
+          "technique_id": "SF-NEGATIVE",
+          "detail": "out-of-domain amount=-1 accepted (declared domain [1e-09, 1e+09])",
+          "evidence": {
+            "amount": -1.0,
+            "request": {
+              "method": "POST",
+              "path": "/accounts/acc:A1/withdraw",
+              "body": {
+                "amount": -1
+              },
+              "headers": {},
+              "principal": "A",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "NEGATIVE::T2:amount=-1",
+              "transition_id": "T2",
+              "technique_id": "SF-NEGATIVE"
+            }
+          },
+          "severity_hint": "high"
+        }
+      },
+      "severity_hint": "high",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0011",
+      "title": "ArithmeticOrdering violation on T2",
+      "technique_id": "SF-NEGATIVE",
+      "mutant_id": "NEG-T2-amount-0-2855",
+      "invariant_id": "INV-I4",
+      "invariant_class": "ArithmeticOrdering",
+      "detail": "out-of-domain amount=0 accepted (declared domain [1e-09, 1e+09])",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:own"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:ArithmeticOrdering:abusable",
+        "move:funds",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I4",
+          "invariant_class": "ArithmeticOrdering",
+          "transition_id": "T2",
+          "technique_id": "SF-NEGATIVE",
+          "detail": "out-of-domain amount=0 accepted (declared domain [1e-09, 1e+09])",
+          "evidence": {
+            "amount": 0.0,
+            "request": {
+              "method": "POST",
+              "path": "/accounts/acc:A1/withdraw",
+              "body": {
+                "amount": 0
+              },
+              "headers": {},
+              "principal": "A",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "NEGATIVE::T2:amount=0",
+              "transition_id": "T2",
+              "technique_id": "SF-NEGATIVE"
+            }
+          },
+          "severity_hint": "high"
+        }
+      },
+      "severity_hint": "high",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0012",
+      "title": "ArithmeticOrdering violation on T3",
+      "technique_id": "SF-NEGATIVE",
+      "mutant_id": "NEG-T3-amount--1-2855",
+      "invariant_id": "INV-I4",
+      "invariant_class": "ArithmeticOrdering",
+      "detail": "out-of-domain amount=-1 accepted (declared domain [1e-09, 1e+09])",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:other"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:ArithmeticOrdering:abusable",
+        "move:funds",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I4",
+          "invariant_class": "ArithmeticOrdering",
+          "transition_id": "T3",
+          "technique_id": "SF-NEGATIVE",
+          "detail": "out-of-domain amount=-1 accepted (declared domain [1e-09, 1e+09])",
+          "evidence": {
+            "amount": -1.0,
+            "request": {
+              "method": "POST",
+              "path": "/transfers",
+              "body": {
+                "from": "acc:A1",
+                "to": "acc:B1",
+                "amount": -1
+              },
+              "headers": {},
+              "principal": "A",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "NEGATIVE::T3:amount=-1",
+              "transition_id": "T3",
+              "technique_id": "SF-NEGATIVE"
+            }
+          },
+          "severity_hint": "high"
+        }
+      },
+      "severity_hint": "high",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0013",
+      "title": "ArithmeticOrdering violation on T3",
+      "technique_id": "SF-NEGATIVE",
+      "mutant_id": "NEG-T3-amount-0-2855",
+      "invariant_id": "INV-I4",
+      "invariant_class": "ArithmeticOrdering",
+      "detail": "out-of-domain amount=0 accepted (declared domain [1e-09, 1e+09])",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:other"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:ArithmeticOrdering:abusable",
+        "move:funds",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I4",
+          "invariant_class": "ArithmeticOrdering",
+          "transition_id": "T3",
+          "technique_id": "SF-NEGATIVE",
+          "detail": "out-of-domain amount=0 accepted (declared domain [1e-09, 1e+09])",
+          "evidence": {
+            "amount": 0.0,
+            "request": {
+              "method": "POST",
+              "path": "/transfers",
+              "body": {
+                "from": "acc:A1",
+                "to": "acc:B1",
+                "amount": 0
+              },
+              "headers": {},
+              "principal": "A",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "NEGATIVE::T3:amount=0",
+              "transition_id": "T3",
+              "technique_id": "SF-NEGATIVE"
+            }
+          },
+          "severity_hint": "high"
+        }
+      },
+      "severity_hint": "high",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0014",
+      "title": "IdentityOwnership violation on T3",
+      "technique_id": "SF-CROSSUSER",
+      "mutant_id": "CX-T3-2855",
+      "invariant_id": "INV-I3",
+      "invariant_class": "IdentityOwnership",
+      "detail": "principal 'B' affected owner-checked slot of 'account:acc:A1' owned by 'A'",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:other"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:IdentityOwnership:abusable",
+        "move:funds",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I3",
+          "invariant_class": "IdentityOwnership",
+          "transition_id": "T3",
+          "technique_id": "SF-CROSSUSER",
+          "detail": "principal 'B' affected owner-checked slot of 'account:acc:A1' owned by 'A'",
+          "evidence": {
+            "entity": "account:acc:A1",
+            "owner": "A",
+            "principal": "B",
+            "request": {
+              "method": "POST",
+              "path": "/transfers",
+              "body": {
+                "from": "acc:A1",
+                "to": "acc:B1",
+                "amount": 50
+              },
+              "headers": {},
+              "principal": "B",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "CROSS-USER::T3:B-on-A",
+              "transition_id": "T3",
+              "technique_id": "SF-CROSSUSER"
+            }
+          },
+          "severity_hint": "critical"
+        }
+      },
+      "severity_hint": "critical",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0015",
+      "title": "IdentityOwnership violation on T4",
+      "technique_id": "SF-CROSSUSER",
+      "mutant_id": "CX-T4-2855",
+      "invariant_id": "INV-I3",
+      "invariant_class": "IdentityOwnership",
+      "detail": "principal 'B' affected owner-checked slot of 'account:acc:A1' owned by 'A'",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:own"
+      ],
+      "grants": [
+        "knows:account_id:other",
+        "logic:IdentityOwnership:abusable",
+        "read:account_snapshot:other",
+        "resource:read"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I3",
+          "invariant_class": "IdentityOwnership",
+          "transition_id": "T4",
+          "technique_id": "SF-CROSSUSER",
+          "detail": "principal 'B' affected owner-checked slot of 'account:acc:A1' owned by 'A'",
+          "evidence": {
+            "entity": "account:acc:A1",
+            "owner": "A",
+            "principal": "B",
+            "request": {
+              "method": "GET",
+              "path": "/accounts/acc:A1/statement",
+              "body": null,
+              "headers": {},
+              "principal": "B",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "CROSS-USER::T4:B-on-A",
+              "transition_id": "T4",
+              "technique_id": "SF-CROSSUSER"
+            }
+          },
+          "severity_hint": "critical"
+        }
+      },
+      "severity_hint": "critical",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0016",
+      "title": "UniquenessRate violation on T1",
+      "technique_id": "SF-REPLAY",
+      "mutant_id": "REPLAY-T1-2855",
+      "invariant_id": "INV-I5",
+      "invariant_class": "UniquenessRate",
+      "detail": "idempotency key 'sfz-replay-2855-T1' applied 2 times (expected exactly 1)",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:own"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:UniquenessRate:abusable",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I5",
+          "invariant_class": "UniquenessRate",
+          "transition_id": "T1",
+          "technique_id": "SF-REPLAY",
+          "detail": "idempotency key 'sfz-replay-2855-T1' applied 2 times (expected exactly 1)",
+          "evidence": {
+            "idempotency_key": "sfz-replay-2855-T1",
+            "effects": [
+              {
+                "kind": "applied_effect",
+                "idempotency_key": "sfz-replay-2855-T1",
+                "route": "deposit",
+                "principal": "A",
+                "ts": 1793719478.616
+              },
+              {
+                "kind": "applied_effect",
+                "idempotency_key": "sfz-replay-2855-T1",
+                "route": "deposit",
+                "principal": "A",
+                "ts": 1793719478.616
+              }
+            ],
+            "request": {
+              "method": "POST",
+              "path": "/accounts/acc:A1/deposit",
+              "body": {
+                "amount": 100
+              },
+              "headers": {
+                "Idempotency-Key": "sfz-replay-2855-T1"
+              },
+              "principal": "A",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "REPLAY::T1:2",
+              "transition_id": "T1",
+              "technique_id": "SF-REPLAY"
+            }
+          },
+          "severity_hint": "high"
+        }
+      },
+      "severity_hint": "high",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0017",
+      "title": "UniquenessRate violation on T1",
+      "technique_id": "SF-IDEM",
+      "mutant_id": "IDEM-T1-2855",
+      "invariant_id": "INV-I5",
+      "invariant_class": "UniquenessRate",
+      "detail": "idempotency key 'sfz-2855-T1' applied 2 times (expected exactly 1)",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:own"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:UniquenessRate:abusable",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I5",
+          "invariant_class": "UniquenessRate",
+          "transition_id": "T1",
+          "technique_id": "SF-IDEM",
+          "detail": "idempotency key 'sfz-2855-T1' applied 2 times (expected exactly 1)",
+          "evidence": {
+            "idempotency_key": "sfz-2855-T1",
+            "effects": [
+              {
+                "kind": "applied_effect",
+                "idempotency_key": "sfz-2855-T1",
+                "route": "deposit",
+                "principal": "A",
+                "ts": 1793719478.616
+              },
+              {
+                "kind": "applied_effect",
+                "idempotency_key": "sfz-2855-T1",
+                "route": "deposit",
+                "principal": "A",
+                "ts": 1793719478.616
+              }
+            ],
+            "request": {
+              "method": "POST",
+              "path": "/accounts/acc:A1/deposit",
+              "body": {
+                "amount": 100
+              },
+              "headers": {
+                "Idempotency-Key": "sfz-2855-T1"
+              },
+              "principal": "A",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "IDEMPOTENCE::T1:2",
+              "transition_id": "T1",
+              "technique_id": "SF-IDEM"
+            }
+          },
+          "severity_hint": "high"
+        }
+      },
+      "severity_hint": "high",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0018",
+      "title": "UniquenessRate violation on T3",
+      "technique_id": "SF-REPLAY",
+      "mutant_id": "REPLAY-T3-2855",
+      "invariant_id": "INV-I5",
+      "invariant_class": "UniquenessRate",
+      "detail": "idempotency key 'sfz-replay-2855-T3' applied 2 times (expected exactly 1)",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:other"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:UniquenessRate:abusable",
+        "move:funds",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I5",
+          "invariant_class": "UniquenessRate",
+          "transition_id": "T3",
+          "technique_id": "SF-REPLAY",
+          "detail": "idempotency key 'sfz-replay-2855-T3' applied 2 times (expected exactly 1)",
+          "evidence": {
+            "idempotency_key": "sfz-replay-2855-T3",
+            "effects": [
+              {
+                "kind": "applied_effect",
+                "idempotency_key": "sfz-replay-2855-T3",
+                "route": "transfer",
+                "principal": "A",
+                "ts": 1793719478.667
+              },
+              {
+                "kind": "applied_effect",
+                "idempotency_key": "sfz-replay-2855-T3",
+                "route": "transfer",
+                "principal": "A",
+                "ts": 1793719478.667
+              }
+            ],
+            "request": {
+              "method": "POST",
+              "path": "/transfers",
+              "body": {
+                "from": "acc:A1",
+                "to": "acc:B1",
+                "amount": 50
+              },
+              "headers": {
+                "Idempotency-Key": "sfz-replay-2855-T3"
+              },
+              "principal": "A",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "REPLAY::T3:2",
+              "transition_id": "T3",
+              "technique_id": "SF-REPLAY"
+            }
+          },
+          "severity_hint": "high"
+        }
+      },
+      "severity_hint": "high",
+      "status": "candidate"
+    },
+    {
+      "finding_id": "F-0019",
+      "title": "UniquenessRate violation on T3",
+      "technique_id": "SF-IDEM",
+      "mutant_id": "IDEM-T3-2855",
+      "invariant_id": "INV-I5",
+      "invariant_class": "UniquenessRate",
+      "detail": "idempotency key 'sfz-2855-T3' applied 2 times (expected exactly 1)",
+      "preconditions": [
+        "auth:low",
+        "knows:account_id:other"
+      ],
+      "grants": [
+        "account:written:own",
+        "logic:UniquenessRate:abusable",
+        "move:funds",
+        "resource:written"
+      ],
+      "evidence": {
+        "violation": {
+          "invariant_id": "INV-I5",
+          "invariant_class": "UniquenessRate",
+          "transition_id": "T3",
+          "technique_id": "SF-IDEM",
+          "detail": "idempotency key 'sfz-2855-T3' applied 2 times (expected exactly 1)",
+          "evidence": {
+            "idempotency_key": "sfz-2855-T3",
+            "effects": [
+              {
+                "kind": "applied_effect",
+                "idempotency_key": "sfz-2855-T3",
+                "route": "transfer",
+                "principal": "A",
+                "ts": 1793719478.667
+              },
+              {
+                "kind": "applied_effect",
+                "idempotency_key": "sfz-2855-T3",
+                "route": "transfer",
+                "principal": "A",
+                "ts": 1793719478.667
+              }
+            ],
+            "request": {
+              "method": "POST",
+              "path": "/transfers",
+              "body": {
+                "from": "acc:A1",
+                "to": "acc:B1",
+                "amount": 50
+              },
+              "headers": {
+                "Idempotency-Key": "sfz-2855-T3"
+              },
+              "principal": "A",
+              "timing": "single",
+              "repeat_n": 1,
+              "note": "IDEMPOTENCE::T3:2",
+              "transition_id": "T3",
+              "technique_id": "SF-IDEM"
+            }
+          },
+          "severity_hint": "high"
+        }
+      },
+      "severity_hint": "high",
+      "status": "candidate"
+    }
+  ]
+}

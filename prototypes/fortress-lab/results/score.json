@@ -1,0 +1,93 @@
+{
+  "elapsed_s": 7.3,
+  "phases": [
+    {
+      "name": "Phase B baseline",
+      "tool": "statefuzz-baseline",
+      "requests": 73,
+      "discovered": 0,
+      "total": 10,
+      "hits": {}
+    },
+    {
+      "name": "Swarm run1",
+      "tool": "swarm-run1",
+      "requests": 329,
+      "discovered": 10,
+      "total": 10,
+      "hits": {
+        "F9": [
+          "FW-CANCEL-REASON"
+        ],
+        "F3": [
+          "FW-TERMINAL-RESIZE"
+        ],
+        "F7": [
+          "FW-MASS-PRICE"
+        ],
+        "F8": [
+          "FW-MASS-PLAN"
+        ],
+        "F5": [
+          "FW-AUDIT-LEAK"
+        ],
+        "F6": [
+          "FW-DEPUTY-CREDIT"
+        ],
+        "F4": [
+          "FW-TOCTOU-SETTLE"
+        ],
+        "F10": [
+          "FW-SETTLED-CANCEL"
+        ],
+        "F2": [
+          "FW-ROUND-DRIFT"
+        ],
+        "F1": [
+          "FW-QUOTA-RACE"
+        ]
+      },
+      "rounds": 34
+    },
+    {
+      "name": "Swarm run2",
+      "tool": "swarm-run2",
+      "requests": 322,
+      "discovered": 10,
+      "total": 10,
+      "hits": {
+        "F9": [
+          "FW-CANCEL-REASON"
+        ],
+        "F3": [
+          "FW-TERMINAL-RESIZE"
+        ],
+        "F7": [
+          "FW-MASS-PRICE"
+        ],
+        "F8": [
+          "FW-MASS-PLAN"
+        ],
+        "F5": [
+          "FW-AUDIT-LEAK"
+        ],
+        "F6": [
+          "FW-DEPUTY-CREDIT"
+        ],
+        "F4": [
+          "FW-TOCTOU-SETTLE"
+        ],
+        "F10": [
+          "FW-SETTLED-CANCEL"
+        ],
+        "F2": [
+          "FW-ROUND-DRIFT"
+        ],
+        "F1": [
+          "FW-QUOTA-RACE"
+        ]
+      },
+      "rounds": 34
+    }
+  ]
+}
