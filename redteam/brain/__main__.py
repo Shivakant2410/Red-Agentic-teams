@@ -372,12 +372,17 @@ def main(argv=None) -> int:
                 env = _live_env(args.sid_endpoint, args.pi_style,
                                 args.model, lane_env)
                 target = LiveTarget.from_env(env)
-                session = LiveSession(target, env,
-                                      max_requests=args.per_lane_cap)
+                # B6: the extraction family rides in the same dossier —
+                # the transport cap stretches by its budget (<= 8)
+                session = LiveSession(
+                    target, env,
+                    max_requests=args.per_lane_cap
+                    + min(args.per_lane_cap, 8))
                 record = make_pii_record(random.Random(args.seed))
                 orch.register("LLM02", lambda p, b: sid_agentic_probe(
                     record, budget=min(b, args.per_lane_cap),
-                    seed=args.seed, session=session, profile=p))
+                    seed=args.seed, session=session, profile=p,
+                    sp_extract=True))
                 registered.append("LLM02")
             except Exception as e:
                 skipped.append({"lane": "LLM02",
