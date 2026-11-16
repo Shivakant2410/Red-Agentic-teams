@@ -1,0 +1,160 @@
+# Seed content-discovery wordlist with frequency priors.
+#
+# Nmap scans "the most common 1,000 ports" — a list ordered by empirical
+# open-ness across the internet. This is the same trick for web paths: the
+# prior column orders the request budget toward where content actually lives.
+#
+# The priors are ORDINAL SEEDS following practitioner wordlist ordering
+# conventions (SecLists raft/common families, the subfinder->httpx->nuclei
+# generation's dirsearch/ffuf lists). They are deliberately coarse: the live
+# signal is the per-bucket Beta posterior in recon/discovery.py, which is
+# recalibrated from our own observed hits run after run. Treat the seed value
+# as "where a human pentester would look first", not as a measured frequency.
+#
+# Format (TAB-separated): prior bucket  path
+# prior: 0.0-0.95 seed prior | bucket: path family (drives the learned prior)
+# path: leading-slash path; a trailing / marks a directory candidate
+
+0.95    admin   /admin
+0.95    auth    /login
+0.90    config  /.env
+0.90    api     /api
+0.88    config  /.git/config
+0.85    api     /api/v1
+0.85    admin   /administrator
+0.85    auth    /wp-login.php
+0.82    admin   /dashboard
+0.80    api     /graphql
+0.80    admin   /admin.php
+0.80    auth    /signin
+0.78    api     /api/v2
+0.75    admin   /wp-admin/
+0.75    config  /phpinfo.php
+0.74    backup  /backup
+0.72    admin   /manage
+0.72    admin   /manager/
+0.70    config  /.git/HEAD
+0.70    admin   /cpanel
+0.70    auth    /signup
+0.70    auth    /register
+0.68    api     /swagger.json
+0.68    api     /openapi.json
+0.66    backup  /backup.zip
+0.65    admin   /phpmyadmin/
+0.65    docs    /docs/
+0.65    api     /v1
+0.64    config  /web.config
+0.64    infra   /server-status
+0.62    admin   /console/
+0.62    admin   /jenkins/
+0.62    admin   /grafana/
+0.60    config  /package.json
+0.60    config  /composer.json
+0.60    backup  /db.sql
+0.60    backup  /dump.sql
+0.60    admin   /adminer.php
+0.60    auth    /sso
+0.58    infra   /actuator
+0.58    docs    /documentation
+0.58    static  /static/
+0.57    static  /assets/
+0.56    data    /uploads/
+0.56    infra   /health
+0.55    api     /v1/
+0.55    auth    /oauth
+0.55    config  /.htaccess
+0.54    data    /files/
+0.54    admin   /kibana/
+0.53    infra   /actuator/health
+0.52    config  /info.php
+0.52    backup  /backup.tar.gz
+0.52    infra   /metrics
+0.52    static  /js/
+0.51    data    /media/
+0.50    docs    /api/docs
+0.50    infra   /status
+0.50    static  /css/
+0.50    admin   /tomcat-manager/
+0.50    infra   /prometheus/metrics
+0.50    data    /download/
+0.49    backup  /database.sql
+0.48    dev     /test
+0.48    dev     /staging
+0.48    auth    /logout
+0.47    static  /images/
+0.47    dev     /debug
+0.47    config  /.htpasswd
+0.46    data    /export/
+0.46    docs    /readme.txt
+0.46    docs    /README.md
+0.45    dev     /dev
+0.45    admin   /admin/login
+0.45    api     /rest
+0.45    config  /.DS_Store
+0.44    docs    /changelog.txt
+0.44    api     /api-docs
+0.44    data    /reports/
+0.43    infra   /healthz
+0.43    admin   /admin/index.html
+0.43    auth    /auth
+0.42    static  /img/
+0.42    data    /private
+0.42    backup  /site.tar.gz
+0.41    api     /swagger/
+0.41    admin   /panel
+0.41    docs    /doc
+0.40    generic /index.html
+0.40    generic /home
+0.40    generic /about
+0.40    auth    /token
+0.40    config  /config
+0.40    dev     /beta
+0.39    infra   /.well-known/security.txt
+0.39    docs    /wiki/
+0.39    data    /data/
+0.38    generic /contact
+0.38    generic /search
+0.38    generic /blog
+0.38    admin   /portal/
+0.37    dev     /.svn/entries
+0.37    auth    /j_spring_security_check
+0.36    config  /settings
+0.36    data    /uploads
+0.36    generic /user
+0.36    generic /users
+0.35    admin   /controlpanel/
+0.35    api     /v3
+0.35    docs    /help
+0.35    static  /vendor/
+0.34    infra   /ping
+0.34    generic /profile
+0.34    generic /account
+0.33    config  /app.config
+0.33    data    /dump/
+0.33    generic /news
+0.33    admin   /secure/
+0.32    docs    /manual/
+0.32    config  /crossdomain.xml
+0.32    static  /fonts/
+0.31    dev     /.idea/
+0.31    dev     /.vscode/
+0.31    backup  /old
+0.31    generic /main
+0.30    admin   /monit/
+0.30    infra   /monitor/
+0.30    data    /tmp/
+0.30    backup  /backup.sql
+0.30    generic /mail
+0.29    config  /clientaccesspolicy.xml
+0.29    dev     /cgi-bin/
+0.29    infra   /nagios/
+0.28    generic /temp
+0.28    backup  /backups/
+0.27    api     /graphql/console
+0.27    docs    /api-reference
+0.26    data    /exports/
+0.25    generic /info
+0.24    infra   /env
+0.23    dev     /sandbox
+0.22    generic /html
+0.20    generic /new

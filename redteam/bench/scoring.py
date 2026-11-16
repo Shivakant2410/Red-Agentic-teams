@@ -9,11 +9,18 @@ A negative control is a run against a target with NO planted bug (empty ground t
 has no recall to measure; its only job is to count claims that cannot be true. Precision
 from a positive run is only trustworthy next to a clean control on the same app — see
 score_pair.
+
+W8/W9 discipline (stats layer wiring): precision and recall are proportions measured
+on small samples — a 4/5 precision on a 5-claim run is a POINT, and the scorecard now
+says so. Precision carries its interval over the decided claims (TP+FP), recall over
+the ground truth (TP+FN); the n next to each interval is the honest sample size.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
+from ..stats import wilson_ci
 
 
 @dataclass
@@ -58,6 +65,14 @@ class ScoreCard:
         p, r = self.precision, self.recall
         return round(2 * p * r / (p + r), 3) if (p + r) else 0.0
 
+    @staticmethod
+    def _ci_str(x: int, n: int) -> str:
+        """Interval fragment for a proportion, or the honest 'no sample' answer."""
+        if n <= 0:
+            return "n/a (n=0)"
+        lo, hi = wilson_ci(x, n)
+        return f"(95% CI [{lo:.3f}, {hi:.3f}], n={n})"
+
     def to_markdown(self) -> str:
         if self.negative_control:
             verdict = "PASS" if self.control_passed else "FAIL"
@@ -76,8 +91,8 @@ class ScoreCard:
             f"| true positives | {self.true_positives} |\n"
             f"| false positives | {self.false_positives} |\n"
             f"| false negatives | {self.false_negatives} |\n"
-            f"| precision | {self.precision} |\n"
-            f"| recall | {self.recall} |\n"
+            f"| precision | {self.precision} {self._ci_str(self.true_positives, self.true_positives + self.false_positives)} |\n"
+            f"| recall | {self.recall} {self._ci_str(self.true_positives, self.true_positives + self.false_negatives)} |\n"
             f"| F1 | {self.f1} |\n"
             f"| tokens | {self.cost_tokens} |\n"
             f"| elapsed (s) | {self.elapsed_s} |\n\n"
