@@ -312,6 +312,20 @@ VERIFY = SpecialistProfile(
     max_steps=15,
 )
 
+# Phase 3 mission tasks: one role-specific line per task instruction (concise
+# task scoping — the profile addon already carries the full method discipline).
+_ROLE_TASK_LINES = {
+    "recon": "This is a recon SLICE of the mission: map what the task names, let "
+             "discoveries register in the knowledge graph, do not exploit.",
+    "exploit": "Prove THIS assigned check with your class discipline; separate "
+               "looking (http_probe) from proving (confirm_finding costs "
+               "verification trials).",
+    "access": "Press the confirmed foothold this task names — harvest, try, prove "
+              "boundaries per your briefing; do not hunt new vuln classes.",
+    "logic": "Probe the workflow assumption this task names with "
+             "verify_workflow_abuse (ordered attack vs control steps).",
+}
+
 
 def run_verify_pass(engagement: Engagement, tools: dict[str, Tool], ctx: ToolContext,
                     client: OpenRouterClient, objective: str, budget=None, on_text=None) -> int:
@@ -667,8 +681,18 @@ class Orchestrator:
             self._manifest = (manifest, manifest_path)
         return self
 
+    @property
+    def ctx(self) -> ToolContext:
+        """Read-only access to the run's shared ToolContext for composition
+        layers built ON the orchestrator (Phase 3: the mission executor diffs
+        the shared FindingStore and audit for real evidence refs). This is the
+        SAME context every specialist runs with — exposing it creates no
+        second authority."""
+        return self._ctx
+
     def _make_specialist(self, profile: SpecialistProfile, addon_suffix: str = "",
-                         agent_name: str | None = None) -> RedTeamAgent:
+                         agent_name: str | None = None,
+                         max_steps: int | None = None) -> RedTeamAgent:
         # Give the specialist only its allowed tools that actually exist in the registry.
         subset = {n: self._tools[n] for n in profile.tool_names if n in self._tools}
         # Phase E1 hands: a profile name that is neither held nor an OPTIONAL (browser/
@@ -694,7 +718,9 @@ class Orchestrator:
         # observations to a specific sibling hypothesis. Without it every worker shows
         # up as the same "exploit" role and "peer" means nobody in particular.
         agent = RedTeamAgent(self._eng, subset, self._ctx, self._client,
-                             max_steps=profile.max_steps, graph=self._graph,
+                             max_steps=(profile.max_steps if max_steps is None
+                                        else max(int(max_steps), 1)),
+                             graph=self._graph,
                              attack_tree=self._attack_tree, memory=self._memory,
                              system_addon=addon, role=profile.role,
                              agent_name=agent_name or profile.name)
@@ -703,6 +729,129 @@ class Orchestrator:
             manifest = self._manifest[0] if self._manifest else None
             agent.with_runtime(budget=self._budget, manifest=manifest, manifest_path=mpath)
         return agent
+
+    # -- Phase 3: mission task-level execution -----------------------------------
+    # One task, one specialist, NO phase sequence. The mission scheduler owns
+    # the claim trio (task reservation, AttackTree claim, hypothesis claim)
+    # BEFORE this is called — execute_task neither claims nor releases
+    # anything, never calls _run_exploit_swarm(), and never restarts recon,
+    # verification, or other phases per dispatch. It is the same specialist
+    # construction machinery run() uses, aimed at exactly one assigned task.
+
+    def execute_task(self, task_view: dict, on_text=None, objective: str = "") -> str:
+        """Execute ONE mission task through the existing specialist machinery.
+
+        Routing (the EXISTING authorities, no second registry):
+          recon   -> RECON
+          exploit -> profile_for(technique) — the class-specialist router —
+                     falling back to the generic EXPLOIT profile
+          access  -> ACCESS
+          logic   -> LOGIC
+          verify  -> the existing independent verification pass
+                     (run_verify_pass: fresh VERIFY context, existing
+                     FindingStore; the only confirmation authority)
+
+        Step budget: the task's execution-plane carve, never widening the
+        specialist profile's own ceiling (min(task max_steps, profile
+        max_steps)). Engagement-level budget/OPSEC/request limits stay with
+        the shared BudgetTracker and ScopeGuard the agent already runs under.
+
+        Returns the agent's final text. A clean return is an EXECUTION outcome
+        only (C4) — it never implies a confirmed finding or a completed tree
+        node. Raises on construction/routing errors; the mission executor maps
+        exceptions to EXEC_FAILED and the scheduler fences the task failure.
+        """
+        role = str(task_view.get("role", "") or "")
+        task_id = str(task_view.get("task_id", "") or "")
+        if role == "verify":
+            return self._execute_verify_task(task_view, on_text=on_text,
+                                             objective=objective)
+        profile, step_budget = self._profile_for_task(task_view)
+        instruction = self._task_instruction(task_view, profile, step_budget,
+                                             objective=objective)
+        agent = self._make_specialist(profile, agent_name=f"mission-{task_id}",
+                                      max_steps=step_budget)
+        self._ctx.audit.record("mission.task.execute", task_id=task_id, role=role,
+                               specialist=profile.name, max_steps=step_budget,
+                               technique=task_view.get("technique", ""),
+                               target=task_view.get("target", ""))
+        return agent.run(instruction, on_text=on_text)
+
+    def _profile_for_task(self, task_view: dict) -> tuple[SpecialistProfile, int]:
+        """Role -> existing SpecialistProfile (+ the task's step carve). Exploit
+        routes through the existing class-specialist router; unknown roles fail
+        loud instead of inventing a specialist."""
+        role = str(task_view.get("role", "") or "")
+        if role == "recon":
+            profile = RECON
+        elif role == "access":
+            profile = ACCESS
+        elif role == "logic":
+            profile = LOGIC
+        elif role == "exploit":
+            # The existing router: class expert per technique, generic EXPLOIT
+            # fallback (specialists.profile_for — NOT a second mapping).
+            profile = profile_for(task_view.get("technique") or None)
+        else:
+            raise ValueError(
+                f"mission task role {role!r} has no specialist routing "
+                f"(expected recon|exploit|access|logic|verify)")
+        # C3: the task's execution-plane carve can only TIGHTEN the profile's
+        # own ceiling — a task-level limit never widens engagement permissions.
+        task_steps = int(task_view.get("max_steps", 0) or 0)
+        step_budget = profile.max_steps if task_steps <= 0 else min(task_steps,
+                                                                    profile.max_steps)
+        return profile, step_budget
+
+    def _task_instruction(self, task_view: dict, profile: SpecialistProfile,
+                          step_budget: int, *, objective: str = "") -> str:
+        """Concise task-scoped instruction from the task view — NOT the whole
+        mission plan, no invented targets, no scope widening."""
+        role = task_view.get("role", "")
+        technique = task_view.get("technique", "")
+        target = task_view.get("target", "")
+        lines = [f"{objective}\n\nThis run: ONE mission task." if objective
+                 else "This run: ONE mission task."]
+        lines.append(f"TASK: {task_view.get('title', '')} ({task_view.get('task_id', '')})")
+        lines.append(f"YOUR ROLE: {profile.name} — execute ONLY this assigned task.")
+        if technique and target:
+            lines.append(f"ASSIGNED CHECK: {technique} on {target}. The attack-tree "
+                         f"node is ALREADY claimed by the mission scheduler — do the "
+                         f"work; do not claim or release the node.")
+        elif target:
+            lines.append(f"TARGET: {target} — in-scope targets only (the RoE scope "
+                         f"guard is authoritative); never invent or widen targets.")
+        lines.append(f"STEP BUDGET: at most {step_budget} steps for this task.")
+        lines.append(_ROLE_TASK_LINES.get(role, ""))
+        lines.append("Your checks only reach pending_verification — the independent "
+                     "verification pass confirms; do not self-promote.")
+        return "\n".join(line for line in lines if line)
+
+    def _execute_verify_task(self, task_view: dict, on_text=None,
+                             objective: str = "") -> str:
+        """Mission verify role: the EXISTING independent verification pass —
+        a fresh VERIFY context over the shared FindingStore. The specialist
+        that proposed a finding never self-confirms; a pass with nothing
+        pending is an honest no-op, and promotion stays inside
+        FindingStore.promote."""
+        task_id = str(task_view.get("task_id", "") or "")
+        pending = self._ctx.findings.pending()
+        if not pending:
+            self._ctx.audit.record("mission.verify.nothing_pending", task_id=task_id)
+            return ("verification task complete: no pending findings — nothing to "
+                    "verify (the independent verifier remains the only "
+                    "confirmation authority)")
+        self._ctx.audit.record("mission.verify.start", task_id=task_id,
+                               pending=len(pending))
+        still_pending = run_verify_pass(self._eng, self._tools, self._ctx,
+                                        self._client,
+                                        objective or str(task_view.get("title", "")),
+                                        budget=self._budget, on_text=on_text)
+        self._ctx.audit.record("mission.verify.finish", task_id=task_id,
+                               remaining=still_pending)
+        return (f"independent verification pass complete: {len(pending)} pending "
+                f"finding(s) re-checked, {still_pending} still pending "
+                f"(verdicts recorded by the existing pipeline)")
 
     # -- telemetry --------------------------------------------------------------
 
