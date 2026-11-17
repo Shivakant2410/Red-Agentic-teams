@@ -199,6 +199,7 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
             create_task(spec)
 
     rounds = 0
+    reflection_round = 0
     while rounds < MAX_ROUNDS:
         if dynamic:
             objective_state = (executor.objective_achieved()
@@ -323,7 +324,8 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                     actions = scheduler.reconcile(now=clock())
                     scheduler.apply_reconcile(actions)
                     if hasattr(executor, "reflect_after_round"):
-                        executor.reflect_after_round(objective, max(rounds - 1, 0))
+                        executor.reflect_after_round(objective, reflection_round)
+                        reflection_round += 1
                     break
                 if task.role in ("exploit", "access", "logic"):
                     pending_now = (executor.pending_findings()
@@ -336,7 +338,8 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                         actions = scheduler.reconcile(now=clock())
                         scheduler.apply_reconcile(actions)
                     if hasattr(executor, "reflect_after_round"):
-                        executor.reflect_after_round(objective, max(rounds - 1, 0))
+                        executor.reflect_after_round(objective, reflection_round)
+                        reflection_round += 1
                 if result.get("outcome") not in ("completed", "succeeded", "reserved"):
                     # Keep progressing through other ranked nodes; the failed
                     # node is not repeated within this mission execution.
