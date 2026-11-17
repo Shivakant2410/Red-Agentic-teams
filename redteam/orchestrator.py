@@ -1588,25 +1588,27 @@ class Orchestrator:
         finding_refs = [str(ev.get("ref", "")) for ev in evidence
                         if ev.get("kind") == "finding" and ev.get("ref")]
         try:
-            if finding_refs:
-                for finding_id in finding_refs:
-                    finding = self._ctx.findings.get(finding_id)
-                    if finding is None:
-                        continue
-                    self._research.registry.attach_evidence(
-                        hyp_id,
-                        EvidenceRef(
-                            evidence_id=f"ev-finding-{finding_id}",
-                            kind="finding", origin="agent",
-                            source_agent=agent, artifact_ref=finding_id,
-                            summary=f"{finding.severity}: {finding.title} @ {finding.target}",
-                            ts=self._research_ts()),
-                        agent)
-                    self._research.registry.set_status(
-                        hyp_id, AWAITING_VERIFICATION, agent,
-                        finding_id=finding_id,
-                        reason=f"mission task produced finding {finding_id}; awaiting independent verification")
-                    self._research_finding_hyp[finding_id] = hyp_id
+            attached = []
+            for finding_id in finding_refs:
+                finding = self._ctx.findings.get(finding_id)
+                if finding is None:
+                    continue
+                self._research.registry.attach_evidence(
+                    hyp_id,
+                    EvidenceRef(
+                        evidence_id=f"ev-finding-{finding_id}",
+                        kind="finding", origin="agent",
+                        source_agent=agent, artifact_ref=finding_id,
+                        summary=f"{finding.severity}: {finding.title} @ {finding.target}",
+                        ts=self._research_ts()),
+                    agent)
+                self._research_finding_hyp[finding_id] = hyp_id
+                attached.append(finding_id)
+            if attached:
+                self._research.registry.set_status(
+                    hyp_id, AWAITING_VERIFICATION, agent,
+                    finding_id=attached[-1],
+                    reason=f"mission task produced {len(attached)} finding(s); awaiting independent verification")
             else:
                 task_id = str(task_view.get("task_id", "mission-task") or "mission-task")
                 self._research.registry.attach_counter_evidence(
