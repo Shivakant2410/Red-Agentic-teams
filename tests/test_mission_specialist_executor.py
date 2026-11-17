@@ -998,6 +998,30 @@ def test_mission_attempt_updates_the_scheduler_claimed_hypothesis(tmp_path):
     assert env.orch._research_hyp_by_node[f"{technique}@{target}"] == hyp.hypothesis_id
 
 
+def test_mission_attempt_without_finding_releases_hypothesis_lease(tmp_path):
+    from redteam.attack_tree import TECHNIQUES
+    from redteam.swarm import ACTIVE, weakness_for_technique
+
+    env = _Env(tmp_path)
+    technique = "auth.test"
+    target = "https://api.acme.example/"
+    claim = (f"{technique} on {target}: "
+             f"{TECHNIQUES[technique].description}")
+    hyp, _ = env.orch._research.claim_or_register(
+        asset_ref=target, weakness_class=weakness_for_technique(technique),
+        claim=claim, agent="exploit", technique=technique)
+
+    env.orch.record_mission_task_outcome(
+        {"task_id": "task-no-proof", "node_id": f"{technique}@{target}",
+         "role": "exploit", "hypothesis_id": hyp.hypothesis_id}, [])
+
+    updated = env.orch._research.registry.get(hyp.hypothesis_id)
+    assert updated.status == ACTIVE
+    assert updated.owner is None
+    assert any(ev.get("artifact_ref") == "task-no-proof"
+               for ev in updated.counter_evidence_refs)
+
+
 def test_mission_outcome_rejects_pending_findings_and_unmet_objective():
     T = type("T", (), {"status": TASK_SUCCEEDED})
     assert mission_outcome([T()], pending_verification=1) == (
