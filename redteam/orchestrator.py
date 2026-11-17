@@ -1527,7 +1527,7 @@ class Orchestrator:
         """
         if self._attack_tree is None:
             return []
-        from .attack_tree import TODO
+        from .attack_tree import TODO, technique_cost
         from .synthesis import brief, synthesize
         ideas = {}
         try:
@@ -1537,6 +1537,13 @@ class Orchestrator:
             self._ctx.audit.record("mission.synthesis.error", error=str(exc))
         candidates = [n for n in self._attack_tree.actionable(limit=max(limit * 4, limit))
                       if n.status == TODO]
+        # Match the classic loop's drift-plus-penalty ordering when configured;
+        # the mission scheduler still performs the actual OPSEC reservation.
+        if self._noise is not None and candidates:
+            ranked = self._noise.rank([
+                (n.technique, n.bucket, technique_cost(n.technique), n)
+                for n in candidates])
+            candidates = [item["meta"] for item in ranked]
         selected = []
         for node in candidates:
             profile = profile_for(node.technique)
@@ -1553,6 +1560,7 @@ class Orchestrator:
                 "technique": node.technique,
                 "target": node.target,
                 "max_steps": int(profile.max_steps),
+                "opsec_allowance": float(technique_cost(node.technique)),
             })
             if len(selected) >= limit:
                 break
