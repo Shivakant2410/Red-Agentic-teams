@@ -1581,6 +1581,8 @@ class Orchestrator:
         """
         hyp_id = str(task_view.get("hypothesis_id", "") or "")
         node_id = str(task_view.get("node_id", "") or "")
+        if node_id and str(task_view.get("role", "")) == "exploit":
+            self._round_claims.append(str(task_view.get("technique", "") or ""))
         if not hyp_id or not node_id:
             return
         agent = str(task_view.get("role", "exploit") or "exploit")
@@ -1653,6 +1655,37 @@ class Orchestrator:
             "new_confirmed_nodes": synced,
             "credits": len(credited)})
         return result
+
+    def mission_access_state(self) -> dict:
+        """Return the current KillChain-directed ACCESS opportunity, if any."""
+        access = getattr(self._ctx, "access", None)
+        killchain = getattr(self._ctx, "killchain", None)
+        if access is None or killchain is None:
+            return {}
+        recommendations = [stage for stage in killchain.recommend(
+            access, getattr(self._ctx, "objective", None))
+            if stage in _ACCESS_STAGES]
+        if not recommendations:
+            return {}
+        holdings = sorted(f"{node.kind}:{node.key}" for node in access.held())
+        return {"recommendations": recommendations,
+                "achieved": sorted(killchain.achieved()),
+                "holdings": holdings}
+
+    def mission_logic_required(self) -> bool:
+        """Use the classic workflow-shape detector as the LOGIC task gate."""
+        return _looks_workflow_shaped(self._graph)
+
+    def mission_reflect_after_round(self, objective: str, round_no: int) -> None:
+        """Run the existing strategist once at a mission round boundary."""
+        if not getattr(self._eng, "enable_reflection", True):
+            self._round_claims = []
+            return
+        try:
+            self._reflect_on_round(objective, round_no)
+        except Exception as exc:
+            self._ctx.audit.record("orchestrator.reflection_error",
+                                   round=round_no + 1, error=str(exc))
 
     def mission_objective_achieved(self) -> bool | None:
         """Return the structured objective result, or None when no criteria exist."""
