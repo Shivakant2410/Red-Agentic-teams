@@ -1,6 +1,7 @@
 # Builder 02 — Phase 2 Implementation Report: Unified Attack Intelligence Graph
 
 Branch: `phase-e2-unified-intelligence-graph` (from `main` @ `ed199f7`)
+Pull request: [#13 — Phase E2: Unified Attack Intelligence Graph](https://github.com/Shivakant2410/Red-Agentic-teams/pull/13)
 Design basis: [Phase 1 audit](builder02-phase1-architecture-audit.md) · [ADR-002](adr-002-unified-intelligence-graph.md)
 
 ## 1. What was implemented
