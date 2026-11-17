@@ -338,6 +338,8 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
         objective_achieved=objective_state,
         pending_verification=len(pending),
         stop_reason=stop_reason)
+    if reason and not stop_reason:
+        stop_reason = reason
     commander.set_mission_status(status, DRIVER_ACTOR, reason=reason)
     summary = {"mission_id": mission.mission_id, "run_id": mission.primary_run_id,
                "rounds": rounds, "tasks": commander.tasks_view(),
