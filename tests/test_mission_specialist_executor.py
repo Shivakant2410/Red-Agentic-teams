@@ -904,6 +904,37 @@ def test_default_mission_generates_frontier_task_and_verifies_automatically(tmp_
     assert tree.node("injection.sqli", target).status == "todo"
 
 
+def test_mission_attempt_updates_the_scheduler_claimed_hypothesis(tmp_path):
+    from redteam.attack_tree import TECHNIQUES
+    from redteam.swarm import AWAITING_VERIFICATION, weakness_for_technique
+
+    env = _Env(tmp_path)
+    technique = "injection.sqli"
+    target = "https://api.acme.example/orders"
+    claim = (f"{technique} on {target}: "
+             f"{TECHNIQUES[technique].description}")
+    hyp, _ = env.orch._research.claim_or_register(
+        asset_ref=target, weakness_class=weakness_for_technique(technique),
+        claim=claim, agent="exploit", technique=technique)
+    finding = env.ctx.findings.add(Finding(
+        title="SQLi candidate", severity="high", target=target,
+        summary="differential proof", confidence="pending_verification"))
+
+    env.orch.record_mission_task_outcome(
+        {"task_id": "task-1", "node_id": f"{technique}@{target}",
+         "role": "exploit", "hypothesis_id": hyp.hypothesis_id},
+        [{"kind": "finding", "ref": finding.id,
+          "confidence": "pending_verification"}])
+
+    updated = env.orch._research.registry.get(hyp.hypothesis_id)
+    assert updated.status == AWAITING_VERIFICATION
+    assert any(ev.get("artifact_ref") == finding.id
+               and ev.get("kind") == "finding"
+               for ev in updated.evidence_refs)
+    assert env.orch._research_finding_hyp[finding.id] == hyp.hypothesis_id
+    assert env.orch._research_hyp_by_node[f"{technique}@{target}"] == hyp.hypothesis_id
+
+
 def test_mission_outcome_rejects_pending_findings_and_unmet_objective():
     T = type("T", (), {"status": TASK_SUCCEEDED})
     assert mission_outcome([T()], pending_verification=1) == (
