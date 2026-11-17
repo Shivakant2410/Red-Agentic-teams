@@ -252,3 +252,58 @@ def test_server_retest_endpoint(tmp_path, harness, target):  # noqa: F811
 
     # unknown run
     assert client.post("/api/runs/ghost/retest", json={}).status_code == 404
+
+
+# -- Phase E2: retest -> remediation invalidation integration ----------------------
+
+def test_build_ctx_loads_graph_and_access_when_present(tmp_path):
+    """build_ctx_for_run picks up the run's own graph.json/access.json so a
+    FIXED retest can invalidate holdings the finding demonstrated (E2); a run
+    without them retests fine with no graph state attached."""
+    import json as _json
+    (tmp_path / "access.json").write_text(_json.dumps(
+        {"nodes": [{"kind": "resource", "key": "records", "attrs": {}, "held": True,
+                    "evidence": "e", "source": "verified_finding", "first_seen": "t"}],
+         "edges": []}), encoding="utf-8")
+    (tmp_path / "graph.json").write_text(_json.dumps(
+        {"nodes": [], "edges": []}), encoding="utf-8")
+    # scope.json is required for the RoE rebuild
+    (tmp_path / "scope.json").write_text(_json.dumps(
+        {"allowed_hosts": ["h.example"], "allowed_ports": [443]}), encoding="utf-8")
+    import datetime as _dt
+    from redteam.config import Engagement, LlmConfig, SandboxConfig
+    eng = Engagement(name="r", client="x", authorized_by="y", ticket="t",
+                     starts=_dt.date.today(), ends=_dt.date.today(),
+                     allowed_hosts=("h.example",), excluded_hosts=(),
+                     allowed_ports=(443,), allowed_schemes=("https",),
+                     max_requests_per_second=1.0, max_total_requests=10,
+                     allow_private_ranges=False, require_approval_for=(),
+                     llm=LlmConfig(), sandbox=SandboxConfig(), raw={})
+    ctx = build_ctx_for_run(eng, tmp_path)
+    assert [n.key for n in ctx.access.held()] == ["records"]
+    assert ctx.graph.nodes() == []
+
+    (tmp_path / "access.json").unlink()
+    ctx2 = build_ctx_for_run(eng, tmp_path)
+    assert getattr(ctx2, "access", None) is None or not ctx2.access.held()
+
+
+def test_invalidate_after_fix_only_on_fully_supported_holds():
+    """Direct contract: only holdings carrying the finding's structured
+    reference are revoked; everything else survives verbatim."""
+    from redteam.access import AccessGraph, RESOURCE
+    from redteam.findings import Finding
+    from redteam.retest import invalidate_after_fix
+
+    g = AccessGraph()
+    g.hold(RESOURCE, "mine", evidence="confirmed finding f1: x",
+           source="verified_finding", attrs={"finding_id": "f1"})
+    g.hold(RESOURCE, "other", evidence="confirmed finding f2: y",
+           source="verified_finding", attrs={"finding_id": "f2"})
+    out = invalidate_after_fix(Finding(id="f1", title="t", severity="high",
+                                       target="https://h/x", summary="s"),
+                               access=g)
+    assert [r["key"] for r in out["revoked"]] == ["mine"]
+    assert [n.key for n in g.held()] == ["other"]
+    node = g._nodes["resource:mine"]
+    assert node.evidence == "confirmed finding f1: x"   # history intact

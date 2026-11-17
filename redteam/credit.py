@@ -28,7 +28,13 @@ Hard limits, on purpose:
 
 from __future__ import annotations
 
+import datetime as _dt
+
 from .objective import HOST_ACCESS, DATA_ACCESS, FLAG, PRIVILEGE, regex_match
+
+
+def _dt_now_iso() -> str:
+    return _dt.datetime.now(_dt.timezone.utc).isoformat()
 
 # Criterion kind -> access-graph node kind for the hold. FLAG is material we read,
 # i.e. a resource. PRIVILEGE is deliberately absent (see module docstring).
@@ -103,8 +109,22 @@ def credit_confirmed_findings(ctx, objective=None, access=None) -> list[dict]:
             evidence = (f"confirmed finding {match.id}: {match.title} "
                         f"({match.severity}) on {match.target}"
                         + (f" — evidence_regex match {snippet!r}" if snippet else ""))
+            # Phase E2 (ADR-002): a STRUCTURED finding reference rides with the
+            # hold, so the retest-fixed bridge can revoke exactly the holdings
+            # this finding proved — without parsing the free-text evidence.
+            # Same hold, same gate; purely additive provenance.
             access.hold(node_kind, criterion.target, evidence=evidence,
-                        source="verified_finding")
+                        source="verified_finding",
+                        attrs={"finding_id": match.id},
+                        evidence_refs=[{
+                            "evidence_id": f"finding-{match.id}",
+                            "kind": "finding", "origin": "agent",
+                            "source": "creditor",
+                            "source_agent": "credit",
+                            "artifact_ref": f"finding:{match.id}",
+                            "summary": f"confirmed finding {match.id} on {match.target}",
+                            "ts": _dt_now_iso(),
+                        }])
         newly = objective.autoevaluate(access)
         for cid in newly:
             c = objective.get(cid)

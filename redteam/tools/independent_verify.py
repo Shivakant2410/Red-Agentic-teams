@@ -29,6 +29,11 @@ from . import ToolContext
 from .http import make_fetch
 from .logic import run_ordered_steps
 
+
+def _dt_now_iso() -> str:
+    import datetime as _dt
+    return _dt.datetime.now(_dt.timezone.utc).isoformat()
+
 # A control must differ from the attack payload but hit the same endpoint/shape. For the
 # check kinds that don't carry an explicit negative_control, we derive a benign stand-in
 # by stripping anything that looks like an injected payload out of the URL/body, so the
@@ -344,10 +349,23 @@ class VerifyFindingIndependentlyTool:
             spec = f.check_spec
             to_principal = spec.get("to_principal", "")
             from_principal = spec.get("from_principal", "")
+            # Phase E2 (ADR-002): structured finding reference on the hold, so
+            # the retest-fixed bridge can revoke exactly the holdings this
+            # finding proved (no free-text parsing). Purely additive provenance.
             target = ctx.access.hold(PRINCIPAL, to_principal,
                                      evidence=f"independently verified: {spec.get('method','GET')} "
                                               f"{spec.get('privileged_url','')} succeeds only as this identity",
-                                     source="prove_privilege")
+                                     source="prove_privilege",
+                                     attrs={"finding_id": f.id},
+                                     evidence_refs=[{
+                                         "evidence_id": f"finding-{f.id}",
+                                         "kind": "finding", "origin": "agent",
+                                         "source": "independent_verify",
+                                         "source_agent": "verify",
+                                         "artifact_ref": f"finding:{f.id}",
+                                         "summary": f"privilege boundary proven by finding {f.id}",
+                                         "ts": _dt_now_iso(),
+                                     }])
             if from_principal:
                 src = ctx.access.observe(PRINCIPAL, from_principal, source="prove_privilege")
                 ctx.access.link(src.id, ESCALATES_TO, target.id)
