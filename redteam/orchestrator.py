@@ -873,40 +873,42 @@ class Orchestrator:
     # KillChain's INITIAL_ACCESS stage. No new foothold store, graph, state
     # machine, or authority.
     #
-    # Intended foothold lifecycle (all of it on the existing authorities):
+    # Intended foothold lifecycle (all of it on the existing authorities —
+    # the SINGLE canonical invalidation path is PR #13's retest-fixed bridge):
     #   demonstrated  — access.hold() (tools, or the creditor on a confirmed
-    #                   finding) sets held=True; the KillChain may journal the
+    #                   finding, which stamps structured finding_id provenance)
+    #                   sets held=True; the KillChain may journal the
     #                   INITIAL_ACCESS milestone.
-    #   invalidated   — a retest verdict of FIXED revokes the holding through
-    #                   AccessGraph.release() (credit.invalidate_holdings_
-    #                   for_fixed_findings is the symmetric step): held=False
-    #                   with the evidence RETAINED — the graph's own
-    #                   invalidation record. The KillChain stage is
-    #                   deliberately NOT auto-demoted: it journals what WAS
-    #                   achieved, and retest.py keeps remediation state
-    #                   orthogonal.
-    #   gate          — active holdings win; an invalidation record CONTRADICTS
+    #   invalidated   — a retest verdict of FIXED, through retest.py's
+    #                   invalidate_after_fix(), revokes the holdings the
+    #                   finding demonstrably supported via the graph's own
+    #                   lifecycle: AccessGraph.revoke() (held=False, with
+    #                   invalidated_at/invalidation_reason and the evidence
+    #                   retained — node.revoked()/revoked_nodes() is the
+    #                   record). The KillChain stage is deliberately NOT
+    #                   auto-demoted: it journals what WAS achieved.
+    #   gate          — active holdings win; a revoked holding CONTRADICTS
     #                   the historical stage, so the gate fails closed (an
     #                   achieved INITIAL_ACCESS must never stand in for a
     #                   foothold current evidence says is gone); only a graph
-    #                   with no invalidation record (or no graph at all) may
+    #                   with no revocation record (or no graph at all) may
     #                   fall back to the achieved stage. Re-demonstration
-    #                   re-opens the gate.
+    #                   (hold() re-activation) re-opens the gate.
 
     def access_precondition_reason(self, task_view: dict) -> str:
         """Why an ACCESS task must NOT dispatch yet ("" = proceed).
 
         Scoped to the access role — every other role proceeds unchanged. A
         valid, demonstrated, ACTIVE foothold — an AccessGraph node with
-        held=True, or — when the graph carries no invalidation record — a
+        held=True, or — when the graph carries no revocation record — a
         KillChain INITIAL_ACCESS stage marked achieved — satisfies the gate.
-        A revoked or invalidated holding (held=False, evidence retained) never
-        does, and its record overrides the achieved stage (fail closed) until
-        a foothold is demonstrated again. Wired by run.py into the mission
-        scheduler's readiness gate, which keeps the task PENDING (existing
-        lifecycle semantics) until satisfied; execute_task also enforces it
-        directly so the specialist can never be constructed without a
-        foothold.
+        A revoked holding (held=False, invalidated_at set, evidence retained)
+        never does, and its record overrides the achieved stage (fail closed)
+        until a foothold is demonstrated again. Wired by run.py into the
+        mission scheduler's readiness gate, which keeps the task PENDING
+        (existing lifecycle semantics) until satisfied; execute_task also
+        enforces it directly so the specialist can never be constructed
+        without a foothold.
         """
         if str(task_view.get("role", "") or "") != "access":
             return ""                     # the gate is access-only
@@ -916,7 +918,7 @@ class Orchestrator:
         killchain = getattr(self._ctx, "killchain", None)
         if access is None and killchain is None:
             return "no access evidence authorities on the shared context"
-        if access is not None and access.invalidated_holdings():
+        if access is not None and access.revoked_nodes():
             return ("foothold invalidated: the AccessGraph carries a "
                     "demonstrated-then-revoked holding (e.g. a FIXED retest) "
                     "and the achieved INITIAL_ACCESS stage must not stand in "
@@ -930,10 +932,10 @@ class Orchestrator:
             if access.held():
                 return True
             # Current evidence AGAINST the foothold: a demonstrated-then-
-            # invalidated holding (e.g. revoked by a FIXED retest) contradicts
-            # the historical KillChain milestone — never let the stale stage
-            # stand in for it.
-            if access.invalidated_holdings():
+            # revoked holding (e.g. the retest-fixed bridge's invalidate_
+            # after_fix) contradicts the historical KillChain milestone —
+            # never let the stale stage stand in for it.
+            if access.revoked_nodes():
                 return False
         killchain = getattr(self._ctx, "killchain", None)
         return (killchain is not None

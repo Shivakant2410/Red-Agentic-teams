@@ -233,28 +233,6 @@ class AccessGraph:
         with self._lock:
             return [n for n in self._nodes.values() if n.held]
 
-    def release(self, kind: str, key: str) -> AccessNode | None:
-        """The inverse of hold(): the demonstrated holding is no longer active
-        (e.g. a retest verdict of FIXED — the weakness that proved it is gone).
-        The node and its evidence REMAIN: held=False plus retained evidence is
-        the graph's own invalidation record (invalidated_holdings()), so any
-        consumer can tell a stale milestone from a live holding. Idempotent."""
-        with self._lock:
-            node = self._nodes.get(f"{kind}:{key}")
-            if node is not None and node.held:
-                node.held = False
-                self._flush()
-            return node
-
-    def invalidated_holdings(self) -> list[AccessNode]:
-        """Demonstrated-then-invalidated holdings: nodes that carry evidence
-        (evidence is only written on hold()) but are no longer active.
-        observe()-only nodes never appear here. This is the record the
-        orchestrator's ACCESS prerequisite gate trusts over a possibly-stale
-        KillChain INITIAL_ACCESS stage."""
-        with self._lock:
-            return [n for n in self._nodes.values() if not n.held and n.evidence]
-
     def reached(self, target_key: str) -> bool:
         """Do we hold the objective's target (by key, any kind)?"""
         with self._lock:

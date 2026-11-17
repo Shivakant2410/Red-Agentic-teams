@@ -77,6 +77,23 @@ def load_plan(out_dir: Path) -> list[dict]:
     return tasks
 
 
+def mission_outcome(tasks) -> tuple[str, str]:
+    """(mission_status, reason) from the tasks' terminal states — the honest
+    endgame calc. Success requires EVERY task to have reached the intended
+    successful terminal outcome (TASK_SUCCEEDED): failed / cancelled / expired
+    / exhausted ends — and tasks that never became dispatchable — make the
+    mission FAILED. "Everything reached A terminal state" is not "everything
+    succeeded": with real specialists on the production path, an all-failed
+    mission must never read MISSION_SUCCEEDED.
+    (TASK_CANCELLED exists in the states machine as reserved vocabulary; no
+    producer writes it yet — the calc is safe against it regardless.)"""
+    tasks = list(tasks)
+    if tasks and all(t.status == TASK_SUCCEEDED for t in tasks):
+        return MISSION_SUCCEEDED, ""
+    return (MISSION_FAILED,
+            "not every task reached a successful terminal state")
+
+
 def run_mission_driver(*, engagement, out_dir, objective: str,
                        attack_tree=None, bus=None, opts=None,
                        executor=None, hypotheses=None, clock=None,
@@ -177,13 +194,10 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
             scheduler.dispatch(task.task_id)
         rounds += 1
 
-    all_done = all(t.status in (TASK_SUCCEEDED, "failed", "cancelled")
-                   for t in commander.tasks.values()) and commander.tasks
-    commander.set_mission_status(
-        MISSION_SUCCEEDED if all_done else MISSION_FAILED,
-        DRIVER_ACTOR,
-        reason="" if all_done else "tasks did not all reach a terminal "
-                                   "successful state")
+    # A mission succeeded only when EVERY task reached the intended successful
+    # terminal outcome (TASK_SUCCEEDED) — see mission_outcome() above.
+    status, reason = mission_outcome(commander.tasks.values())
+    commander.set_mission_status(status, DRIVER_ACTOR, reason=reason)
     summary = {"mission_id": mission.mission_id, "run_id": mission.primary_run_id,
                "rounds": rounds, "tasks": commander.tasks_view(),
                "status": commander.mission.status,

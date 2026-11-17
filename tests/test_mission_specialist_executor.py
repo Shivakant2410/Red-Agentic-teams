@@ -28,8 +28,7 @@ import pytest
 from redteam.access import AccessGraph
 from redteam.attack_tree import AttackTree
 from redteam.config import Engagement, LlmConfig, SandboxConfig
-from redteam.credit import (credit_confirmed_findings,
-                            invalidate_holdings_for_fixed_findings)
+from redteam.credit import credit_confirmed_findings
 from redteam.findings import Finding, FindingStore
 from redteam.knowledge import KnowledgeGraph
 from redteam.killchain import ACHIEVED, INITIAL_ACCESS, KillChain
@@ -37,6 +36,7 @@ from redteam.llm.openrouter import ChatResult
 from redteam.mission.executor import (EXEC_FAILED, EXEC_SUCCEEDED,
                                       ExecutionResult)
 from redteam.mission.specialist_executor import MissionSpecialistExecutor
+from redteam.mission.driver import mission_outcome, run_mission_driver
 from redteam.objective import DATA_ACCESS, Objective, SuccessCriterion
 from redteam.orchestrator import (ACCESS, EXPLOIT, LOGIC, RECON, VERIFY,
                                   Orchestrator)
@@ -46,7 +46,8 @@ from redteam.retest import (FIXED, build_ctx_for_run,
 from redteam.runtime import BudgetTracker
 from redteam.scope import ScopeGuard
 from redteam.specialists import A03, profile_for
-from redteam.states import TASK_FAILED, TASK_PENDING, TASK_SUCCEEDED
+from redteam.states import (MISSION_FAILED, MISSION_SUCCEEDED, TASK_FAILED,
+                            TASK_PENDING, TASK_SUCCEEDED)
 from redteam.tools import ToolContext, build_registry
 
 import mission_helpers as H
@@ -650,16 +651,17 @@ def test_revoked_foothold_does_not_satisfy_the_gate(tmp_path):
                                  actor="op")
     env.ctx.access.hold("session", "web-sess-1", evidence="proven")
     assert [t.task_id for t in scheduler.ready_tasks()] == [task.task_id]
-    # invalidated through the graph's OWN lifecycle operation: release() flips
-    # held and KEEPS the evidence — the invalidation record (a revoked or
-    # otherwise invalidated foothold is no longer active evidence)
-    env.ctx.access.release("session", "web-sess-1")
+    # invalidated through the canonical lifecycle (PR #13): revoke() flips
+    # held, stamps invalidated_at/reason and KEEPS the evidence — the
+    # revocation record (a revoked foothold is no longer active evidence)
+    env.ctx.access.revoke("session", "web-sess-1", reason="retest fixed")
     assert env.ctx.access.held() == []
-    assert len(env.ctx.access.invalidated_holdings()) == 1
+    assert len(env.ctx.access.revoked_nodes()) == 1
     assert scheduler.ready_tasks() == []
     assert commander.task(task.task_id).status == TASK_PENDING
     assert captured == {}
-    # demonstrated again -> dispatchable again (the gate re-checks every round)
+    # demonstrated again -> dispatchable again (the gate re-checks every round;
+    # hold() re-activation is the only sanctioned revoked -> held transition)
     env.ctx.access.hold("session", "web-sess-1", evidence="re-proven")
     assert [t.task_id for t in scheduler.ready_tasks()] == [task.task_id]
 
@@ -686,14 +688,14 @@ def test_invalidated_holding_contradicts_the_killchain_fallback(tmp_path):
     env.ctx.access.hold("session", "web-sess-1", evidence="was proven")
     env.ctx.killchain.mark(INITIAL_ACCESS, ACHIEVED, note="milestone")
     assert env.orch.access_precondition_reason(view) == ""   # active holding wins
-    env.ctx.access.release("session", "web-sess-1")
+    env.ctx.access.revoke("session", "web-sess-1", reason="retest fixed")
     reason = env.orch.access_precondition_reason(view)
     assert "invalidated" in reason and "must not stand in" in reason
-    # re-demonstration re-opens the gate
+    # re-demonstration (hold() re-activation) re-opens the gate
     env.ctx.access.hold("session", "web-sess-1", evidence="re-proven")
     assert env.orch.access_precondition_reason(view) == ""
     # a graph that NEVER tracked a holding (observe-only, no evidence) may
-    # still fall back to the stage — no invalidation record exists to contradict
+    # still fall back to the stage — no revocation record exists to contradict
     env2, _c2 = _access_env(tmp_path / "env2")
     env2.ctx.access.observe("session", "seen-only")
     env2.ctx.killchain.mark(INITIAL_ACCESS, ACHIEVED, note="milestone")
@@ -760,14 +762,104 @@ def test_driver_wires_the_access_gate(tmp_path):
 
 
 # =============================================================================
+# Mission-success truthfulness (review follow-up): "everything reached A
+# terminal state" is not "everything succeeded". With real specialists on the
+# production path, an all-failed, mixed, or cancelled mission must never read
+# MISSION_SUCCEEDED — success requires every task TASK_SUCCEEDED.
+# =============================================================================
+
+
+class _StatusExecutor:
+    """Phase 2 protocol seam: every task ends with the scripted EXEC status."""
+
+    def __init__(self, status: str):
+        self.status = status
+
+    def run(self, task_view: dict) -> ExecutionResult:
+        if self.status == EXEC_FAILED:
+            return ExecutionResult(status=EXEC_FAILED, error="scripted failure")
+        return ExecutionResult(status=EXEC_SUCCEEDED, result="scripted ok")
+
+
+class _RoleScriptExecutor:
+    """recon succeeds, exploit fails — the mixed-success/failure mission."""
+
+    def run(self, task_view: dict) -> ExecutionResult:
+        if task_view.get("role") == "exploit":
+            return ExecutionResult(status=EXEC_FAILED, error="scripted failure")
+        return ExecutionResult(status=EXEC_SUCCEEDED, result="scripted ok")
+
+
+def _write_plan(tmp_path, specs):
+    (tmp_path / "mission_plan.json").write_text(
+        json.dumps({"tasks": specs}), encoding="utf-8")
+
+
+def _driver_opts():
+    return type("O", (), {"max_steps": 40, "round_noise_budget": 12.0})()
+
+
+def test_all_failed_mission_is_reported_failed(tmp_path):
+    _write_plan(tmp_path, [{"title": "map", "role": "recon"},
+                           {"title": "check", "role": "exploit",
+                            "technique": "auth.test",
+                            "target": "https://t.test/"}])
+    summary = run_mission_driver(
+        engagement=_engagement(), out_dir=tmp_path, objective="probe",
+        executor=_StatusExecutor(EXEC_FAILED), clock=H.FakeClock(),
+        opts=_driver_opts(), say=lambda t: None)
+    assert summary["status"] == MISSION_FAILED          # NOT "succeeded"
+    assert {t["status"] for t in summary["tasks"]} == {TASK_FAILED}
+
+
+def test_mixed_success_and_failure_is_reported_failed(tmp_path):
+    _write_plan(tmp_path, [{"title": "map", "role": "recon"},
+                           {"title": "check", "role": "exploit",
+                            "technique": "auth.test",
+                            "target": "https://t.test/"}])
+    summary = run_mission_driver(
+        engagement=_engagement(), out_dir=tmp_path, objective="probe",
+        executor=_RoleScriptExecutor(), clock=H.FakeClock(),
+        opts=_driver_opts(), say=lambda t: None)
+    assert summary["status"] == MISSION_FAILED
+    statuses = {t["role"]: t["status"] for t in summary["tasks"]}
+    assert statuses == {"recon": TASK_SUCCEEDED, "exploit": TASK_FAILED}
+
+
+def test_all_succeeded_mission_reports_succeeded(tmp_path):
+    _write_plan(tmp_path, [{"title": "map", "role": "recon"},
+                           {"title": "check", "role": "exploit",
+                            "technique": "auth.test",
+                            "target": "https://t.test/"}])
+    summary = run_mission_driver(
+        engagement=_engagement(), out_dir=tmp_path, objective="probe",
+        executor=_StatusExecutor(EXEC_SUCCEEDED), clock=H.FakeClock(),
+        opts=_driver_opts(), say=lambda t: None)
+    assert summary["status"] == MISSION_SUCCEEDED
+    assert all(t["status"] == TASK_SUCCEEDED for t in summary["tasks"])
+
+
+def test_mission_outcome_counts_cancelled_as_failure():
+    # TASK_CANCELLED exists in the states machine (reserved vocabulary — no
+    # producer writes it yet); the outcome calc is safe against it regardless:
+    # success is EVERY task at the intended successful terminal outcome.
+    T = type("T", (), {"status": TASK_SUCCEEDED})
+    C = type("T", (), {"status": "cancelled"})
+    F = type("T", (), {"status": TASK_FAILED})
+    assert mission_outcome([T(), T()]) == (MISSION_SUCCEEDED, "")
+    for tasks in ([C()], [T(), C()], [F()], [T(), F()], []):
+        status, reason = mission_outcome(tasks)
+        assert status == MISSION_FAILED
+        assert "successful terminal state" in reason
+
+
+# =============================================================================
 # Revocation vs the KillChain fallback (review follow-up): a FIXED retest must
-# invalidate the demonstrated foothold, and the achieved INITIAL_ACCESS stage
-# must NOT stand in for it. Run end to end on the REAL authorities — the
-# creditor, the retest machinery (stored-recipe replay against a live local
-# lab), and the graph's own release()/invalidation record. retest.py itself
-# stays verdict-only (verification, remediation and access state are
-# orthogonal there, by its own contract); the invalidation is the creditor's
-# explicit mirror step: credit.invalidate_holdings_for_fixed_findings().
+# revoke the demonstrated foothold, and the achieved INITIAL_ACCESS stage must
+# NOT stand in for it. Run end to end on the REAL, SINGLE canonical path — the
+# creditor (structured finding_id provenance), retest.py's own FIXED-gated
+# invalidate_after_fix (AccessGraph.revoke()), and the orchestrator gate
+# reading revoked_nodes(). No second invalidation implementation exists.
 # =============================================================================
 
 
@@ -872,22 +964,35 @@ def test_fixed_retest_invalidates_the_foothold_and_blocks_access(
                                  actor="op")
     assert [t.task_id for t in scheduler.ready_tasks()] == [task.task_id]
     # 2. run a REAL retest of the stored recipe against the now-patched lab:
-    #    verdict FIXED, recorded on the finding's remediation timeline
-    results = retest_run(ctx.findings, ctx, trials=3, need=2)
+    #    verdict FIXED, recorded on the finding's remediation timeline — and
+    #    retest_run ITSELF drives the canonical invalidation (the authorities
+    #    are forwarded exactly as the retest CLI and the retest endpoint do)
+    results = retest_run(ctx.findings, ctx, trials=3, need=2,
+                         access=getattr(ctx, "access", None),
+                         graph=getattr(ctx, "graph", None))
     assert results[0]["verdict"] == FIXED
-    # 3. the invalidation step revokes the holding the finding created —
-    #    held=False, evidence retained: the graph's own invalidation record
-    invalidated = invalidate_holdings_for_fixed_findings(ctx)
-    assert invalidated == [held[0].id]
+    # 3. the FIXED verdict revoked the holding the finding created, through the
+    #    graph's own lifecycle (revoke(): held=False, invalidated_at/reason
+    #    stamped, evidence retained — the structured finding_id provenance the
+    #    creditor wrote is the match key; no free-text parsing)
+    invalidated = results[0]["invalidation"]
+    assert invalidated["revoked"] == [{"kind": held[0].kind, "key": held[0].key}]
     assert ctx.access.held() == []
-    assert len(ctx.access.invalidated_holdings()) == 1
+    revoked = ctx.access.revoked_nodes()
+    assert len(revoked) == 1 and revoked[0].id == held[0].id
+    assert revoked[0].evidence and revoked[0].invalidated_at
+    assert "retest fixed" in revoked[0].invalidation_reason
+    # the audit trail records the revocation against the finding
+    assert any(e["event"] == "retest.invalidated" for e in ctx.audit.read_all())
     #    THE expected behavior, explicit: the achieved INITIAL_ACCESS stage is
-    #    a historical milestone and does NOT stand in for the invalidated
+    #    a historical milestone and does NOT stand in for the revoked
     #    foothold — the ACCESS task is blocked, nothing constructed, nothing run
     assert scheduler.ready_tasks() == []
     assert commander.task(task.task_id).status == TASK_PENDING
     assert captured == {}
     # 4. a newly demonstrated foothold re-opens the gate for the SAME task
+    #    (hold() re-activation is the only sanctioned revoked -> held path)
     ctx.access.hold("resource", f"{gate_lab_target}/patched",
                     evidence="re-proven by a fresh confirmed session")
+    assert ctx.access.revoked_nodes() == []
     assert [t.task_id for t in scheduler.ready_tasks()] == [task.task_id]
