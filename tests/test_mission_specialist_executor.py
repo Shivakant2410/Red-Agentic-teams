@@ -839,6 +839,302 @@ def test_all_succeeded_mission_reports_succeeded(tmp_path):
     assert all(t["status"] == TASK_SUCCEEDED for t in summary["tasks"])
 
 
+def test_default_mission_generates_frontier_task_and_verifies_automatically(tmp_path):
+    """No mission_plan: recon -> canonical frontier -> exploit -> independent VERIFY."""
+    from redteam.mission.executor import ExecutionResult
+    mission_dir, clock = H.make_mission_dir(tmp_path)
+    tree = AttackTree(tmp_path / "tree.json")
+    target = "https://api.acme.example/orders"
+    tree.seed_endpoint(target)
+
+    class DynamicExecutor:
+        def __init__(self):
+            self.pending = []
+            self.frontier_used = False
+            self.calls = []
+            self.reconciled = 0
+
+        def run(self, task_view):
+            role = task_view["role"]
+            self.calls.append(role)
+            if role == "exploit":
+                self.pending = [type("FindingRef", (), {"id": "finding-1"})()]
+            elif role == "verify":
+                self.pending = []
+            return ExecutionResult(status=EXEC_SUCCEEDED, result=f"{role} slice done")
+
+        def pending_findings(self):
+            return list(self.pending)
+
+        def attack_frontier(self, limit=6):
+            if self.frontier_used:
+                return []
+            self.frontier_used = True
+            return [{"title": "a03-injection: injection.sqli on " + target,
+                     "role": "exploit", "technique": "injection.sqli",
+                     "target": target, "max_steps": 8}]
+
+        def reconcile_after_verification(self):
+            self.reconciled += 1
+            return {}
+
+        def objective_achieved(self):
+            return None
+
+        def budget_available(self):
+            return True
+
+    executor = DynamicExecutor()
+    summary = run_mission_driver(
+        engagement=_engagement(), out_dir=mission_dir, objective="prove an injection flaw",
+        attack_tree=tree, executor=executor, clock=clock,
+        opts=_driver_opts(), say=lambda t: None)
+
+    assert executor.calls == ["recon", "exploit", "verify"]
+    assert executor.reconciled == 1
+    assert {t["role"] for t in summary["tasks"]} == {"recon", "exploit", "verify"}
+    assert all(t["status"] == TASK_SUCCEEDED for t in summary["tasks"])
+    assert summary["dynamic"] is True
+    assert summary["pending_verification"] == 0
+    assert summary["objective_achieved"] is None
+    assert summary["stop_reason"] == "frontier_exhausted"
+    assert summary["execution_complete"] is True
+    # The scheduler releases the execution claim; it does not mark the node
+    # complete merely because the specialist task returned successfully.
+    assert tree.node("injection.sqli", target).status == "todo"
+
+
+def test_mission_uses_existing_access_and_logic_gates(tmp_path):
+    from redteam.knowledge import ENDPOINT
+
+    env = _Env(tmp_path, with_access=True)
+    env.ctx.access.hold("host", "api.acme.example", evidence="demonstrated reachability")
+    env.ctx.killchain.mark(INITIAL_ACCESS, ACHIEVED)
+    state = env.orch.mission_access_state()
+    assert state["recommendations"]
+    assert state["holdings"] == ["host:api.acme.example"]
+
+    env.graph.observe(ENDPOINT, "https://api.acme.example/cart")
+    assert env.orch.mission_logic_required()
+
+
+def test_dynamic_driver_schedules_access_then_workflow_logic(tmp_path):
+    from redteam.mission.executor import ExecutionResult
+
+    mission_dir, clock = H.make_mission_dir(tmp_path)
+
+    class AccessLogicExecutor:
+        def __init__(self):
+            self.calls = []
+            self.reflections = 0
+
+        def run(self, task_view):
+            self.calls.append(task_view["role"])
+            return ExecutionResult(status=EXEC_SUCCEEDED, result="slice complete")
+
+        def pending_findings(self):
+            return []
+
+        def attack_frontier(self, limit=6):
+            return []
+
+        def access_state(self):
+            return {"recommendations": ["discovery"],
+                    "achieved": ["initial_access"],
+                    "holdings": ["host:api.acme.example"]}
+
+        def logic_required(self):
+            return True
+
+        def reflect_after_round(self, objective, round_no):
+            self.reflections += 1
+
+        def objective_achieved(self):
+            return None
+
+        def budget_available(self):
+            return True
+
+    executor = AccessLogicExecutor()
+    summary = run_mission_driver(
+        engagement=_engagement(), out_dir=mission_dir, objective="map and test workflow",
+        executor=executor, clock=clock, opts=_driver_opts(), say=lambda t: None)
+
+    assert executor.calls == ["recon", "access", "logic"]
+    assert executor.reflections == 2
+    assert {t["role"] for t in summary["tasks"]} == {"recon", "access", "logic"}
+    assert summary["stop_reason"] == "frontier_exhausted"
+    assert summary["execution_complete"] is True
+
+
+def test_dynamic_mission_replans_after_failed_attack_path(tmp_path):
+    from redteam.mission.executor import ExecutionResult
+
+    mission_dir, clock = H.make_mission_dir(tmp_path)
+    tree = AttackTree(tmp_path / "tree.json")
+    targets = ["https://api.acme.example/a", "https://api.acme.example/b"]
+    for target in targets:
+        tree.seed_endpoint(target)
+
+    class ReplanningExecutor:
+        def __init__(self):
+            self.calls = []
+
+        def run(self, task_view):
+            role = task_view["role"]
+            technique = task_view.get("technique", "")
+            self.calls.append((role, technique, task_view.get("target", "")))
+            if role == "exploit" and task_view["target"] == targets[0]:
+                return ExecutionResult(status=EXEC_FAILED, error="path did not execute")
+            return ExecutionResult(status=EXEC_SUCCEEDED, result=f"{role} slice done")
+
+        def pending_findings(self):
+            return []
+
+        def attack_frontier(self, limit=6):
+            return [
+                {"title": "first path", "role": "exploit",
+                 "technique": "auth.test", "target": targets[0], "max_steps": 8},
+                {"title": "alternate path", "role": "exploit",
+                 "technique": "auth.test", "target": targets[1], "max_steps": 8},
+            ]
+
+        def objective_achieved(self):
+            return None
+
+        def budget_available(self):
+            return True
+
+    executor = ReplanningExecutor()
+    summary = run_mission_driver(
+        engagement=_engagement(), out_dir=mission_dir, objective="test two attack paths",
+        attack_tree=tree, executor=executor, clock=clock,
+        opts=_driver_opts(), say=lambda t: None)
+
+    assert executor.calls == [
+        ("recon", "", ""),
+        ("exploit", "auth.test", targets[0]),
+        ("exploit", "auth.test", targets[1]),
+    ]
+    assert summary["status"] == "failed"  # first task failed; alternate still ran
+    assert summary["execution_complete"] is False
+    assert summary["stop_reason"] == "frontier_exhausted"
+    assert tree.node("auth.test", targets[0]).status == "todo"
+    assert tree.node("auth.test", targets[1]).status == "todo"
+
+
+def test_dynamic_mission_stops_immediately_when_objective_is_achieved(tmp_path):
+    from redteam.mission.executor import ExecutionResult
+
+    mission_dir, clock = H.make_mission_dir(tmp_path)
+    tree = AttackTree(tmp_path / "tree.json")
+    targets = ["https://api.acme.example/a", "https://api.acme.example/b"]
+    for target in targets:
+        tree.seed_endpoint(target)
+
+    class ObjectiveExecutor:
+        def __init__(self):
+            self.calls = []
+            self.achieved = False
+
+        def run(self, task_view):
+            self.calls.append(task_view["role"])
+            if task_view["role"] == "exploit":
+                self.achieved = True
+            return ExecutionResult(status=EXEC_SUCCEEDED, result="slice done")
+
+        def pending_findings(self):
+            return []
+
+        def attack_frontier(self, limit=6):
+            return [{"title": f"path {i}", "role": "exploit",
+                     "technique": "auth.test", "target": target, "max_steps": 8}
+                    for i, target in enumerate(targets)]
+
+        def objective_achieved(self):
+            return self.achieved
+
+        def budget_available(self):
+            return True
+
+    executor = ObjectiveExecutor()
+    summary = run_mission_driver(
+        engagement=_engagement(), out_dir=mission_dir, objective="reach the objective",
+        attack_tree=tree, executor=executor, clock=clock,
+        opts=_driver_opts(), say=lambda t: None)
+
+    assert executor.calls == ["recon", "exploit"]
+    assert summary["status"] == "succeeded"
+    assert summary["objective_achieved"] is True
+    assert summary["stop_reason"] == "objective_achieved"
+    assert tree.node("auth.test", targets[1]).status == "todo"
+
+
+def test_mission_attempt_updates_the_scheduler_claimed_hypothesis(tmp_path):
+    from redteam.attack_tree import TECHNIQUES
+    from redteam.swarm import AWAITING_VERIFICATION, weakness_for_technique
+
+    env = _Env(tmp_path)
+    technique = "injection.sqli"
+    target = "https://api.acme.example/orders"
+    claim = (f"{technique} on {target}: "
+             f"{TECHNIQUES[technique].description}")
+    hyp, _ = env.orch._research.claim_or_register(
+        asset_ref=target, weakness_class=weakness_for_technique(technique),
+        claim=claim, agent="exploit", technique=technique)
+    finding = env.ctx.findings.add(Finding(
+        title="SQLi candidate", severity="high", target=target,
+        summary="differential proof", confidence="pending_verification"))
+
+    env.orch.record_mission_task_outcome(
+        {"task_id": "task-1", "node_id": f"{technique}@{target}",
+         "role": "exploit", "hypothesis_id": hyp.hypothesis_id},
+        [{"kind": "finding", "ref": finding.id,
+          "confidence": "pending_verification"}])
+
+    updated = env.orch._research.registry.get(hyp.hypothesis_id)
+    assert updated.status == AWAITING_VERIFICATION
+    assert any(ev.get("artifact_ref") == finding.id
+               and ev.get("kind") == "finding"
+               for ev in updated.evidence_refs)
+    assert env.orch._research_finding_hyp[finding.id] == hyp.hypothesis_id
+    assert env.orch._research_hyp_by_node[f"{technique}@{target}"] == hyp.hypothesis_id
+
+
+def test_mission_attempt_without_finding_releases_hypothesis_lease(tmp_path):
+    from redteam.attack_tree import TECHNIQUES
+    from redteam.swarm import ACTIVE, weakness_for_technique
+
+    env = _Env(tmp_path)
+    technique = "auth.test"
+    target = "https://api.acme.example/"
+    claim = (f"{technique} on {target}: "
+             f"{TECHNIQUES[technique].description}")
+    hyp, _ = env.orch._research.claim_or_register(
+        asset_ref=target, weakness_class=weakness_for_technique(technique),
+        claim=claim, agent="exploit", technique=technique)
+
+    env.orch.record_mission_task_outcome(
+        {"task_id": "task-no-proof", "node_id": f"{technique}@{target}",
+         "role": "exploit", "hypothesis_id": hyp.hypothesis_id}, [])
+
+    updated = env.orch._research.registry.get(hyp.hypothesis_id)
+    assert updated.status == ACTIVE
+    assert updated.owner is None
+    assert any(ev.get("artifact_ref") == "task-no-proof"
+               for ev in updated.counter_evidence_refs)
+
+
+def test_mission_outcome_rejects_pending_findings_and_unmet_objective():
+    T = type("T", (), {"status": TASK_SUCCEEDED})
+    assert mission_outcome([T()], pending_verification=1) == (
+        MISSION_FAILED, "unresolved_verification")
+    assert mission_outcome([T()], objective_achieved=False) == (
+        MISSION_FAILED, "objective_not_achieved")
+    assert mission_outcome([T()], objective_achieved=True) == (
+        MISSION_SUCCEEDED, "")
+
+
 def test_mission_outcome_counts_cancelled_as_failure():
     # TASK_CANCELLED exists in the states machine (reserved vocabulary — no
     # producer writes it yet); the outcome calc is safe against it regardless:

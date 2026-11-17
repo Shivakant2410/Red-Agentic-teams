@@ -25,7 +25,7 @@ import threading
 from dataclasses import dataclass
 from typing import Callable
 
-from ..attack_tree import AttackTree
+from ..attack_tree import AttackTree, TECHNIQUES
 from ..states import (MISSION_RUNNING, TASK_BLOCKED_DUPLICATE, TASK_CLAIMED,
                       TASK_EXPIRED, TASK_FAILED, TASK_PENDING, TASK_RUNNING,
                       TASK_SUCCEEDED)
@@ -177,14 +177,17 @@ class MissionScheduler:
         hyp = None
         research_error = False
         if self.hypotheses is not None and task.node_id:
-            claim_text = (f"{task.technique} on {task.target}")
+            technique = TECHNIQUES.get(task.technique)
+            claim_text = (f"{task.technique} on {task.target}"
+                          + (f": {technique.description}" if technique else ""))
             try:
-                # ResearchBundle.claim_or_register contract (orchestrator's
-                # exploit swarm): (hypothesis, events) on a won claim,
-                # (None, ()) when lost to a concurrent worker — treated exactly
-                # like a lost tree claim, per its docstring.
+                # Use the same canonical weakness class + claim identity as
+                # Orchestrator._research_claim_for_node so mission and classic
+                # work converge on the run's one hypothesis record.
+                from ..swarm import weakness_for_technique
                 hyp, _events = self.hypotheses.claim_or_register(
-                    asset_ref=task.target, weakness_class=task.technique,
+                    asset_ref=task.target,
+                    weakness_class=weakness_for_technique(task.technique),
                     claim=claim_text, agent=agent, technique=task.technique)
                 hyp_id = hyp.hypothesis_id if hyp is not None else ""
             except Exception:
@@ -212,7 +215,12 @@ class MissionScheduler:
         result = None
         if self.executor is not None:
             try:
-                result = self.executor.run(self.commander.task_view(task_id))
+                task_view = self.commander.task_view(task_id)
+                # Ephemeral handoff only: the scheduler remains the hypothesis
+                # claim authority; the executor uses this id to attach the
+                # attempt's real finding evidence to that same canonical record.
+                task_view["hypothesis_id"] = hyp_id
+                result = self.executor.run(task_view)
             except Exception as exc:
                 self.commander.fail_task(task_id, actor=agent, lease_token=token,
                                          error=f"executor error: {exc}")

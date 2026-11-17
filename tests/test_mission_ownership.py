@@ -74,10 +74,14 @@ def test_duplicate_hypothesis_blocks_and_releases_tree(tmp_path):
     mission_dir, clock, commander, tree, task = _ready_mission(tmp_path)
     bundle = ResearchBundle.for_run("eng-1")
     # Another worker owns the equivalent investigation already.
+    from redteam.attack_tree import TECHNIQUES
+    from redteam.swarm import weakness_for_technique
+    technique = TECHNIQUES["auth.test"]
     hyp, _ = bundle.claim_or_register(
-        asset_ref="https://t.test/", weakness_class="auth.test",
-        claim="auth.test on https://t.test/", agent="other-w",
-        technique="auth.test")
+        asset_ref="https://t.test/",
+        weakness_class=weakness_for_technique("auth.test"),
+        claim=f"auth.test on https://t.test/: {technique.description}",
+        agent="other-w", technique="auth.test")
     scheduler = H.make_scheduler(commander, tree, hypotheses=bundle, clock=clock)
     result = scheduler.dispatch(task.task_id)
     assert result["outcome"] == "blocked_duplicate"

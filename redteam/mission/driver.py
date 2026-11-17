@@ -15,13 +15,13 @@ simulation / fault-injection seam: passing no executor prints a loud warning
 and the mock's own task results still say "mock execution" — mock execution is
 never silent.
 
-Task plan source: `mission_plan.json` in the run directory
-  {"tasks": [{"title", "role", "technique", "target", "dependencies": [..],
-              "max_steps", "opsec_allowance", "max_attempts"}, ...]}
-Node tasks are seeded into the tree as entry techniques before dispatch (the
-tree remains the work-selection authority — the driver never dispatches a node
-the tree does not hold). Without a plan file, one smoke task runs so the
-coordination path is observable end to end.
+Task plan source: `mission_plan.json` in the run directory remains an explicit
+operator/replay override. Without it, the default path runs a bounded RECON
+specialist, incrementally selects TODO work from the canonical ranked
+AttackTree, automatically dispatches independent VERIFY for pending findings,
+reconciles the existing graph/hypothesis/tree/credit authorities, then
+re-evaluates KillChain-gated ACCESS and workflow-gated LOGIC opportunities.
+Node tasks are never selected or claimed by a second planner.
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ from .registry import AgentRegistry
 from .scheduler import MissionScheduler
 from .task import TASK_LEASE_SECONDS
 
-MAX_ROUNDS = 50          # dependency-depth safety cap (a cycle cannot proceed)
+MAX_ROUNDS = 50          # bounded mission dispatch safety cap
 DRIVER_ACTOR = "mission-driver"
 
 
@@ -77,21 +77,26 @@ def load_plan(out_dir: Path) -> list[dict]:
     return tasks
 
 
-def mission_outcome(tasks) -> tuple[str, str]:
-    """(mission_status, reason) from the tasks' terminal states — the honest
-    endgame calc. Success requires EVERY task to have reached the intended
-    successful terminal outcome (TASK_SUCCEEDED): failed / cancelled / expired
-    / exhausted ends — and tasks that never became dispatchable — make the
-    mission FAILED. "Everything reached A terminal state" is not "everything
-    succeeded": with real specialists on the production path, an all-failed
-    mission must never read MISSION_SUCCEEDED.
-    (TASK_CANCELLED exists in the states machine as reserved vocabulary; no
-    producer writes it yet — the calc is safe against it regardless.)"""
+def mission_outcome(tasks, *, objective_achieved=None,
+                   pending_verification: int = 0,
+                   stop_reason: str = "") -> tuple[str, str]:
+    """Return mission lifecycle status without conflating execution and impact.
+
+    A structured objective is successful only when Objective.achieved is true.
+    Without structured criteria, a mission is execution-complete only when all
+    tasks succeeded AND no finding remains pending independent verification.
+    """
     tasks = list(tasks)
+    if objective_achieved is True:
+        return MISSION_SUCCEEDED, ""
+    if objective_achieved is False:
+        return MISSION_FAILED, stop_reason or "objective_not_achieved"
+    if pending_verification:
+        return MISSION_FAILED, stop_reason or "unresolved_verification"
     if tasks and all(t.status == TASK_SUCCEEDED for t in tasks):
         return MISSION_SUCCEEDED, ""
     return (MISSION_FAILED,
-            "not every task reached a successful terminal state")
+            stop_reason or "not every task reached a successful terminal state")
 
 
 def run_mission_driver(*, engagement, out_dir, objective: str,
@@ -99,7 +104,10 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                        executor=None, hypotheses=None, clock=None,
                        access_gate=None,
                        say=lambda text: None) -> dict:
-    """Execute the mission coordination loop.
+    """Execute a mission, using an explicit plan only when the operator supplied one.
+
+    No-plan runs use the live AttackTree frontier and existing specialist/verifier
+    adapters; plan-file runs preserve the explicit dependency-round override.
 
     `executor`: the production path passes a MissionSpecialistExecutor built
     on the run's Orchestrator (run.py); tests inject scripted executors (and
@@ -154,14 +162,18 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
     commander.start_mission(DRIVER_ACTOR)
 
     plan = load_plan(out_dir)
-    if not plan:
-        plan = [{"title": "coordination self-check", "role": "recon"}]
+    dynamic = not bool(plan)
     created: list[str] = []
-    for spec in plan:
+    seen_nodes: set[str] = set()
+    seen_access_states: set[tuple] = set()
+    logic_task_created = False
+    verified_pending_ids: set[str] = set()
+    unresolved_verification = False
+    stop_reason = ""
+
+    def create_task(spec: dict):
         technique = str(spec.get("technique", "") or "")
         target = str(spec.get("target", "") or "")
-        if technique and target and attack_tree is not None:
-            attack_tree.seed_endpoint(target)   # tree stays the work selector
         task = commander.create_task(
             title=str(spec.get("title", "")) or f"{technique} on {target}",
             role=str(spec.get("role", "")), actor=DRIVER_ACTOR,
@@ -169,39 +181,231 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
             dependencies=tuple(spec.get("dependencies") or ()),
             max_steps=int(spec.get("max_steps", 20)),
             opsec_allowance=float(spec.get("opsec_allowance", 0.0)),
-            max_attempts=int(spec.get("max_attempts", 2)))
+            max_attempts=int(spec.get("max_attempts", 1 if dynamic else 2)))
         created.append(task.task_id)
+        return task
 
-    # -- dispatch rounds: dependencies resolve across rounds; each round ends
-    #    with a lease sweep (the round boundary, C5.1) --
+    if dynamic:
+        # Deterministic recon has already run in execute_run(); this bounded
+        # specialist pass enriches the live surface before we ask the canonical
+        # AttackTree for offensive work.
+        recon_steps = min(int(getattr(opts, "max_steps", 22) or 22), 22)
+        create_task({"title": "Map the discovered attack surface",
+                     "role": "recon", "max_steps": recon_steps})
+    else:
+        # Explicit mission_plan.json remains a replay/operator override.
+        for spec in plan:
+            technique = str(spec.get("technique", "") or "")
+            target = str(spec.get("target", "") or "")
+            if technique and target and attack_tree is not None:
+                attack_tree.seed_endpoint(target)
+            create_task(spec)
+
     rounds = 0
+    reflection_round = 0
     while rounds < MAX_ROUNDS:
+        if dynamic:
+            objective_state = (executor.objective_achieved()
+                               if hasattr(executor, "objective_achieved") else None)
+            if objective_state is True:
+                stop_reason = "objective_achieved"
+                break
+            if hasattr(executor, "budget_available") and not executor.budget_available():
+                stop_reason = "budget_exhausted"
+                break
+
+            pending = (executor.pending_findings()
+                       if hasattr(executor, "pending_findings") else [])
+            pending_ids = {str(getattr(f, "id", "")) for f in pending}
+            unverified_ids = pending_ids - verified_pending_ids
+            active_verify = any(
+                t.role == "verify" and t.status in
+                ("pending", "claimed", "running")
+                for t in commander.tasks.values())
+            if unverified_ids and not active_verify:
+                verify_steps = min(int(getattr(opts, "max_steps", 15) or 15), 15)
+                create_task({"title": "Independently verify pending findings",
+                             "role": "verify", "max_steps": verify_steps})
+
+            # Only ask the canonical selector for more exploit work after the
+            # recon task has completed and any newly-created VERIFY task has run.
+            has_recon = any(t.role == "recon" for t in commander.tasks.values())
+            recon_done = has_recon and all(
+                t.status == TASK_SUCCEEDED for t in commander.tasks.values()
+                if t.role == "recon")
+            has_unverified = bool(unverified_ids) or active_verify
+            if recon_done and not has_unverified:
+                access_task_created = False
+                access_state = (executor.access_state()
+                                if hasattr(executor, "access_state") else {})
+                if access_state:
+                    signature = (
+                        tuple(access_state.get("recommendations", ())),
+                        tuple(access_state.get("achieved", ())),
+                        tuple(access_state.get("holdings", ())))
+                    if signature not in seen_access_states:
+                        seen_access_states.add(signature)
+                        cap = int(getattr(opts, "max_steps", 20) or 20)
+                        create_task({
+                            "title": "Press confirmed foothold toward: "
+                                     + ", ".join(access_state["recommendations"]),
+                            "role": "access", "max_steps": min(cap, 20)})
+                        access_task_created = True
+
+                if not access_task_created:
+                    frontier = (executor.attack_frontier(limit=999)
+                                if hasattr(executor, "attack_frontier") else [])
+                    new_specs = []
+                    for spec in frontier:
+                        node_id = f"{spec.get('technique', '')}@{spec.get('target', '')}"
+                        if (not spec.get("technique") or not spec.get("target")
+                                or node_id in seen_nodes):
+                            continue
+                        seen_nodes.add(node_id)
+                        cap = int(getattr(opts, "max_steps", 40) or 40)
+                        spec = dict(spec)
+                        spec["max_steps"] = min(int(spec.get("max_steps", cap)), cap)
+                        new_specs.append(spec)
+                        break  # incremental dispatch: one ranked node at a time
+                    if new_specs:
+                        create_task(new_specs[0])
+                    elif (not logic_task_created
+                          and hasattr(executor, "logic_required")
+                          and executor.logic_required()):
+                        cap = int(getattr(opts, "max_steps", 25) or 25)
+                        create_task({"title": "Test workflow and business-logic invariants",
+                                     "role": "logic", "max_steps": min(cap, 25)})
+                        logic_task_created = True
+                    elif not any(t.status in ("pending", "claimed", "running")
+                                 for t in commander.tasks.values()):
+                        stop_reason = ("unresolved_verification" if pending
+                                       else "frontier_exhausted")
+                        break
+
         ready = scheduler.ready_tasks()
         if not ready:
             scheduler.sweep(now=clock())
             ready = scheduler.ready_tasks()
             if not ready:
+                blocked_access = [t for t in commander.tasks.values()
+                                  if t.role == "access" and t.status == "pending"]
+                if blocked_access and access_gate is not None:
+                    gate_reason = access_gate(blocked_access[0].view())
+                    if gate_reason:
+                        stop_reason = "access_prerequisite_unmet"
+                        break
                 active = [t for t in commander.tasks.values()
                           if t.status in ("claimed", "running", "pending",
                                           "expired", "blocked_duplicate")]
                 if not active:
                     break
-                # No progress possible (e.g. permanently blocked duplicates):
-                # one sweep + re-check, then stop trying.
-                if rounds > 0 and not ready:
+                # No progress possible (e.g. a permanently blocked duplicate):
+                # stop rather than spin or re-dispatch the same node in this round.
+                if rounds > 0:
+                    stop_reason = "frontier_exhausted" if dynamic else ""
                     break
         for task in ready:
-            scheduler.dispatch(task.task_id)
-        rounds += 1
+            result = scheduler.dispatch(task.task_id)
+            if dynamic:
+                rounds += 1
+            if dynamic:
+                if task.node_id:
+                    # A task is attempted at most once per mission execution.
+                    # A fresh mission may retry it; this run must move on.
+                    seen_nodes.add(task.node_id)
+                if task.role == "verify":
+                    if hasattr(executor, "reconcile_after_verification"):
+                        executor.reconcile_after_verification()
+                    pending_after = (executor.pending_findings()
+                                     if hasattr(executor, "pending_findings") else [])
+                    verified_pending_ids.update(
+                        str(getattr(f, "id", "")) for f in pending)
+                    if pending_after:
+                        unresolved_verification = True
+                    # Release any completed task's still-held tree claim through
+                    # the scheduler's existing recovery reconciliation path.
+                    actions = scheduler.reconcile(now=clock())
+                    scheduler.apply_reconcile(actions)
+                    if hasattr(executor, "reflect_after_round"):
+                        executor.reflect_after_round(objective, reflection_round)
+                        reflection_round += 1
+                    break
+                if task.role in ("exploit", "access", "logic"):
+                    pending_now = (executor.pending_findings()
+                                   if hasattr(executor, "pending_findings") else [])
+                    if pending_now:
+                        # Verification is a separate task and always precedes
+                        # the next frontier selection or reflection boundary.
+                        break
+                    if task.role == "exploit":
+                        actions = scheduler.reconcile(now=clock())
+                        scheduler.apply_reconcile(actions)
+                    if hasattr(executor, "reflect_after_round"):
+                        executor.reflect_after_round(objective, reflection_round)
+                        reflection_round += 1
+                if result.get("outcome") not in ("completed", "succeeded", "reserved"):
+                    # Keep progressing through other ranked nodes; the failed
+                    # node is not repeated within this mission execution.
+                    actions = scheduler.reconcile(now=clock())
+                    scheduler.apply_reconcile(actions)
+            else:
+                # Explicit operator plans preserve their dependency-round behavior,
+                # but still use the same post-VERIFY reconciliation authority.
+                if (task.role == "verify"
+                        and result.get("outcome") in ("completed", "succeeded", "reserved")
+                        and hasattr(executor, "reconcile_after_verification")):
+                    executor.reconcile_after_verification()
+                    if hasattr(executor, "reflect_after_round"):
+                        executor.reflect_after_round(objective, reflection_round)
+                        reflection_round += 1
+                continue
+        if not dynamic:
+            rounds += 1
+        elif not ready:
+            break
 
-    # A mission succeeded only when EVERY task reached the intended successful
-    # terminal outcome (TASK_SUCCEEDED) — see mission_outcome() above.
-    status, reason = mission_outcome(commander.tasks.values())
+    if dynamic and not stop_reason:
+        objective_state = (executor.objective_achieved()
+                           if hasattr(executor, "objective_achieved") else None)
+        pending = (executor.pending_findings()
+                   if hasattr(executor, "pending_findings") else [])
+        if objective_state is True:
+            stop_reason = "objective_achieved"
+        elif pending or unresolved_verification:
+            stop_reason = "unresolved_verification"
+        elif rounds >= MAX_ROUNDS:
+            stop_reason = "round_limit"
+        else:
+            stop_reason = "frontier_exhausted"
+
+    objective_state = (executor.objective_achieved()
+                       if hasattr(executor, "objective_achieved") else None)
+    pending = (executor.pending_findings()
+               if hasattr(executor, "pending_findings") else [])
+    if pending and not stop_reason:
+        stop_reason = "unresolved_verification"
+    failed_tasks = [t for t in commander.tasks.values()
+                    if t.status not in (TASK_SUCCEEDED, "pending")]
+    if failed_tasks and not stop_reason:
+        stop_reason = "execution_failure"
+    status, reason = mission_outcome(
+        commander.tasks.values(),
+        objective_achieved=objective_state,
+        pending_verification=len(pending),
+        stop_reason=stop_reason)
+    if reason and not stop_reason:
+        stop_reason = reason
     commander.set_mission_status(status, DRIVER_ACTOR, reason=reason)
     summary = {"mission_id": mission.mission_id, "run_id": mission.primary_run_id,
                "rounds": rounds, "tasks": commander.tasks_view(),
                "status": commander.mission.status,
-               "executor": type(executor).__name__}
+               "executor": type(executor).__name__,
+               "dynamic": dynamic,
+               "stop_reason": stop_reason,
+               "objective_achieved": objective_state,
+               "execution_complete": all(t.status == TASK_SUCCEEDED
+                                         for t in commander.tasks.values()),
+               "pending_verification": len(pending)}
     say(f"mission {mission.mission_id}: {commander.mission.status} "
-        f"({rounds} rounds, {len(created)} tasks)")
+        f"({rounds} dispatches, {len(created)} tasks; {stop_reason or 'plan complete'})")
     return summary

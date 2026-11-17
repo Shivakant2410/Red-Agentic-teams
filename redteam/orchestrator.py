@@ -1519,6 +1519,181 @@ class Orchestrator:
                    confirmed=confirmed_count, reflections=len(self._reflections))
         return summary
 
+    def mission_attack_frontier(self, limit: int = 6) -> list[dict]:
+        """Return ranked, currently claimable mission work from the canonical tree.
+
+        AttackTree remains the selector. Synthesis only enriches an already
+        selected node, and the MissionScheduler still owns the actual claim.
+        """
+        if self._attack_tree is None:
+            return []
+        from .attack_tree import TODO, technique_cost
+        from .synthesis import brief, synthesize
+        ideas = {}
+        try:
+            for idea in synthesize(self._ctx):
+                ideas[(idea.technique, idea.target)] = idea
+        except Exception as exc:
+            self._ctx.audit.record("mission.synthesis.error", error=str(exc))
+        candidates = [n for n in self._attack_tree.actionable(limit=max(limit * 4, limit))
+                      if n.status == TODO]
+        # Match the classic loop's drift-plus-penalty ordering when configured;
+        # the mission scheduler still performs the actual OPSEC reservation.
+        if self._noise is not None and candidates:
+            ranked = self._noise.rank([
+                (n.technique, n.bucket, technique_cost(n.technique), n)
+                for n in candidates])
+            candidates = [item["meta"] for item in ranked]
+        selected = []
+        for node in candidates:
+            profile = profile_for(node.technique)
+            title = f"{profile.name}: {node.technique} on {node.target}"
+            idea = ideas.get((node.technique, node.target))
+            if idea is not None:
+                try:
+                    title += " — " + brief(idea, max_chars=900)
+                except Exception:
+                    pass
+            selected.append({
+                "title": title[:1800],
+                "role": "exploit",
+                "technique": node.technique,
+                "target": node.target,
+                "max_steps": int(profile.max_steps),
+                "opsec_allowance": float(technique_cost(node.technique)),
+            })
+            if len(selected) >= limit:
+                break
+        self._ctx.audit.record(
+            "mission.frontier.selected",
+            candidates=len(candidates),
+            selected=[f"{x['technique']}@{x['target']}" for x in selected])
+        return selected
+
+    def record_mission_task_outcome(self, task_view: dict,
+                                    evidence: tuple[dict, ...] | list[dict]) -> None:
+        """Close the mission task's existing hypothesis claim with real outcomes.
+
+        The scheduler passes the hypothesis id it already claimed. Finding
+        evidence is attached before verification so the existing verifier
+        mirror can move that same hypothesis to CONFIRMED/REFUTED. An attempt
+        with no finding records counter-evidence and releases its lease.
+        """
+        hyp_id = str(task_view.get("hypothesis_id", "") or "")
+        node_id = str(task_view.get("node_id", "") or "")
+        if node_id and str(task_view.get("role", "")) == "exploit":
+            self._round_claims.append(str(task_view.get("technique", "") or ""))
+        if not hyp_id or not node_id:
+            return
+        agent = str(task_view.get("role", "exploit") or "exploit")
+        self._research_hyp_by_node[node_id] = hyp_id
+        finding_refs = [str(ev.get("ref", "")) for ev in evidence
+                        if ev.get("kind") == "finding" and ev.get("ref")]
+        try:
+            attached = []
+            for finding_id in finding_refs:
+                finding = self._ctx.findings.get(finding_id)
+                if finding is None:
+                    continue
+                self._research.registry.attach_evidence(
+                    hyp_id,
+                    EvidenceRef(
+                        evidence_id=f"ev-finding-{finding_id}",
+                        kind="finding", origin="agent",
+                        source_agent=agent, artifact_ref=finding_id,
+                        summary=f"{finding.severity}: {finding.title} @ {finding.target}",
+                        ts=self._research_ts()),
+                    agent)
+                self._research_finding_hyp[finding_id] = hyp_id
+                attached.append(finding_id)
+            if attached:
+                self._research.registry.set_status(
+                    hyp_id, AWAITING_VERIFICATION, agent,
+                    finding_id=attached[-1],
+                    reason=f"mission task produced {len(attached)} finding(s); awaiting independent verification")
+            else:
+                task_id = str(task_view.get("task_id", "mission-task") or "mission-task")
+                self._research.registry.attach_counter_evidence(
+                    hyp_id,
+                    EvidenceRef(
+                        evidence_id=f"ev-mission-empty-{task_id}",
+                        kind="observation", origin="agent",
+                        source_agent=agent, artifact_ref=task_id,
+                        summary="Mission task ended without producing a finding; no proof outcome asserted.",
+                        ts=self._research_ts()),
+                    agent)
+                self._research.registry.release(
+                    hyp_id, agent, reason="mission task ended without a finding")
+        except Exception as exc:
+            self._ctx.audit.record("research.error", stage="mission_attempt",
+                                   hypothesis_id=hyp_id, error=str(exc))
+
+    def mission_reconcile_after_verification(self) -> dict:
+        """Apply the classic loop's reusable post-verification joins.
+
+        This mirrors verifier outcomes, bridges observed inventory into the
+        existing KnowledgeGraph, synchronizes the canonical AttackTree, and
+        runs deterministic objective/access credit. It does not select, claim,
+        dispatch, or create any parallel state authority.
+        """
+        mirrored = self._mirror_verification_outcomes()
+        bridge = {"skipped": True}
+        if getattr(self._ctx, "inventory", None) is not None and self._graph is not None:
+            bridge = sync_inventory_into_graph(self._ctx.inventory, self._graph)
+        synced = 0
+        if self._attack_tree is not None:
+            before = len(self._attack_tree.confirmed_chain())
+            self._attack_tree.sync(graph=self._graph,
+                                   findings=self._ctx.findings.all())
+            synced = max(0, len(self._attack_tree.confirmed_chain()) - before)
+        from .credit import credit_confirmed_findings
+        credited = credit_confirmed_findings(self._ctx)
+        result = {"hypotheses_mirrored": mirrored, "inventory_bridge": bridge,
+                  "new_confirmed_nodes": synced, "credits": credited}
+        self._ctx.audit.record("mission.reconcile", **{
+            "hypotheses_mirrored": mirrored,
+            "new_confirmed_nodes": synced,
+            "credits": len(credited)})
+        return result
+
+    def mission_access_state(self) -> dict:
+        """Return the current KillChain-directed ACCESS opportunity, if any."""
+        access = getattr(self._ctx, "access", None)
+        killchain = getattr(self._ctx, "killchain", None)
+        if access is None or killchain is None:
+            return {}
+        recommendations = [stage for stage in killchain.recommend(
+            access, getattr(self._ctx, "objective", None))
+            if stage in _ACCESS_STAGES]
+        if not recommendations:
+            return {}
+        holdings = sorted(f"{node.kind}:{node.key}" for node in access.held())
+        return {"recommendations": recommendations,
+                "achieved": sorted(killchain.achieved()),
+                "holdings": holdings}
+
+    def mission_logic_required(self) -> bool:
+        """Use the classic workflow-shape detector as the LOGIC task gate."""
+        return _looks_workflow_shaped(self._graph)
+
+    def mission_reflect_after_round(self, objective: str, round_no: int) -> None:
+        """Run the existing strategist once at a mission round boundary."""
+        if not getattr(self._eng, "enable_reflection", True):
+            self._round_claims = []
+            return
+        try:
+            self._reflect_on_round(objective, round_no)
+        except Exception as exc:
+            self._ctx.audit.record("orchestrator.reflection_error",
+                                   round=round_no + 1, error=str(exc))
+
+    def mission_objective_achieved(self) -> bool | None:
+        """Return the structured objective result, or None when no criteria exist."""
+        objective = getattr(self._ctx, "objective", None)
+        if objective is None:
+            return None
+        return bool(objective.achieved)
+
     def _reflect_on_round(self, objective: str, round_no: int) -> None:
         """One strategist call per completed round; folds the round's evidence into
         the cross-round strategy state (Phase B5, redteam/strategy.py), lets the
