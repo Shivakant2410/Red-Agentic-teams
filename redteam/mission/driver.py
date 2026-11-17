@@ -283,6 +283,13 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
             scheduler.sweep(now=clock())
             ready = scheduler.ready_tasks()
             if not ready:
+                blocked_access = [t for t in commander.tasks.values()
+                                  if t.role == "access" and t.status == "pending"]
+                if blocked_access and access_gate is not None:
+                    gate_reason = access_gate(blocked_access[0].view())
+                    if gate_reason:
+                        stop_reason = "access_prerequisite_unmet"
+                        break
                 active = [t for t in commander.tasks.values()
                           if t.status in ("claimed", "running", "pending",
                                           "expired", "blocked_duplicate")]
