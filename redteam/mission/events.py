@@ -38,6 +38,8 @@ EVENT_TASK_EVIDENCE = "TASK_EVIDENCE"
 
 EVENT_TREE_RELEASED = "TREE_RELEASED"                 # tree effect, journaled here
 EVENT_AGENT_REGISTERED = "AGENT_REGISTERED"
+EVENT_MISSION_SYNTHESIS = "MISSION_SYNTHESIS"         # one adaptive planning round
+EVENT_MISSION_STOPPED = "MISSION_STOPPED"             # why the loop ended (WS5)
 
 # -- event construction -----------------------------------------------------------
 

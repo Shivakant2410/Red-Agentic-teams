@@ -194,26 +194,57 @@ def _canonical_key_match(candidate: str, node_keys: list[str]) -> str | None:
 
 
 def _build_attack_paths(run_dir: Path) -> list[dict]:
+    """Dashboard projection: the attack-path join over the PERSISTED artifacts.
+    The join itself lives in join_attack_paths() — the planner computes the SAME
+    projection read-time over the live authorities (planner.authority_projection),
+    so both consumers share one join and one record shape."""
+    kg = _read_json(run_dir / "graph.json", {}) or {}
+    tree_nodes = [n for n in _read_json(run_dir / "attack_tree.json", []) or []
+                  if isinstance(n, dict) and n.get("technique")]
+    findings_raw = [f for f in _read_json(run_dir / "findings.json", []) or []
+                    if isinstance(f, dict) and f.get("id")]
+    access_nodes = []
+    for n in (_read_json(run_dir / "access.json", {}) or {}).get("nodes", []):
+        if not isinstance(n, dict):
+            continue
+        if not n.get("id") and n.get("kind") and n.get("key") is not None:
+            n = dict(n, id=f"{n.get('kind')}:{n.get('key')}")
+        if n.get("id"):
+            access_nodes.append(n)
+    objective_raw = _read_json(run_dir / "objective.json", {}) or {}
+    criteria = [c for c in (objective_raw.get("criteria") or []) if isinstance(c, dict)]
+    inv = _read_json(run_dir / "inventory.json", {}) or {}
+    return join_attack_paths(kg_nodes=kg.get("nodes", []) or [],
+                             kg_edges=kg.get("edges", []) or [],
+                             tree_nodes=tree_nodes, findings=findings_raw,
+                             access_nodes=access_nodes, criteria=criteria,
+                             inv_hosts=inv.get("hosts", {}) or {})
+
+
+def join_attack_paths(*, kg_nodes, kg_edges, tree_nodes, findings,
+                      access_nodes, criteria, inv_hosts) -> list[dict]:
     """One attack-path record per endpoint that actually participates in a
-    chain (has a tree technique, a finding, or a holding attached). Joins:
+    chain (has a tree technique, a finding, or a holding attached). The PURE
+    join behind the Phase E2 projection — both the dashboard (persisted
+    artifacts) and the planner (live authorities, read-time) feed it the same
+    normalized rows:
 
       AssetInventory host/service -> KG endpoint -> AttackTree technique
         -> FindingStore finding (+ verification + retest state)
         -> AccessGraph holding (held or revoked, with its finding reference)
         -> Objective criterion (target match with the holding)
     """
-    kg = _read_json(run_dir / "graph.json", {}) or {}
     endpoints: dict[str, dict] = {}
     host_of_service: dict[str, str] = {}
     service_of_endpoint: dict[str, str] = {}
-    for n in kg.get("nodes", []) or []:
+    for n in kg_nodes or []:
         if not isinstance(n, dict):
             continue
         nid = n.get("id") or f"{n.get('kind')}:{n.get('key')}"
         kind = str(n.get("kind", ""))
         if kind in ("host", "service", "domain", "endpoint"):
             endpoints[nid] = n
-    for e in kg.get("edges", []) or []:
+    for e in kg_edges or []:
         try:
             src, rel, dst = str(e[0]), str(e[1]), str(e[2])
         except (TypeError, ValueError, IndexError):
@@ -223,44 +254,17 @@ def _build_attack_paths(run_dir: Path) -> list[dict]:
         elif src.startswith("service:") and dst.startswith("endpoint:"):
             service_of_endpoint[dst] = src
 
-    # attack tree rows (read-only; never created here)
-    tree_nodes = [n for n in _read_json(run_dir / "attack_tree.json", []) or []
-                  if isinstance(n, dict) and n.get("technique")]
-    tree_targets = sorted({str(n.get("target") or "") for n in tree_nodes})
-
-    # findings with their full verification/remediation state
-    findings_raw = [f for f in _read_json(run_dir / "findings.json", []) or []
-                    if isinstance(f, dict) and f.get("id")]
-
-    # access nodes — kept ALL (held and revoked): a revoked holding is history,
-    # rendered with status, never as current
-    access_nodes = []
-    for n in (_read_json(run_dir / "access.json", {}) or {}).get("nodes", []):
-        if not isinstance(n, dict):
-            continue
-        if not n.get("id") and n.get("kind") and n.get("key") is not None:
-            n = dict(n, id=f"{n.get('kind')}:{n.get('key')}")
-        if n.get("id"):
-            access_nodes.append(n)
     holds_by_finding: dict[str, list[dict]] = {}
-    for n in access_nodes:
+    for n in access_nodes or []:
         fid = (n.get("attrs") or {}).get("finding_id") if isinstance(n.get("attrs"), dict) else None
         if fid:
             holds_by_finding.setdefault(str(fid), []).append(n)
-
-    # objective criteria (post-run persistence; join via target match on holdings)
-    objective_raw = _read_json(run_dir / "objective.json", {}) or {}
-    criteria = [c for c in (objective_raw.get("criteria") or []) if isinstance(c, dict)]
-
-    # inventory (canonical host join; only what the records actually contain)
-    inv = _read_json(run_dir / "inventory.json", {}) or {}
-    inv_hosts = inv.get("hosts", {}) or {}
 
     endpoint_keys = sorted(str(n.get("key") or "") for n in endpoints.values()
                            if str(n.get("kind")) == "endpoint")
     paths: list[dict] = []
     unmatched_findings: list[dict] = []
-    for f in findings_raw:
+    for f in findings or []:
         target = str(f.get("target") or "")
         matched = _canonical_key_match(target, endpoint_keys)
         if matched is None:
@@ -277,7 +281,7 @@ def _build_attack_paths(run_dir: Path) -> list[dict]:
         last_retest = retest_hist[-1] if retest_hist else None
         path = _path_entry(endpoint_id, endpoints.get(endpoint_id, {}),
                            host_of_service, service_of_endpoint, inv_hosts)
-        techniques = [n for n in tree_nodes
+        techniques = [n for n in tree_nodes or []
                       if _canonical_key_match(str(n.get("target") or ""), [matched])
                       or str(n.get("target") or "") == matched]
         path["techniques"] = [{"id": f"{n.get('technique')}@{n.get('target')}",
@@ -303,12 +307,12 @@ def _build_attack_paths(run_dir: Path) -> list[dict]:
         path["objective"] = [{"criterion": c.get("id"), "kind": c.get("kind"),
                               "achieved": c.get("achieved", False),
                               "target": c.get("target", "")}
-                             for c in criteria if c.get("target") in hold_keys]
+                             for c in criteria or [] if c.get("target") in hold_keys]
         paths.append(path)
 
     # endpoints with techniques but no findings still form honest partial paths
     path_endpoints = {p["endpoint"]["id"] for p in paths if p.get("endpoint")}
-    for n in tree_nodes:
+    for n in tree_nodes or []:
         matched = _canonical_key_match(str(n.get("target") or ""), endpoint_keys)
         if matched is None:
             continue

@@ -263,6 +263,13 @@ class RunOptions:
     # delegation is Phase 4). Separate from `multi_agent`, which remains the
     # classic-mode swarm toggle.
     driver: str = "classic"
+    # Phase F1 (Issue #15): the mission driver ADAPTS — each round it refreshes
+    # canonical intelligence from actual outcomes and synthesizes work from the
+    # read-time attack-path projection instead of depending on a manually
+    # prepared mission_plan.json. Static plans remain the test / replay /
+    # explicit-override mechanism: set False to reproduce the pre-F1 static
+    # loop exactly (seed tasks only, no synthesis, no stop-on-objective).
+    mission_adaptive: bool = True
 
 
 def execute_run(opts: RunOptions) -> dict:
@@ -539,6 +546,20 @@ def execute_run(opts: RunOptions) -> dict:
                                               manifest_path=out / "manifest.json")
             mission_executor = MissionSpecialistExecutor(
                 mission_orchestrator, objective=opts.objective, on_text=on_text)
+
+            def _mission_stop_check() -> str:
+                # WS5: engagement limits require stopping — the SAME budget
+                # tracker and kill file the rest of the run obeys, surfaced as
+                # an honest mission stop reason instead of a silent idle loop.
+                s = budget.status()
+                if s.get("max_seconds") and s["elapsed_s"] >= s["max_seconds"]:
+                    return "engagement time budget exhausted"
+                if s.get("max_tokens") and s["tokens"] >= s["max_tokens"]:
+                    return "engagement token budget exhausted"
+                if (out / "STOP").exists():
+                    return "STOP kill file present"
+                return ""
+
             mission_summary = run_mission_driver(
                 engagement=engagement, out_dir=out, objective=opts.objective,
                 attack_tree=attack_tree, bus=bus, opts=opts,
@@ -550,6 +571,12 @@ def execute_run(opts: RunOptions) -> dict:
                 # existing AccessGraph/KillChain evidence) — a prerequisite-
                 # less ACCESS task stays PENDING, never claimed or dispatched.
                 access_gate=mission_orchestrator.access_precondition_reason,
+                # Phase F1 adaptive loop: the run's shared authorities for
+                # read-time planning + the objective/budget stop contract.
+                graph=graph, findings=findings, access=access,
+                objective_model=engagement.objective,
+                stop_check=_mission_stop_check,
+                adaptive=opts.mission_adaptive,
                 say=say)
             # C4: a CONFIRMED finding completes its tree node through the same
             # idempotent sync() the orchestrator's verify passes use.

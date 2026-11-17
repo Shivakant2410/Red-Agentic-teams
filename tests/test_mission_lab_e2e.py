@@ -359,6 +359,12 @@ llm: {{}}
         engagement_path=str(tmp_path / "engagement.yaml"),
         objective="find injection flaws in the local lab",
         out_dir=tmp_path, driver="mission", quiet=True,
+        # Phase F1 compat witness: this test pins the STATIC mission path
+        # (seed tasks only, exactly 2 dispatches). The adaptive loop is the
+        # production default, but static plans remain the explicit-override
+        # mechanism — reproduced here via the flag; the adaptive path gets
+        # its own execute_run e2e in test_adaptive_autonomy.py.
+        mission_adaptive=False,
         no_sandbox=True, no_browser=True,
         approve=lambda a, d: True, memory_dir=tmp_path / "memory"))
 

@@ -134,6 +134,15 @@ class MissionScheduler:
                 return {"dispatched": False, "outcome": "not_claimable",
                         "task_id": task_id, "lease_token": 0,
                         "hypothesis_id": "", "result": ""}
+            # -- claim gate (C3): the allowance is charged at claim time, so
+            #    the check is re-run HERE, against the spend as of THIS claim —
+            #    the readiness filter saw the round's empty ledger, but earlier
+            #    claims in the same round may have spent it. A refused claim
+            #    stays PENDING (the round boundary reset re-opens the gate).
+            if not self._opsec_affordable(task):
+                return {"dispatched": False, "outcome": "opsec_budget",
+                        "task_id": task_id, "lease_token": 0,
+                        "hypothesis_id": "", "result": ""}
             agent = agent_id or task.role
             token = int(task.lease_token) + 1          # mint the next generation
             deadline = (self._clock() +
@@ -141,6 +150,15 @@ class MissionScheduler:
             # -- step 1: reserve (journaled CAS) --
             self.commander.reserve_task(task_id, actor=agent, lease_token=token,
                                         lease_expires_at=deadline)
+            # -- claim-time OPSEC charge (C3): the reservation spends the
+            #    task's allowance against THIS round's budget. The readiness
+            #    check (_opsec_affordable) gated which tasks became ready;
+            #    this charge is what makes that gate real — without it the
+            #    round budget never constrained anything (found by the Phase
+            #    F1 adaptive tests: a 2.0 round budget dispatched every task).
+            #    No refund on abort: the reservation WAS made and the round
+            #    boundary (sweep) resets the round spend.
+            self._opsec_spent += float(task.opsec_allowance)
             # -- steps 2-4: any failure rolls the reservation back (journaled),
             #    then propagates. The failed step's own mutation never happened
             #    (journal-first); tree claims that DID apply expire via their
