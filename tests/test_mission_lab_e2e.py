@@ -140,7 +140,7 @@ class ScriptedClient:
         if m:   # the independent verifier's instruction (run_verify_pass)
             return self._tool_call("verify_finding_independently",
                                    {"finding_id": m.group(1)})
-        if re.search(r"ASSIGNED CHECK:\\s*injection\\.sqli\\b", text):
+        if re.search(r"ASSIGNED CHECK:\s*injection\.sqli\b", text):
             return self._tool_call("confirm_finding", {
                 "title": "error-based SQLi in /api/orders id",
                 "severity": "high", "target": base + "/api/orders",
