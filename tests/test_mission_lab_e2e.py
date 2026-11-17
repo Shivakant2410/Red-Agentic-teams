@@ -421,3 +421,14 @@ llm: {{}}
                            f"http://127.0.0.1:{lab_server}/api/orders").status == "todo"
     assert tree_after.node("data.exfil",
                            f"http://127.0.0.1:{lab_server}/api/orders").status == "todo"
+
+    # Journal replay reconstructs the dynamically-created tasks exactly once;
+    # a second recovery pass must not create duplicate tasks or tree releases.
+    replayed, _, recovery = recover_mission(tmp_path, tree=tree_after)
+    assert recovery["skipped"] == 0
+    assert len(replayed.tasks) == 6
+    assert all(t.status == "succeeded" for t in replayed.tasks.values())
+    node_ids = [t.node_id for t in replayed.tasks.values() if t.node_id]
+    assert len(node_ids) == 3 and len(set(node_ids)) == 3
+    _, _, recovery_again = recover_mission(tmp_path, tree=tree_after)
+    assert recovery_again["reconcile_actions"] == []
