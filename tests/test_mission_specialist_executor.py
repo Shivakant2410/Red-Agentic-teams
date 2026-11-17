@@ -904,6 +904,16 @@ def test_default_mission_generates_frontier_task_and_verifies_automatically(tmp_
     assert tree.node("injection.sqli", target).status == "todo"
 
 
+def test_mission_outcome_rejects_pending_findings_and_unmet_objective():
+    T = type("T", (), {"status": TASK_SUCCEEDED})
+    assert mission_outcome([T()], pending_verification=1) == (
+        MISSION_FAILED, "unresolved_verification")
+    assert mission_outcome([T()], objective_achieved=False) == (
+        MISSION_FAILED, "objective_not_achieved")
+    assert mission_outcome([T()], objective_achieved=True) == (
+        MISSION_SUCCEEDED, "")
+
+
 def test_mission_outcome_counts_cancelled_as_failure():
     # TASK_CANCELLED exists in the states machine (reserved vocabulary — no
     # producer writes it yet); the outcome calc is safe against it regardless:
