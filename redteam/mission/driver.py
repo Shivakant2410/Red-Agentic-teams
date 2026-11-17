@@ -77,21 +77,26 @@ def load_plan(out_dir: Path) -> list[dict]:
     return tasks
 
 
-def mission_outcome(tasks) -> tuple[str, str]:
-    """(mission_status, reason) from the tasks' terminal states — the honest
-    endgame calc. Success requires EVERY task to have reached the intended
-    successful terminal outcome (TASK_SUCCEEDED): failed / cancelled / expired
-    / exhausted ends — and tasks that never became dispatchable — make the
-    mission FAILED. "Everything reached A terminal state" is not "everything
-    succeeded": with real specialists on the production path, an all-failed
-    mission must never read MISSION_SUCCEEDED.
-    (TASK_CANCELLED exists in the states machine as reserved vocabulary; no
-    producer writes it yet — the calc is safe against it regardless.)"""
+def mission_outcome(tasks, *, objective_achieved=None,
+                   pending_verification: int = 0,
+                   stop_reason: str = "") -> tuple[str, str]:
+    """Return mission lifecycle status without conflating execution and impact.
+
+    A structured objective is successful only when Objective.achieved is true.
+    Without structured criteria, a mission is execution-complete only when all
+    tasks succeeded AND no finding remains pending independent verification.
+    """
     tasks = list(tasks)
+    if objective_achieved is True:
+        return MISSION_SUCCEEDED, ""
+    if objective_achieved is False:
+        return MISSION_FAILED, stop_reason or "objective_not_achieved"
+    if pending_verification:
+        return MISSION_FAILED, "unresolved_verification"
     if tasks and all(t.status == TASK_SUCCEEDED for t in tasks):
         return MISSION_SUCCEEDED, ""
     return (MISSION_FAILED,
-            "not every task reached a successful terminal state")
+            stop_reason or "not every task reached a successful terminal state")
 
 
 def run_mission_driver(*, engagement, out_dir, objective: str,
@@ -319,18 +324,21 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
             stop_reason = "frontier_exhausted"
 
     objective_state = (executor.objective_achieved()
-                       if dynamic and hasattr(executor, "objective_achieved") else None)
-    if dynamic and objective_state is True:
-        status, reason = MISSION_SUCCEEDED, ""
-    elif dynamic and objective_state is False:
-        status, reason = MISSION_FAILED, stop_reason or "objective_not_achieved"
-    else:
-        status, reason = mission_outcome(commander.tasks.values())
-        if dynamic and status == MISSION_FAILED and not reason:
-            reason = stop_reason or "execution_incomplete"
-    commander.set_mission_status(status, DRIVER_ACTOR, reason=reason)
+                       if hasattr(executor, "objective_achieved") else None)
     pending = (executor.pending_findings()
-               if dynamic and hasattr(executor, "pending_findings") else [])
+               if hasattr(executor, "pending_findings") else [])
+    if pending and not stop_reason:
+        stop_reason = "unresolved_verification"
+    failed_tasks = [t for t in commander.tasks.values()
+                    if t.status not in (TASK_SUCCEEDED, "pending")]
+    if failed_tasks and not stop_reason:
+        stop_reason = "execution_failure"
+    status, reason = mission_outcome(
+        commander.tasks.values(),
+        objective_achieved=objective_state,
+        pending_verification=len(pending),
+        stop_reason=stop_reason)
+    commander.set_mission_status(status, DRIVER_ACTOR, reason=reason)
     summary = {"mission_id": mission.mission_id, "run_id": mission.primary_run_id,
                "rounds": rounds, "tasks": commander.tasks_view(),
                "status": commander.mission.status,
