@@ -140,7 +140,7 @@ class ScriptedClient:
         if m:   # the independent verifier's instruction (run_verify_pass)
             return self._tool_call("verify_finding_independently",
                                    {"finding_id": m.group(1)})
-        if "ASSIGNED CHECK" in text:   # the mission exploit task
+        if "ASSIGNED CHECK" in text and "injection.sqli" in text:
             return self._tool_call("confirm_finding", {
                 "title": "error-based SQLi in /api/orders id",
                 "severity": "high", "target": base + "/api/orders",
@@ -148,6 +148,10 @@ class ScriptedClient:
                 "check_type": "http", "cwe": "CWE-89",
                 "request": {"method": "GET", "url": base + "/api/orders?id=1'"},
                 "body_regex": "SQL syntax error", "trials": 3, "need": 3})
+        if "ASSIGNED CHECK" in text:   # chained follow-up specialist task
+            return ChatResult(model="scripted-lab", finish_reason="stop", usage={},
+                              message={"role": "assistant",
+                                       "content": "follow-on path attempted; no additional proof in this fixture"})
         if "ONE mission task" in text:     # the mission recon task
             return self._tool_call("http_probe", {"url": base + "/api/orders?id=1"})
         return ChatResult(model="scripted-lab", finish_reason="stop", usage={},
@@ -347,13 +351,20 @@ sandbox:
 llm: {{}}
 """
     (tmp_path / "engagement.yaml").write_text(engagement_yaml, encoding="utf-8")
-    (tmp_path / "mission_plan.json").write_text(json.dumps({"tasks": [
-        {"title": "map the lab surface", "role": "recon",
-         "target": "127.0.0.1", "max_steps": 6},
-        {"title": "prove the orders injection", "role": "exploit",
-         "technique": "injection.sqli",
-         "target": f"http://127.0.0.1:{lab_server}/api/orders", "max_steps": 8},
-    ]}), encoding="utf-8")
+    # No mission_plan.json: deterministic recon seeds exactly one authorized
+    # entry technique. The mission driver must generate the exploit task from
+    # the live tree, then discover the chained follow-ups only after VERIFY.
+    from redteam import recon as recon_module
+
+    def seeded_recon(engagement, graph, attack_tree, audit=None, source_dir=None):
+        attack_tree.seed_endpoint(f"http://127.0.0.1:{lab_server}/api/orders")
+        return {"endpoints_discovered": 1, "static_routes_found": 0}
+
+    def seed_sqli_only(self, target, bucket=""):
+        self._add("injection.sqli", target, bucket=bucket)
+
+    monkeypatch.setattr(recon_module, "run_deterministic_recon", seeded_recon)
+    monkeypatch.setattr(AttackTree, "seed_endpoint", seed_sqli_only)
 
     summary = execute_run(RunOptions(
         engagement_path=str(tmp_path / "engagement.yaml"),
@@ -367,37 +378,47 @@ llm: {{}}
     assert summary["mission_executor"] == "MissionSpecialistExecutor"
     # The explicit plan omits VERIFY. Task execution completed, but the
     # mission must not report success while its finding remains pending.
-    assert summary["mission_status"] == "failed"
-    assert summary["mission_stop_reason"] == "unresolved_verification"
+    assert summary["mission_status"] == "succeeded"
+    assert summary["mission_stop_reason"] == "frontier_exhausted"
     assert summary["mission_execution_complete"] is True
-    assert summary["mission_pending_verification"] == 1
+    assert summary["mission_pending_verification"] == 0
+    assert summary["mission_objective_achieved"] is None
     assert summary["status"] == "completed"
-    # the run-level summary reflects the REAL findings state, not zeros
+    # The real finding was independently confirmed before chained work ran.
     assert summary["findings"] == 1
-    assert summary["confirmed"] == 0        # this plan has no verify task:
-    pending = json.loads((tmp_path / "findings.json").read_text())
-    assert len(pending) == 1
-    assert pending[0]["confidence"] == "pending_verification"
+    assert summary["confirmed"] == 1
+    findings = json.loads((tmp_path / "findings.json").read_text())
+    assert len(findings) == 1
+    assert findings[0]["confidence"] == "confirmed"
+    assert not (tmp_path / "mission_plan.json").exists()
     # shared finalization ran (Phase 2 skipped it): reports + audit chain
     report = Path(summary["report_path"])
     assert report.exists() and report.stat().st_size > 0
     assert Path(summary["html_path"]).exists()
     assert summary["audit_intact"] is True
     # the exploit task's record carries the real evidence ref
-    exploit = next(t for t in summary["tasks"] if t["role"] == "exploit")
+    exploit = next(t for t in summary["tasks"]
+                   if t["role"] == "exploit" and t["technique"] == "injection.sqli")
     assert exploit["status"] == "succeeded"
     assert len(exploit["evidence"]) == 1
     assert exploit["evidence"][0]["confidence"] == "pending_verification"
+    assert {t["technique"] for t in summary["tasks"] if t["role"] == "exploit"} == {
+        "injection.sqli", "auth.bypass", "data.exfil"}
+    assert {t["role"] for t in summary["tasks"]} == {"recon", "exploit", "verify"}
     # coordination artifacts persisted
     assert (tmp_path / "mission.json").exists()
     assert (tmp_path / "mission_journal.jsonl").exists()
     journal = EventJournal("lab-e2e", path=tmp_path / "mission_journal.jsonl")
     types = [e["type"] for e in journal.read_all()]
-    assert types.count("TASK_DISPATCHED") == 2
+    assert types.count("TASK_DISPATCHED") == 5
     # C4 chain completed: the CONFIRMED... pending finding's node is claimed and
     # held (no verify task in this plan — the node must NOT be completed by
     # task success alone)
     tree_after = AttackTree(tmp_path / "attack_tree.json")
     node = tree_after.node("injection.sqli",
                            f"http://127.0.0.1:{lab_server}/api/orders")
-    assert node.owner == "exploit" or node.status == "in_progress"
+    assert node.status == "completed"
+    assert tree_after.node("auth.bypass",
+                           f"http://127.0.0.1:{lab_server}/api/orders").status == "todo"
+    assert tree_after.node("data.exfil",
+                           f"http://127.0.0.1:{lab_server}/api/orders").status == "todo"
