@@ -1,0 +1,23 @@
+[
+  {
+    "technique": "auth.test",
+    "target": "https://target.test/",
+    "status": "completed",
+    "findings": "session stored",
+    "bucket": "static"
+  },
+  {
+    "technique": "access.idor",
+    "target": "https://target.test/api/users/7",
+    "status": "in_progress",
+    "findings": "",
+    "bucket": "rest"
+  },
+  {
+    "technique": "injection.sqli",
+    "target": "https://target.test/search",
+    "status": "todo",
+    "findings": "",
+    "bucket": "form"
+  }
+]
