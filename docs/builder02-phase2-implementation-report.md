@@ -322,7 +322,17 @@ green.
 runs backing them — `.github/workflows/ci.yml` now runs the full suite on
 every push and PR (setup-python 3.12, `pip install -e ".[dev]"`,
 `python -m pytest -q`; no LLM keys, no external targets), so this and future
-heads carry verifiable check runs.
+heads carry verifiable check runs. CI's first run immediately earned its keep
+and went red for the right reason: `fastapi` (and `pydantic`/`uvicorn`, the
+dashboard/API server's stack, imported through `fastapi.testclient`) were
+undeclared in `pyproject.toml` — the sandbox environment had them installed
+out-of-band, which is exactly the class of drift CI exists to catch. Fixed by
+declaring the server stack as hard dependencies plus `httpx` in `dev`
+(fastapi.testclient); a clean-venv install then surfaced two more real gaps —
+`cryptography` (the proxy's TLS-interception dependency, contract-tested) and
+the Playwright chromium build the SPA-walk tests drive (the workflow now runs
+`playwright install --with-deps chromium`) — after which the clean-venv suite
+passes in full.
 
 **Results from the final commit (executed on this exact tree):** focused
 (retest / access invalidation / objective / orchestrator) **53 passed**;
