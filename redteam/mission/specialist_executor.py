@@ -71,6 +71,15 @@ class MissionSpecialistExecutor:
     def objective_achieved(self) -> bool | None:
         return self._orchestrator.mission_objective_achieved()
 
+    def access_state(self) -> dict:
+        return self._orchestrator.mission_access_state()
+
+    def logic_required(self) -> bool:
+        return self._orchestrator.mission_logic_required()
+
+    def reflect_after_round(self, objective: str, round_no: int) -> None:
+        self._orchestrator.mission_reflect_after_round(objective, round_no)
+
     def budget_available(self) -> bool:
         budget = getattr(self._orchestrator, "_budget", None)
         if budget is None:
