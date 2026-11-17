@@ -29,6 +29,11 @@ from collections import deque
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+# Phase E2: hold-lifecycle vocabulary lives in states.py (the one lifecycle
+# registry). REVOKED is a currency state, not deletion — the historical hold,
+# its evidence and its revocation record all stay on file.
+from .states import HOLD_REVOKED
+
 PRINCIPAL, CREDENTIAL, HOST, RESOURCE, PRIVILEGE = (
     "principal", "credential", "host", "resource", "privilege")
 KINDS = (PRINCIPAL, CREDENTIAL, HOST, RESOURCE, PRIVILEGE)
@@ -37,9 +42,20 @@ KINDS = (PRINCIPAL, CREDENTIAL, HOST, RESOURCE, PRIVILEGE)
 HOLDS, AUTHENTICATES_AS, CAN_ACCESS = "holds", "authenticates_as", "can_access"
 ESCALATES_TO, PIVOTS_TO, REVEALS = "escalates_to", "pivots_to", "reveals"
 
+# Phase E2: bounded provenance strings (same discipline as the swarm — shared
+# text is stored, never executed, never allowed to bloat the file).
+_MAX_REASON = 200
+_MAX_RAW = 300
+_INVALIDATION_HISTORY_CAP = 32
+
 
 def _now() -> str:
     return _dt.datetime.now(_dt.timezone.utc).isoformat()
+
+
+def _clip(text: str, limit: int) -> str:
+    text = str(text or "")
+    return text[:limit]
 
 
 @dataclass
@@ -51,10 +67,20 @@ class AccessNode:
     evidence: str = ""
     source: str = ""
     first_seen: str = field(default_factory=_now)
+    # Phase E2 (additive — every field defaults, so pre-E2 access.json rows
+    # load unchanged via the existing AccessNode(**row) path):
+    last_seen: str = ""           # refreshed whenever the holding is re-demonstrated
+    evidence_refs: list[dict] = field(default_factory=list)  # EvidenceRef-shaped dicts (swarm vocabulary)
+    invalidated_at: str = ""      # when the hold stopped being current (HOLD_REVOKED)
+    invalidation_reason: str = ""
 
     @property
     def id(self) -> str:
         return f"{self.kind}:{self.key}"
+
+    @property
+    def revoked(self) -> bool:
+        return self.held is False and bool(self.invalidated_at)
 
 
 class AccessGraph:
@@ -83,7 +109,7 @@ class AccessGraph:
     # -- building --------------------------------------------------------------
 
     def observe(self, kind: str, key: str, attrs: dict | None = None,
-                source: str = "") -> AccessNode:
+                source: str = "", evidence_refs: list[dict] | None = None) -> AccessNode:
         """Record that something EXISTS (not that we hold it).
 
         A node is commonly observed first (discovery) and held later (proof) — e.g. a
@@ -91,7 +117,11 @@ class AccessGraph:
         therefore upgrades on re-observation when a new one is given: without this, a bare
         `source=""`/"agent" first-touch would permanently stick, and no later proving
         mechanism could ever satisfy a REQUIRED_SOURCE gate in objective.py (this silently
-        defeated the DATA_ACCESS/HOST_ACCESS gating the first time it was exercised)."""
+        defeated the DATA_ACCESS/HOST_ACCESS gating the first time it was exercised).
+
+        Phase E2: `evidence_refs` (optional, EvidenceRef-shaped dicts from the swarm
+        vocabulary) appends provenance for this observation; existing callers are
+        unaffected."""
         with self._lock:
             node = AccessNode(kind=kind, key=key, attrs=dict(attrs or {}), source=source)
             existing = self._nodes.get(node.id)
@@ -99,25 +129,91 @@ class AccessGraph:
                 existing.attrs.update(attrs or {})
                 if source:
                     existing.source = source
+                if evidence_refs:
+                    existing.evidence_refs.extend(evidence_refs)
                 return existing
+            if evidence_refs:
+                node.evidence_refs.extend(evidence_refs)
             self._nodes[node.id] = node
             self._flush()
             return node
 
     def hold(self, kind: str, key: str, evidence: str = "", attrs: dict | None = None,
-             source: str = "") -> AccessNode:
-        """Record that we DEMONSTRABLY hold this (a session, a credential, a foothold)."""
+             source: str = "", evidence_refs: list[dict] | None = None) -> AccessNode:
+        """Record that we DEMONSTRABLY hold this (a session, a credential, a foothold).
+
+        Phase E2: re-demonstration refreshes last_seen; re-holding a REVOKED node
+        re-activates it (states.py access_hold: revoked -> held) — which is legal
+        ONLY through this demonstration path, never through observe(). Whether the
+        (re-)hold can satisfy an objective criterion is still decided solely by the
+        objective.REQUIRED_SOURCE gate on `source`, so an agent's unsupported
+        assertion remains unable to credit anything, resurrected or not. The
+        revocation record survives the re-hold (append-only history in attrs)."""
         with self._lock:
-            node = self.observe(kind, key, attrs, source)
+            node = self.observe(kind, key, attrs, source, evidence_refs=evidence_refs)
+            if node.revoked:
+                history = list(node.attrs.get("invalidation_history") or [])
+                history.append({"invalidated_at": node.invalidated_at,
+                                "reason": node.invalidation_reason,
+                                "re_held_at": _now(),
+                                "re_hold_source": _clip(source, 80)})
+                node.attrs["invalidation_history"] = history[-_INVALIDATION_HISTORY_CAP:]
+                node.invalidated_at = ""
+                node.invalidation_reason = ""
             node.held = True
+            node.last_seen = _now()
             if evidence:
-                node.evidence = evidence
+                node.evidence = _clip(evidence, _MAX_RAW)
+            if evidence_refs:
+                node.evidence_refs.extend(evidence_refs)
             self._flush()
             return node
 
-    def link(self, src_id: str, relation: str, dst_id: str) -> None:
+    def revoke(self, kind: str, key: str, reason: str = "") -> bool:
+        """Record that a demonstrated holding is NO LONGER current (Phase E2,
+        states.py access_hold: held -> revoked). Written by the retest-fixed
+        bridge; nothing here deletes nodes or edges, and the historical evidence
+        (evidence, source, evidence_refs, when/why it was revoked) stays on file
+        — an auditor can always see that the access WAS demonstrated. Revoked
+        nodes drop out of held()/reached()/frontier(), so no downstream consumer
+        (objective crediting, kill-chain recommendation, projections) treats a
+        revoked holding as current. Returns whether a held node was revoked;
+        revoking an unknown or already-revoked node is a safe no-op."""
+        with self._lock:
+            node = self._nodes.get(f"{kind}:{key}")
+            if node is None or not node.held:
+                return False
+            node.held = False
+            node.invalidated_at = _now()
+            node.invalidation_reason = _clip(reason, _MAX_REASON)
+            history = list(node.attrs.get("invalidation_history") or [])
+            history.append({"invalidated_at": node.invalidated_at,
+                            "reason": _clip(reason, _MAX_REASON)})
+            node.attrs["invalidation_history"] = history[-_INVALIDATION_HISTORY_CAP:]
+            self._flush()
+            return True
+
+    def revoked_nodes(self) -> list[AccessNode]:
+        """Historical holdings that were demonstrated once and are no longer
+        current — the honesty view (projections and reports render these with
+        their status instead of hiding them)."""
+        with self._lock:
+            return [n for n in self._nodes.values() if n.revoked]
+
+    def link(self, src_id: str, relation: str, dst_id: str,
+             evidence_refs: list[dict] | None = None) -> None:
+        """Phase E2: `evidence_refs` (optional) records provenance for this
+        relationship as node-adjacent metadata in attrs of the source node
+        (edges stay bare tuples — see ADR-002 §Edge metadata)."""
         with self._lock:
             self._edges.add((src_id, relation, dst_id))
+            if evidence_refs:
+                src = self._nodes.get(src_id)
+                if src is not None:
+                    out = list(src.attrs.get("edge_evidence") or [])
+                    out.append({"edge": [src_id, relation, dst_id],
+                                "evidence_refs": evidence_refs})
+                    src.attrs["edge_evidence"] = out[-_INVALIDATION_HISTORY_CAP:]
             self._flush()
 
     # -- questions an adversary asks -------------------------------------------
@@ -187,6 +283,17 @@ class AccessGraph:
         for n in holdings:
             lines.append(f"  {n.kind}: {n.key}" + (f"  ({n.attrs.get('note')})" if n.attrs.get("note") else ""))
 
+        # Phase E2: previously-held access that is no longer current (retest
+        # proved the fix, credential revoked, ...). Honest surface, not history
+        # rewriting — the agent must not keep leaning on a dead foothold, and
+        # must not pretend it never existed.
+        revoked = self.revoked_nodes()
+        if revoked:
+            lines.append("[NO LONGER HELD — re-demonstrate before relying on these]")
+            for n in revoked[-6:]:
+                why = n.invalidation_reason or "invalidated"
+                lines.append(f"  x {n.kind}: {n.key}  ({why[:120]})")
+
         frontier = self.frontier()
         if frontier:
             lines.append("[REACHABLE NEXT — press these]")
@@ -213,6 +320,7 @@ class AccessGraph:
             for n in self._nodes.values():
                 by_kind[n.kind] = by_kind.get(n.kind, 0) + 1
             return {"nodes": len(self._nodes), "held": len(self.held()),
+                    "revoked": len(self.revoked_nodes()),
                     "edges": len(self._edges), "by_kind": by_kind}
 
     def _flush(self) -> None:
