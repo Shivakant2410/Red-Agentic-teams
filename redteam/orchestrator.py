@@ -1519,6 +1519,84 @@ class Orchestrator:
                    confirmed=confirmed_count, reflections=len(self._reflections))
         return summary
 
+    def mission_attack_frontier(self, limit: int = 6) -> list[dict]:
+        """Return ranked, currently claimable mission work from the canonical tree.
+
+        AttackTree remains the selector. Synthesis only enriches an already
+        selected node, and the MissionScheduler still owns the actual claim.
+        """
+        if self._attack_tree is None:
+            return []
+        from .attack_tree import TODO
+        from .synthesis import brief, synthesize
+        ideas = {}
+        try:
+            for idea in synthesize(self._ctx):
+                ideas[(idea.technique, idea.target)] = idea
+        except Exception as exc:
+            self._ctx.audit.record("mission.synthesis.error", error=str(exc))
+        candidates = [n for n in self._attack_tree.actionable(limit=max(limit * 4, limit))
+                      if n.status == TODO]
+        selected = []
+        for node in candidates:
+            profile = profile_for(node.technique)
+            title = f"{profile.name}: {node.technique} on {node.target}"
+            idea = ideas.get((node.technique, node.target))
+            if idea is not None:
+                try:
+                    title += " — " + brief(idea, max_chars=900)
+                except Exception:
+                    pass
+            selected.append({
+                "title": title[:1800],
+                "role": "exploit",
+                "technique": node.technique,
+                "target": node.target,
+                "max_steps": int(profile.max_steps),
+            })
+            if len(selected) >= limit:
+                break
+        self._ctx.audit.record(
+            "mission.frontier.selected",
+            candidates=len(candidates),
+            selected=[f"{x['technique']}@{x['target']}" for x in selected])
+        return selected
+
+    def mission_reconcile_after_verification(self) -> dict:
+        """Apply the classic loop's reusable post-verification joins.
+
+        This mirrors verifier outcomes, bridges observed inventory into the
+        existing KnowledgeGraph, synchronizes the canonical AttackTree, and
+        runs deterministic objective/access credit. It does not select, claim,
+        dispatch, or create any parallel state authority.
+        """
+        mirrored = self._mirror_verification_outcomes()
+        bridge = {"skipped": True}
+        if getattr(self._ctx, "inventory", None) is not None and self._graph is not None:
+            bridge = sync_inventory_into_graph(self._ctx.inventory, self._graph)
+        synced = 0
+        if self._attack_tree is not None:
+            before = len(self._attack_tree.confirmed_chain())
+            self._attack_tree.sync(graph=self._graph,
+                                   findings=self._ctx.findings.all())
+            synced = max(0, len(self._attack_tree.confirmed_chain()) - before)
+        from .credit import credit_confirmed_findings
+        credited = credit_confirmed_findings(self._ctx)
+        result = {"hypotheses_mirrored": mirrored, "inventory_bridge": bridge,
+                  "new_confirmed_nodes": synced, "credits": credited}
+        self._ctx.audit.record("mission.reconcile", **{
+            "hypotheses_mirrored": mirrored,
+            "new_confirmed_nodes": synced,
+            "credits": len(credited)})
+        return result
+
+    def mission_objective_achieved(self) -> bool | None:
+        """Return the structured objective result, or None when no criteria exist."""
+        objective = getattr(self._ctx, "objective", None)
+        if objective is None:
+            return None
+        return bool(objective.achieved)
+
     def _reflect_on_round(self, objective: str, round_no: int) -> None:
         """One strategist call per completed round; folds the round's evidence into
         the cross-round strategy state (Phase B5, redteam/strategy.py), lets the
