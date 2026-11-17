@@ -904,6 +904,69 @@ def test_default_mission_generates_frontier_task_and_verifies_automatically(tmp_
     assert tree.node("injection.sqli", target).status == "todo"
 
 
+def test_mission_uses_existing_access_and_logic_gates(tmp_path):
+    from redteam.knowledge import ENDPOINT
+
+    env = _Env(tmp_path, with_access=True)
+    env.ctx.access.hold("host", "api.acme.example", evidence="demonstrated reachability")
+    env.ctx.killchain.mark(INITIAL_ACCESS, ACHIEVED)
+    state = env.orch.mission_access_state()
+    assert state["recommendations"]
+    assert state["holdings"] == ["host:api.acme.example"]
+
+    env.graph.observe(ENDPOINT, "https://api.acme.example/cart")
+    assert env.orch.mission_logic_required()
+
+
+def test_dynamic_driver_schedules_access_then_workflow_logic(tmp_path):
+    from redteam.mission.executor import ExecutionResult
+
+    mission_dir, clock = H.make_mission_dir(tmp_path)
+
+    class AccessLogicExecutor:
+        def __init__(self):
+            self.calls = []
+            self.reflections = 0
+
+        def run(self, task_view):
+            self.calls.append(task_view["role"])
+            return ExecutionResult(status=EXEC_SUCCEEDED, result="slice complete")
+
+        def pending_findings(self):
+            return []
+
+        def attack_frontier(self, limit=6):
+            return []
+
+        def access_state(self):
+            return {"recommendations": ["discovery"],
+                    "achieved": ["initial_access"],
+                    "holdings": ["host:api.acme.example"]}
+
+        def logic_required(self):
+            return True
+
+        def reflect_after_round(self, objective, round_no):
+            self.reflections += 1
+
+        def objective_achieved(self):
+            return None
+
+        def budget_available(self):
+            return True
+
+    executor = AccessLogicExecutor()
+    summary = run_mission_driver(
+        engagement=_engagement(), out_dir=mission_dir, objective="map and test workflow",
+        executor=executor, clock=clock, opts=_driver_opts(), say=lambda t: None)
+
+    assert executor.calls == ["recon", "access", "logic"]
+    assert executor.reflections == 2
+    assert {t["role"] for t in summary["tasks"]} == {"recon", "access", "logic"}
+    assert summary["stop_reason"] == "frontier_exhausted"
+    assert summary["execution_complete"] is True
+
+
 def test_mission_attempt_updates_the_scheduler_claimed_hypothesis(tmp_path):
     from redteam.attack_tree import TECHNIQUES
     from redteam.swarm import AWAITING_VERIFICATION, weakness_for_technique
