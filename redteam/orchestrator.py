@@ -56,8 +56,8 @@ from .attack_tree import FAILED, TECHNIQUES, TODO, technique_cost
 from .sandbox.detection_belief import BeliefFilter
 from .config import Engagement
 from .events import coerce_payload
-from .killchain import (CREDENTIAL_ACCESS, DISCOVERY, LATERAL_MOVEMENT,
-                        PRIVILEGE_ESCALATION)
+from .killchain import (ACHIEVED, CREDENTIAL_ACCESS, DISCOVERY, INITIAL_ACCESS,
+                        LATERAL_MOVEMENT, PRIVILEGE_ESCALATION)
 from .hands import (OPTIONAL_TOOLS, hands_briefing, skills_briefing)
 from .llm.openrouter import OpenRouterClient
 from .llm.routing import PARSE, PLAN
@@ -766,6 +766,19 @@ class Orchestrator:
         if role == "verify":
             return self._execute_verify_task(task_view, on_text=on_text,
                                              objective=objective)
+        if role == "access":
+            # Correction gate: the ACCESS specialist's method assumes a
+            # demonstrated foothold to press. Mission-plan dependencies do not
+            # PROVE access was obtained — only the existing AccessGraph /
+            # KillChain evidence does. Without it no specialist is constructed
+            # or run; the scheduler's readiness gate keeps the task PENDING
+            # (the same not-ready semantics dependencies use) until a foothold
+            # is demonstrated.
+            reason = self.access_precondition_reason(task_view)
+            if reason:
+                raise ValueError(
+                    f"access prerequisite not met — task stays blocked, no "
+                    f"specialist constructed: {reason}")
         profile, step_budget = self._profile_for_task(task_view)
         instruction = self._task_instruction(task_view, profile, step_budget,
                                              objective=objective)
@@ -852,6 +865,45 @@ class Orchestrator:
         return (f"independent verification pass complete: {len(pending)} pending "
                 f"finding(s) re-checked, {still_pending} still pending "
                 f"(verdicts recorded by the existing pipeline)")
+
+    # -- ACCESS prerequisite gate (foothold required before pressing) -----------
+    # The check reads ONLY the existing authorities: the shared AccessGraph
+    # (held nodes are "demonstrated, not assumed" — the same evidence the
+    # classic ACCESS loop consumes via killchain.recommend()) or the
+    # KillChain's INITIAL_ACCESS stage. No new foothold store, graph, state
+    # machine, or authority.
+
+    def access_precondition_reason(self, task_view: dict) -> str:
+        """Why an ACCESS task must NOT dispatch yet ("" = proceed).
+
+        Scoped to the access role — every other role proceeds unchanged. A
+        valid, demonstrated, ACTIVE foothold — an AccessGraph node with
+        held=True, or a KillChain INITIAL_ACCESS stage marked achieved —
+        satisfies the gate. A revoked, invalidated (held=False), or
+        never-proven foothold never does. Wired by run.py into the mission
+        scheduler's readiness gate, which keeps the task PENDING (existing
+        lifecycle semantics) until satisfied; execute_task also enforces it
+        directly so the specialist can never be constructed without a
+        foothold.
+        """
+        if str(task_view.get("role", "") or "") != "access":
+            return ""                     # the gate is access-only
+        if self._active_foothold():
+            return ""
+        access = getattr(self._ctx, "access", None)
+        killchain = getattr(self._ctx, "killchain", None)
+        if access is None and killchain is None:
+            return "no access evidence authorities on the shared context"
+        return ("no demonstrated foothold: the shared AccessGraph holds no "
+                "active node and KillChain INITIAL_ACCESS is not achieved")
+
+    def _active_foothold(self) -> bool:
+        access = getattr(self._ctx, "access", None)
+        if access is not None and access.held():
+            return True
+        killchain = getattr(self._ctx, "killchain", None)
+        return (killchain is not None
+                and killchain.status(INITIAL_ACCESS) == ACHIEVED)
 
     # -- telemetry --------------------------------------------------------------
 

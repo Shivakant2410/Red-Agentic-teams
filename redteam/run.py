@@ -545,7 +545,12 @@ def execute_run(opts: RunOptions) -> dict:
                 executor=mission_executor,
                 # Duplicate suppression rides the orchestrator's own
                 # ResearchBundle — the scheduler's claim step 3, one registry.
-                hypotheses=mission_orchestrator._research, say=say)
+                hypotheses=mission_orchestrator._research,
+                # ACCESS prerequisite: the orchestrator's foothold gate (the
+                # existing AccessGraph/KillChain evidence) — a prerequisite-
+                # less ACCESS task stays PENDING, never claimed or dispatched.
+                access_gate=mission_orchestrator.access_precondition_reason,
+                say=say)
             # C4: a CONFIRMED finding completes its tree node through the same
             # idempotent sync() the orchestrator's verify passes use.
             attack_tree.sync(graph=graph, findings=findings.all())

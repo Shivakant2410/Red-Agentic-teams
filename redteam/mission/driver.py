@@ -80,6 +80,7 @@ def load_plan(out_dir: Path) -> list[dict]:
 def run_mission_driver(*, engagement, out_dir, objective: str,
                        attack_tree=None, bus=None, opts=None,
                        executor=None, hypotheses=None, clock=None,
+                       access_gate=None,
                        say=lambda text: None) -> dict:
     """Execute the mission coordination loop.
 
@@ -92,6 +93,11 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
     `hypotheses`: optional duplicate-suppression authority (duck-typed
     claim_or_register carrier — the orchestrator's ResearchBundle). Claim
     step 3 of the trio stays with the scheduler; the executor never claims.
+
+    `access_gate`: optional readiness hook (duck-typed task_view -> "" |
+    reason) consulted in ready_tasks; run.py wires the orchestrator's ACCESS
+    foothold gate, so a prerequisite-less ACCESS task stays PENDING — the
+    existing not-ready semantics — instead of being claimed and dispatched.
     """
     clock = _injectable_clock(clock)
     out_dir = Path(out_dir)
@@ -125,7 +131,8 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
         commander, tree=attack_tree, executor=executor, hypotheses=hypotheses,
         clock=clock,
         round_noise_budget=roe_caps["round_noise_budget"],
-        lease_seconds=TASK_LEASE_SECONDS)
+        lease_seconds=TASK_LEASE_SECONDS,
+        prerequisite=access_gate)
 
     commander.start_mission(DRIVER_ACTOR)
 

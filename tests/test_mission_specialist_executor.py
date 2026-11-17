@@ -19,6 +19,7 @@ construction is stubbed at _make_specialist.
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import threading
 
 import pytest
@@ -27,6 +28,7 @@ from redteam.attack_tree import AttackTree
 from redteam.config import Engagement, LlmConfig, SandboxConfig
 from redteam.findings import Finding, FindingStore
 from redteam.knowledge import KnowledgeGraph
+from redteam.killchain import ACHIEVED, INITIAL_ACCESS
 from redteam.llm.openrouter import ChatResult
 from redteam.mission.executor import (EXEC_FAILED, EXEC_SUCCEEDED,
                                       ExecutionResult)
@@ -37,7 +39,7 @@ from redteam.ratelimit import RateLimiter
 from redteam.runtime import BudgetTracker
 from redteam.scope import ScopeGuard
 from redteam.specialists import A03, profile_for
-from redteam.states import TASK_FAILED, TASK_SUCCEEDED
+from redteam.states import TASK_FAILED, TASK_PENDING, TASK_SUCCEEDED
 from redteam.tools import ToolContext, build_registry
 
 import mission_helpers as H
@@ -118,9 +120,17 @@ def _ctx(tmp_path, audit):
 class _Env:
     """The shared run environment ONE orchestrator is built over."""
 
-    def __init__(self, tmp_path):
+    def __init__(self, tmp_path, *, with_access=False):
         self.audit = RecordingAudit()
         self.ctx = _ctx(tmp_path, self.audit)
+        if with_access:
+            # the REAL foothold authorities on the shared context (no fakes):
+            # AccessGraph nodes are "demonstrated, not assumed"; KillChain
+            # tracks INITIAL_ACCESS. Nothing else in the env changes.
+            from redteam.access import AccessGraph
+            from redteam.killchain import KillChain
+            self.ctx.access = AccessGraph(tmp_path / "access.json")
+            self.ctx.killchain = KillChain(tmp_path / "killchain.json")
         self.graph = KnowledgeGraph(tmp_path / "g.json")
         self.tree = AttackTree(tmp_path / "attack_tree.json")
         self.budget = BudgetTracker(max_seconds=600, max_tokens=100000)
@@ -298,7 +308,10 @@ def test_unknown_exploit_technique_falls_back_to_exploit(tmp_path):
 
 
 def test_access_routes_to_access_and_logic_to_logic(tmp_path):
-    env = _Env(tmp_path)
+    env = _Env(tmp_path, with_access=True)
+    # the ACCESS routing assertion needs its prerequisite met: a demonstrated,
+    # active foothold (the correction gate now requires one before construction)
+    env.ctx.access.hold("session", "web-sess-1", evidence="demonstrated")
     captured = _spy_specialist(env, StubAgent())
     ex = MissionSpecialistExecutor(env.orch)
     ex.run(_task_view(role="access"))
@@ -544,3 +557,172 @@ def test_driver_production_path_requires_no_mock(tmp_path, capsys):
                        objective="probe", clock=clock, opts=commander_opts)
     captured = capsys.readouterr()
     assert "MOCK execution" in (captured.out + captured.err)
+
+
+# =============================================================================
+# ACCESS prerequisite gate: a demonstrated, ACTIVE foothold is required before
+# the ACCESS specialist is constructed or run. The gate reads ONLY the
+# existing AccessGraph / KillChain evidence; the mission scheduler's readiness
+# gate keeps a prerequisite-less ACCESS task PENDING (the existing not-ready
+# semantics — exactly like unsatisfied dependencies). Lifecycle untouched.
+# =============================================================================
+
+def _access_env(tmp_path):
+    """_Env with the real AccessGraph/KillChain + a construction spy."""
+    env = _Env(tmp_path, with_access=True)
+    env.executor = MissionSpecialistExecutor(
+        env.orch, objective="press the confirmed foothold toward the objective")
+    captured = {}
+    real_make = env.orch._make_specialist
+
+    def spy(profile, addon_suffix="", agent_name=None, max_steps=None):
+        captured["constructed"] = True
+        captured["profile"] = profile
+        return real_make(profile, addon_suffix, agent_name, max_steps)
+
+    env.orch._make_specialist = spy
+    return env, captured
+
+
+def _access_stack(tmp_path, env):
+    mission_dir, clock = H.make_mission_dir(tmp_path)
+    commander = H.make_commander(mission_dir, clock)
+    commander.start_mission("op")
+    scheduler = H.make_scheduler(commander, tree=None, executor=env.executor,
+                                 clock=clock,
+                                 prerequisite=env.orch.access_precondition_reason)
+    return commander, scheduler, clock
+
+
+def test_access_task_without_foothold_is_not_dispatchable(tmp_path):
+    env, captured = _access_env(tmp_path)
+    commander, scheduler, _clock = _access_stack(tmp_path, env)
+    task = commander.create_task(title="press the foothold", role="access",
+                                 actor="op")
+    # readiness gate: the task must WAIT — it stays PENDING, nothing is claimed
+    assert scheduler.ready_tasks() == []
+    assert commander.task(task.task_id).status == TASK_PENDING
+    assert captured == {}                     # no specialist was ever constructed
+    assert env.audit.events == []             # no agent turn, no task.execute
+
+
+def test_access_task_direct_dispatch_refuses_without_a_specialist(tmp_path):
+    # defense in depth: even a direct dispatch (bypassing readiness) cannot
+    # reach the specialist — execute_task refuses before construction and the
+    # existing failure path records the reason.
+    env, captured = _access_env(tmp_path)
+    commander, scheduler, _clock = _access_stack(tmp_path, env)
+    task = commander.create_task(title="press the foothold", role="access",
+                                 actor="op")
+    result = scheduler.dispatch(task.task_id)
+    assert result["outcome"] == "failed"
+    done = commander.task(task.task_id)
+    assert done.status == TASK_FAILED
+    assert "access prerequisite not met" in done.error
+    assert captured == {}                     # _make_specialist never ran
+    assert "agent.start" not in [e["event"] for e in env.audit.events]
+
+
+def test_access_task_with_demonstrated_foothold_executes(tmp_path):
+    env, captured = _access_env(tmp_path)
+    commander, scheduler, _clock = _access_stack(tmp_path, env)
+    task = commander.create_task(title="press the foothold", role="access",
+                                 actor="op")
+    # the EXISTING authority speaks: a demonstrated session on the AccessGraph
+    env.ctx.access.hold("session", "web-sess-1",
+                        evidence="verified login replay (confirm-grade)")
+    assert [t.task_id for t in scheduler.ready_tasks()] == [task.task_id]
+    result = scheduler.dispatch(task.task_id)
+    assert result["outcome"] == "succeeded"
+    assert commander.task(task.task_id).status == TASK_SUCCEEDED
+    assert captured["profile"] is ACCESS       # routing preserved
+
+
+def test_revoked_foothold_does_not_satisfy_the_gate(tmp_path):
+    env, captured = _access_env(tmp_path)
+    commander, scheduler, _clock = _access_stack(tmp_path, env)
+    task = commander.create_task(title="press the foothold", role="access",
+                                 actor="op")
+    node = env.ctx.access.hold("session", "web-sess-1", evidence="proven")
+    assert [t.task_id for t in scheduler.ready_tasks()] == [task.task_id]
+    # invalidated through the graph's OWN lifecycle field (held=False):
+    # a revoked/invalidated foothold is no longer active evidence
+    node.held = False
+    assert scheduler.ready_tasks() == []
+    assert commander.task(task.task_id).status == TASK_PENDING
+    assert captured == {}
+    # demonstrated again -> dispatchable again (the gate re-checks every round)
+    env.ctx.access.hold("session", "web-sess-1", evidence="re-proven")
+    assert [t.task_id for t in scheduler.ready_tasks()] == [task.task_id]
+
+
+def test_killchain_initial_access_achieved_satisfies_the_gate(tmp_path):
+    env, captured = _access_env(tmp_path)
+    view = _task_view(role="access")
+    assert env.orch.access_precondition_reason(view) != ""
+    # the other existing authority: KillChain INITIAL_ACCESS achieved
+    env.ctx.killchain.mark(INITIAL_ACCESS, ACHIEVED, note="first foothold proven")
+    assert env.orch.access_precondition_reason(view) == ""
+    # a non-achieved stage never substitutes (active-only evidence)
+    env2, _c2 = _access_env(tmp_path / "env2")
+    env2.ctx.killchain.mark(INITIAL_ACCESS, "in_progress", note="trying")
+    assert env2.orch.access_precondition_reason(view) != ""
+
+
+def test_non_access_tasks_are_unaffected_by_the_gate(tmp_path):
+    env, captured = _access_env(tmp_path)     # NO foothold held
+    commander, scheduler, _clock = _access_stack(tmp_path, env)
+    recon = commander.create_task(title="map", role="recon", actor="op")
+    exploit = commander.create_task(title="check", role="exploit", actor="op",
+                                    technique="auth.test",
+                                    target="https://t.test/")
+    logic = commander.create_task(title="workflow", role="logic", actor="op")
+    ready = {t.task_id: t.role for t in scheduler.ready_tasks()}
+    assert set(ready.values()) == {"recon", "exploit", "logic"}   # gate is access-only
+    assert scheduler.dispatch(recon.task_id)["outcome"] == "succeeded"
+    assert captured["profile"] is RECON
+    assert scheduler.dispatch(exploit.task_id)["outcome"] == "succeeded"
+    assert captured["profile"] is profile_for("auth.test")
+    assert scheduler.dispatch(logic.task_id)["outcome"] == "succeeded"
+    assert captured["profile"] is LOGIC
+
+
+def test_gate_allows_dispatch_once_the_foothold_appears_mid_mission(tmp_path):
+    env, captured = _access_env(tmp_path)
+    commander, scheduler, _clock = _access_stack(tmp_path, env)
+    recon = commander.create_task(title="map", role="recon", actor="op")
+    access = commander.create_task(title="press", role="access", actor="op",
+                                   dependencies=(recon.task_id,))
+    # round 1: recon dispatches; the access task stays pending BOTH because of
+    # its dependency and the (unmet) foothold gate
+    ready_roles = {t.role for t in scheduler.ready_tasks()}
+    assert ready_roles == {"recon"}
+    assert scheduler.dispatch(recon.task_id)["outcome"] == "succeeded"
+    assert scheduler.ready_tasks() == []      # dep satisfied, foothold NOT
+    # exploitation demonstrates a foothold through the existing pipeline
+    env.ctx.access.hold("session", "web-sess-1", evidence="confirmed foothold")
+    # round 2: the SAME pending task is now dispatchable — no re-creation
+    assert [t.task_id for t in scheduler.ready_tasks()] == [access.task_id]
+    assert scheduler.dispatch(access.task_id)["outcome"] == "succeeded"
+    assert commander.task(access.task_id).status == TASK_SUCCEEDED
+
+
+def test_driver_wires_the_access_gate(tmp_path):
+    from redteam.mission.driver import run_mission_driver
+    env, captured = _access_env(tmp_path)
+    (tmp_path / "mission_plan.json").write_text(json.dumps({"tasks": [
+        {"title": "press the foothold", "role": "access"},
+    ]}), encoding="utf-8")
+    commander_opts = type("O", (), {"max_steps": 40,
+                                    "round_noise_budget": 12.0})()
+    summary = run_mission_driver(
+        engagement=_engagement(), out_dir=tmp_path, objective="probe",
+        executor=MissionSpecialistExecutor(env.orch, objective="probe"),
+        clock=H.FakeClock(), opts=commander_opts, say=lambda t: None,
+        access_gate=env.orch.access_precondition_reason)
+    # honest endgame: the access work never became possible -> mission FAILED,
+    # the task stayed PENDING, and no specialist was ever invoked
+    assert summary["status"] == "failed"
+    assert summary["tasks"][0]["status"] == TASK_PENDING
+    assert captured == {}
+    assert "agent.start" not in [e["event"] for e in env.audit.events]
