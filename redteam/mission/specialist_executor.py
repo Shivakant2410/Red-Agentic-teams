@@ -57,6 +57,30 @@ class MissionSpecialistExecutor:
         self._objective = objective
         self._on_text = on_text
 
+    # -- mission autonomy adapters (read/reconcile existing authorities) ---------
+
+    def pending_findings(self) -> list:
+        return self._orchestrator.ctx.findings.pending()
+
+    def attack_frontier(self, limit: int = 6) -> list[dict]:
+        return self._orchestrator.mission_attack_frontier(limit=limit)
+
+    def reconcile_after_verification(self) -> dict:
+        return self._orchestrator.mission_reconcile_after_verification()
+
+    def objective_achieved(self) -> bool | None:
+        return self._orchestrator.mission_objective_achieved()
+
+    def budget_available(self) -> bool:
+        budget = getattr(self._orchestrator, "_budget", None)
+        if budget is None:
+            return True
+        try:
+            budget.check()
+            return True
+        except Exception:
+            return False
+
     # -- the executor contract ---------------------------------------------------
 
     def run(self, task_view: dict) -> ExecutionResult:
