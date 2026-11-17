@@ -1,15 +1,19 @@
-"""The mission driver — Phase 2's wired execution path for `RunOptions.driver ==
+"""The mission driver — the wired execution path for `RunOptions.driver ==
 "mission"` (the third branch of the same fork the classic single-agent and
 multi-agent drivers hang off, run.py).
 
 It runs the FULL coordination core for real: mission.json + mission_journal.jsonl
 artifacts, agent registration (derived roster), task creation with budget
 inheritance, the claim trio against the run's real AttackTree, lease sweeps,
-dependency rounds, recovery reconcile — over a SCRIPTED executor
-(mission/executor.MockExecutor). Real specialist delegation through the
-orchestrator is Phase 4; that boundary is a documented known limitation, not a
-hidden one — every artifact this driver writes says "mock execution" in its
-results.
+dependency rounds, recovery reconcile.
+
+Phase 3: the EXECUTOR is real on the production path — run.py constructs the
+run's Orchestrator over the shared context and passes a
+MissionSpecialistExecutor, so every dispatch invokes the existing
+RedTeamAgent specialists. MockExecutor remains ONLY the explicit test /
+simulation / fault-injection seam: passing no executor prints a loud warning
+and the mock's own task results still say "mock execution" — mock execution is
+never silent.
 
 Task plan source: `mission_plan.json` in the run directory
   {"tasks": [{"title", "role", "technique", "target", "dependencies": [..],
@@ -73,13 +77,45 @@ def load_plan(out_dir: Path) -> list[dict]:
     return tasks
 
 
+def mission_outcome(tasks) -> tuple[str, str]:
+    """(mission_status, reason) from the tasks' terminal states — the honest
+    endgame calc. Success requires EVERY task to have reached the intended
+    successful terminal outcome (TASK_SUCCEEDED): failed / cancelled / expired
+    / exhausted ends — and tasks that never became dispatchable — make the
+    mission FAILED. "Everything reached A terminal state" is not "everything
+    succeeded": with real specialists on the production path, an all-failed
+    mission must never read MISSION_SUCCEEDED.
+    (TASK_CANCELLED exists in the states machine as reserved vocabulary; no
+    producer writes it yet — the calc is safe against it regardless.)"""
+    tasks = list(tasks)
+    if tasks and all(t.status == TASK_SUCCEEDED for t in tasks):
+        return MISSION_SUCCEEDED, ""
+    return (MISSION_FAILED,
+            "not every task reached a successful terminal state")
+
+
 def run_mission_driver(*, engagement, out_dir, objective: str,
                        attack_tree=None, bus=None, opts=None,
-                       executor=None, clock=None,
+                       executor=None, hypotheses=None, clock=None,
+                       access_gate=None,
                        say=lambda text: None) -> dict:
-    """Execute the mission coordination loop. `executor` defaults to a
-    MockExecutor; tests inject scripted executors (and fault-injected
-    journals/trees) against this exact entry point."""
+    """Execute the mission coordination loop.
+
+    `executor`: the production path passes a MissionSpecialistExecutor built
+    on the run's Orchestrator (run.py); tests inject scripted executors (and
+    fault-injected journals/trees) against this exact entry point. None here
+    means the explicit test/simulation seam — MockExecutor runs, LOUDLY (see
+    the module docstring).
+
+    `hypotheses`: optional duplicate-suppression authority (duck-typed
+    claim_or_register carrier — the orchestrator's ResearchBundle). Claim
+    step 3 of the trio stays with the scheduler; the executor never claims.
+
+    `access_gate`: optional readiness hook (duck-typed task_view -> "" |
+    reason) consulted in ready_tasks; run.py wires the orchestrator's ACCESS
+    foothold gate, so a prerequisite-less ACCESS task stays PENDING — the
+    existing not-ready semantics — instead of being claimed and dispatched.
+    """
     clock = _injectable_clock(clock)
     out_dir = Path(out_dir)
     mission, journal = build_mission(
@@ -96,11 +132,24 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                           roe_caps=roe_caps,
                           record_path=out_dir / "mission.json")
     if executor is None:
+        # The test/simulation seam must never be silent: the warning goes to
+        # stderr UNCONDITIONALLY (the default `say` here is a no-op) plus the
+        # caller's channel, and the mock's own task results say "mock
+        # execution".
+        import sys
+        warning = ("WARNING: no executor provided to run_mission_driver — "
+                   "running MOCK execution (the explicit test/simulation seam). "
+                   "Production mission runs must pass a MissionSpecialistExecutor "
+                   "over the run's Orchestrator.")
+        sys.stderr.write(warning + "\n")
+        say(warning)
         executor = MockExecutor()
     scheduler = MissionScheduler(
-        commander, tree=attack_tree, executor=executor, clock=clock,
+        commander, tree=attack_tree, executor=executor, hypotheses=hypotheses,
+        clock=clock,
         round_noise_budget=roe_caps["round_noise_budget"],
-        lease_seconds=TASK_LEASE_SECONDS)
+        lease_seconds=TASK_LEASE_SECONDS,
+        prerequisite=access_gate)
 
     commander.start_mission(DRIVER_ACTOR)
 
@@ -145,16 +194,14 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
             scheduler.dispatch(task.task_id)
         rounds += 1
 
-    all_done = all(t.status in (TASK_SUCCEEDED, "failed", "cancelled")
-                   for t in commander.tasks.values()) and commander.tasks
-    commander.set_mission_status(
-        MISSION_SUCCEEDED if all_done else MISSION_FAILED,
-        DRIVER_ACTOR,
-        reason="" if all_done else "tasks did not all reach a terminal "
-                                   "successful state")
+    # A mission succeeded only when EVERY task reached the intended successful
+    # terminal outcome (TASK_SUCCEEDED) — see mission_outcome() above.
+    status, reason = mission_outcome(commander.tasks.values())
+    commander.set_mission_status(status, DRIVER_ACTOR, reason=reason)
     summary = {"mission_id": mission.mission_id, "run_id": mission.primary_run_id,
                "rounds": rounds, "tasks": commander.tasks_view(),
-               "status": commander.mission.status}
+               "status": commander.mission.status,
+               "executor": type(executor).__name__}
     say(f"mission {mission.mission_id}: {commander.mission.status} "
         f"({rounds} rounds, {len(created)} tasks)")
     return summary

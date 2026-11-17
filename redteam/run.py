@@ -510,69 +510,82 @@ def execute_run(opts: RunOptions) -> dict:
         manifest = RunManifest(objective=opts.objective, engagement=engagement.name)
         manifest.save(out / "manifest.json")  # exists from the first second (API listing)
 
+        run_mode = ("mission coordination" if opts.driver == "mission"
+                    else "multi-agent swarm" if opts.multi_agent else "single agent")
         safe_emit(bus, "run.start", objective=opts.objective, engagement=engagement.name,
-                  mode="multi-agent swarm" if opts.multi_agent else "single agent")
+                  mode=run_mode)
 
+        mission_summary = None
         if opts.driver == "mission":
-            # Phase 2 mission coordination core: the third branch of the same
-            # fork. Runs lifecycle/registry/claim-trio/lease/recovery machinery
-            # over a scripted executor (mock delegation is Phase 4); the
-            # coordination artifacts are real (mission.json, mission_journal.jsonl,
-            # attack_tree.json lease fields). Post-driver LLM machinery (verify
-            # pass, reports, memory reflection) does not apply — no model runs.
+            # Phase 3 — REAL specialist execution: the coordination core
+            # dispatches every mission task through the EXISTING
+            # Orchestrator/RedTeamAgent path over THIS run's shared context
+            # (same tools, graph, AttackTree, FindingStore, audit, budget,
+            # scope — no second agent framework, no second authority). The
+            # scheduler keeps the claim trio; the executor wraps the
+            # orchestrator's task-level interface. The shared finalization
+            # below (memory credit/reflection, reports, objective scoring)
+            # runs for missions too — the Phase 2 early return is gone.
             from .mission.driver import run_mission_driver
+            from .mission.specialist_executor import MissionSpecialistExecutor
+            from .orchestrator import Orchestrator as _MissionOrchestrator
+            mission_orchestrator = _MissionOrchestrator(
+                engagement, tools, ctx, client, graph=graph,
+                attack_tree=attack_tree, memory=memory,
+                noise_budget=opts.round_noise_budget,
+                noise_mu=opts.noise_mu, noise_V=opts.noise_V,
+                research_dir=out)
+            mission_orchestrator.with_runtime(budget=budget, manifest=manifest,
+                                              manifest_path=out / "manifest.json")
+            mission_executor = MissionSpecialistExecutor(
+                mission_orchestrator, objective=opts.objective, on_text=on_text)
             mission_summary = run_mission_driver(
                 engagement=engagement, out_dir=out, objective=opts.objective,
-                attack_tree=attack_tree, bus=bus, opts=opts, say=say)
+                attack_tree=attack_tree, bus=bus, opts=opts,
+                executor=mission_executor,
+                # Duplicate suppression rides the orchestrator's own
+                # ResearchBundle — the scheduler's claim step 3, one registry.
+                hypotheses=mission_orchestrator._research,
+                # ACCESS prerequisite: the orchestrator's foothold gate (the
+                # existing AccessGraph/KillChain evidence) — a prerequisite-
+                # less ACCESS task stays PENDING, never claimed or dispatched.
+                access_gate=mission_orchestrator.access_precondition_reason,
+                say=say)
+            # C4: a CONFIRMED finding completes its tree node through the same
+            # idempotent sync() the orchestrator's verify passes use.
+            attack_tree.sync(graph=graph, findings=findings.all())
             manifest.status = "completed"
             manifest.steps = len(mission_summary["tasks"])
             manifest.save(out / "manifest.json")
-            safe_emit(bus, "run.finish", status="completed", findings=0,
-                      tokens=0, halt_reason="")
-            return {
-                "status": "completed", "halt_reason": "",
-                "driver": "mission",
-                "mission_id": mission_summary["mission_id"],
-                "run_id": mission_summary["run_id"],
-                "mission_status": mission_summary["status"],
-                "tasks": mission_summary["tasks"],
-                "rounds": mission_summary["rounds"],
-                "findings": 0, "confirmed": 0, "tokens": 0,
-                "steps": len(mission_summary["tasks"]),
-                "requests": 0, "objective_achieved": False,
-                "objective_done": 0, "objective_total": 0,
-                "report_path": "", "html_path": "",
-                "audit_intact": True, "out_dir": str(out),
-                "traffic_recorded": 0, "proxy": None,
-                "surface_hosts": 0, "surface_services": 0,
-            }
-
-        if opts.multi_agent:
-            from .orchestrator import Orchestrator
-            driver = Orchestrator(engagement, tools, ctx, client, graph=graph,
-                                  attack_tree=attack_tree, memory=memory,
-                                  noise_budget=opts.round_noise_budget,
-                                  noise_mu=opts.noise_mu, noise_V=opts.noise_V,
-                                  research_dir=out)   # Phase C1: persist the research journal
         else:
-            driver = RedTeamAgent(engagement, tools, ctx, client, max_steps=opts.max_steps,
-                                  graph=graph, attack_tree=attack_tree, memory=memory,
-                                  terminal_on_budget_end=True)
-        driver.with_runtime(budget=budget, manifest=manifest, manifest_path=out / "manifest.json")
+            if opts.multi_agent:
+                from .orchestrator import Orchestrator
+                driver = Orchestrator(engagement, tools, ctx, client, graph=graph,
+                                      attack_tree=attack_tree, memory=memory,
+                                      noise_budget=opts.round_noise_budget,
+                                      noise_mu=opts.noise_mu, noise_V=opts.noise_V,
+                                      research_dir=out)   # Phase C1: persist the research journal
+            else:
+                driver = RedTeamAgent(engagement, tools, ctx, client, max_steps=opts.max_steps,
+                                      graph=graph, attack_tree=attack_tree, memory=memory,
+                                      terminal_on_budget_end=True)
+            driver.with_runtime(budget=budget, manifest=manifest, manifest_path=out / "manifest.json")
 
-        mode = "multi-agent swarm" if opts.multi_agent else "single agent"
-        say(f"\nStarting {mode}... "
-            f"(drop a file named STOP in {out} to halt cleanly)\n" if not opts.quiet
-            else f"Starting {mode}...")
+            mode = run_mode
+            say(f"\nStarting {mode}... "
+                f"(drop a file named STOP in {out} to halt cleanly)\n" if not opts.quiet
+                else f"Starting {mode}...")
 
-        driver.run(opts.objective, on_text=on_text)
+            driver.run(opts.objective, on_text=on_text)
 
-        if not opts.multi_agent:
+        if opts.driver != "mission" and not opts.multi_agent:
             # Single-agent mode has no built-in VERIFY phase — its own checks only ever
             # reach pending_verification (see tools/confirm.py, tools/verify_tool.py,
             # tools/postex.py), so without this nothing here would ever count toward the
             # objective. Run the independent re-check in a FRESH context; never let the
             # same continuous run grade its own findings.
+            # (Mission mode verifies through its verify-role tasks — the same
+            # run_verify_pass, invoked per task by the mission executor.)
             from .orchestrator import run_verify_pass
             say("\nRunning independent verification pass over pending findings...\n")
             still_pending = run_verify_pass(engagement, tools, ctx, client, opts.objective,
@@ -654,7 +667,7 @@ def execute_run(opts: RunOptions) -> dict:
     safe_emit(bus, "run.finish", status=status, findings=len(findings.all()),
               tokens=tokens, halt_reason=halt_reason)
 
-    return {
+    summary = {
         "status": status,
         "halt_reason": halt_reason,
         "findings": len(findings.all()),
@@ -674,3 +687,14 @@ def execute_run(opts: RunOptions) -> dict:
         "surface_hosts": inventory.summary()["hosts"],
         "surface_services": inventory.summary()["services"],
     }
+    if mission_summary is not None:
+        summary.update({
+            "driver": "mission",
+            "mission_id": mission_summary["mission_id"],
+            "run_id": mission_summary["run_id"],
+            "mission_status": mission_summary["status"],
+            "mission_executor": mission_summary.get("executor", ""),
+            "tasks": mission_summary["tasks"],
+            "rounds": mission_summary["rounds"],
+        })
+    return summary

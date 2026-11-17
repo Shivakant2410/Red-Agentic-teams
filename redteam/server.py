@@ -504,7 +504,12 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
                 ctx.findings, ctx, finding_id=body.finding_id,
                 trials=body.trials, need=body.need,
                 fresh_attack_steps=body.fresh_attack_steps or None,
-                fresh_control_steps=body.fresh_control_steps or None)
+                fresh_control_steps=body.fresh_control_steps or None,
+                # forward the run's own authorities: a FIXED verdict here
+                # revokes exactly the holdings that finding demonstrated
+                # (invalidate_after_fix) — same as the retest CLI
+                access=getattr(ctx, "access", None),
+                graph=getattr(ctx, "graph", None))
         except Exception as exc:
             raise HTTPException(500, f"retest failed: {exc}")
         if body.finding_id and not results:

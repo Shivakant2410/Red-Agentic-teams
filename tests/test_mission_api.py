@@ -23,11 +23,18 @@ from redteam.server import create_app
 
 def _await_mission(runs_root, mission_id, timeout=10.0):
     """202 = accepted; the engine thread finishes asynchronously — wait for the
-    mission record to reach a terminal status (test_server's own pattern)."""
+    mission record to reach a terminal status (test_server's own pattern).
+    A poll may legitimately race the engine thread: the record does not exist
+    until the driver's first save, and (on legacy non-atomic writers) could be
+    mid-write — both are normal waiting states, not failures."""
     import time
     deadline = time.time() + timeout
     while time.time() < deadline:
-        rec = json.loads((runs_root / mission_id / "mission.json").read_text())
+        try:
+            rec = json.loads((runs_root / mission_id / "mission.json").read_text())
+        except (FileNotFoundError, json.JSONDecodeError):
+            time.sleep(0.05)
+            continue
         rec = rec.get("mission") if isinstance(rec.get("mission"), dict) else rec
         if rec.get("status") in ("succeeded", "failed", "halted", "cancelled"):
             return rec

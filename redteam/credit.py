@@ -160,3 +160,14 @@ def credit_confirmed_findings(ctx, objective=None, access=None) -> list[dict]:
         if newly:
             break
     return applied
+
+# Remediation-side invalidation deliberately does NOT live here. The single
+# source of truth for "this finding's latest retest verdict is FIXED, so its
+# holdings are no longer supported" is the retest bridge:
+#   retest.latest_verdict(finding)   — the remediation-state read (used above)
+#   retest.invalidate_after_fix(f, access=..., graph=...) — the revocation
+#       itself, matched on the structured attrs["finding_id"] reference (never
+#       free-text evidence parsing) and wired into retest_run() on FIXED.
+# Flows that hold a finding store and an access graph call the bridge; the
+# ACCESS prerequisite gate (orchestrator) honors the resulting timestamped,
+# append-only record via revoked_nodes().

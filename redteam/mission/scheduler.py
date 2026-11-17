@@ -67,7 +67,8 @@ class MissionScheduler:
                  clock: Callable[[], _dt.datetime] | None = None,
                  round_noise_budget: float = 12.0,
                  lease_seconds: float = TASK_LEASE_SECONDS,
-                 worker_alive: Callable[[str], bool] | None = None):
+                 worker_alive: Callable[[str], bool] | None = None,
+                 prerequisite: Callable[[dict], str] | None = None):
         self.commander = commander
         self.tree = tree
         self.hypotheses = hypotheses        # duck-typed claim_or_register carrier
@@ -76,6 +77,12 @@ class MissionScheduler:
         self.round_noise_budget = float(round_noise_budget)
         self.lease_seconds = max(float(lease_seconds), 1.0)
         self.worker_alive = worker_alive
+        # Duck-typed readiness hook (run.py wires the orchestrator's ACCESS
+        # foothold gate): task_view -> "" when the task may dispatch, else the
+        # reason it must WAIT. The gate owns no state; the lifecycle effect is
+        # the existing one — the task stays PENDING and is re-examined every
+        # round, exactly like unsatisfied dependencies.
+        self.prerequisite = prerequisite
         self._lock = threading.RLock()
         self._opsec_spent = 0.0             # credits charged this round
 
@@ -88,11 +95,22 @@ class MissionScheduler:
     def _opsec_affordable(self, task) -> bool:
         return (self._opsec_spent + task.opsec_allowance) <= self.round_noise_budget
 
+    def _prerequisite_clear(self, task) -> bool:
+        if self.prerequisite is None:
+            return True
+        # No swallow: a gate fault surfaces at the coordination boundary like
+        # any other failed mutation (the codebase rule: never paper over a
+        # failing check). The orchestrator's gate is a total function over
+        # getattr'd authorities, so this is a bug-loudness guarantee, not a
+        # runtime path.
+        return not self.prerequisite(task.view())
+
     def ready_tasks(self, *, now: _dt.datetime | None = None) -> list:
         """Dispatchable tasks: mission RUNNING, PENDING, dependencies SUCCEEDED,
-        role registered, OPSEC allowance affordable this round. Ordering is
-        deterministic (task_id sort) — the mission layer does not re-invent the
-        AttackTree's ranking authority; it only respects task dependencies."""
+        role registered, OPSEC allowance affordable this round, prerequisite
+        clear (e.g. the ACCESS foothold gate). Ordering is deterministic
+        (task_id sort) — the mission layer does not re-invent the AttackTree's
+        ranking authority; it only respects task dependencies."""
         with self._lock:
             if self.commander.mission.status != MISSION_RUNNING:
                 return []
@@ -100,7 +118,8 @@ class MissionScheduler:
                                       key=lambda t: t.task_id)
                     if t.status == TASK_PENDING
                     and self._deps_satisfied(t)
-                    and self._opsec_affordable(t)]
+                    and self._opsec_affordable(t)
+                    and self._prerequisite_clear(t)]
 
     # -- the claim trio ----------------------------------------------------------
 

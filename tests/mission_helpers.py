@@ -62,12 +62,14 @@ def make_tree(mission_dir: Path, clock: FakeClock) -> AttackTree:
 def make_scheduler(commander: Commander, tree: AttackTree, *, executor=None,
                    hypotheses=None, clock: FakeClock | None = None,
                    round_noise_budget: float = 12.0,
-                   worker_alive=None) -> MissionScheduler:
+                   worker_alive=None,
+                   prerequisite=None) -> MissionScheduler:
     return MissionScheduler(commander, tree=tree, executor=executor,
                             hypotheses=hypotheses,
                             clock=clock or commander._clock,
                             round_noise_budget=round_noise_budget,
-                            worker_alive=worker_alive)
+                            worker_alive=worker_alive,
+                            prerequisite=prerequisite)
 
 
 class FaultJournal:
