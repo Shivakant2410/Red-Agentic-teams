@@ -14,6 +14,13 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+# Confidence vocabulary + transition table + WRITER matrix live in states.py
+# (the platform's ONE lifecycle registry — docs/state-machines.md). The strings
+# are unchanged; this import only ends the days of the vocabulary being
+# discoverable solely by reading merge conditionals.
+from .states import (CONF_CONFIRMED, CONF_FALSIFIED, CONF_FIRM, CONF_NOT_REPRODUCIBLE,
+                     CONF_PENDING_VERIFICATION, CONF_TENTATIVE)
+
 SEVERITIES = ("info", "low", "medium", "high", "critical")
 
 
@@ -26,15 +33,22 @@ class Finding:
     evidence: str = ""
     recommendation: str = ""
     cwe: str = ""  # e.g. "CWE-89"
-    # tentative | pending_verification | confirmed | falsified | not_reproducible
+    # Lifecycle vocabulary (authoritative table + writer matrix in states.py,
+    # machine "finding_confidence"; docs/state-machines.md §finding-funnel):
     #
-    # pending_verification = the proposing agent's own k-of-n check passed, but no
-    # independent re-check has run yet. Nothing may credit an objective criterion or an
-    # access-graph "held" node from a pending_verification finding — only "confirmed" is
-    # self-grading-free (see tools/independent_verify.py). falsified/not_reproducible are
-    # terminal: the finding stays on record (so false-positive attempts are auditable) but
-    # never counts toward anything.
-    confidence: str = "tentative"
+    # tentative | firm | pending_verification | confirmed | falsified |
+    # not_reproducible
+    #
+    # tentative = as recorded by the proposing agent, no k-of-n check yet.
+    # firm = the proposing agent's OWN k-of-n check passed (self-graded).
+    # pending_verification = queued for the INDEPENDENT re-check. Nothing may
+    # credit an objective criterion or an access-graph "held" node from any
+    # self-asserted state — only "confirmed" is self-grading-free (see
+    # tools/independent_verify.py). falsified/confirmed are terminal:
+    # the finding stays on record (so false-positive attempts are auditable)
+    # but never counts toward anything; not_reproducible is deliberately NOT
+    # terminal (it is a statement about the environment and stays re-checkable).
+    confidence: str = CONF_TENTATIVE
     # Verification record (populated when a finding was reproduced by verify.py).
     verification_verdict: str = ""   # confirmed | not_reproducible | rejected
     reproductions: int = 0
@@ -90,8 +104,8 @@ class FindingStore:
                 # it and a fully-solved objective dead-ended). A pending/confirmed
                 # proof supersedes the weaker self-assertions and brings its replay
                 # material; terminal verdicts are never overwritten or resurrected.
-                if existing.confidence in ("tentative", "firm") \
-                        and finding.confidence in ("pending_verification", "confirmed"):
+                if existing.confidence in (CONF_TENTATIVE, CONF_FIRM) \
+                        and finding.confidence in (CONF_PENDING_VERIFICATION, CONF_CONFIRMED):
                     existing.confidence = finding.confidence
                     if finding.check_type and not existing.check_type:
                         existing.check_type = finding.check_type
@@ -135,7 +149,7 @@ class FindingStore:
         """Findings whose own k-of-n check passed but have not survived an independent
         re-check yet — the worklist for the VERIFY specialist/tool."""
         with self._lock:
-            return [f for f in self._findings if f.confidence == "pending_verification"]
+            return [f for f in self._findings if f.confidence == CONF_PENDING_VERIFICATION]
 
     def promote(self, finding_id: str, verdict: str, detail: str = "") -> Finding | None:
         """Apply an INDEPENDENT re-check's verdict. Only this path may set confidence to
@@ -145,12 +159,12 @@ class FindingStore:
             if f is None:
                 return None
             f.independent_verdict = verdict
-            if verdict == "confirmed":
-                f.confidence = "confirmed"
-            elif verdict == "falsified":
-                f.confidence = "falsified"
+            if verdict == CONF_CONFIRMED:
+                f.confidence = CONF_CONFIRMED
+            elif verdict == CONF_FALSIFIED:
+                f.confidence = CONF_FALSIFIED
             else:
-                f.confidence = "not_reproducible"
+                f.confidence = CONF_NOT_REPRODUCIBLE
             if detail:
                 f.evidence = (f.evidence + "\n[independent re-check] " + detail).strip()
             self._flush()

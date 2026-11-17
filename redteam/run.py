@@ -43,6 +43,7 @@ from .llm.gateway import build_llm_client
 from .ratelimit import RateLimiter
 from .report import build_html_report, build_report
 from .scope import ScopeGuard
+from .states import APPROVAL_PENDING, APPROVAL_RESOLVED
 from .tools import ToolContext, build_registry
 
 
@@ -57,6 +58,9 @@ def _now() -> str:
 # ---------------------------------------------------------------------------
 # approvals.json: the file contract between the engine thread (writer of pending
 # records) and the API (resolver). Same process, so a module lock is enough.
+# Lifecycle: states.py machine "approval" — pending -> resolved exactly once;
+# `approved` is a boolean dimension on the resolved record (the STOP kill file's
+# auto-deny is a resolution, not a third state).
 # ---------------------------------------------------------------------------
 
 _APPROVALS_LOCK = threading.Lock()
@@ -100,14 +104,14 @@ class HeadlessApprover:
         with _APPROVALS_LOCK:
             data = _load_approvals(self._path)
             data.append({"id": aid, "action": action, "details": details,
-                         "ts": _now(), "status": "pending", "approved": None,
+                         "ts": _now(), "status": APPROVAL_PENDING, "approved": None,
                          "resolved_ts": None})
             _save_approvals(self._path, data)
         safe_emit(self._bus, "approval.requested", id=aid, action=action, details=details)
         while True:
             with _APPROVALS_LOCK:
                 rec = next((r for r in _load_approvals(self._path) if r.get("id") == aid), None)
-            if rec and rec.get("status") == "resolved":
+            if rec and rec.get("status") == APPROVAL_RESOLVED:
                 approved = bool(rec.get("approved"))
                 safe_emit(self._bus, "approval.resolved", id=aid, approved=approved)
                 return approved
@@ -121,8 +125,8 @@ class HeadlessApprover:
     def _resolve_locked(self, aid: str, approved: bool, note: str = "") -> None:
         data = _load_approvals(self._path)
         for rec in data:
-            if rec.get("id") == aid and rec.get("status") == "pending":
-                rec["status"] = "resolved"
+            if rec.get("id") == aid and rec.get("status") == APPROVAL_PENDING:
+                rec["status"] = APPROVAL_RESOLVED
                 rec["approved"] = bool(approved)
                 rec["resolved_ts"] = _now()
                 if note:
@@ -138,9 +142,9 @@ def resolve_approval(out_dir: str | Path, approval_id: str, approved: bool) -> b
     with _APPROVALS_LOCK:
         data = _load_approvals(p)
         rec = next((r for r in data if r.get("id") == approval_id), None)
-        if rec is None or rec.get("status") != "pending":
+        if rec is None or rec.get("status") != APPROVAL_PENDING:
             return False
-        rec["status"] = "resolved"
+        rec["status"] = APPROVAL_RESOLVED
         rec["approved"] = bool(approved)
         rec["resolved_ts"] = _now()
         _save_approvals(p, data)
@@ -253,6 +257,12 @@ class RunOptions:
     # itself (scope self-targeting — the agent must never be authorized to attack its
     # own console). None in CLI/standalone mode (nothing to collide with).
     control_plane: tuple[str, int] | None = None
+    # Phase 2 mission coordination driver (docs/builder01-phase2-mission-design.md):
+    # "classic" (default) = the existing single-agent / multi-agent fork below;
+    # "mission" = the mission coordination core over a scripted executor (mock
+    # delegation is Phase 4). Separate from `multi_agent`, which remains the
+    # classic-mode swarm toggle.
+    driver: str = "classic"
 
 
 def execute_run(opts: RunOptions) -> dict:
@@ -420,6 +430,13 @@ def execute_run(opts: RunOptions) -> dict:
             from .sandbox.docker_kali import KaliSandbox, SandboxError
             sandbox = KaliSandbox(engagement, audit=audit)
             try:
+                # requirement-driven tool layer BEFORE start: the container's
+                # egress is default-DROP, so packages must arrive via the
+                # image build (host network), not at runtime
+                extra = engagement.sandbox.extra_tools
+                if extra:
+                    tag, pkgs = sandbox.ensure_tools(list(extra))
+                    say(f"Tool layer: {', '.join(pkgs)} -> {tag}")
                 say("\nStarting Kali sandbox (this can take a while on first build)...")
                 plan = sandbox.start(
                     proxy_url=proxy.url_for("host.docker.internal") if proxy else "",
@@ -495,6 +512,40 @@ def execute_run(opts: RunOptions) -> dict:
 
         safe_emit(bus, "run.start", objective=opts.objective, engagement=engagement.name,
                   mode="multi-agent swarm" if opts.multi_agent else "single agent")
+
+        if opts.driver == "mission":
+            # Phase 2 mission coordination core: the third branch of the same
+            # fork. Runs lifecycle/registry/claim-trio/lease/recovery machinery
+            # over a scripted executor (mock delegation is Phase 4); the
+            # coordination artifacts are real (mission.json, mission_journal.jsonl,
+            # attack_tree.json lease fields). Post-driver LLM machinery (verify
+            # pass, reports, memory reflection) does not apply — no model runs.
+            from .mission.driver import run_mission_driver
+            mission_summary = run_mission_driver(
+                engagement=engagement, out_dir=out, objective=opts.objective,
+                attack_tree=attack_tree, bus=bus, opts=opts, say=say)
+            manifest.status = "completed"
+            manifest.steps = len(mission_summary["tasks"])
+            manifest.save(out / "manifest.json")
+            safe_emit(bus, "run.finish", status="completed", findings=0,
+                      tokens=0, halt_reason="")
+            return {
+                "status": "completed", "halt_reason": "",
+                "driver": "mission",
+                "mission_id": mission_summary["mission_id"],
+                "run_id": mission_summary["run_id"],
+                "mission_status": mission_summary["status"],
+                "tasks": mission_summary["tasks"],
+                "rounds": mission_summary["rounds"],
+                "findings": 0, "confirmed": 0, "tokens": 0,
+                "steps": len(mission_summary["tasks"]),
+                "requests": 0, "objective_achieved": False,
+                "objective_done": 0, "objective_total": 0,
+                "report_path": "", "html_path": "",
+                "audit_intact": True, "out_dir": str(out),
+                "traffic_recorded": 0, "proxy": None,
+                "surface_hosts": 0, "surface_services": 0,
+            }
 
         if opts.multi_agent:
             from .orchestrator import Orchestrator

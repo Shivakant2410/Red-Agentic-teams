@@ -64,6 +64,20 @@ class LaunchBody(BaseModel):
     asset_feed: str = ""
 
 
+class MissionBody(BaseModel):
+    # Phase 2 missions (additive): same launch validation as /api/runs; the run
+    # is executed by the mission coordination driver (RunOptions.driver="mission",
+    # scripted executors — mock delegation is Phase 4). plan is an optional
+    # inline task plan (otherwise mission_plan.json in the run dir, else the
+    # coordination self-check smoke task).
+    engagement_path: str
+    objective: str = Field(min_length=1, max_length=20000)
+    max_steps: int = Field(default=40, ge=1, le=1000)
+    asset_feed: str = ""
+    yes_to_all: bool = False
+    plan: list = []
+
+
 class ApprovalBody(BaseModel):
     approve: bool
 
@@ -187,6 +201,17 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
     @app.get("/api/health")
     def health() -> dict:
         return {"status": "ok", "version": VERSION, "runs_root": str(runs_root)}
+
+    # -- API: lifecycle introspection --------------------------------------------
+    # Machine-readable spec of EVERY state machine the platform emits into
+    # events/artifacts/API payloads (states.py is the source of truth). Agents,
+    # the dashboard, and CI lint the vocabulary from here instead of parsing
+    # source — the AX/DX surface of docs/state-machines.md.
+
+    @app.get("/api/state-machines")
+    def state_machines() -> dict:
+        from .states import machines_json
+        return machines_json()
 
     # -- API: runs lifecycle ---------------------------------------------------
 
@@ -507,6 +532,121 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
                     return {"ok": True}
                 raise HTTPException(404, "approval already resolved or expired")
         raise HTTPException(404, "unknown approval")
+
+    # -- API: missions (Phase 2 coordination core — additive) ---------------------
+    # A mission is hosted in a run directory; in Phase 2 mission_id == that run's
+    # run_id BY CONSTRUCTION, but the two travel as SEPARATE logical fields (C1):
+    # mission.json carries mission_id + run_ids (a list, 1:N-capable) and every
+    # response echoes both. Resolution reuses require_run — the same directory
+    # lookup /api/runs/{run_id} uses; no second identity authority is minted.
+
+    @app.post("/api/missions", status_code=202)
+    def launch_mission(body: MissionBody) -> dict:
+        from .config import ConfigError, load_engagement
+        try:
+            engagement = load_engagement(body.engagement_path)
+        except ConfigError as exc:
+            raise HTTPException(400, f"bad engagement: {exc}")
+        except ValueError as exc:
+            raise HTTPException(400, f"bad engagement: {exc}")
+        if not engagement.is_active:
+            raise HTTPException(400, "engagement window is not active")
+        if control_plane is not None:
+            from .scope import check_control_plane_overlap
+            try:
+                check_control_plane_overlap(engagement, control_plane[0],
+                                            control_plane[1])
+            except ConfigError as exc:
+                raise HTTPException(400, f"bad engagement: {exc}")
+        if body.asset_feed:
+            from .importers.assets import load_asset_feed
+            try:
+                load_asset_feed(body.asset_feed)
+            except ValueError as exc:
+                raise HTTPException(400, f"bad asset_feed: {exc}")
+
+        run_id = registry.new_run_id(body.objective)
+        out_dir = runs_root / run_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+        RunManifest(objective=body.objective,
+                    engagement=engagement.name).save(out_dir / "manifest.json")
+
+        from .events import EventBus
+        from .run import HeadlessApprover
+        bus = EventBus(run_id=run_id, sink_path=out_dir / "events.jsonl")
+        registry.register_bus(run_id, bus)
+
+        opts = launch_form(body.engagement_path, body.objective, False,
+                           body.max_steps, "", body.yes_to_all, body.asset_feed)
+        opts.out_dir = out_dir
+        opts.driver = "mission"
+        opts.events = bus
+        opts.approve = HeadlessApprover(out_dir, bus, kill_file=out_dir / "STOP")
+        if body.plan:
+            (out_dir / "mission_plan.json").write_text(
+                json.dumps({"tasks": body.plan}, indent=2), encoding="utf-8")
+
+        registry.launch(run_id, out_dir, opts)
+        return {"mission_id": run_id, "run_id": run_id, "run_ids": [run_id],
+                "engagement": engagement.name, "out_dir": str(out_dir),
+                "status": "running", "driver": "mission"}
+
+    @app.get("/api/missions")
+    def list_missions() -> dict:
+        missions = []
+        if runs_root.exists():
+            for d in runs_root.iterdir():
+                if not d.is_dir():
+                    continue
+                rec = _read_json(d / "mission.json", None)
+                if not isinstance(rec, dict):
+                    continue
+                m = rec.get("mission") if isinstance(rec.get("mission"), dict) else rec
+                tasks = rec.get("tasks") or [] if isinstance(rec.get("mission"), dict) else []
+                missions.append({
+                    "mission_id": m.get("mission_id", d.name),
+                    "run_id": m.get("run_id", d.name),
+                    "run_ids": m.get("run_ids", [d.name]),
+                    "engagement": m.get("engagement", ""),
+                    "ticket": m.get("ticket", ""),
+                    "objective": m.get("objective", ""),
+                    "status": m.get("status", "planned"),
+                    "created": m.get("created", ""), "updated": m.get("updated", ""),
+                    "tasks": len(tasks),
+                })
+        missions.sort(key=lambda m: m.get("created", ""), reverse=True)
+        return {"missions": missions}
+
+    @app.get("/api/missions/{mission_id}")
+    def mission_detail(mission_id: str) -> dict:
+        run_dir = require_run(mission_id)
+        rec = _read_json(run_dir / "mission.json", None)
+        if not isinstance(rec, dict):
+            raise HTTPException(404, "unknown mission")
+        is_snapshot = isinstance(rec.get("mission"), dict)
+        mission = rec.get("mission") if is_snapshot else rec
+        tasks = rec.get("tasks") if is_snapshot else []
+        # Recent mission-journal events (tail): the journal is the intent
+        # authority; the API shows the last slice for operator visibility.
+        events: list[dict] = []
+        journal_path = run_dir / "mission_journal.jsonl"
+        if journal_path.exists():
+            lines = journal_path.read_text(encoding="utf-8").splitlines()
+            for line in lines[-MAX_EVENTS_PER_READ:]:
+                try:
+                    events.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        return {"mission_id": mission.get("mission_id", mission_id),
+                "run_id": mission.get("run_id", mission_id),
+                "run_ids": mission.get("run_ids", [mission_id]),
+                "engagement": mission.get("engagement", ""),
+                "ticket": mission.get("ticket", ""),
+                "objective": mission.get("objective", ""),
+                "status": mission.get("status", "planned"),
+                "halt_reason": mission.get("halt_reason", ""),
+                "tasks": tasks,
+                "recent_events": events}
 
     # -- static dashboard ----------------------------------------------------------
 

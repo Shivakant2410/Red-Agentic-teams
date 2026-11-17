@@ -72,8 +72,8 @@ A01 = ClassSpecialist(
             "name WHAT you reached. Your checks only reach pending_verification; an "
             "independent pass confirms — keep proving, don't self-promote."),
         tool_names=["authenticate", "set_session", "http_probe", "verify_vulnerability",
-                    "confirm_finding", "browser_navigate", "browser_content",
-                    "search_peer_traces"],
+                    "confirm_finding", "crosscheck_lead", "browser_navigate",
+                    "browser_content", "search_peer_traces"],
         role=PLAN, max_steps=24,
     ),
 )
@@ -99,7 +99,11 @@ A03 = ClassSpecialist(
             "separators before metacharacter soup. XSS: reflect ONE unique marker per param "
             "(e.g. <rtx7c15>) — http_probe the result and CLASSIFY the reflection context "
             "(element body, attribute value, JS string, href/src); the context picks the "
-            "breakout, not a payload list. Proof = reflected_unescaped on that marker in the "
+            "breakout, not a payload list. xss_reflect_probe does this deterministically "
+            "(one marker per param, context classification) and hands you a READY check_spec "
+            "— fire it through verify_vulnerability 1:1; an escaped reflection produces NO "
+            "idea, do not spend budget on a dead oracle. Proof = reflected_unescaped on that "
+            "marker in the "
             "same context. Stored XSS: submit the marker through the app's normal flow, then "
             "browser_content every rendering surface INCLUDING list/admin views. "
             "session.steal: prove the XSS reads session material in-context (browser_content "
@@ -109,8 +113,9 @@ A03 = ClassSpecialist(
             "pair). Your checks only reach pending_verification — an independent pass "
             "confirms; keep proving."),
         tool_names=["authenticate", "set_session", "http_probe", "verify_vulnerability",
-                    "confirm_finding", "browser_navigate", "browser_content", "browser_fill",
-                    "browser_click", "search_peer_traces"],
+                    "confirm_finding", "xss_reflect_probe", "graphql_inspect",
+                    "crosscheck_lead", "browser_navigate", "browser_content",
+                    "browser_fill", "browser_click", "search_peer_traces"],
         role=PLAN, max_steps=28,
     ),
 )
@@ -125,7 +130,10 @@ A05 = ClassSpecialist(
             "exposure) — the boring gold: exposed backups, dotfiles, debug endpoints, verbose "
             "errors, API docs, source maps, directory listings, hard-coded secrets. Your ONLY "
             "job is this class. START with surface_scan (one call, no arguments): it tells you "
-            "which in-scope services are alive. Then http_probe the high-yield paths — "
+            "which in-scope services are alive. Then content_discovery the high-yield "
+            "wordlists (backups, dotfiles, dumps, admin paths) on ALIVE hosts only, and "
+            "crosscheck_lead its claimed paths first — a path the first-party re-fetch 404s "
+            "is dead. Then http_probe the high-yield paths — "
             "/.git/HEAD, /.env, /backup*, *.sql/*.zip/*.tar.gz dumps, /debug, /actuator, "
             "/server-status, /swagger*, /openapi.json, *.map source maps — and read error "
             "pages for stack traces, absolute paths, and versions. find_attack_templates / "
@@ -140,7 +148,8 @@ A05 = ClassSpecialist(
             "values like CHANGE_ME. Off-scope hosts are unreachable — never spend a step "
             "trying. Your checks only reach pending_verification; an independent pass "
             "confirms."),
-        tool_names=["surface_scan", "http_probe", "verify_vulnerability", "confirm_finding",
+        tool_names=["surface_scan", "content_discovery", "nuclei_scan", "crosscheck_lead",
+                    "http_probe", "verify_vulnerability", "confirm_finding",
                     "extract_secrets", "browser_navigate", "browser_content",
                     "find_attack_templates", "apply_template", "search_peer_traces"],
         role=PARSE, max_steps=18,

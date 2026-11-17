@@ -63,6 +63,9 @@ class KaliSandbox:
         self._audit = audit
         self._plan: EgressPlan | None = None
         self._started = False
+        # requirement-driven tool layer: set by ensure_tools() before start()
+        self._image: str | None = None
+        self._build_args: list[str] = []
 
     # -- helpers ---------------------------------------------------------------
 
@@ -76,7 +79,7 @@ class KaliSandbox:
             raise SandboxError("docker CLI not found on PATH. Install Docker to use the sandbox.")
 
     def _image_exists(self) -> bool:
-        proc = _run(["docker", "image", "inspect", self._cfg.image])
+        proc = _run(["docker", "image", "inspect", self._image or self._cfg.image])
         return proc.returncode == 0
 
     # -- lifecycle -------------------------------------------------------------
@@ -86,14 +89,39 @@ class KaliSandbox:
         dockerfile = Path(self._cfg.dockerfile)
         if not dockerfile.exists():
             raise SandboxError(f"Dockerfile not found: {dockerfile}")
-        self._log("sandbox.build.start", image=self._cfg.image)
+        self._log("sandbox.build.start", image=self._image or self._cfg.image)
         proc = _run(
-            ["docker", "build", "-t", self._cfg.image, "-f", str(dockerfile), str(dockerfile.parent)],
+            ["docker", "build", "-t", self._image or self._cfg.image,
+             "-f", str(dockerfile),
+             *self._build_args, str(dockerfile.parent)],
             timeout=3600,
         )
         if proc.returncode != 0:
             raise SandboxError(f"docker build failed:\n{proc.stderr[-2000:]}")
-        self._log("sandbox.build.done", image=self._cfg.image)
+        self._log("sandbox.build.done", image=self._image or self._cfg.image)
+
+    # -- requirement-driven tool layer -----------------------------------------
+
+    def ensure_tools(self, names) -> tuple[str, list[str]]:
+        """Provision catalog tools BEFORE start(): rebuilds the image with the
+        EXTRA_TOOLS build-arg (host network — the sandbox egress rightly
+        blocks runtime installs) and pins the image override for this run.
+        Returns (image_tag, kali_pkgs_installed)."""
+        from .provision import ensure_tools_for_image
+        tag, pkgs = ensure_tools_for_image(self._cfg.image,
+                                           Path(self._cfg.dockerfile), names)
+        if tag != self._cfg.image:
+            self._image = tag
+            self._log("sandbox.tool_layer", image=tag, packages=pkgs)
+        return tag, pkgs
+
+    def has_tool(self, binary: str) -> bool:
+        """Whether `binary` is executable inside the (running) sandbox."""
+        if not self._started:
+            return False
+        probe = f"command -v {binary} >/dev/null 2>&1 && echo yes || echo no"
+        result = self.exec(probe, timeout=15)
+        return "yes" in result.stdout and not result.timed_out
 
     def _ensure_network(self) -> None:
         proc = _run(["docker", "network", "inspect", self._cfg.network_name])
@@ -172,7 +200,7 @@ class KaliSandbox:
             for var in ("HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"):
                 cmd += ["-e", f"{var}={proxy_url}"]
             cmd += ["-e", "NO_PROXY=localhost,127.0.0.1,::1"]
-        cmd += [self._cfg.image]
+        cmd += [self._image or self._cfg.image]
         self._log("sandbox.start", image=self._cfg.image, allowed_cidrs=self._plan.allowed_cidrs,
                   proxy=proxy_url or None)
         proc = _run(cmd, timeout=120)

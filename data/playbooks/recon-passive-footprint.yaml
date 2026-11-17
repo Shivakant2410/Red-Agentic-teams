@@ -1,0 +1,26 @@
+id: recon-passive-footprint
+name: Passive footprint from operator-supplied third-party data
+kill_chain: recon
+surfaces: [web, api]
+tech_tags: [osint, dns, certificates]
+risk_class: 0
+tools: [http_probe, surface_scan, host_probe]
+prerequisites:
+  - "operator handoff: cert-transparency / wayback / passive-dns exports (data_source: operator)"
+  - "assets importer (importers/assets.py) receives the export as an INTERSECTION with the RoE"
+detection_risk: none
+technique: |
+  1. Ask the operator for CT-log (crt.sh), wayback (gau/waymore) and passive-DNS exports
+     for the engagement's apex domains. The sandbox egress firewall refuses third-party
+     sources BY DESIGN, so this data arrives via the operator, never via the agent.
+  2. Feed the export through the assets importer: out-of-scope entries are dropped and
+     counted — the import is an intersection with the RoE, never a merge.
+  3. For each surviving host, run surface_scan (fills the inventory from the allowlist)
+     and then http_probe each discovered HTTP service for title/status/tech.
+  4. Fold everything into the surface graph; record which sources contributed which
+     hosts (provenance: operator export artifact ref).
+verify_hint: |
+  Nothing here is a finding — it is surface. Findings start at enum/exploit playbooks
+  against the in-scope hosts discovered here.
+references:
+  - "docs/tool-integration-plan.md §W1"

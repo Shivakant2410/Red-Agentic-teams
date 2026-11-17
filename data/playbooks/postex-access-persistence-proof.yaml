@@ -1,0 +1,26 @@
+id: postex-access-persistence-proof
+name: Proving the privilege boundary moved (creditor discipline)
+kill_chain: postex
+surfaces: [web, api, host]
+tech_tags: [postex, privilege]
+risk_class: 3
+tools: [prove_privilege, record_access, claim_objective]
+prerequisites:
+  - "a held access whose upgrade path the objective credits"
+detection_risk: unmeasured
+technique: |
+  1. prove_privilege converts 'we hold X' into 'X demonstrably reaches Y': run the
+     privileged action against canary objects (a canary admin entry, a canary file)
+     — the creditor pattern from the live-fire hardening round.
+  2. Persistence steps are class 3: per-action approval, canary objects only, and
+     reverts recorded as evidence. The engagement's windows decide how long anything
+     persists; default is to prove once, then revert.
+  3. record_access after every hop so the access graph (and the dashboard's kill
+     chain) reflects reality — assumed access never paints impact.
+  4. claim_objective only when the objective's machine-checkable criteria are met by
+     a confirmed proof, never by inference.
+verify_hint: |
+  The proof IS the privileged action's transcript on a canary object, plus the revert
+  receipt where applicable. 'It would probably work' is not a state the platform can hold.
+references:
+  - "ROADMAP live-fire hardening: the creditor"

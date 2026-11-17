@@ -32,8 +32,48 @@ from pathlib import Path
 
 SCHEMA_VERSION = 1
 
-REQUIRED_EVENT_FIELDS = ("event_id", "engagement_id", "type", "hypothesis_id",
-                         "actor", "ts", "payload")
+# Phase 2 (docs/builder01-phase2-mission-design.md C4): the original flat tuple
+# required `hypothesis_id` of EVERY event. The journal is now the shared
+# append-only substrate for the hypothesis layer AND the mission layer, so the
+# mandatory core is the identity set and the entity field became a PER-TYPE
+# requirement. Behavioral contract for existing records (tests-first, golden
+# fixtures in tests/fixtures/journal/):
+#   - every swarm type still requires hypothesis_id (append AND replay — the
+#     registry's apply_event keeps raising on its own types regardless);
+#   - mission types (MISSION_/TASK_/AGENT_/TREE_ prefixes) require mission_id
+#     (TASK_ additionally task_id) — that is what makes cross-entity replay
+#     skip-counts and journal validation stable;
+#   - no record is migrated or rewritten: the journal stays append-only and
+#     SCHEMA_VERSION stays 1 (new event kinds are additive vocabulary, and
+#     unknown fields were always tolerated by the flat-dict format).
+CORE_REQUIRED_EVENT_FIELDS = ("event_id", "engagement_id", "type",
+                              "actor", "ts", "payload")
+
+# The swarm/hypothesis event vocabulary (swarm/hypotheses.py EVENT_* constants,
+# mirrored here as a frozen set — the registry stamps hypothesis_id on every
+# event it writes, and replay's apply path validates it independently).
+_SWARM_HYP_TYPES = frozenset({
+    "REGISTERED", "STATUS_CHANGED", "CLAIMED", "RELEASED", "LEASE_RENEWED",
+    "EVIDENCE_ADDED", "COUNTER_EVIDENCE_ADDED", "LINKED", "CHALLENGED",
+})
+
+# Prefixes owned by the mission layer (mission/events.py).
+_MISSION_TYPE_PREFIXES = ("MISSION_", "TASK_", "AGENT_", "TREE_")
+
+
+def required_fields_for(event_type: str) -> tuple[str, ...]:
+    """Extra mandatory fields beyond CORE_REQUIRED_EVENT_FIELDS for one event
+    type. Unknown types carry only the core requirement (a new layer can start
+    writing before this table learns it — validation then tightens in the same
+    PR that introduces the type's consumers)."""
+    etype = str(event_type or "")
+    if etype in _SWARM_HYP_TYPES:
+        return ("hypothesis_id",)
+    if etype.startswith("TASK_"):
+        return ("mission_id", "task_id")
+    if etype.startswith(_MISSION_TYPE_PREFIXES):
+        return ("mission_id",)
+    return ()
 
 
 def utc_now() -> str:
@@ -92,7 +132,10 @@ class EventJournal:
     def _validate(self, event: dict) -> None:
         if not isinstance(event, dict):
             raise JournalError("event must be a mapping")
-        for field in REQUIRED_EVENT_FIELDS:
+        for field in CORE_REQUIRED_EVENT_FIELDS:
+            if not event.get(field):
+                raise JournalError(f"event missing required field {field!r}")
+        for field in required_fields_for(event["type"]):
             if not event.get(field):
                 raise JournalError(f"event missing required field {field!r}")
         if event["engagement_id"] != self.engagement_id:

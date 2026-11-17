@@ -47,6 +47,36 @@ planner.py            Objective -> plan of actions
 attack_tree.py         Attack tree modeling; optional BanditStore (bandit.py) learns
                        per-(technique, endpoint-shape) win rates across runs to nudge
                        the static priority table instead of overriding it
+synthesis.py           Evidence-join layer (docs/synthesis.md): deterministic rules
+                       (identity differential, unauth baseline, live reflection,
+                       credential reuse) turn run observations into per-node attack
+                       ideas with evidence + DRAFT checks, injected into the swarm's
+                       claim->worker handoff and the hypothesis registry
+                       (expected_behavior/proposed_test + EvidenceRefs). Honors the C1
+                       contract: never selects, never proves, evidence-or-silence,
+                       degrades to an audit record. Not a tool — the orchestrator
+                       owns it
+states.py              The lifecycle registry — EVERY state machine (run manifest,
+                       approval, finding confidence, attack-tree node, kill-chain
+                       stage, hypothesis) with vocabulary + transition tables +
+                       writer matrix; owner modules import their constants here.
+                       Introspect: `python -m redteam.states --json` or
+                       GET /api/state-machines. See docs/state-machines.md before
+                       adding/changing any status string
+hands.py               Phase E1 — agent hands and skills: every profile's tool_names
+                       is a stated capability surface (Hand = purpose/cost/trust/
+                       obligation, trust classes locked to the crosscheck matrix)
+                       plus declared Skills (entry evidence -> tool-naming steps ->
+                       exit -> proof, validated against held hands). Introspect:
+                       `python -m redteam.hands --json`; rendering in
+                       docs/hands-and-skills.md. A new tool without a Hand bound
+                       to a named agent is shelfware — draft Hand+Skill+card triples
+offensive.py          Phase E2 — the deterministic offensive engine: the declared
+                       Skills compiled to executable workflows (recon -> lead trust
+                       discipline -> class exploitation -> independent verify pass),
+                       ZERO model calls. Live-fire regression: the machinery alone
+                       must confirm every planted lab bug (tests/test_offensive.py).
+                       Run: python3 scripts/live_offensive_run.py
 bandit.py              Contextual multi-armed bandit (Thompson sampling) over
                        attack_tree.py's technique choices; persists to
                        memory/bandit.json, same cross-engagement pattern as memory.py
@@ -150,6 +180,31 @@ tools/
   workflow.py            record_finding, request_approval
   jwt.py                 jwt_inspect — deterministic JWT checklist (offline, leads only)
   nuclei.py              nuclei_scan — sandbox-first scanner; matches are LEADS only
+  webdiscover.py         Phase W1 discovery (docs/tool-integration-plan.md):
+                         content_discovery (ffuf), crawl (katana, domain-scoped),
+                         param_discovery (arjun) — rate-capped LEAD generators;
+                         endpoints fold into the graph, parameters feed verify hints
+  hostprobe.py           Phase W1b deep probes: host_probe (httpx: status/title/tech
+                         -> ENDPOINT+TECHNOLOGY nodes), port_scan (nmap -sV, ONE
+                         allowed host, RoE-validated ports -> HOST+SERVICE nodes)
+  webinspect.py          Phase W2 inspectors (first-party HTTP via fetch_once):
+                         xss_reflect_probe maps marker reflections to sink contexts
+                         and emits a READY check_spec verify_vulnerability consumes
+                         1:1; graphql_inspect = deterministic 4-request checklist
+                         (introspection/GET/suggestions/batching). The inspect ->
+                         spec -> prove chain — discovery output IS the proof input
+  crosscheck.py          crosscheck_lead — "never believe a tool's direct output"
+                         made operational: every lead class carries a registered
+                         SECOND method (first-party HTTP / raw socket vs a sandbox
+                         binary; fresh markers vs the inspector's own). Verdicts
+                         corroborated/contradicted/unverifiable; unknown pairs fail
+                         closed; exempt classes documented (surface_scan, jwt_inspect);
+                         python -m redteam.tools.crosscheck --matrix. Trust ladder
+                         lives in docs/tool-inventory.md
+  playbooks.py           find_techniques — first-party offline technique library
+                         (data/playbooks/): kill-chain-indexed playbooks with concrete
+                         steps + verify hints; agents look up tradecraft, never search
+                         the web (egress would refuse third-party sources anyway)
   independent_verify.py  verify_finding_independently — the ONLY tool that may promote
                          a finding to confirmed
   access.py / access_tools.py   Access-control testing helpers

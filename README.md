@@ -73,8 +73,39 @@ redteam/
   sandbox/           Kali container: egress firewall, self-test, lifecycle
   tools/             kali_exec, browser_*, record_finding, request_approval,
                      verify_vulnerability, verify_finding_independently, jwt_inspect,
-                     nuclei_scan (leads only), template/skill tools, postex, ...
+                     nuclei_scan (leads only), content_discovery / crawl /
+                     param_discovery (W1 lead generators), host_probe / port_scan
+                     (W1b deep probes: httpx + nmap, RoE-fenced), xss_reflect_probe /
+                     graphql_inspect (W2 inspectors — reflection mapping and GraphQL
+                     checklists that emit READY check_specs for verify_vulnerability),
+                     find_techniques (offline playbook library in data/playbooks/),
+                     crosscheck_lead (never believe a tool's direct output — every lead
+                     re-verified by a second method),
+                     template/skill tools, postex, ... — the capability ladder lives in
+                     docs/tool-integration-plan.md, the phase inventory in
+                     docs/tool-inventory.md
 dashboard/           Next.js mission-control UI (static export, served by server.py)
+states.py            Lifecycle registry — every state machine (run, approval, finding
+                     confidence, attack-tree node, kill-chain stage, hypothesis) in one
+                     place: vocabulary, transition tables, writer matrix. Introspect via
+                     `python -m redteam.states --json` or GET /api/state-machines;
+                     rationale + inventory in docs/state-machines.md
+hands.py             Agent hands and skills — every agent's tool set is a stated
+                     capability surface (purpose/cost/trust/obligation per hand,
+                     trust classes locked to the crosscheck matrix) plus declared
+                     skills (entry -> steps -> exit -> proof). Introspect via
+                     `python -m redteam.hands --json`; rendering in
+                     docs/hands-and-skills.md; operator tooling research in
+                     docs/operator-tooling-research.md
+offensive.py         Deterministic offensive engine — declared skills executed as
+                     code through the scoped ToolContext (recon -> crosschecked
+                     leads -> prove with negative control -> verify pass), no model
+                     calls; live-fire: `python3 scripts/live_offensive_run.py`
+                     (engine vs the lab targets, scored against ground truth)
+synthesis.py         Evidence-join layer (docs/synthesis.md): deterministic rules turn
+                     run observations (params, identities, findings) into evidence-
+                     carrying attack ideas with draft checks, injected into the swarm's
+                     claim->worker handoff. Never selects, never proves; no tool
 config/engagement.example.yaml
 GEN2-ARCHITECTURE.md Gen-2 design doc — how the pieces fit and which invariants hold
 ROADMAP.md           Gap analysis vs CAI / PentestGPT / Nebula + the path forward

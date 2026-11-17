@@ -58,6 +58,7 @@ from .config import Engagement
 from .events import coerce_payload
 from .killchain import (CREDENTIAL_ACCESS, DISCOVERY, LATERAL_MOVEMENT,
                         PRIVILEGE_ESCALATION)
+from .hands import (OPTIONAL_TOOLS, hands_briefing, skills_briefing)
 from .llm.openrouter import OpenRouterClient
 from .llm.routing import PARSE, PLAN
 from .reflection import coach_note, reflect
@@ -118,15 +119,21 @@ RECON = SpecialistProfile(
            "set_session instead of inventing a login. START with surface_scan (one call, "
            "no arguments): it knocks on every host/port the RoE allows and fills the asset "
            "inventory, so you know which in-scope services are actually alive before you "
-           "spend a single step on a dead one. Use http_probe for raw API surfaces "
-           "the browser cannot reach (JSON endpoints, API roots, robots.txt, versioned "
-           "APIs) and for anything behind a session — it is a cheap fetch, not a proof. "
-           "Be broad and fast."),
-    tool_names=["browser_navigate", "browser_content", "browser_click", "kali_exec",
-                "authenticate", "set_session", "http_probe", "surface_scan",
-                "search_peer_traces"],
+           "spend a single step on a dead one. Then BROADEN with the discovery stack — "
+           "content_discovery (path wordlists), crawl (link/JS walk), spa_recon (SPA API "
+           "routes), param_discovery (hidden params), host_probe/port_scan (fingerprint, "
+           "ports) — and DISCIPLINE it with crosscheck_lead: every discovery lead is a "
+           "claim from a binary/crawler until a first-party method corroborates it; "
+           "corroborated leads go in the graph, contradicted ones are dropped. Use "
+           "http_probe for raw API surfaces the browser cannot reach (JSON endpoints, API "
+           "roots, robots.txt, versioned APIs) and for anything behind a session — it is a "
+           "cheap fetch, not a proof. Be broad and fast."),
+    tool_names=["surface_scan", "host_probe", "port_scan", "content_discovery", "crawl",
+                "param_discovery", "spa_recon", "crosscheck_lead", "http_probe",
+                "browser_navigate", "browser_content", "browser_click",
+                "authenticate", "set_session", "kali_exec", "search_peer_traces"],
     role=PARSE,          # breadth work -> cheaper model
-    max_steps=15,
+    max_steps=22,        # was 15: the discovery stack is the mapping job now, not an extra
 )
 
 EXPLOIT = SpecialistProfile(
@@ -143,7 +150,8 @@ EXPLOIT = SpecialistProfile(
            "confirming findings; do not re-map the surface. NOTE: your checks only reach "
            "pending_verification — a separate pass independently re-checks them before "
            "anything counts. That is by design; keep proving, don't try to self-promote."),
-    tool_names=["confirm_finding", "verify_vulnerability", "authenticate", "set_session",
+    tool_names=["find_techniques", "crosscheck_lead", "apply_skill", "confirm_finding",
+                "verify_vulnerability", "authenticate", "set_session",
                 "http_probe", "kali_exec", "search_peer_traces",
                 "browser_navigate", "browser_content", "browser_fill"],
     role=PLAN,           # depth/reasoning work -> strongest model
@@ -237,7 +245,9 @@ def run_verify_pass(engagement: Engagement, tools: dict[str, Tool], ctx: ToolCon
     ctx.audit.record("verify_pass.start", pending=len(pending))
     subset = {n: tools[n] for n in VERIFY.tool_names if n in tools}
     verifier = RedTeamAgent(engagement, subset, ctx, client, max_steps=VERIFY.max_steps,
-                            system_addon=VERIFY.addon, role=VERIFY.role,
+                            system_addon=(VERIFY.addon + "\n\n"
+                                          + skills_briefing("verify", held=set(subset))),
+                            role=VERIFY.role,
                             agent_name="verify")
     if budget is not None:
         verifier.with_runtime(budget=budget)
@@ -567,7 +577,24 @@ class Orchestrator:
                          agent_name: str | None = None) -> RedTeamAgent:
         # Give the specialist only its allowed tools that actually exist in the registry.
         subset = {n: self._tools[n] for n in profile.tool_names if n in self._tools}
-        addon = profile.addon + addon_suffix
+        # Phase E1 hands: a profile name that is neither held nor an OPTIONAL (browser/
+        # sandbox disabled) tool used to drop SILENTLY here — the A10/surface_scan class
+        # of drift, invisible until a worker needed the hand. Now it is fail-OBSERVABLE:
+        # the static discipline (profile.tool_names == HANDS[agent], tools exist) is
+        # enforced fail-loud by tests/test_hands.py; at runtime the drop is audited so
+        # a live run shows exactly which hand a specialist was promised and lost.
+        unheld = [n for n in profile.tool_names
+                  if n not in self._tools and n not in OPTIONAL_TOOLS]
+        if unheld:
+            self._ctx.audit.record("specialist.hands.unheld", specialist=profile.name,
+                                   unheld=unheld)
+        # The hands/skills briefing: what each held tool costs and may be trusted as,
+        # and which declared procedures the agent may execute — filtered to hands the
+        # agent can actually raise (a briefing teaching an unraisable hand is the
+        # same drift again).
+        addon = (profile.addon + addon_suffix + "\n\n"
+                 + hands_briefing(profile.name, subset) + "\n\n"
+                 + skills_briefing(profile.name, held=set(subset)))
         # agent_name override: the swarm gives each concurrent worker a UNIQUE telemetry
         # identity (exploit-w0, exploit-w1, ...) so peer-trace search can attribute
         # observations to a specific sibling hypothesis. Without it every worker shows
@@ -619,6 +646,23 @@ class Orchestrator:
         n_workers = min(self._max_swarm_workers, len(actionable))
         self._ctx.audit.record("orchestrator.swarm_start", round=round_no,
                                workers=n_workers, actionable=len(actionable))
+        # The evidence-join layer (redteam/synthesis.py): deterministic composition of
+        # run observations into per-(technique, target) attack ideas. This does NOT
+        # select — the tree's actionable()/claim() order is untouched — it ENRICHES
+        # whatever a worker claims, so the claim -> worker handoff carries evidence and
+        # a draft check instead of a bare pair plus one generic sentence. Failure here
+        # degrades to an audit record; the swarm runs exactly as before.
+        idea_map: dict = {}
+        try:
+            from .synthesis import synthesize
+            for idea in synthesize(self._ctx):
+                idea_map[(idea.technique, idea.target)] = idea
+            if idea_map:
+                self._ctx.audit.record(
+                    "synthesis.round", round=round_no, ideas=len(idea_map),
+                    top=[f"{t} on {tg}" for (t, tg) in list(idea_map)[:3]])
+        except Exception as exc:
+            self._ctx.audit.record("synthesis.error", stage="round", error=str(exc))
         if self._noise is not None:
             self._noise.reset()   # per-ROUND allowance: throttled by current pressure
             self._emit("scheduler.state", round=round_no,
@@ -672,7 +716,10 @@ class Orchestrator:
                 # same rationale as the empty-attempt FAILED below) and move on. A
                 # research-layer ERROR never suppresses work: the swarm proceeds
                 # exactly as Gen-1 did (degrade to audit record, never crash).
-                hyp, suppressed = self._research_claim_for_node(claimed, worker_id)
+                hyp, suppressed = self._research_claim_for_node(claimed, worker_id,
+                                                                idea=idea_map.get(
+                                                                    (claimed.technique,
+                                                                     claimed.target)))
                 if suppressed:
                     if self._noise is not None:
                         self._noise.refund(technique_cost(claimed.technique))
@@ -701,6 +748,14 @@ class Orchestrator:
                 # (the specialists-vs-generalist A/B switch).
                 profile = profile_for(claimed.technique)
                 research_note = self._research_note_for(hyp)
+                idea_brief = ""
+                idea = idea_map.get((claimed.technique, claimed.target))
+                if idea is not None:
+                    try:
+                        from .synthesis import brief
+                        idea_brief = "\n\n" + brief(idea)
+                    except Exception:
+                        idea_brief = ""
                 exploit = self._make_specialist(
                     profile, agent_name=f"{profile.name}-w{worker_id}",
                     addon_suffix=f"\n\nYOUR ASSIGNED TARGET THIS TURN: "
@@ -712,7 +767,8 @@ class Orchestrator:
                     f"tool activity actually saw — hits are leads, prove them yourself."
                     + (f"\n\nRESEARCH BRIEFING (run-scoped hypothesis registry — this is "
                        f"recorded context, not proof; every claim still needs YOUR proof "
-                       f"through the normal pipeline):\n{research_note}" if research_note else ""))
+                       f"through the normal pipeline):\n{research_note}" if research_note else "")
+                    + idea_brief)
                 summary = exploit.run(
                     f"{objective}\n\nThis run: EXPLOIT swarm worker {worker_id} round "
                     f"{round_no + 1} — prove {claimed.technique} on {claimed.target}.",
@@ -764,8 +820,14 @@ class Orchestrator:
     #   3. A research-layer failure degrades to an audit record — the swarm runs
     #      exactly as Gen-1 did when the registry/forum is unavailable.
 
-    def _research_claim_for_node(self, node, worker_id: int):
+    def _research_claim_for_node(self, node, worker_id, idea=None):
         """Find-or-register + atomically claim the hypothesis for a claimed tree node.
+
+        `idea` (optional) is a synthesis.AttackIdea for this (technique, target): its
+        expected_behavior/proposed_test ride into the registry's own slots, and its
+        evidence observations attach as EvidenceRefs (kind=observation, source=synthesis)
+        so the hypothesis records WHY the node looked attackable — the rationale chain
+        survives the run, not just the verdict.
 
         Returns (hypothesis, suppressed):
           (hyp, False)  — the worker owns the hypothesis; proceed (with briefing).
@@ -782,13 +844,31 @@ class Orchestrator:
             hyp, _ = self._research.claim_or_register(
                 asset_ref=node.target,
                 weakness_class=weakness_for_technique(node.technique),
-                claim=claim_text, agent=agent, technique=node.technique)
+                claim=claim_text, agent=agent, technique=node.technique,
+                expected_behavior=(idea.expected_behavior if idea is not None else ""),
+                proposed_test=(idea.proposed_test if idea is not None else ""))
             if hyp is None:
                 self._ctx.audit.record("research.duplicate_suppressed",
                                        technique=node.technique, target=node.target,
                                        worker=agent)
                 return None, True
             self._research_hyp_by_node[node.id] = hyp.hypothesis_id
+            if idea is not None and getattr(idea, "evidence", None):
+                try:
+                    for i, obs in enumerate(idea.evidence):
+                        self._research.registry.attach_evidence(
+                            hyp.hypothesis_id,
+                            EvidenceRef(evidence_id=f"ev-syn-{node.id}-{i}",
+                                        kind="observation", origin="agent",
+                                        source_agent="synthesis",
+                                        artifact_ref=str(obs.ref)[:200],
+                                        summary=f"[{obs.source}/{obs.kind}] "
+                                                f"{str(obs.detail)[:180]}",
+                                        ts=self._research_ts()),
+                            agent)
+                except Exception as exc:
+                    self._ctx.audit.record("research.error", stage="synthesis_evidence",
+                                           hypothesis_id=hyp.hypothesis_id, error=str(exc))
             return hyp, False
         except SwarmError as exc:      # registry-level issue (e.g. malformed target)
             self._ctx.audit.record("research.error", stage="claim",

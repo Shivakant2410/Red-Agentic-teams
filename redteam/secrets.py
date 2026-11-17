@@ -64,12 +64,19 @@ def decode_jwt(token: str) -> tuple[dict, dict] | None:
 
 
 _JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*")
+# The keyword label may carry a prefix ("internal_token", "ops_service_token",
+# "db.password") — real docs name credentials that way, and a bare \btoken\b
+# misses every one of them.
 _KV_RE = re.compile(
-    r"""(?i)\b(api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|
+    r"""(?i)\b(?:[\w-]+[_-])?(api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|
         auth[_-]?token|access[_-]?token|refresh[_-]?token|session[_-]?token|
         password|passwd|pwd|secret|token|bearer)\b["']?\s*[:=]\s*["']?
         ([A-Za-z0-9_\-./+=]{8,})""",
     re.VERBOSE)
+# ...and the canonical leak shape "Authorization: Bearer <value>" has NO key:
+# value separator at all — "bearer" is followed by whitespace.
+_BEARER_RE = re.compile(
+    r"(?i)\bbearer\s+([A-Za-z0-9_\-./+=]{8,})")
 _CONN_RE = re.compile(
     r"\b(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|redis|amqp|ftp)://[^\s'\"<>]{6,}", re.IGNORECASE)
 _AWS_RE = re.compile(r"\bAKIA[0-9A-Z]{16}\b")
@@ -103,6 +110,9 @@ def extract_candidates(text: str, context: str = "", max_items: int = 40) -> lis
 
     for label, value in _KV_RE.findall(text):
         add(KEYVALUE, value, label.lower(), "high")
+
+    for value in _BEARER_RE.findall(text):
+        add(KEYVALUE, value, "bearer header", "high")
 
     for conn in _CONN_RE.findall(text):
         add(CONNECTION_STRING, conn, "connection string", "high")

@@ -80,6 +80,7 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     from .nuclei import NucleiScanTool
     from .peer_traces import SearchPeerTracesTool
     from .probe import HttpProbeTool
+    from .provision import ToolProvisionTool
     from .skill_tools import ApplySkillTool
     from .spa_recon import SpaReconTool
     from .surface import SurfaceScanTool
@@ -109,6 +110,38 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # login-gated SPA with bootstrap mocks (ARTEX api-recon port) to reveal the runtime
     # API surface. None record findings.
     tools += [JwtInspectTool(), NucleiScanTool(), SurfaceScanTool(), SpaReconTool()]
+    # The on-requirement toolbox: downloads a catalog tool when the agent needs
+    # it (image layer with a sandbox, project venv without) — provisioning
+    # places binaries only; execution stays under RoE via the other tools.
+    tools.append(ToolProvisionTool())
+    # Phase W1 discovery (docs/tool-integration-plan.md): ffuf/katana/arjun as
+    # structured, rate-capped LEAD generators — endpoints fold into the graph,
+    # parameters ride lead payloads into verify hints. None record findings.
+    from .webdiscover import ContentDiscoveryTool, CrawlTool, ParamDiscoveryTool
+    tools += [ContentDiscoveryTool(), CrawlTool(), ParamDiscoveryTool()]
+    # Phase W1b deep probes (httpx/nmap): content-level host probing and service
+    # fingerprinting of ONE allowed host each — HOST/SERVICE/TECHNOLOGY nodes the
+    # planner, bandit buckets, and priors already read. Leads, never findings.
+    from .hostprobe import HostProbeTool, PortScanTool
+    tools += [HostProbeTool(), PortScanTool()]
+    # Phase W2 first inspectors (the jwt_inspect pattern, first-party HTTP): the
+    # inspect -> spec -> prove chain. xss_reflect_probe maps marker reflections to
+    # sink contexts and emits a READY check_spec verify_vulnerability consumes 1:1;
+    # graphql_inspect runs the deterministic 4-request checklist. Leads, never
+    # findings; markers are benign (mapping, not payload blasting).
+    from .webinspect import GraphqlInspectTool, XssReflectProbeTool
+    tools += [XssReflectProbeTool(), GraphqlInspectTool()]
+    # crosscheck_lead — the "never believe a tool's direct output" rule made
+    # operational: every lead class carries a SECOND-METHOD entry (first-party HTTP /
+    # raw socket vs a sandbox binary; fresh markers vs the inspector's own), verdicts
+    # corroborated/contradicted/unverifiable, still leads-only. Unknown (tool, claim)
+    # pairs fail closed.
+    from .crosscheck import CrossCheckTool
+    tools.append(CrossCheckTool())
+    # First-party technique playbooks (data/playbooks/, ships in-repo): the offline
+    # research layer — agents look techniques up here BEFORE inventing or searching.
+    from .playbooks import FindTechniquesTool
+    tools.append(FindTechniquesTool())
     # search_peer_traces = the swarm's read side (ARTEX worker-trace exchange port):
     # keyword-search sibling specialists' raw process traces for observations that
     # never became findings. Read-only over this run's event log, costs no budget.

@@ -1,0 +1,49 @@
+{
+  "engagement_id": "golden-eng",
+  "report": {
+    "duplicates_skipped": 0,
+    "engagement_id": "golden-eng",
+    "events_applied": 19,
+    "events_read": 19,
+    "invalid_skipped": 0,
+    "issues": []
+  },
+  "state": [
+    {
+      "asset_ref": "https://target.test/admin",
+      "counter_evidence": [
+        "ev-golden-5"
+      ],
+      "evidence": [
+        "ev-golden-4"
+      ],
+      "finding_id": "",
+      "hypothesis_id": "hyp-a57ad922cf66",
+      "lease_expires_at": null,
+      "owner": null,
+      "related": [],
+      "status": "REFUTED",
+      "version": 8,
+      "weakness_class": "auth.bypass"
+    },
+    {
+      "asset_ref": "https://target.test/api/users/7",
+      "counter_evidence": [],
+      "evidence": [
+        "ev-golden-1",
+        "ev-golden-2",
+        "ev-golden-3"
+      ],
+      "finding_id": "",
+      "hypothesis_id": "hyp-f66940602264",
+      "lease_expires_at": null,
+      "owner": null,
+      "related": [
+        "{'hypothesis_id': 'hyp-a57ad922cf66', 'kind': 'RELATED_TO', 'created_by': 'exploit-w1', 'origin': 'agent', 'ts': '2026-01-01T00:16:40+00:00', 'note': 'same auth surface'}"
+      ],
+      "status": "CONFIRMED",
+      "version": 11,
+      "weakness_class": "idor"
+    }
+  ]
+}

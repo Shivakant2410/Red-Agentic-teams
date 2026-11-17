@@ -1,0 +1,28 @@
+id: creds-kerberoast-chain
+name: Service account Kerberoasting chain (identity track, R1 tools)
+kill_chain: creds
+surfaces: [ad]
+tech_tags: [kerberos, kerberoast, ad]
+risk_class: 2
+tools: [find_techniques, verify_vulnerability]
+prerequisites:
+  - "R1 tools composed: kerbrute_enum + kerberoast (impacket GetUserSPNs wrapper)"
+  - "domain creds on the access graph (any authenticated domain identity)"
+  - "operator host runs hashcat offline — the sandbox never cracks hashes"
+detection_risk: medium
+technique: |
+  1. kerbrute_enum for valid usernames (Kerberos user enum is quiet; the B4 harness
+     scores it — attach the measurement to any stealth claim).
+  2. kerberoast: request service tickets for accounts with SPNs using the held
+     identity. Ticket/hash material is handled like all secrets: masked at capture,
+     artifact references only.
+  3. Hand the hash material to the OPERATOR for offline cracking (hashcat on their
+     host); the platform never brute-forces.
+  4. A cracked service-account credential re-enters as set_session-equivalent access:
+     record_access, then prove what it unlocks (paths toward DA come from the R2
+     attack-path playbook, ad-paths-to-hypotheses).
+verify_hint: |
+  Confirmed credential = an authenticated access held on the access graph with the
+  unlock surface it reaches. The roast itself is a lead; the access is the proof.
+references:
+  - "docs/tool-integration-plan.md §R1"

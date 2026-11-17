@@ -1,0 +1,29 @@
+id: lateral-cred-reuse-sweep
+name: Credential reuse and lateral movement sweep (R1 tools, strictly gated)
+kill_chain: lateral
+surfaces: [ad, host]
+tech_tags: [lateral, pth, netexec]
+risk_class: 2
+tools: [find_techniques]
+prerequisites:
+  - "R1 tools composed: nxc_sweep (netexec wrapper) + harvested credential/hash material"
+  - "operator approval per sweep batch; explicit RoE host list for lateral targets"
+detection_risk: high
+technique: |
+  1. Inventory what we hold on the access graph: passwords, NTLM hashes, tickets,
+     keys — each with provenance (which confirmed proof produced it).
+  2. request_approval per sweep batch: target list comes from the RoE/attack-path
+     playbook, never from the agent's own scanning.
+  3. nxc_sweep with the held material: auth check only (--auth-* class modules),
+     one credential x approved hosts. No spraying here — that is the creds playbook
+     with its own guards.
+  4. A successful auth re-enters the loop: record_access -> prove the boundary move
+     (postex-access-persistence-proof) -> the attack-path graph updates.
+  5. Detection risk is HIGH (SMB auth bursts); attach B4 measurements, prefer the
+     quietest valid technique (e.g. one SMB auth over twenty), and say so in the report.
+verify_hint: |
+  Confirmed lateral access = authenticated session on the new host via the held
+  material, recorded on the access graph with both the credential's and the target's
+  provenance. Sweep noise numbers go in the report's detection appendix.
+references:
+  - "docs/tool-integration-plan.md §R1 nxc_sweep"

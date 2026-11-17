@@ -69,6 +69,10 @@ class SandboxConfig:
     container_name: str = "redteam-kali-run"
     memory: str = "2g"
     cpus: str = "2"
+    # catalog tool NAMES (see sandbox/provision.py) to provision into the image
+    # before start — built as an EXTRA_TOOLS layer on the host network, since
+    # the sandbox egress firewall rightly blocks runtime installs
+    extra_tools: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -195,6 +199,7 @@ def _load_sandbox(data: dict) -> SandboxConfig:
         container_name=str(d.get("container_name", defaults.container_name)),
         memory=str(d.get("memory", defaults.memory)),
         cpus=str(d.get("cpus", defaults.cpus)),
+        extra_tools=tuple(str(x) for x in (d.get("extra_tools") or ())),
     )
 
 
