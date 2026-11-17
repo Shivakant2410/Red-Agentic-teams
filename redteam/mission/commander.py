@@ -464,15 +464,23 @@ class Commander:
     def _save_record(self) -> None:
         """Best-effort snapshot of the current mission+task state. A failed
         snapshot write is swallowed (the journal holds the authority; the next
-        mutation rewrites the snapshot)."""
+        mutation rewrites the snapshot). ATOMIC: write to a sibling temp file
+        and os.replace over the target — a concurrent reader (the API's
+        mission poller, the recovery replay) must never observe a truncated
+        or empty mission.json mid-write (this snapshot fires on EVERY
+        mutation, so a non-atomic write here was the mission-poller race)."""
         if self._record_path is None:
             return
         try:
             import json
+            import os
             from pathlib import Path
-            Path(self._record_path).write_text(json.dumps(
+            target = Path(self._record_path)
+            tmp = target.with_name(target.name + ".tmp")
+            tmp.write_text(json.dumps(
                 {"schema_version": 2, "mission": self.mission.to_dict(),
                  "tasks": self.tasks_view()}, indent=2), encoding="utf-8")
+            os.replace(tmp, target)
         except Exception:
             pass
 
