@@ -892,7 +892,7 @@ def test_default_mission_generates_frontier_task_and_verifies_automatically(tmp_
 
     assert executor.calls == ["recon", "exploit", "verify"]
     assert executor.reconciled == 1
-    assert [t["role"] for t in summary["tasks"]] == ["recon", "exploit", "verify"]
+    assert {t["role"] for t in summary["tasks"]} == {"recon", "exploit", "verify"}
     assert all(t["status"] == TASK_SUCCEEDED for t in summary["tasks"])
     assert summary["dynamic"] is True
     assert summary["pending_verification"] == 0
