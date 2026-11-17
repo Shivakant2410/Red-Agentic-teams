@@ -28,9 +28,13 @@ from redteam.states import (can_transition, describe, is_known, machines,
 # mission_task machines per this file's documented drift procedure:
 # bump states.EXPORT_VERSION, update this tuple, check every consumer listed
 # in the machine specs.
-KNOWN_MACHINES = ("approval", "attack_tree_node", "finding_confidence",
-                  "hypothesis", "killchain_stage", "mission", "mission_task",
-                  "run")
+# Phase E2 (docs/adr-002-unified-intelligence-graph.md) added kg_node_lifecycle
+# + access_hold — reversible CURRENCY dimensions (no terminal states by
+# design: stale clears on re-observation, revoked clears on a fresh
+# demonstration), covered by the reachability branch below.
+KNOWN_MACHINES = ("access_hold", "approval", "attack_tree_node",
+                  "finding_confidence", "hypothesis", "kg_node_lifecycle",
+                  "killchain_stage", "mission", "mission_task", "run")
 
 
 def test_all_machines_present():
@@ -51,19 +55,36 @@ def test_machine_tables_are_well_formed(name):
     computed_terminal = {s for s in spec["states"] if not spec["transitions"][s]}
     assert set(spec["terminal"]) == computed_terminal, \
         f"{name}: declared terminal set disagrees with the table"
-    # every non-terminal state can reach a terminal state (no gilded cages)
-    for s in state_set - computed_terminal:
-        seen, frontier, reached = {s}, [s], False
-        while frontier and not reached:
-            cur = frontier.pop()
-            for nxt in spec["transitions"][cur]:
-                if nxt in computed_terminal:
-                    reached = True
-                    break
-                if nxt not in seen:
-                    seen.add(nxt)
-                    frontier.append(nxt)
-        assert reached, f"{name}: {s} can never reach a terminal state"
+    # every non-terminal state can reach a terminal state (no gilded cages) —
+    # EXCEPT machines with NO terminal states at all (Phase E2's reversible
+    # currency dimensions): those must instead let every state return to the
+    # initial state, which is the same no-dead-end guarantee on the reverse edge.
+    if not computed_terminal:
+        for s in state_set:
+            seen, frontier, back = {s}, [s], False
+            while frontier and not back:
+                cur = frontier.pop()
+                for nxt in spec["transitions"][cur]:
+                    if nxt == spec["initial"]:
+                        back = True
+                        break
+                    if nxt not in seen:
+                        seen.add(nxt)
+                        frontier.append(nxt)
+            assert back, f"{name}: {s} can never return to {spec['initial']}"
+    else:
+        for s in state_set - computed_terminal:
+            seen, frontier, reached = {s}, [s], False
+            while frontier and not reached:
+                cur = frontier.pop()
+                for nxt in spec["transitions"][cur]:
+                    if nxt in computed_terminal:
+                        reached = True
+                        break
+                    if nxt not in seen:
+                        seen.add(nxt)
+                        frontier.append(nxt)
+            assert reached, f"{name}: {s} can never reach a terminal state"
     # writers never write outside the vocabulary
     for w in spec["writers"]:
         assert set(w["may_set"]) <= state_set, f"{name}: writer {w['writer']} invents states"
