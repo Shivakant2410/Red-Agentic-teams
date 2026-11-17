@@ -75,10 +75,11 @@ RunOptions.driver == "mission"  (run.py execute_run)
 | File | Change |
 | --- | --- |
 | `redteam/mission/specialist_executor.py` | **new (108 lines)** — `MissionSpecialistExecutor`: task_view → one real specialist invocation → `ExecutionResult`; soft-failure audit mapping (`agent.no_models` / `agent.halt` / `agent.budget_exhausted` → EXEC_FAILED); real-evidence diff over the shared FindingStore |
-| `redteam/orchestrator.py` | **+153/−2** — `execute_task()` task-level interface, `_profile_for_task()` (role→existing profile, `profile_for()` for exploit), `_task_instruction()` (concise, task-scoped), `_execute_verify_task()` (existing `run_verify_pass`), read-only `ctx` property, optional `max_steps` parameter on `_make_specialist()`, `_ROLE_TASK_LINES` |
-| `redteam/mission/driver.py` | `hypotheses` pass-through to `MissionScheduler` (the orchestrator's own `ResearchBundle` — one duplicate-suppression registry); the no-executor seam is now LOUD (unconditional stderr warning + `say`); summary reports `executor` class name; docstring updated to Phase 3 |
-| `redteam/run.py` | mission branch: constructs the shared `Orchestrator` + `MissionSpecialistExecutor`, passes both to the driver, `attack_tree.sync()` after the mission (same sync the orchestrator's verify passes use), falls through to the SHARED finalization (reports, objective scoring, memory reflection — the Phase 2 early return removed); `run.start` mode string is driver-aware; final summary carries mission fields (`mission_id`, `mission_status`, `tasks`, `rounds`, `mission_executor`) |
-| `tests/test_mission_specialist_executor.py` | **new (546 lines, 22 tests)** — executor contract, routing, shared context, claim ownership, task limits, verification |
+| `redteam/orchestrator.py` | **+153/−2** — `execute_task()` task-level interface, `_profile_for_task()` (role→existing profile, `profile_for()` for exploit), `_task_instruction()` (concise, task-scoped), `_execute_verify_task()` (existing `run_verify_pass`), read-only `ctx` property, optional `max_steps` parameter on `_make_specialist()`, `_ROLE_TASK_LINES`; **correction**: `access_precondition_reason()` + `_active_foothold()` (the ACCESS foothold gate) enforced in `execute_task()` before any ACCESS construction |
+| `redteam/mission/driver.py` | `hypotheses` pass-through to `MissionScheduler` (the orchestrator's own `ResearchBundle` — one duplicate-suppression registry); **correction**: `access_gate` pass-through wired into the scheduler's readiness gate; the no-executor seam is now LOUD (unconditional stderr warning + `say`); summary reports `executor` class name; docstring updated to Phase 3 |
+| `redteam/mission/scheduler.py` | **correction**: duck-typed `prerequisite` readiness hook (task_view → "" \| reason) consulted in `ready_tasks()` — a gated task stays PENDING and is re-examined every round (the existing not-ready semantics); no claim, no lifecycle/status/journal change |
+| `redteam/run.py` | mission branch: constructs the shared `Orchestrator` + `MissionSpecialistExecutor`, passes both to the driver, `attack_tree.sync()` after the mission (same sync the orchestrator's verify passes use), falls through to the SHARED finalization (reports, objective scoring, memory reflection — the Phase 2 early return removed); **correction**: passes `access_gate=mission_orchestrator.access_precondition_reason`; `run.start` mode string is driver-aware; final summary carries mission fields (`mission_id`, `mission_status`, `tasks`, `rounds`, `mission_executor`) |
+| `tests/test_mission_specialist_executor.py` | **new (30 tests)** — executor contract, routing, shared context, claim ownership, task limits, verification, and the ACCESS prerequisite gate (no-foothold blocked/no-invocation, direct-dispatch refusal, demonstrated foothold executes, revoked foothold blocked, KillChain path, non-ACCESS unaffected, mid-mission foothold, driver wiring) |
 | `tests/test_mission_lab_e2e.py` | **new (398 lines, 2 tests)** — the controlled lab (below) |
 | `docs/builder01-phase3-implementation-report.md` | **new** — this report |
 
@@ -138,15 +139,52 @@ The proposing specialist can never self-confirm: its checks only reach
 `confidence="confirmed"` from evidence (and `ExecutionResult` rejects it by
 construction), and the verify pass runs in a separate specialist context.
 
+## 6b. Correction (post-review): ACCESS prerequisite gate — a demonstrated foothold is required
+
+The ACCESS specialist's method assumes a foothold to press; mission-plan
+dependencies alone do not PROVE access was obtained. The gate reads ONLY the
+existing authorities — no new foothold store, graph, state machine, or
+authority:
+
+- **Authority**: `Orchestrator.access_precondition_reason(task_view)` (in
+  `orchestrator.py`, next to the routing). It returns `""` (proceed) only when
+  a valid, demonstrated, ACTIVE foothold exists per the existing evidence: an
+  `AccessGraph` node with `held=True` ("demonstrated, not assumed" — the same
+  evidence the classic ACCESS loop consumes via `killchain.recommend()`) or a
+  `KillChain` INITIAL_ACCESS stage marked `achieved`. A revoked / invalidated
+  (`held=False`) / never-proven foothold never satisfies it, and a non-achieved
+  stage (`in_progress`, …) never substitutes. The check is access-role-scoped:
+  recon/exploit/logic/verify routing is untouched.
+- **Dispatch-time enforcement (the lifecycle representation)**: the scheduler
+  gained a duck-typed `prerequisite` hook consulted in `ready_tasks()` (same
+  pattern as `worker_alive`/`hypotheses`); `run.py` wires it to the
+  orchestrator's gate via the driver's `access_gate` parameter. A
+  prerequisite-less ACCESS task is simply NOT dispatchable — it stays
+  **PENDING**, re-examined every round, exactly like unsatisfied dependencies
+  (the existing not-ready semantics). No claim is made, no specialist is
+  constructed, no agent turn runs; when a foothold is demonstrated later in the
+  mission, the SAME pending task dispatches. If the mission ends with the task
+  still gated, the mission ends `failed` (honest: the access work never became
+  possible).
+- **Execution-layer enforcement (defense in depth)**: `execute_task()` checks
+  the gate for every access task before routing — if reached without a
+  foothold (e.g. a direct dispatch), it raises before `_make_specialist()` /
+  `RedTeamAgent.run()`; the executor maps that to EXEC_FAILED with the reason
+  preserved, and the existing failure path records it. Unreachable through the
+  mission path; loud on any bypass.
+- No executor-contract, state-machine, or journal-schema change: the gate adds
+  a readiness condition, not a new task status (`blocked_duplicate` remains the
+  duplicate-suppression case it was in Phase 2).
+
 ## 7. Tests — exact commands and actual results
 
 ```
 $ PYTHONPATH=src python3 -m pytest tests/test_mission_specialist_executor.py tests/test_mission_lab_e2e.py -q
-...........................................................            [100%]
-24 passed in 0.86s
+.................................................................           [100%]
+32 passed in 0.98s          (24 original + 8 ACCESS-gate tests)
 
 $ PYTHONPATH=src python3 -m pytest tests/ -q        (full repository regression)
-1922 passed, 16 skipped, 3 warnings in 48.38s          (exit 0)
+1930 passed, 16 skipped, 3 warnings in 54.11s          (exit 0)
 ```
 
 Baseline before this branch: 1898 passed / 16 skipped (24 new tests, 0
