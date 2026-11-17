@@ -244,9 +244,16 @@ def test_sse_drains_and_closes_on_finished_manifest(harness):
     frames = []
     with client.stream("GET", f"/api/runs/{run_id}/stream?after=0", timeout=10) as resp:
         assert resp.headers["content-type"].startswith("text/event-stream")
+        # read until the backlog event actually shows up: under load the first
+        # data frames can both be ping heartbeats (CI flake 2026-11-17), so a
+        # bare data-count break could stop before run_event is ever delivered.
+        # The stream itself closes when the finished manifest drains — the
+        # break here is only an early exit.
         for line in resp.iter_lines():
             frames.append(line)
-            if len([f for f in frames if f.startswith("data:")]) >= 2:
+            text = "\n".join(frames)
+            if "event: run_event" in text and \
+                    len([f for f in frames if f.startswith("data:")]) >= 2:
                 break
     text = "\n".join(frames)
     assert "event: run_event" in text
