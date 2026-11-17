@@ -75,13 +75,12 @@ RunOptions.driver == "mission"  (run.py execute_run)
 | File | Change |
 | --- | --- |
 | `redteam/mission/specialist_executor.py` | **new (108 lines)** — `MissionSpecialistExecutor`: task_view → one real specialist invocation → `ExecutionResult`; soft-failure audit mapping (`agent.no_models` / `agent.halt` / `agent.budget_exhausted` → EXEC_FAILED); real-evidence diff over the shared FindingStore |
-| `redteam/orchestrator.py` | **+153/−2** — `execute_task()` task-level interface, `_profile_for_task()` (role→existing profile, `profile_for()` for exploit), `_task_instruction()` (concise, task-scoped), `_execute_verify_task()` (existing `run_verify_pass`), read-only `ctx` property, optional `max_steps` parameter on `_make_specialist()`, `_ROLE_TASK_LINES`; **correction**: `access_precondition_reason()` + `_active_foothold()` (the ACCESS foothold gate) enforced in `execute_task()` before any ACCESS construction; **follow-up**: an invalidated holding (the graph's record) contradicts a stale KillChain INITIAL_ACCESS stage — fail closed |
-| `redteam/access.py` | **correction follow-up**: `release()` (the lifecycle inverse of `hold()` — flips `held`, RETAINS the evidence: the graph's own invalidation record) and the read-only `invalidated_holdings()` query; no new node fields, no new authority |
-| `redteam/credit.py` | **correction follow-up**: `invalidate_holdings_for_fixed_findings()` — the creditor's mirror step; findings whose LATEST retest verdict is FIXED revoke exactly the holdings their credit created (evidence marker `confirmed finding <id>:`), emitting `credit.invalidated`; retest.py/findings.py/killchain.py behavior unchanged |
-| `redteam/mission/driver.py` | `hypotheses` pass-through to `MissionScheduler` (the orchestrator's own `ResearchBundle` — one duplicate-suppression registry); **correction**: `access_gate` pass-through wired into the scheduler's readiness gate; the no-executor seam is now LOUD (unconditional stderr warning + `say`); summary reports `executor` class name; docstring updated to Phase 3 |
+| `redteam/orchestrator.py` | **+153/−2** — `execute_task()` task-level interface, `_profile_for_task()` (role→existing profile, `profile_for()` for exploit), `_task_instruction()` (concise, task-scoped), `_execute_verify_task()` (existing `run_verify_pass`), read-only `ctx` property, optional `max_steps` parameter on `_make_specialist()`, `_ROLE_TASK_LINES`; **correction**: `access_precondition_reason()` + `_active_foothold()` (the ACCESS foothold gate) enforced in `execute_task()` before any ACCESS construction; **review round 2**: the gate reads PR #13's canonical `revoked_nodes()` — a revoked holding (the retest-fixed bridge's record) contradicts a stale KillChain INITIAL_ACCESS stage and the gate fails closed |
+| `redteam/server.py` | **review round 2**: the retest endpoint forwards the run's own `ctx.access`/`ctx.graph` to `retest_run` (the retest CLI already did) — a production FIXED verdict now actually revokes the demonstrated holdings through the canonical `invalidate_after_fix` path |
+| `redteam/mission/driver.py` | `hypotheses` pass-through to `MissionScheduler` (the orchestrator's own `ResearchBundle` — one duplicate-suppression registry); **correction**: `access_gate` pass-through wired into the scheduler's readiness gate; the no-executor seam is now LOUD (unconditional stderr warning + `say`); summary reports `executor` class name; docstring updated to Phase 3; **review round 2**: the endgame calc is `mission_outcome()` — mission success requires EVERY task `TASK_SUCCEEDED` (failed/cancelled/expired/exhausted ends are MISSION_FAILED; the old calc equated "all terminal" with "all succeeded") |
 | `redteam/mission/scheduler.py` | **correction**: duck-typed `prerequisite` readiness hook (task_view → "" \| reason) consulted in `ready_tasks()` — a gated task stays PENDING and is re-examined every round (the existing not-ready semantics); no claim, no lifecycle/status/journal change |
 | `redteam/run.py` | mission branch: constructs the shared `Orchestrator` + `MissionSpecialistExecutor`, passes both to the driver, `attack_tree.sync()` after the mission (same sync the orchestrator's verify passes use), falls through to the SHARED finalization (reports, objective scoring, memory reflection — the Phase 2 early return removed); **correction**: passes `access_gate=mission_orchestrator.access_precondition_reason`; `run.start` mode string is driver-aware; final summary carries mission fields (`mission_id`, `mission_status`, `tasks`, `rounds`, `mission_executor`) |
-| `tests/test_mission_specialist_executor.py` | **new (36 tests)** — executor contract, routing, shared context, claim ownership, task limits, verification, and the ACCESS prerequisite gate (no-foothold blocked/no-invocation, direct-dispatch refusal, demonstrated foothold executes, revoked foothold blocked, KillChain path + invalidated-holding contradiction, non-ACCESS unaffected, mid-mission foothold, driver wiring, and the end-to-end FIXED-retest invalidation lab: real creditor → real retest_run → invalidation → blocked despite achieved stage → re-demonstration re-opens) |
+| `tests/test_mission_specialist_executor.py` | **new (38 tests)** — executor contract, routing, shared context, claim ownership, task limits, verification, the ACCESS prerequisite gate (no-foothold blocked/no-invocation, direct-dispatch refusal, demonstrated foothold executes, revoked foothold blocked via the canonical `revoke()`/`revoked_nodes()`, KillChain path + revoked-holding contradiction, non-ACCESS unaffected, mid-mission foothold, driver wiring), the end-to-end FIXED-retest revocation lab (real creditor → real `retest_run` → canonical `invalidate_after_fix` revocation → blocked despite achieved stage → re-demonstration re-opens), and mission-success truthfulness (all-failed/mixed/succeeded e2e, cancelled at the calc seam) |
 | `tests/test_mission_lab_e2e.py` | **new (398 lines, 2 tests)** — the controlled lab (below) |
 | `docs/builder01-phase3-implementation-report.md` | **new** — this report |
 
@@ -153,39 +152,39 @@ authority:
   a valid, demonstrated, ACTIVE foothold exists per the existing evidence: an
   `AccessGraph` node with `held=True` ("demonstrated, not assumed" — the same
   evidence the classic ACCESS loop consumes via `killchain.recommend()`) or —
-  when the graph carries no invalidation record — a `KillChain`
-  INITIAL_ACCESS stage marked `achieved`. A revoked / invalidated
-  (`held=False`) / never-proven foothold never satisfies it, and a non-achieved
-  stage (`in_progress`, …) never substitutes. The check is access-role-scoped:
-  recon/exploit/logic/verify routing is untouched.
-- **Revocation vs the KillChain fallback (review follow-up, decided)**: an
-  achieved INITIAL_ACCESS stage is a HISTORICAL milestone and does **not**
-  remain sufficient once the evidence supporting the foothold is invalidated.
-  The intended lifecycle, all on the existing authorities:
+  when the graph carries no revocation record — a `KillChain`
+  INITIAL_ACCESS stage marked `achieved`. A revoked / never-proven foothold
+  never satisfies it, and a non-achieved stage (`in_progress`, …) never
+  substitutes. The check is access-role-scoped: recon/exploit/logic/verify
+  routing is untouched.
+- **Revocation vs the KillChain fallback (review follow-up, decided; adapted
+  to PR #13's single canonical lifecycle)**: an achieved INITIAL_ACCESS stage
+  is a HISTORICAL milestone and does **not** remain sufficient once the
+  evidence supporting the foothold is revoked. The intended lifecycle — all on
+  the existing authorities, with the SINGLE canonical invalidation path:
   1. *demonstrated* — `access.hold()` (tools, or the creditor
-     `credit_confirmed_findings` on a confirmed finding) sets `held=True`; the
-     KillChain may journal the milestone;
-  2. *invalidated* — a retest verdict of FIXED revokes the holding through the
-     graph's own lifecycle inverse `AccessGraph.release()`:
-     `held=False` with the evidence RETAINED — the graph's own invalidation
-     record (`invalidated_holdings()`); `credit.
-     invalidate_holdings_for_fixed_findings()` is the symmetric step (it
-     revokes exactly the holdings whose evidence reads "confirmed finding
-     <id>:", emits `credit.invalidated`, and touches nothing else);
-  3. *gate* — active holdings win; an invalidation record CONTRADICTS the
+     `credit_confirmed_findings` on a confirmed finding, which stamps
+     structured `finding_id` provenance) sets `held=True`; the KillChain may
+     journal the milestone;
+  2. *revoked* — a retest verdict of FIXED, through retest.py's own
+     FIXED-gated `invalidate_after_fix()`, revokes exactly the holdings that
+     finding demonstrably supported via `AccessGraph.revoke()` (held=False
+     with invalidated_at/invalidation_reason stamped and the evidence
+     retained — `node.revoked` / `revoked_nodes()` is the record;
+     re-demonstration through `hold()` is the only sanctioned re-activation);
+  3. *gate* — active holdings win; a revoked holding CONTRADICTS the
      historical stage, so the gate fails closed (the stage must never stand in
      for a foothold current evidence says is gone) until a foothold is
-     demonstrated again; only a graph with NO invalidation record (or no graph
+     demonstrated again; only a graph with NO revocation record (or no graph
      at all — kill-chain-style deployments) may fall back to the achieved
      stage; re-demonstration re-opens the gate for the SAME pending task.
-  Premise note (verified in code): before this change NO automated path
-  revoked holdings — `retest.py` is verdict-only by design (it appends to
-  `retest_history` and "never touches confidence"; verification, remediation
-  and access state are deliberately orthogonal there). The invalidation step
-  above is the explicit lifecycle link for flows that hold both the finding
-  store and the access graph, and the gate honors the resulting record no
-  matter who wrote it. `retest.py`/`findings.py`/`killchain.py` behavior is
-  unchanged.
+  Wiring (this branch): the retest endpoint in `server.py` now forwards the
+  run's own `ctx.access`/`ctx.graph` to `retest_run` (the retest CLI already
+  did) — so a production FIXED retest actually revokes the demonstrated
+  holdings. No parallel implementation exists: this branch's earlier
+  `release()` / `invalidated_holdings()` / credit-mirror helper were REMOVED
+  in favor of PR #13's unified `revoke()` / `revoked_nodes()` /
+  `invalidate_after_fix()` (the branch is rebased on PR #13's head).
 - **Dispatch-time enforcement (the lifecycle representation)**: the scheduler
   gained a duck-typed `prerequisite` hook consulted in `ready_tasks()` (same
   pattern as `worker_alive`/`hypotheses`); `run.py` wires it to the
@@ -207,21 +206,52 @@ authority:
   a readiness condition, not a new task status (`blocked_duplicate` remains the
   duplicate-suppression case it was in Phase 2).
 
+## 6c. Correction (review round 2): mission success requires every task succeeded
+
+`run_mission_driver`'s endgame calc treated "succeeded", "failed" and
+"cancelled" as equivalent terminal states — a mission in which every task
+failed (or was cancelled) was recorded MISSION_SUCCEEDED. Intolerable now
+that the production mission path dispatches real specialists. The calc is now
+`mission_outcome(tasks)` (driver.py): success requires EVERY task to have
+reached `TASK_SUCCEEDED`; failed / cancelled / expired / exhausted ends — and
+tasks that never became dispatchable — make the mission FAILED, with the
+explicit reason recorded on the mission. `TASK_CANCELLED` exists in the
+states machine as reserved vocabulary (no producer writes it yet); the calc
+is safe against it regardless. Tests cover all-failed, mixed success/failure
+and genuinely successful missions end to end through the driver (scripted
+executors over the Phase 2 `run(task_view)` seam), and the cancelled case at
+the calc seam itself.
+
+Product-scope note (review round 2): this phase is the execution-integration
+step — task loading comes from `mission_plan.json` (with a single
+coordination self-check default), NOT yet an autonomous planner. It is not
+the complete autonomous mission-planning loop; the next milestone connects
+objective + recon intelligence + AttackTree priorities to task generation,
+specialist execution, result-driven replanning and further exploitation.
+
 ## 7. Tests — exact commands and actual results
 
 ```
 $ PYTHONPATH=src python3 -m pytest tests/test_mission_specialist_executor.py tests/test_mission_lab_e2e.py -q
 .................................................................           [100%]
-36 passed in 1.55s          (24 original + 12 ACCESS-gate/lifecycle tests)
+40 passed in 1.38s          (24 original + 12 ACCESS-gate/lifecycle tests
+                             + 4 mission-success truthfulness tests)
 
-$ PYTHONPATH=src python3 -m pytest tests/ -q        (full repository regression)
-1932 passed, 16 skipped, 3 warnings in 49.72s          (exit 0)
+$ PYTHONPATH=src python3 -m pytest tests/ -q        (full repository regression,
+                             branch rebased on PR #13's head — the union suite)
+2043 passed, 16 skipped, 3 warnings in 52.55s          (exit 0; verified twice
+                             consecutively — one earlier run had a single
+                             transient flake in test_mission_api, which passes
+                             standalone and never recurred)
 ```
 
-Baseline before this branch: 1898 passed / 16 skipped (24 new tests, 0
-failures). Existing mission suites (71 tests: lifecycle, identity, ownership,
-recovery, leases, budgets, registry, journal compat, API) pass unchanged —
-their scripted-executor injection seam is preserved.
+The branch is rebased on PR #13's head, so the full-suite number is the union
+of both branches' suites (PR #13 contributes its own ADR-002/graph/retest
+suites). This branch's own contribution over its pre-review state: 24
+executor/lab tests + 12 ACCESS-gate/lifecycle tests + 4 mission-success
+truthfulness tests, 0 failures. Existing mission suites (lifecycle, identity,
+ownership, recovery, leases, budgets, registry, journal compat, API) pass
+unchanged — their scripted-executor injection seam is preserved.
 
 Coverage map: (A) executor contract — success/exception/soft-failure mapping,
 error preservation, no fabricated evidence, real-ref evidence, confirmed-
