@@ -365,7 +365,12 @@ llm: {{}}
     # the production mission path ran the REAL executor (not the mock)
     assert summary["driver"] == "mission"
     assert summary["mission_executor"] == "MissionSpecialistExecutor"
-    assert summary["mission_status"] == "succeeded"
+    # The explicit plan omits VERIFY. Task execution completed, but the
+    # mission must not report success while its finding remains pending.
+    assert summary["mission_status"] == "failed"
+    assert summary["mission_stop_reason"] == "unresolved_verification"
+    assert summary["mission_execution_complete"] is True
+    assert summary["mission_pending_verification"] == 1
     assert summary["status"] == "completed"
     # the run-level summary reflects the REAL findings state, not zeros
     assert summary["findings"] == 1
