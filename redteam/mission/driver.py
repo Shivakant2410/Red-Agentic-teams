@@ -349,7 +349,15 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                     actions = scheduler.reconcile(now=clock())
                     scheduler.apply_reconcile(actions)
             else:
-                # Explicit operator plans preserve their dependency-round behavior.
+                # Explicit operator plans preserve their dependency-round behavior,
+                # but still use the same post-VERIFY reconciliation authority.
+                if (task.role == "verify"
+                        and result.get("outcome") in ("completed", "succeeded", "reserved")
+                        and hasattr(executor, "reconcile_after_verification")):
+                    executor.reconcile_after_verification()
+                    if hasattr(executor, "reflect_after_round"):
+                        executor.reflect_after_round(objective, reflection_round)
+                        reflection_round += 1
                 continue
         if not dynamic:
             rounds += 1
