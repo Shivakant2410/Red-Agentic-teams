@@ -878,13 +878,18 @@ class Orchestrator:
     #                   finding) sets held=True; the KillChain may journal the
     #                   INITIAL_ACCESS milestone.
     #   invalidated   — a retest verdict of FIXED revokes the holding through
-    #                   AccessGraph.release() (credit.invalidate_holdings_
-    #                   for_fixed_findings is the symmetric step): held=False
-    #                   with the evidence RETAINED — the graph's own
-    #                   invalidation record. The KillChain stage is
+    #                   AccessGraph.revoke() (retest.invalidate_after_fix is
+    #                   the single structured step — matched on the hold's
+    #                   attrs["finding_id"] reference, wired into retest_run):
+    #                   held=False with the evidence RETAINED and a timestamped,
+    #                   append-only invalidation record — the graph's own
+    #                   invalidation history. The KillChain stage is
     #                   deliberately NOT auto-demoted: it journals what WAS
     #                   achieved, and retest.py keeps remediation state
-    #                   orthogonal.
+    #                   orthogonal. (Review round 2: this PR's original
+    #                   release()/invalidated_holdings() pair was removed in
+    #                   favor of PR #13's structured revoke()/revoked_nodes()
+    #                   lifecycle — one revocation authority, no shims.)
     #   gate          — active holdings win; an invalidation record CONTRADICTS
     #                   the historical stage, so the gate fails closed (an
     #                   achieved INITIAL_ACCESS must never stand in for a
@@ -916,7 +921,7 @@ class Orchestrator:
         killchain = getattr(self._ctx, "killchain", None)
         if access is None and killchain is None:
             return "no access evidence authorities on the shared context"
-        if access is not None and access.invalidated_holdings():
+        if access is not None and access.revoked_nodes():
             return ("foothold invalidated: the AccessGraph carries a "
                     "demonstrated-then-revoked holding (e.g. a FIXED retest) "
                     "and the achieved INITIAL_ACCESS stage must not stand in "
@@ -933,7 +938,7 @@ class Orchestrator:
             # invalidated holding (e.g. revoked by a FIXED retest) contradicts
             # the historical KillChain milestone — never let the stale stage
             # stand in for it.
-            if access.invalidated_holdings():
+            if access.revoked_nodes():
                 return False
         killchain = getattr(self._ctx, "killchain", None)
         return (killchain is not None

@@ -76,8 +76,8 @@ RunOptions.driver == "mission"  (run.py execute_run)
 | --- | --- |
 | `redteam/mission/specialist_executor.py` | **new (108 lines)** — `MissionSpecialistExecutor`: task_view → one real specialist invocation → `ExecutionResult`; soft-failure audit mapping (`agent.no_models` / `agent.halt` / `agent.budget_exhausted` → EXEC_FAILED); real-evidence diff over the shared FindingStore |
 | `redteam/orchestrator.py` | **+153/−2** — `execute_task()` task-level interface, `_profile_for_task()` (role→existing profile, `profile_for()` for exploit), `_task_instruction()` (concise, task-scoped), `_execute_verify_task()` (existing `run_verify_pass`), read-only `ctx` property, optional `max_steps` parameter on `_make_specialist()`, `_ROLE_TASK_LINES`; **correction**: `access_precondition_reason()` + `_active_foothold()` (the ACCESS foothold gate) enforced in `execute_task()` before any ACCESS construction; **follow-up**: an invalidated holding (the graph's record) contradicts a stale KillChain INITIAL_ACCESS stage — fail closed |
-| `redteam/access.py` | **correction follow-up**: `release()` (the lifecycle inverse of `hold()` — flips `held`, RETAINS the evidence: the graph's own invalidation record) and the read-only `invalidated_holdings()` query; no new node fields, no new authority |
-| `redteam/credit.py` | **correction follow-up**: `invalidate_holdings_for_fixed_findings()` — the creditor's mirror step; findings whose LATEST retest verdict is FIXED revoke exactly the holdings their credit created (evidence marker `confirmed finding <id>:`), emitting `credit.invalidated`; retest.py/findings.py/killchain.py behavior unchanged |
+| `redteam/access.py` | **correction follow-up (superseded by the PR #13 integration, see the note below)**: this branch originally added `release()` + `invalidated_holdings()`; per the PR #13 review round-2 decision the structured `revoke()` / `revoked_nodes()` lifecycle is the single source of truth and the duplicate pair was REMOVED in the integration merge |
+| `redteam/credit.py` | **correction follow-up (superseded by the PR #13 integration, see the note below)**: this branch originally added `invalidate_holdings_for_fixed_findings()` (evidence-marker matching + `credit.invalidated` events); the integration removes it — the retest bridge `retest.invalidate_after_fix()` (structured `attrs["finding_id"]` match, KG remediation marking, wired into `retest_run()` on FIXED) is the single invalidation authority, and `credit_confirmed_findings()` (PR #13 review round 2) now excludes findings whose latest retest verdict is FIXED so stale proof can never re-create a revoked holding |
 | `redteam/mission/driver.py` | `hypotheses` pass-through to `MissionScheduler` (the orchestrator's own `ResearchBundle` — one duplicate-suppression registry); **correction**: `access_gate` pass-through wired into the scheduler's readiness gate; the no-executor seam is now LOUD (unconditional stderr warning + `say`); summary reports `executor` class name; docstring updated to Phase 3 |
 | `redteam/mission/scheduler.py` | **correction**: duck-typed `prerequisite` readiness hook (task_view → "" \| reason) consulted in `ready_tasks()` — a gated task stays PENDING and is re-examined every round (the existing not-ready semantics); no claim, no lifecycle/status/journal change |
 | `redteam/run.py` | mission branch: constructs the shared `Orchestrator` + `MissionSpecialistExecutor`, passes both to the driver, `attack_tree.sync()` after the mission (same sync the orchestrator's verify passes use), falls through to the SHARED finalization (reports, objective scoring, memory reflection — the Phase 2 early return removed); **correction**: passes `access_gate=mission_orchestrator.access_precondition_reason`; `run.start` mode string is driver-aware; final summary carries mission fields (`mission_id`, `mission_status`, `tasks`, `rounds`, `mission_executor`) |
@@ -165,13 +165,15 @@ authority:
   1. *demonstrated* — `access.hold()` (tools, or the creditor
      `credit_confirmed_findings` on a confirmed finding) sets `held=True`; the
      KillChain may journal the milestone;
-  2. *invalidated* — a retest verdict of FIXED revokes the holding through the
-     graph's own lifecycle inverse `AccessGraph.release()`:
-     `held=False` with the evidence RETAINED — the graph's own invalidation
-     record (`invalidated_holdings()`); `credit.
-     invalidate_holdings_for_fixed_findings()` is the symmetric step (it
-     revokes exactly the holdings whose evidence reads "confirmed finding
-     <id>:", emits `credit.invalidated`, and touches nothing else);
+  2. *invalidated* — a retest verdict of FIXED revokes the holding through
+     `AccessGraph.revoke()` (PR #13's structured, timestamped, append-only
+     revocation — the single lifecycle authority after the integration merge):
+     `held=False` with the evidence RETAINED and the invalidation record
+     readable via `revoked_nodes()`; the revocation itself is
+     `retest.invalidate_after_fix()`, matched on the hold's structured
+     `attrs["finding_id"]` reference (never free-text evidence parsing) and
+     wired into `retest_run()` on FIXED — see the integration note below for
+     what this replaced and why;
   3. *gate* — active holdings win; an invalidation record CONTRADICTS the
      historical stage, so the gate fails closed (the stage must never stand in
      for a foothold current evidence says is gone) until a foothold is
@@ -309,3 +311,41 @@ reproduced k-of-n and the negative control held); in Lab 2 the finding remains
 7. **Lease grace formula** stays as Phase 2 shipped it (900 s floor +
    sweep-based extension); wiring `deadline + 2 × command_timeout`
    automatically from `SandboxConfig` remains future work.
+
+## Integration with PR #13 (unified attack intelligence graph) — merge sequence
+
+Per the PR #13 review round-2 decision, PR #13's timestamped, structured
+revocation lifecycle is the **single source of truth**, and this branch now
+consumes it directly (integration merge commit on this branch; no shim
+methods preserved):
+
+- **Removed** this branch's duplicate `AccessGraph.release()` /
+  `invalidated_holdings()` pair. The gate and all call sites read
+  `revoke()` / `revoked_nodes()` — strictly richer (timestamped
+  `invalidated_at`/`invalidation_reason` + append-only `invalidation_history`,
+  the record `retest.invalidate_after_fix` writes), same fail-closed gate
+  semantics, and every test that exercised release()/invalidated_holdings()
+  now exercises revoke()/revoked_nodes() unchanged in intent.
+- **Removed** `credit.invalidate_holdings_for_fixed_findings()`. Its job is
+  done better by the retest bridge: `retest_run(..., access=...)` calls
+  `retest.invalidate_after_fix()` on FIXED, matched on the hold's structured
+  `attrs["finding_id"]` reference (this branch's version matched a free-text
+  evidence prefix — fragile and redundant with the structured reference),
+  and it additionally marks the KnowledgeGraph endpoint REMEDIATED.
+- **Consumed** PR #13's creditor hardening: `credit_confirmed_findings()`
+  excludes findings whose LATEST retest verdict is `fixed`
+  (`retest.latest_verdict()`), so the stale proof can never re-create the
+  holding the bridge just revoked — the exact resurrection path the PR #13
+  review round 2 identified. The gate lab test
+  (`test_fixed_retest_invalidates_the_foothold_and_blocks_access`) now runs
+  the invalidation through `retest_run` itself and asserts the bridge's
+  structured `invalidation.revoked` output.
+
+Merge sequence: **PR #13 merges first** (it owns the access-lifecycle
+authority and the credit/remediation contract), then this PR. Conflicts
+resolve exactly as this integration commit shows: duplicate lifecycle
+methods deleted, call sites re-pointed, tests kept green.
+
+Results on the merged tree (both PRs' suites together): **2040 passed,
+16 skipped, 0 failed** (`python -m pytest -q`); the PR #13 integration
+demonstration still reports **ALL 10 STEPS ASSERTED**.

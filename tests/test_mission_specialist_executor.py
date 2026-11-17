@@ -28,8 +28,7 @@ import pytest
 from redteam.access import AccessGraph
 from redteam.attack_tree import AttackTree
 from redteam.config import Engagement, LlmConfig, SandboxConfig
-from redteam.credit import (credit_confirmed_findings,
-                            invalidate_holdings_for_fixed_findings)
+from redteam.credit import credit_confirmed_findings
 from redteam.findings import Finding, FindingStore
 from redteam.knowledge import KnowledgeGraph
 from redteam.killchain import ACHIEVED, INITIAL_ACCESS, KillChain
@@ -650,12 +649,12 @@ def test_revoked_foothold_does_not_satisfy_the_gate(tmp_path):
                                  actor="op")
     env.ctx.access.hold("session", "web-sess-1", evidence="proven")
     assert [t.task_id for t in scheduler.ready_tasks()] == [task.task_id]
-    # invalidated through the graph's OWN lifecycle operation: release() flips
-    # held and KEEPS the evidence — the invalidation record (a revoked or
-    # otherwise invalidated foothold is no longer active evidence)
-    env.ctx.access.release("session", "web-sess-1")
+    # invalidated through the graph's OWN lifecycle operation: revoke() flips
+    # held, KEEPS the evidence and writes the timestamped, append-only
+    # invalidation record (a revoked foothold is no longer active evidence)
+    env.ctx.access.revoke("session", "web-sess-1", reason="retest fixed")
     assert env.ctx.access.held() == []
-    assert len(env.ctx.access.invalidated_holdings()) == 1
+    assert len(env.ctx.access.revoked_nodes()) == 1
     assert scheduler.ready_tasks() == []
     assert commander.task(task.task_id).status == TASK_PENDING
     assert captured == {}
@@ -686,7 +685,7 @@ def test_invalidated_holding_contradicts_the_killchain_fallback(tmp_path):
     env.ctx.access.hold("session", "web-sess-1", evidence="was proven")
     env.ctx.killchain.mark(INITIAL_ACCESS, ACHIEVED, note="milestone")
     assert env.orch.access_precondition_reason(view) == ""   # active holding wins
-    env.ctx.access.release("session", "web-sess-1")
+    env.ctx.access.revoke("session", "web-sess-1", reason="retest fixed")
     reason = env.orch.access_precondition_reason(view)
     assert "invalidated" in reason and "must not stand in" in reason
     # re-demonstration re-opens the gate
@@ -763,11 +762,15 @@ def test_driver_wires_the_access_gate(tmp_path):
 # Revocation vs the KillChain fallback (review follow-up): a FIXED retest must
 # invalidate the demonstrated foothold, and the achieved INITIAL_ACCESS stage
 # must NOT stand in for it. Run end to end on the REAL authorities — the
-# creditor, the retest machinery (stored-recipe replay against a live local
-# lab), and the graph's own release()/invalidation record. retest.py itself
-# stays verdict-only (verification, remediation and access state are
-# orthogonal there, by its own contract); the invalidation is the creditor's
-# explicit mirror step: credit.invalidate_holdings_for_fixed_findings().
+# creditor, the retest bridge (stored-recipe replay against a live local lab,
+# invalidation wired in via retest_run's FIXED gate: retest.invalidate_after_fix,
+# matched on the hold's structured attrs["finding_id"] reference), and the
+# graph's own timestamped, append-only revocation record (revoked_nodes()).
+# retest.py itself stays confidence-only (verification, remediation and access
+# state are orthogonal there, by its own contract). (Integration with PR #13:
+# this section originally used PR #12's local release()/
+# invalidate_holdings_for_fixed_findings pair — removed in favor of the single
+# structured revocation lifecycle.)
 # =============================================================================
 
 
@@ -872,15 +875,15 @@ def test_fixed_retest_invalidates_the_foothold_and_blocks_access(
                                  actor="op")
     assert [t.task_id for t in scheduler.ready_tasks()] == [task.task_id]
     # 2. run a REAL retest of the stored recipe against the now-patched lab:
-    #    verdict FIXED, recorded on the finding's remediation timeline
-    results = retest_run(ctx.findings, ctx, trials=3, need=2)
+    #    verdict FIXED — and the retest bridge itself revokes the holding the
+    #    finding created (structured attrs["finding_id"] match), writing the
+    #    timestamped, append-only invalidation record; evidence retained
+    results = retest_run(ctx.findings, ctx, trials=3, need=2, access=ctx.access)
     assert results[0]["verdict"] == FIXED
-    # 3. the invalidation step revokes the holding the finding created —
-    #    held=False, evidence retained: the graph's own invalidation record
-    invalidated = invalidate_holdings_for_fixed_findings(ctx)
-    assert invalidated == [held[0].id]
+    assert results[0]["invalidation"]["revoked"] == [
+        {"kind": held[0].kind, "key": held[0].key}]
     assert ctx.access.held() == []
-    assert len(ctx.access.invalidated_holdings()) == 1
+    assert len(ctx.access.revoked_nodes()) == 1
     #    THE expected behavior, explicit: the achieved INITIAL_ACCESS stage is
     #    a historical milestone and does NOT stand in for the invalidated
     #    foothold — the ACCESS task is blocked, nothing constructed, nothing run
