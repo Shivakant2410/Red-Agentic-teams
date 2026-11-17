@@ -1016,7 +1016,7 @@ def test_dynamic_mission_replans_after_failed_attack_path(tmp_path):
         ("exploit", "auth.test", targets[0]),
         ("exploit", "auth.test", targets[1]),
     ]
-    assert summary["mission_status"] == "failed"  # first task failed; alternate still ran
+    assert summary["status"] == "failed"  # first task failed; alternate still ran
     assert summary["execution_complete"] is False
     assert summary["stop_reason"] == "frontier_exhausted"
     assert tree.node("auth.test", targets[0]).status == "todo"
@@ -1064,7 +1064,7 @@ def test_dynamic_mission_stops_immediately_when_objective_is_achieved(tmp_path):
         opts=_driver_opts(), say=lambda t: None)
 
     assert executor.calls == ["recon", "exploit"]
-    assert summary["mission_status"] == "succeeded"
+    assert summary["status"] == "succeeded"
     assert summary["objective_achieved"] is True
     assert summary["stop_reason"] == "objective_achieved"
     assert tree.node("auth.test", targets[1]).status == "todo"
