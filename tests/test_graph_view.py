@@ -160,3 +160,118 @@ def test_graph_endpoint_served_by_api(harness):
 
     # unknown run → same 404 contract as every other endpoint
     assert client.get("/api/runs/unknown-run/graph").status_code == 404
+
+
+# -- Phase E2: attack-path projection (read-time, joins real records only) ---------
+
+def _seed_run(tmp_path):
+    """A small but complete run directory: the full chain from inventory to
+    objective, plus one stale endpoint and one revoked holding."""
+    (tmp_path / "graph.json").write_text(json.dumps({
+        "nodes": [
+            {"id": "host:lab.acme", "kind": "host", "key": "lab.acme", "attrs": {}, "sources": []},
+            {"id": "service:lab.acme:443", "kind": "service", "key": "lab.acme:443",
+             "attrs": {}, "sources": []},
+            {"id": "endpoint:https://lab.acme/admin", "kind": "endpoint",
+             "key": "https://lab.acme/admin",
+             "attrs": {}, "sources": [],
+             "lifecycle": {"status": "remediated", "marked_at": "m", "reason": "retest fixed f1",
+                           "history": []}},
+        ],
+        "edges": [["host:lab.acme", "runs", "service:lab.acme:443"],
+                  ["service:lab.acme:443", "has", "endpoint:https://lab.acme/admin"]]}),
+        encoding="utf-8")
+    (tmp_path / "attack_tree.json").write_text(json.dumps([
+        {"technique": "access.control", "target": "https://lab.acme/admin",
+         "status": "completed", "findings": "f1", "bucket": ""}]), encoding="utf-8")
+    (tmp_path / "findings.json").write_text(json.dumps([
+        {"id": "f1", "title": "AC bypass", "severity": "high",
+         "target": "https://lab.acme/admin", "confidence": "confirmed",
+         "independent_verdict": "confirmed",
+         "retest_history": [{"verdict": "fixed", "when": "w2", "detail": ""}]},
+        {"id": "f2", "title": "orphan claim", "severity": "low",
+         "target": "https://never-seen.example/x", "confidence": "pending_verification"}]),
+        encoding="utf-8")
+    (tmp_path / "access.json").write_text(json.dumps({
+        "nodes": [
+            {"id": "resource:admin", "kind": "resource", "key": "admin",
+             "attrs": {"finding_id": "f1"}, "held": False,
+             "evidence": "confirmed finding f1: x", "source": "verified_finding",
+             "first_seen": "t", "invalidated_at": "2026-01-02",
+             "invalidation_reason": "retest fixed: f1"},
+        ], "edges": []}), encoding="utf-8")
+    (tmp_path / "inventory.json").write_text(json.dumps(
+        {"hosts": {"lab.acme": {"services": {"https/443": {
+            "port": 443, "scheme": "https", "first_seen": "t", "hits": 1,
+            "status_last": 200, "server": "nginx", "title": "Lab", "auth": False,
+            "source": "http", "last_seen": "t"}}}}}), encoding="utf-8")
+    (tmp_path / "objective.json").write_text(json.dumps(
+        {"criteria": [{"id": "c1", "kind": "data_access", "description": "d",
+                       "target": "admin", "achieved": True, "evidence": "e",
+                       "achieved_at": "t"}]}), encoding="utf-8")
+
+
+def test_attack_path_full_chain(tmp_path):
+    _seed_run(tmp_path)
+    g = build_exploration_graph(tmp_path)
+    paths = [p for p in g["attack_paths"] if "endpoint" in p]
+    assert len(paths) == 1
+    p = paths[0]
+    assert p["endpoint"]["id"] == "endpoint:https://lab.acme/admin"
+    assert p["endpoint"]["lifecycle"] == "remediated"          # stale state surfaced
+    assert p["host"]["id"] == "host:lab.acme" and p["service"]["id"] == "service:lab.acme:443"
+    assert p["inventory"]["host"] == "lab.acme"                 # canonical inventory join
+    assert p["techniques"][0]["id"] == "access.control@https://lab.acme/admin"
+    assert p["techniques"][0]["status"] == "completed"
+    f = p["findings"][0]
+    assert f["confidence"] == "confirmed" and f["independent_verdict"] == "confirmed"
+    assert f["retest_last"]["verdict"] == "fixed"               # remediation state surfaced
+    assert p["access"][0]["status"] == "revoked"                # never presented as current
+    assert p["access"][0]["invalidated_at"] == "2026-01-02"
+    assert p["objective"][0]["criterion"] == "c1"
+
+
+def test_attack_path_unmatched_finding_reported_not_guessed(tmp_path):
+    _seed_run(tmp_path)
+    g = build_exploration_graph(tmp_path)
+    unresolved = [p["unresolved"] for p in g["attack_paths"] if "unresolved" in p]
+    assert unresolved and unresolved[0][0]["finding_id"] == "f2"
+    assert unresolved[0][0]["reason"] == "no matching endpoint record"
+    # the orphan never joined to a fabricated endpoint node
+    assert {n["id"] for n in g["nodes"]} & {"endpoint:https://never-seen.example/x"} == set()
+
+
+def test_attack_path_canonical_join_on_query_and_port(tmp_path):
+    (tmp_path / "graph.json").write_text(json.dumps({
+        "nodes": [{"id": "endpoint:https://h.acme/api", "kind": "endpoint",
+                   "key": "https://h.acme/api", "attrs": {}, "sources": []}],
+        "edges": []}), encoding="utf-8")
+    (tmp_path / "findings.json").write_text(json.dumps([
+        {"id": "f3", "title": "t", "severity": "low",
+         "target": "https://h.acme:443/api?utm=2", "confidence": "falsified"}]),
+        encoding="utf-8")
+    (tmp_path / "attack_tree.json").write_text(json.dumps([
+        {"technique": "injection.sqli", "target": "https://h.acme/api",
+         "status": "failed", "findings": "f3", "bucket": ""}]), encoding="utf-8")
+    g = build_exploration_graph(tmp_path)
+    paths = [p for p in g["attack_paths"] if "endpoint" in p]
+    assert len(paths) == 1
+    assert paths[0]["endpoint"]["id"] == "endpoint:https://h.acme/api"
+    assert paths[0]["findings"][0]["confidence"] == "falsified"
+    assert paths[0]["techniques"][0]["status"] == "failed"
+
+
+def test_attack_path_no_records_yields_empty(tmp_path):
+    g = build_exploration_graph(tmp_path)   # empty run dir
+    assert g["attack_paths"] == []
+
+
+def test_existing_graph_response_shape_unchanged(tmp_path):
+    _seed_run(tmp_path)
+    g = build_exploration_graph(tmp_path)
+    # the pre-E2 contract keys are all present and well-formed (additive only)
+    assert set(g.keys()) >= {"nodes", "edges", "layer_counts", "killchain", "attack_tree"}
+    # asset layer: KG host + KG service + inventory host + inventory service
+    assert g["layer_counts"]["asset"] == 4 and g["layer_counts"]["endpoint"] == 1
+    assert g["killchain"] == []   # no killchain.json in this seed — honest partial
+    assert g["attack_tree"] == {"todo": 0, "in_progress": 0, "failed": 0, "completed": 1}

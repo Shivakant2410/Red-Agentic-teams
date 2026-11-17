@@ -22,13 +22,27 @@ Hard limits, on purpose:
     show the privilege boundary actually moved. The gate stays intact.
   - Only confirmed findings count. pending_verification findings are invisible to the
     creditor exactly as they are invisible to record_access(held=true).
+  - Remediation state is respected (review round 2): a finding whose LATEST retest
+    verdict is `fixed` is remediation proof — its confirmation stays on record
+    (history intact) but it no longer demonstrates CURRENT exploitability, so it can
+    never re-create the holding the retest-fixed bridge just revoked or earn fresh
+    credit from stale proof. A newer `reproducible` retest re-establishes
+    exploitability; a genuinely new demonstration always re-establishes the holding
+    through the normal hold() path. latest_verdict() (retest.py) is the single read.
   - Idempotent: access.hold() merges on (kind, key), and criteria only ever move
     outstanding -> achieved, so re-running the sweep is a no-op.
 """
 
 from __future__ import annotations
 
+import datetime as _dt
+
 from .objective import HOST_ACCESS, DATA_ACCESS, FLAG, PRIVILEGE, regex_match
+from .retest import FIXED, latest_verdict
+
+
+def _dt_now_iso() -> str:
+    return _dt.datetime.now(_dt.timezone.utc).isoformat()
 
 # Criterion kind -> access-graph node kind for the hold. FLAG is material we read,
 # i.e. a resource. PRIVILEGE is deliberately absent (see module docstring).
@@ -74,14 +88,20 @@ def credit_confirmed_findings(ctx, objective=None, access=None) -> list[dict]:
 
     Never raises for missing objective/access — the creditor simply collects nothing.
     Emits a 'credit.applied' event per criterion when an event bus is attached.
-    """
+    Findings whose latest retest verdict is FIXED are excluded (see the module
+    docstring): the remediated proof must not resurrect a revoked holding."""
     objective = objective if objective is not None else getattr(ctx, "objective", None)
     access = access if access is not None else getattr(ctx, "access", None)
     findings = getattr(ctx, "findings", None)
     if objective is None or access is None or findings is None:
         return []
 
-    confirmed = [f for f in findings.all() if f.confidence == "confirmed"]
+    confirmed = [f for f in findings.all()
+                 if f.confidence == "confirmed"
+                 # historical confirmation (was it real?) and current
+                 # exploitability (does it still reproduce?) are separate
+                 # dimensions — the retest pipeline owns the second one
+                 and latest_verdict(f) != FIXED]
     if not confirmed:
         return []
 
@@ -103,8 +123,22 @@ def credit_confirmed_findings(ctx, objective=None, access=None) -> list[dict]:
             evidence = (f"confirmed finding {match.id}: {match.title} "
                         f"({match.severity}) on {match.target}"
                         + (f" — evidence_regex match {snippet!r}" if snippet else ""))
+            # Phase E2 (ADR-002): a STRUCTURED finding reference rides with the
+            # hold, so the retest-fixed bridge can revoke exactly the holdings
+            # this finding proved — without parsing the free-text evidence.
+            # Same hold, same gate; purely additive provenance.
             access.hold(node_kind, criterion.target, evidence=evidence,
-                        source="verified_finding")
+                        source="verified_finding",
+                        attrs={"finding_id": match.id},
+                        evidence_refs=[{
+                            "evidence_id": f"finding-{match.id}",
+                            "kind": "finding", "origin": "agent",
+                            "source": "creditor",
+                            "source_agent": "credit",
+                            "artifact_ref": f"finding:{match.id}",
+                            "summary": f"confirmed finding {match.id} on {match.target}",
+                            "ts": _dt_now_iso(),
+                        }])
         newly = objective.autoevaluate(access)
         for cid in newly:
             c = objective.get(cid)

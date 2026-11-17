@@ -53,6 +53,23 @@ REPRODUCIBLE, FIXED, CANNOT_CONFIRM, BLOCKED = (
     "reproducible", "fixed", "cannot_confirm", "blocked")
 
 
+def latest_verdict(finding) -> str:
+    """The most recent retest verdict for a finding — "" when never retested.
+
+    THE remediation-state read for consumers (the creditor sweep, reporting,
+    projections): `confidence` records whether the finding was REAL
+    (verification), this records whether it STILL IS (remediation) — the two
+    dimensions stay orthogonal by design. Only verdict == FIXED is remediation
+    proof; cannot_confirm / blocked explicitly are NOT (a fix is never
+    certified over dead or refused trials), and a newer reproducible entry
+    re-establishes exploitability after a fix — this reads the LATEST entry,
+    so the answer always reflects the current remediation cycle."""
+    history = getattr(finding, "retest_history", None) or []
+    if not history:
+        return ""
+    return str((history[-1] or {}).get("verdict") or "")
+
+
 class _TransportBox:
     """Counts trials whose transport died (status 0 — host down, DNS, refused).
     Fetch-level, not assertion-level: only real evidence the target was gone."""
@@ -217,10 +234,19 @@ def _replay(f, ctx, trials, need, fresh_attack_steps, fresh_control_steps):
 def retest_run(store, ctx, *, finding_id: str = "", trials: int = 5, need: int = 4,
                fresh_attack_steps: list | None = None,
                fresh_control_steps: list | None = None,
-               record_history: bool = True) -> list[dict]:
+               record_history: bool = True,
+               access=None, graph=None) -> list[dict]:
     """Retest one finding (by id) or every finding with a stored replay recipe.
     Appends each result to the finding's retest_history (never touches confidence —
-    verification state and remediation state are orthogonal)."""
+    verification state and remediation state are orthogonal).
+
+    Phase E2: `access`/`graph` (the run's AccessGraph/KnowledgeGraph, loaded
+    from the run dir by build_ctx_for_run) enable remediation invalidation —
+    when a retest proves FIXED, holdings and graph observations that this
+    finding demonstrably supported are revoked/marked remediated
+    (invalidate_after_fix). Every other verdict (reproducible / cannot_confirm /
+    blocked) changes NO lifecycle state: a flaky, unreachable or scope-blocked
+    retest is not evidence of a fix."""
     results = []
     for f in store.all():
         if finding_id and f.id != finding_id:
@@ -237,18 +263,83 @@ def retest_run(store, ctx, *, finding_id: str = "", trials: int = 5, need: int =
                      "verdict": out["verdict"], "reproductions": out["reproductions"],
                      "trials": out["trials"], "detail": out["detail"]}
             store.append_retest(f.id, entry)
+        if out["verdict"] == FIXED and (access is not None or graph is not None):
+            invalidation = invalidate_after_fix(
+                f, access=access, graph=graph, audit=getattr(ctx, "audit", None))
+            out["invalidation"] = invalidation
         safe_emit(getattr(ctx, "events", None), "finding.retested",
                   finding_id=f.id, verdict=out["verdict"], detail=out["detail"][:200])
     return results
 
 
+def invalidate_after_fix(finding, access=None, graph=None, audit=None) -> dict:
+    """Remediation invalidation for a FIXED retest verdict (Phase E2, ADR-002).
+
+    The audit's finding F4 in action: a confirmed finding whose proof no longer
+    reproduces means the holding(s) that finding demonstrated and the graph
+    state that echoed it must stop reading as CURRENT — while every historical
+    record survives (the hold happened; the finding is still confirmed; the
+    retest timeline is intact).
+
+    Evidence rules (the safety contract):
+      - a hold is revoked ONLY when it carries a structured `finding_id`
+        reference equal to this finding's id (written by the creditor and the
+        privilege-credit path at hold time) — no free-text parsing, no guessing;
+      - the matching KnowledgeGraph endpoint is marked REMEDIATED (lifecycle
+        decoration, append-only history) when one exists — never deleted;
+      - `blocked` / `cannot_confirm` / `reproducible` verdicts NEVER reach this
+        function (the caller gates on FIXED) — a transport failure, a timeout,
+        or a retest the RoE now refuses is not proof of a fix.
+
+    Nothing here executes anything, authorizes anything, or touches finding
+    confidence (retest history and confidence are orthogonal by design)."""
+    revoked: list[dict] = []
+    remediated: list[dict] = []
+    if access is not None:
+        for node in access.held():
+            provenance = getattr(node, "attrs", {}) or {}
+            if provenance.get("finding_id") != getattr(finding, "id", None):
+                continue
+            if access.revoke(node.kind, node.key,
+                             reason=f"retest fixed: {finding.id} no longer reproduces"):
+                revoked.append({"kind": node.kind, "key": node.key})
+    if graph is not None:
+        target = str(getattr(finding, "target", "") or "")
+        if target:
+            from .knowledge import ENDPOINT, canonical_url
+            canon = canonical_url(target)
+            node = None
+            for n in graph.nodes(ENDPOINT):
+                if n.key == target or canonical_url(n.key) == canon:
+                    node = n
+                    break
+            if node is not None and graph.mark_remediated(
+                    node.key, kind=ENDPOINT,
+                    reason=f"finding {finding.id} retested fixed"):
+                remediated.append({"kind": ENDPOINT, "key": node.key})
+    if audit is not None and (revoked or remediated):
+        try:
+            audit.record("retest.invalidated", finding_id=finding.id,
+                         revoked=revoked, remediated=remediated)
+        except Exception:
+            pass
+    return {"revoked": revoked, "remediated": remediated}
+
+
 def build_ctx_for_run(engagement, run_dir):
     """A minimal ToolContext for retesting a FINISHED run: the frozen RoE from
     scope.json (rebuilt as an Engagement — the original engagement file may have
-    changed since), a fresh audit/traffic/inventory against the run dir, no LLM."""
+    changed since), a fresh audit/traffic/inventory against the run dir, no LLM.
+
+    Phase E2: the run's graph.json / access.json are also loaded (when present)
+    so a FIXED retest can invalidate the holdings and graph state that finding
+    demonstrated — the run dir is the same store the run wrote, so this reads
+    the run's own truth, never another engagement's."""
     from .audit import AuditLog
+    from .access import AccessGraph
     from .findings import FindingStore
     from .inventory import AssetInventory
+    from .knowledge import KnowledgeGraph
     from .ratelimit import RateLimiter
     from .scope import ScopeGuard
     from .traffic import TrafficRecorder
@@ -267,6 +358,16 @@ def build_ctx_for_run(engagement, run_dir):
     )
     ctx.traffic = TrafficRecorder(run_dir / "traffic.jsonl")
     ctx.inventory = AssetInventory(run_dir / "inventory.json")
+    if (run_dir / "access.json").exists():
+        try:
+            ctx.access = AccessGraph(run_dir / "access.json")
+        except Exception:
+            ctx.access = None
+    if (run_dir / "graph.json").exists():
+        try:
+            ctx.graph = KnowledgeGraph(run_dir / "graph.json")
+        except Exception:
+            ctx.graph = None
     return ctx
 
 
@@ -312,7 +413,9 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin CLI
     results = retest_run(ctx.findings, ctx, finding_id=args.finding,
                          trials=args.trials, need=args.need,
                          fresh_attack_steps=json.loads(Path(args.fresh_attack).read_text()) if args.fresh_attack else None,
-                         fresh_control_steps=json.loads(Path(args.fresh_control).read_text()) if args.fresh_control else None)
+                         fresh_control_steps=json.loads(Path(args.fresh_control).read_text()) if args.fresh_control else None,
+                         access=getattr(ctx, "access", None),
+                         graph=getattr(ctx, "graph", None))
     print(json.dumps(results, indent=2, ensure_ascii=False))
     return 0
 

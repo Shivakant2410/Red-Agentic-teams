@@ -68,6 +68,100 @@ from .swarm import (AWAITING_VERIFICATION, CONFIRMED, REFUTED, EvidenceRef,
 from .tools import ToolContext, Tool
 
 
+def sync_inventory_into_graph(inventory, graph) -> dict:
+    """Inventory -> KnowledgeGraph synchronization bridge (Phase E2, ADR-002).
+
+    The audit's finding F2: AssetInventory passively records every answering
+    host/port (tools/http.py fingerprints each response), but the KnowledgeGraph's
+    host/service layer only ever filled from kali_exec output parsing — so the
+    "unified" graph had a hole at its root and the two stores never reconciled.
+    This bridge makes the inventory the KG's host/service FEEDER while the
+    inventory stays the host/service authority and the KG stays the relationship
+    authority.
+
+    ELIGIBILITY POLICY (deliberate, ADR-002): only services with a real observed
+    response (`status_last` > 0) become graph nodes. Imported/declared asset-feed
+    rows (status_last=None) stay inventory-only — an operator-supplied feed is
+    data, never a live observation, and must not widen what the graph presents
+    as the answering surface. Failure/denied probes (status 0) are likewise
+    skipped: a knock that got nothing is not a service.
+
+    IDEMPOTENCY: every write is a KnowledgeGraph.observe() merge (same key
+    re-observed = attrs merged, last_seen refreshed, sources corroborated) —
+    calling this twice changes nothing but freshness, which is exactly the
+    temporal signal we want (last_seen IS the staleness evidence).
+
+    SAFETY: pure in-memory state work — no network, no scope logic, no findings,
+    no attack-tree authority. Cannot widen scope (both stores were scope-checked
+    at their own write time) and cannot create demonstrated access.
+    """
+    if inventory is None or graph is None:
+        return {"bridged": 0, "skipped_unanswered": 0}
+    from .knowledge import HOST, SERVICE, canonical_host, _now
+    bridged = skipped = 0
+    try:
+        rows = inventory.iter_services()
+    except Exception as exc:   # a broken inventory must never break the run
+        return {"bridged": 0, "skipped_unanswered": 0, "error": str(exc)[:200]}
+    for host, svc in rows:
+        try:
+            status = svc.get("status_last")
+            if not status:
+                skipped += 1
+                continue
+            scheme = str(svc.get("scheme") or "tcp")
+            port = int(svc.get("port") or 0)
+            if port <= 0:
+                skipped += 1
+                continue
+            chost = canonical_host(host)
+            inv_key = f"{scheme}/{port}"
+            source = str(svc.get("source") or "inventory")
+            # HOST node — canonical spelling; the raw inventory spelling is
+            # preserved as foreign-reference metadata (ADR-002 §Join strategy).
+            graph.observe(
+                HOST, chost,
+                attrs={"inventory_host": host},
+                source="inventory",
+                evidence_refs=[_inv_evidence_ref(host, inv_key, svc)],
+            )
+            # SERVICE node + host -> runs -> service edge.
+            skey = f"{chost}:{port}"
+            graph.observe(
+                SERVICE, skey,
+                attrs={"scheme": scheme, "port": port,
+                       "inventory_key": inv_key,
+                       **({"server": str(svc["server"])[:120]} if svc.get("server") else {}),
+                       **({"title": str(svc["title"])[:120]} if svc.get("title") else {}),
+                       **({"auth": True} if svc.get("auth") else {})},
+                source="inventory",
+                relate_to=f"{HOST}:{chost}", relation="runs",
+                evidence_refs=[_inv_evidence_ref(host, inv_key, svc)],
+            )
+            bridged += 1
+        except Exception:
+            skipped += 1   # one bad row must not poison the bridge
+    return {"bridged": bridged, "skipped_unanswered": skipped}
+
+
+def _inv_evidence_ref(host: str, inv_key: str, svc: dict) -> dict:
+    """EvidenceRef-shaped provenance for one bridged observation. The artifact
+    reference points at the inventory row itself (host + service key), so the
+    provenance resolves to a real record the run persisted."""
+    from .knowledge import _now
+    return {
+        "evidence_id": f"inv-{host}-{inv_key}",
+        "kind": "observation",
+        "origin": "target",
+        "source": "inventory",
+        "source_agent": "inventory_bridge",
+        "artifact_ref": f"inventory.json:hosts[{host}].services[{inv_key}]",
+        "summary": (f"{svc.get('scheme')}/{svc.get('port')} answered "
+                    f"{svc.get('status_last')} (server: {str(svc.get('server') or '')[:60]})"),
+        "ts": _now(),
+    }
+
+
 def profile_for(technique: str | None):
     """Module-level alias so callers (and tests) can reach the router without the
     specialists import — kept as a function attribute to avoid a circular import
@@ -1351,6 +1445,13 @@ class Orchestrator:
             # causes of finding confidence).
             self._mirror_verification_outcomes()
             if self._attack_tree is not None:
+                # Phase E2: inventory->KG bridge first (host/service observations
+                # reach the graph the same place the tree re-syncs), then the tree
+                # sync. Bridge is idempotent; failure degrades to an audit record.
+                bridge = sync_inventory_into_graph(self._ctx.inventory, self._graph)
+                if bridge.get("error") or bridge.get("skipped_unanswered"):
+                    self._ctx.audit.record("orchestrator.inventory_bridge",
+                                           **{k: v for k, v in bridge.items() if k != "error"})
                 # Promote nodes this pass just confirmed NOW: only worker agents sync
                 # (on their own turns), so a confirmation landing in the final verify
                 # pass would otherwise never promote — no COMPLETED, no unlock, and
@@ -1390,6 +1491,7 @@ class Orchestrator:
                 self._ctx.audit.record("orchestrator.verify_incomplete", remaining=still_pending)
             self._mirror_verification_outcomes()
             if self._attack_tree is not None:
+                sync_inventory_into_graph(self._ctx.inventory, self._graph)
                 self._attack_tree.sync(graph=self._graph, findings=self._ctx.findings.all())
 
         # Final creditor sweep (idempotent — see run_verify_pass note): catches a

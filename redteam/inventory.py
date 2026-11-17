@@ -144,3 +144,21 @@ class AssetInventory:
     def known_hosts(self) -> list[str]:
         with self._lock:
             return sorted(self._data["hosts"].keys())
+
+    def iter_services(self) -> list[tuple[str, dict]]:
+        """Every recorded (host, service-row) pair — the unbounded read the
+        inventory→KnowledgeGraph synchronization bridge needs (Phase E2).
+
+        `summary()` is deliberately bounded at 64 rows for briefings; the bridge
+        needs the full map so no answering service is dropped from the graph.
+        Read-only, returns a copy; rows carry their `source` and `status_last`
+        so the bridge can apply its eligibility policy (only services that
+        actually ANSWERED become graph nodes — imported/declared assets stay
+        inventory-only, per ADR-002)."""
+        with self._lock:
+            out = []
+            for host, rec in sorted(self._data["hosts"].items()):
+                for svc in sorted((rec.get("services") or {}).values(),
+                                  key=lambda s: (s.get("scheme", ""), s.get("port", 0))):
+                    out.append((str(host), dict(svc)))
+            return out

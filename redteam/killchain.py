@@ -12,7 +12,9 @@ session, or a host — otherwise it's a side note to write up, not a win.
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
+import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -25,6 +27,10 @@ from .states import (STAGE_ACHIEVED as ACHIEVED, STAGE_IN_PROGRESS as IN_PROGRES
                      STAGE_NOT_STARTED as NOT_STARTED, STAGE_TRANSITIONS)
 
 RECON = "reconnaissance"
+
+def _now() -> str:
+    return _dt.datetime.now(_dt.timezone.utc).isoformat()
+
 INITIAL_ACCESS = "initial-access"
 EXECUTION = "execution"
 CREDENTIAL_ACCESS = "credential-access"
@@ -63,12 +69,20 @@ class StageState:
     stage: str
     status: str = NOT_STARTED
     notes: list = field(default_factory=list)
+    # Phase E2: when the stage transitioned to ACHIEVED ("" = never / reverted).
+    # server.py and graph_view.py have read this field since Gen-2 (they .get()
+    # it defensively); the producer never wrote it — now it does.
+    achieved_at: str = ""
 
 
 class KillChain:
     def __init__(self, path: str | Path | None = None):
         self._stages: dict[str, StageState] = {s: StageState(stage=s) for s in STAGES}
         self._path = Path(path) if path else None
+        # Phase E2: one lock, consistent with every other shared store (the
+        # exploit swarm and the verify/credit paths can mark stages from
+        # different threads). RLock so locked methods can call locked methods.
+        self._lock = threading.RLock()
         if self._path and self._path.exists():
             try:
                 for row in json.loads(self._path.read_text(encoding="utf-8")):
@@ -78,20 +92,29 @@ class KillChain:
                 pass
 
     def mark(self, stage: str, status: str, note: str = "") -> None:
-        st = self._stages.get(stage)
-        if st is None:
-            return
-        st.status = status
-        if note:
-            st.notes.append(note)
-        self._flush()
+        with self._lock:
+            st = self._stages.get(stage)
+            if st is None:
+                return
+            was = st.status
+            st.status = status
+            if status == ACHIEVED:
+                if was != ACHIEVED or not st.achieved_at:
+                    st.achieved_at = _now()   # first transition stamps; re-marks keep it
+            elif was == ACHIEVED:
+                st.achieved_at = ""           # an operator revert un-achieves honestly
+            if note:
+                st.notes.append(note)
+            self._flush()
 
     def status(self, stage: str) -> str:
-        st = self._stages.get(stage)
-        return st.status if st else NOT_STARTED
+        with self._lock:
+            st = self._stages.get(stage)
+            return st.status if st else NOT_STARTED
 
     def achieved(self) -> list[str]:
-        return [s for s, st in self._stages.items() if st.status == ACHIEVED]
+        with self._lock:
+            return [s for s, st in self._stages.items() if st.status == ACHIEVED]
 
     # -- the decision that makes this a red team ------------------------------
 
@@ -124,19 +147,22 @@ class KillChain:
         return pending or [COLLECTION]
 
     def briefing(self, access=None, objective=None) -> str:
-        done = self.achieved()
-        lines = ["[KILL CHAIN]"]
-        lines.append("  achieved: " + (", ".join(done) if done else "(nothing yet)"))
-        recs = self.recommend(access, objective)
-        lines.append("[NEXT STAGE — choose actions that advance these]")
-        for s in recs:
-            gate = "  (GATED: needs explicit authorization + approval)" if s in GATED else ""
-            lines.append(f"  -> {s}: {STAGES.get(s, '')}{gate}")
-        return "\n".join(lines)
+        with self._lock:
+            done = self.achieved()
+            lines = ["[KILL CHAIN]"]
+            lines.append("  achieved: " + (", ".join(done) if done else "(nothing yet)"))
+            recs = self.recommend(access, objective)
+            lines.append("[NEXT STAGE — choose actions that advance these]")
+            for s in recs:
+                gate = "  (GATED: needs explicit authorization + approval)" if s in GATED else ""
+                lines.append(f"  -> {s}: {STAGES.get(s, '')}{gate}")
+            return "\n".join(lines)
 
     def summary(self) -> dict:
-        return {"achieved": len(self.achieved()),
-                "stages": {s: st.status for s, st in self._stages.items()}}
+        with self._lock:
+            stages = {s: st.status for s, st in self._stages.items()}
+        return {"achieved": len([s for s, v in stages.items() if v == ACHIEVED]),
+                "stages": stages}
 
     def _flush(self) -> None:
         if not self._path:

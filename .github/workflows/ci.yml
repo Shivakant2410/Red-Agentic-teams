@@ -1,0 +1,28 @@
+# Minimal CI: make test results verifiable on GitHub (review round 2 — the
+# builder-reported pass counts had no check runs to back them). Runs the full
+# suite on every push and PR; no LLM keys, no network targets, no browsers —
+# the suite is deterministic and local (see docs/state-machines.md and the
+# implementation reports' "controlled demonstration" sections).
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install package (editable, with test deps)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Full test suite
+        run: python -m pytest -q

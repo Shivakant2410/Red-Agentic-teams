@@ -206,6 +206,53 @@ authorization-first discipline as the traffic/inventory/feed round:
   `confidence`, and the proved-by edge exists only when the target endpoint is
   actually in the discovered surface.
 
+
+## Unified attack intelligence graph (Phase E2, docs/adr-002-unified-intelligence-graph.md)
+
+The seven authorities (KnowledgeGraph, AccessGraph, AttackTree, KillChain,
+AssetInventory, FindingStore, HypothesisRegistry) now operate as ONE coherent
+intelligence architecture — by extension, not replacement. What was added:
+
+- **Canonical identity** — `knowledge.canonical_url()` / `canonical_host()`
+  give every store one join key (scheme/host casing, default ports, fragments
+  and query strings normalized away; paths preserved exactly; the raw URL kept
+  as `attrs["url_raw"]`). Existing node keys are NEVER re-keyed: canonical
+  behavior is a lookup/join layer, so old run data needs no migration.
+- **Evidence references** — `Node.evidence_refs`, `AccessNode.evidence_refs`
+  and a parallel KG `edge_attrs` map reuse the swarm's `EvidenceRef` contract
+  (origin / source / artifact_ref / kind / ts), so relationships can answer
+  "who recorded this, when, where is the full material". Append-only, empty on
+  legacy data, never fabricated.
+- **Lifecycle** — `KnowledgeGraph.mark_stale()/mark_remediated()` and
+  `AccessGraph.revoke()` add an honest currency layer (machines
+  `kg_node_lifecycle` + `access_hold` in states.py): observations and holdings
+  that are no longer current are MARKED, never deleted; a revoked holding drops
+  out of `held()`/`reached()`/crediting, and a remediated endpoint stays
+  remediated until an independent re-proof — re-observation clears stale, not
+  remediated.
+- **Synchronization bridges** (all idempotent, all at existing chokepoints):
+  `orchestrator.sync_inventory_into_graph()` feeds answering inventory
+  services into the KG host/service layer (declared/failed probes stay
+  inventory-only); `AttackTree.sync()` now also fails the matching node on an
+  INDEPENDENTLY falsified finding (canonical target match, existing nodes
+  only, siblings untouched); `retest_run(..., access, graph)` invalidates
+  holdings and graph state on a FIXED retest verdict — exactly the holdings
+  carrying the finding's structured `finding_id` reference, never on
+  `blocked`/`cannot_confirm`.
+- **Attack-path projection** — `graph_view` gained an additive `attack_paths`
+  section: inventory host/service → KG endpoint → AttackTree technique →
+  finding (confidence + independent verdict + retest state) → access holding
+  (held or revoked, with status) → objective criterion. Read-time only, real
+  records only; unjoinable findings are listed as `unresolved`, never guessed
+  into a chain.
+- **Persistence robustness** — the KG now writes atomically (tmp+replace) and
+  loads torn/corrupt files with a REPORTED warning instead of crashing; the
+  kill chain is locked and writes the `achieved_at` its consumers read.
+
+Nothing about authorization changed: the graph is still an intelligence and
+decision-support layer; ScopeGuard, approvals, egress, the verification
+pipeline and objective crediting are untouched. `states.EXPORT_VERSION` is 3.
+
 ## Invariants kept from Gen-1
 
 - Network-layer scope enforcement (sandbox egress firewall + browser interception +

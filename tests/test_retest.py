@@ -252,3 +252,133 @@ def test_server_retest_endpoint(tmp_path, harness, target):  # noqa: F811
 
     # unknown run
     assert client.post("/api/runs/ghost/retest", json={}).status_code == 404
+
+
+# -- Phase E2: retest -> remediation invalidation integration ----------------------
+
+def test_build_ctx_loads_graph_and_access_when_present(tmp_path):
+    """build_ctx_for_run picks up the run's own graph.json/access.json so a
+    FIXED retest can invalidate holdings the finding demonstrated (E2); a run
+    without them retests fine with no graph state attached."""
+    import json as _json
+    (tmp_path / "access.json").write_text(_json.dumps(
+        {"nodes": [{"kind": "resource", "key": "records", "attrs": {}, "held": True,
+                    "evidence": "e", "source": "verified_finding", "first_seen": "t"}],
+         "edges": []}), encoding="utf-8")
+    (tmp_path / "graph.json").write_text(_json.dumps(
+        {"nodes": [], "edges": []}), encoding="utf-8")
+    # scope.json is required for the RoE rebuild
+    (tmp_path / "scope.json").write_text(_json.dumps(
+        {"allowed_hosts": ["h.example"], "allowed_ports": [443]}), encoding="utf-8")
+    import datetime as _dt
+    from redteam.config import Engagement, LlmConfig, SandboxConfig
+    eng = Engagement(name="r", client="x", authorized_by="y", ticket="t",
+                     starts=_dt.date.today(), ends=_dt.date.today(),
+                     allowed_hosts=("h.example",), excluded_hosts=(),
+                     allowed_ports=(443,), allowed_schemes=("https",),
+                     max_requests_per_second=1.0, max_total_requests=10,
+                     allow_private_ranges=False, require_approval_for=(),
+                     llm=LlmConfig(), sandbox=SandboxConfig(), raw={})
+    ctx = build_ctx_for_run(eng, tmp_path)
+    assert [n.key for n in ctx.access.held()] == ["records"]
+    assert ctx.graph.nodes() == []
+
+    (tmp_path / "access.json").unlink()
+    ctx2 = build_ctx_for_run(eng, tmp_path)
+    assert getattr(ctx2, "access", None) is None or not ctx2.access.held()
+
+
+def test_invalidate_after_fix_only_on_fully_supported_holds():
+    """Direct contract: only holdings carrying the finding's structured
+    reference are revoked; everything else survives verbatim."""
+    from redteam.access import AccessGraph, RESOURCE
+    from redteam.findings import Finding
+    from redteam.retest import invalidate_after_fix
+
+    g = AccessGraph()
+    g.hold(RESOURCE, "mine", evidence="confirmed finding f1: x",
+           source="verified_finding", attrs={"finding_id": "f1"})
+    g.hold(RESOURCE, "other", evidence="confirmed finding f2: y",
+           source="verified_finding", attrs={"finding_id": "f2"})
+    out = invalidate_after_fix(Finding(id="f1", title="t", severity="high",
+                                       target="https://h/x", summary="s"),
+                               access=g)
+    assert [r["key"] for r in out["revoked"]] == ["mine"]
+    assert [n.key for n in g.held()] == ["other"]
+    node = g._nodes["resource:mine"]
+    assert node.evidence == "confirmed finding f1: x"   # history intact
+
+
+# --- creditor vs. remediation state (review round 2) ---------------------------
+
+def test_creditor_respects_latest_fixed_retest(tmp_path, target):
+    """A FIXED retest must not be undone by the creditor sweep.
+
+    The finding's confidence stays `confirmed` (verification record — orthogonal
+    by design), but its LATEST retest verdict is `fixed`: the finding no longer
+    demonstrates CURRENT exploitability. The full loop is exercised on a live
+    local target: credit -> retest(FIXED) -> the no-pending-findings
+    verification/finalization path (run_verify_pass early-return sweep) ->
+    assertions. Without the fix, the creditor re-created the very holding the
+    retest-fixed bridge had just revoked."""
+    from redteam.access import AccessGraph
+    from redteam.credit import credit_confirmed_findings
+    from redteam.knowledge import ENDPOINT, KnowledgeGraph
+    from redteam.objective import DATA_ACCESS, Objective, SuccessCriterion
+    from redteam.orchestrator import run_verify_pass
+
+    url = f"{target['base']}/patched"                # patched: marker is gone
+    f = _http_finding(target["base"], 0, path="/patched")
+    f.confidence = "confirmed"                       # historically verified real
+    rd, eng, ctx = _ctx_for(tmp_path, target, [f])
+    access = AccessGraph(rd / "access.json")
+    graph = KnowledgeGraph(rd / "graph.json")
+    graph.observe_canonical(ENDPOINT, url, source="recon")
+    obj = Objective(name="n", criteria=[SuccessCriterion(
+        id="c1", kind=DATA_ACCESS, description="read records", target=url)])
+    ctx.access, ctx.objective, ctx.graph = access, obj, graph
+
+    # 1) the still-confirmed finding legitimately credits the holding
+    applied = credit_confirmed_findings(ctx)
+    assert [e["finding"] for e in applied] == [f.id]
+    node = access._nodes["resource:" + url]
+    assert node.held and node.attrs.get("finding_id") == f.id
+    assert obj.achieved is True
+
+    # 2) retest the finding as FIXED — the bridge revokes + marks remediated
+    results = retest_run(ctx.findings, ctx, trials=3, need=2,
+                         access=access, graph=graph)
+    assert results[0]["verdict"] == FIXED
+    assert node.held is False and node.revoked is True
+    assert graph.nodes(ENDPOINT)[0].lifecycle_status() == "remediated"
+    # historical confirmation and the retest timeline both survive untouched
+    assert ctx.findings.all()[0].confidence == "confirmed"
+    assert ctx.findings.all()[0].retest_history[-1]["verdict"] == FIXED
+
+    # 3) the no-pending-findings verification/finalization path re-runs the
+    #    creditor sweep — the stale proof must NOT resurrect the holding
+    assert ctx.findings.pending() == []
+    assert run_verify_pass(eng, {}, ctx, None, "c1") == 0   # sweep ran, still nothing pending
+    assert credit_confirmed_findings(ctx) == []             # no fresh credit events
+    assert access.held() == []                              # holding stays revoked
+    assert node.revoked is True
+    assert obj.autoevaluate(access) == []                   # no re-credit from stale proof
+    assert obj.progress() == (1, 1)
+
+    # 4a) a genuinely NEW demonstration re-establishes the holding (the normal
+    #     hold() path — exactly what the remediation lifecycle intends)
+    access.hold("resource", url, evidence="fresh manual demonstration",
+                source="verified_finding")
+    assert any(n.held and n.key == url for n in access.held())
+
+    # 4b) fresh verification (a newer reproducible retest) re-enables crediting:
+    #     the LATEST verdict — not any historical fix — is what gates the sweep
+    obj2 = Objective(name="n2", criteria=[SuccessCriterion(
+        id="c2", kind=DATA_ACCESS, description="re-establish", target=url)])
+    ctx.objective = obj2
+    assert credit_confirmed_findings(ctx) == []            # still latest-fixed: no credit
+    ctx.findings.append_retest(f.id, {"when": "later", "verdict": "reproducible",
+                                      "reproductions": 3, "trials": 3,
+                                      "detail": "the hole is open again"})
+    applied2 = credit_confirmed_findings(ctx)
+    assert [e["criterion"] for e in applied2] == ["c2"]    # fresh proof may credit again

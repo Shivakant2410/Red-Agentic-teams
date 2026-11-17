@@ -80,8 +80,22 @@ offensive.py          Phase E2 — the deterministic offensive engine: the decla
 bandit.py              Contextual multi-armed bandit (Thompson sampling) over
                        attack_tree.py's technique choices; persists to
                        memory/bandit.json, same cross-engagement pattern as memory.py
-killchain.py           Kill-chain stage tracking
-knowledge.py / retrieval.py   Knowledge base + retrieval for the agent
+killchain.py           Kill-chain stage tracking (locked; writes achieved_at on
+                       ACHIEVED transitions since Phase E2)
+knowledge.py / retrieval.py   Knowledge base + retrieval for the agent. Since
+                       Phase E2 (docs/adr-002) knowledge.py also owns the
+                       platform's canonical identity layer: canonical_url()/
+                       canonical_host() are THE join functions for cross-store
+                       matching (graph_view, the inventory bridge, the
+                       falsified-finding sync). Nodes carry additive
+                       evidence_refs (the swarm EvidenceRef vocabulary — never
+                       invent a second one) and a lifecycle dict
+                       (mark_stale()/mark_remediated(): currency decoration,
+                       append-only history, nothing deleted). Persistence is
+                       atomic (tmp+replace) and corrupt-file tolerant (reports
+                       last_load_warning instead of crashing). access.py adds
+                       revoke() the same way: a revoked holding drops out of
+                       held()/reached()/crediting but its history stays.
 memory.py              Cross-run memory (see memory/experience.json)
 recon/                 Deterministic (zero-LLM-cost) recon: passive.py (robots.txt/
                        sitemap.xml/API-schema fetches) and static_source.py (route
