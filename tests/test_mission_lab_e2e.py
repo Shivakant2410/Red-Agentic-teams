@@ -404,13 +404,13 @@ llm: {{}}
     assert exploit["evidence"][0]["confidence"] == "pending_verification"
     assert {t["technique"] for t in summary["tasks"] if t["role"] == "exploit"} == {
         "injection.sqli", "auth.bypass", "data.exfil"}
-    assert {t["role"] for t in summary["tasks"]} == {"recon", "exploit", "verify"}
+    assert {t["role"] for t in summary["tasks"]} == {"recon", "exploit", "verify", "logic"}
     # coordination artifacts persisted
     assert (tmp_path / "mission.json").exists()
     assert (tmp_path / "mission_journal.jsonl").exists()
     journal = EventJournal("lab-e2e", path=tmp_path / "mission_journal.jsonl")
     types = [e["type"] for e in journal.read_all()]
-    assert types.count("TASK_DISPATCHED") == 5
+    assert types.count("TASK_DISPATCHED") == 6
     # Only the independently confirmed SQLi node is completed. The unlocked
     # follow-up nodes were dispatched but not promoted without their own proof.
     tree_after = AttackTree(tmp_path / "attack_tree.json")
