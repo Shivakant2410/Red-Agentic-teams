@@ -8,10 +8,19 @@ dependencies = [
     "pyyaml>=6.0",
     "playwright>=1.44",
     "python-dotenv>=1.0",   # agentic_setup.config.load_local_environment
+    # dashboard/API server (redteam/server.py) — the test suite imports it via
+    # fastapi.testclient, so these are hard deps, not extras:
+    "fastapi>=0.100",
+    "pydantic>=2.5",
+    "uvicorn>=0.23",
+    # proxy TLS interception (redteam/proxy.py RunCA); without it the proxy
+    # degrades honestly to passthrough, but the interception behavior is
+    # contract-tested, so the capability's dependency is declared:
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "httpx>=0.24"]   # fastapi.testclient needs httpx
 # --semantic-memory (redteam/memory_backend/): HelixDB graph+vector recall instead of
 # plain tag matching. Requires Docker (ghcr.io/helixdb/helixdb) for the server, not
 # vendored here. See memory_backend/__init__.py for the persistence caveat.
