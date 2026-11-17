@@ -26,8 +26,69 @@ This project's differentiators, built in Gen-1 and preserved in Gen-2, remain ra
    failure. Nothing new is load-bearing.
 5. **Auditability.** Append-only hash-chained audit log, per-run event stream, reproducible
    reports. An operator can reconstruct every action and every decision.
+6. **Prompt-injection oracles with earned resistance (LLM01, `redteam/pi`).** Prompt
+   injection is judged by four deterministic oracle primitives — canary stage tracking
+   (EXPOSED→PERSISTED→RELAYED→EXECUTED; exposure is never success), forbidden-tool
+   detection on the real invocation trace (a reply that *says* it calls a tool proves
+   nothing), ground-truth state predicates, and schema/authorization validation — with
+   three verdicts where RESISTED must be EARNED (benign control completed + negative
+   control held): an always-refusing app is INCONCLUSIVE, never "safe". The LLM judge may
+   annotate INCONCLUSIVE results and can never override. SUCCEEDED evidence flows into
+   the same pending_verification → independent-verify pipeline as web findings
+   (check_type `pi_oracle` re-derives the verdict from raw evidence, controls mandated).
+   Every competitor we surveyed reports ASR counts; none re-derives its verdicts
+   independently.
 
 ## Gen-2: what this release added (shipped)
+
+- **Prompt-injection capability (`redteam/pi`, OWASP LLM01)** — proof-first PI testing
+  inside the existing architecture: 18 versioned techniques across direct / indirect /
+  PlanFlip plan-time / multimodal / hybrid families (every payload canary-attributable,
+  provenance + ATLAS anchors honest about verified vs inferred), a controlled llm_app
+  victim target plugging into the existing AgenticLoopTarget (declared tool surface +
+  permission policy, RAG corpus, defense I/O policy for differential runs, app-state
+  ledger of every side effect), four deterministic oracle primitives with earned-
+  RESISTED verdicts, an engagement runner whose benign and negative controls run on
+  separate app instances, spec-conformant evidence records, bench metrics (ASR with
+  Wilson CIs, FP rate only from real verification, defense differential), findings
+  bridged as `pending_verification` with a `pi_oracle` check the existing independent
+  verifier re-derives from raw evidence, and a reproducible offline bench
+  (`python -m redteam.pi`).
+
+- **PI 2026 gap closure (G1-G11, `PI_GAP_RESEARCH.md` + `PI_INTEGRATION_CATALOG.md`)** —
+  the registry grew to 24 techniques / 28 payloads / 10 delivery channels with the surfaces
+  the 2026 field shows matter most: cross-session memory persistence (PI.B6,
+  AgentPoison/XSPI protocol port — the PERSISTED canary stage is live, and
+  `IOPolicy.memory_write_approval` models the OWASP-2026 privileged-memory-write
+  prevention), MCP tool-metadata poisoning + rug pull (PI.B7/PI.B8 with
+  `tool_desc_pinning`), and unicode smuggling (PI.A5 v1.1: unicode-tags + zero-width,
+  with detection seeing through every encoding it attacks with). Two OUR-tools
+  additions change what the numbers MEAN: the legit-instruction control (G5) turns the
+  2026 contextual-integrity impossibility result into a runnable gate — a blanket
+  defense that drops legitimate in-data instructions is INCONCLUSIVE (over-blocking),
+  never credited as resistance, so the defended ASR is honestly UNDECIDABLE rather than
+  a laundered 0.0 — and the adaptive phase (G2, `--adaptive-rounds`,
+  `--defense-spec-visible`) re-attacks every non-succeeded cell with deterministic
+  GPTFuzzer/TurboFuzzLLM-style mutations (mutants marked, never bridged to findings).
+  Bench output now ships a honesty block (fixture-only, public-payload saturation →
+  ASR is an upper bound, RAS-Eval live-execution caveat) and `python -m redteam.pi
+  --audit` prints the coverage audit (known-uncovered surfaces named, PIAtlas classes
+  deliberately not guessed) plus dual-pinned OWASP 2025+2026 / ATLAS-2026.07 anchors.
+  One cell = one payload now: A1/A2 (2 payloads each) and A5 (3) run per-payload with
+  `payload_ref` attribution carried into findings titles. The final three gaps close
+  the evidence honesty loop: typed RELAYED (G6) — relay evidence names the CHANNEL
+  (echo_reply / tool_args / outbound_request, pi.canary 1.1.0) and PI.E3 models
+  zero-click outbound-request exfil against a canary-tokened `.invalid` destination
+  with the `egress_allowlist` block defense and an `output_filter` egress-URL
+  sanitizer that preserves utility (the fetch completes, the secret never leaves —
+  the only E3 defense that earns RESISTED); evidence-linked skips (G7) — family D
+  capability skips carry the vector, paper, reported ASR, why-fixture and live-lane
+  pointer (SKIP_EVIDENCE), and PI.D2 registers the fun-tuning vector as a gated
+  skip with bench metric `skips_evidence_linked`; and the thread protocol (G11) —
+  `pre_turns` sends in the same session before the attack turn, with PI.E4 seeding
+  a benign formatting convention then pivoting on it (attack class 2, arXiv
+  2605.17634), `pre_replies` recorded end-to-end so blanket defenses cannot be
+  credited for dropping convention and utility together.
 
 - **Multi-provider LLM gateway** — role-routed, cross-provider round-robin failover with
   429 cooldowns; Anthropic native; OpenAI-compatible endpoints (OpenAI/Z.ai/Groq/

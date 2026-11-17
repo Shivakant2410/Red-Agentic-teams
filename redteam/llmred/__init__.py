@@ -54,6 +54,15 @@ full teardown in docs/competitor-landscape.md §AI-red-teaming-vendors):
                   with a CI exit code so a regression fails the build.
   report.py       Markdown report: ASRs with intervals, framework mapping,
                   regression labels, evidence pointers.
+  dynamics.py     The B2 dynamics layer: formal adversary models (game theory,
+                  information theory, physics, pharmacology, economics) as
+                  measuring instruments — policy purity, talk-action gaps,
+                  exfil channel capacity, timing contrasts, dose-response
+                  thresholds, cost amplification. Measurements with declared
+                  limits, never laundered verdicts (see dynamics.py).
+  propagation.py  The B2 chain harness: per-hop text/action survival of a
+                  planted directive across the agent-to-agent seam (Morris II /
+                  Prompt Infection model).
 
 Stats contract (matches stats.py and paper sec. 7): a reported ASR is
 successes/decided with a Wilson interval — UNDETERMINED attempts and transport
@@ -63,9 +72,22 @@ errors are reported, never laundered into either success or failure.
 from __future__ import annotations
 
 from .detectors import Verdict, evaluate, evaluate_tool_trace
+from .dynamics import (
+    KNOWN_INSTRUMENTS,
+    DYN_SCHEMA,
+    InstrumentSkip,
+    probe_amplification,
+    probe_dose_response,
+    probe_exfil_capacity,
+    probe_policy_commitment,
+    probe_signaling_gap,
+    probe_timing_contrast,
+    run_dynamics,
+)
 from .objectives import PROBE_PACK, Objective, ToolCondition, select_objectives
+from .propagation import run_propagation_chain
 from .regression import diff_summaries, gate_exit_code
-from .report import render_markdown
+from .report import render_dynamics_card, render_markdown
 from .strategies import TRANSFORMS, Strategy, encode, select_strategies
 from .targets import (
     AgenticLoopTarget,
@@ -86,6 +108,9 @@ __all__ = [
     "AgenticLoopTarget",
     "AgentHarness",
     "AgentRun",
+    "DYN_SCHEMA",
+    "InstrumentSkip",
+    "KNOWN_INSTRUMENTS",
     "Objective",
     "OpenAIToolLoop",
     "ScriptedTarget",
@@ -103,7 +128,16 @@ __all__ = [
     "evaluate",
     "evaluate_tool_trace",
     "gate_exit_code",
+    "probe_amplification",
+    "probe_dose_response",
+    "probe_exfil_capacity",
+    "probe_policy_commitment",
+    "probe_signaling_gap",
+    "probe_timing_contrast",
+    "render_dynamics_card",
     "render_markdown",
+    "run_dynamics",
+    "run_propagation_chain",
     "select_objectives",
     "select_strategies",
     "target_from_config",

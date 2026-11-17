@@ -101,3 +101,83 @@ def render_markdown(summary: dict, diff_rows: list[dict] | None = None) -> str:
        "where the NEXT campaign's budget goes.")
     ap("")
     return "\n".join(lines)
+
+
+def render_dynamics_card(dyn: dict) -> str:
+    """Markdown card for the B2 dynamics run (see dynamics.py for the models).
+
+    Every block renders its headline measurement, its model anchor, and its
+    declared limits — a card that hides the limits would be marketing."""
+    lines: list[str] = []
+    ap = lines.append
+    ap("## Dynamics — formal adversary models as instruments (B2)")
+    ap("")
+    ap(f"- Instruments: {dyn.get('instruments_ok')} ok · "
+       f"{dyn.get('instruments_skipped')} skipped · "
+       f"{dyn.get('instruments_error')} error (seed {dyn.get('seed')})")
+    ap("- These are measurements of target DYNAMICS with declared limits — "
+       "not verdicts; nothing here was laundered into a success number.")
+    ap("")
+    for block in dyn.get("blocks", []):
+        inst = block.get("instrument", "?")
+        status = block.get("status")
+        if status == "skipped":
+            ap(f"### {inst} — SKIPPED")
+            ap("")
+            ap(f"- {block.get('reason')}")
+            ap("")
+            continue
+        if status == "error":
+            ap(f"### {inst} — ERROR")
+            ap("")
+            ap(f"- {block.get('error')}")
+            ap("")
+            continue
+        ap(f"### {inst} — {block.get('label', 'measured')}")
+        ap("")
+        ap(f"- Model: {block.get('model')}")
+        if inst == "policy_commitment":
+            ap(f"- unanimous repeats: {block.get('unanimous_rate')} over "
+               f"{block.get('probe_count')} probes × {block.get('repeats')} "
+               f"repeats · mean verdict entropy: "
+               f"{block.get('mean_entropy_bits')} bits")
+            ap(f"- attacker doctrine: {block.get('attacker_doctrine')}")
+        elif inst == "signaling_gap":
+            ev = block.get("deception_events") or []
+            ap(f"- talk-action divergence events: {len(ev)}"
+               + (f" — {ev[0].get('detail')}" if ev else ""))
+            for r in block.get("probes", []):
+                ap(f"- probe `{r.get('probe')}`: {r.get('classification')}")
+        elif inst == "exfil_capacity":
+            ap(f"- capacity: {block.get('capacity_bits')} bits recovered of "
+               f"{block.get('payload_bits')} planted "
+               f"(ratio {block.get('capacity_ratio')}, class "
+               f"{block.get('label')})")
+            ap(f"- benign control: "
+               f"{'clean (0 bits)' if block.get('control_clean') else 'LEAKED — instrument machinery suspect'}")
+        elif inst == "timing_contrast":
+            ap(f"- median delta: {block.get('median_delta_ms')} ms "
+               f"(trigger {block.get('trigger_median_ms')} vs benign "
+               f"{block.get('benign_median_ms')}) · p={block.get('stat', {}).get('p_two_sided')}")
+            nc = block.get("null_control") or {}
+            ap(f"- split-half null: p={nc.get('p_two_sided')} "
+               f"({nc.get('note')})")
+        elif inst == "dose_response":
+            ap(f"- crossing: turn {block.get('crossing_turn')} at "
+               f"{block.get('crossing_dose_chars')} cumulative fragment "
+               f"chars ({block.get('label')})")
+        elif inst == "amplification_ratio":
+            ap(f"- aggregate byte amplification {block.get('aggregate_amplification')}× "
+               f"(peak {block.get('peak_amplification')}× on "
+               f"`{block.get('peak_probe')}`)")
+            if block.get("operations_ratio") is not None:
+                ap(f"- operations: {block.get('operations_ratio')} tool "
+                   "invocations per attacker message")
+        elif inst == "propagation_chain":
+            ap(f"- chain: {block.get('label')} · text survival "
+               f"{block.get('text_survival_hops')} hops · action survival "
+               f"{block.get('action_survival_hops')} hops · R="
+               f"{block.get('r_factor')}")
+        ap(f"- Limits: {block.get('limits')}")
+        ap("")
+    return "\n".join(lines)
