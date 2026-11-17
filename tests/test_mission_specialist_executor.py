@@ -967,6 +967,109 @@ def test_dynamic_driver_schedules_access_then_workflow_logic(tmp_path):
     assert summary["execution_complete"] is True
 
 
+def test_dynamic_mission_replans_after_failed_attack_path(tmp_path):
+    from redteam.mission.executor import ExecutionResult
+
+    mission_dir, clock = H.make_mission_dir(tmp_path)
+    tree = AttackTree(tmp_path / "tree.json")
+    targets = ["https://api.acme.example/a", "https://api.acme.example/b"]
+    for target in targets:
+        tree.seed_endpoint(target)
+
+    class ReplanningExecutor:
+        def __init__(self):
+            self.calls = []
+
+        def run(self, task_view):
+            role = task_view["role"]
+            technique = task_view.get("technique", "")
+            self.calls.append((role, technique, task_view.get("target", "")))
+            if role == "exploit" and task_view["target"] == targets[0]:
+                return ExecutionResult(status=EXEC_FAILED, error="path did not execute")
+            return ExecutionResult(status=EXEC_SUCCEEDED, result=f"{role} slice done")
+
+        def pending_findings(self):
+            return []
+
+        def attack_frontier(self, limit=6):
+            return [
+                {"title": "first path", "role": "exploit",
+                 "technique": "auth.test", "target": targets[0], "max_steps": 8},
+                {"title": "alternate path", "role": "exploit",
+                 "technique": "auth.test", "target": targets[1], "max_steps": 8},
+            ]
+
+        def objective_achieved(self):
+            return None
+
+        def budget_available(self):
+            return True
+
+    executor = ReplanningExecutor()
+    summary = run_mission_driver(
+        engagement=_engagement(), out_dir=mission_dir, objective="test two attack paths",
+        attack_tree=tree, executor=executor, clock=clock,
+        opts=_driver_opts(), say=lambda t: None)
+
+    assert executor.calls == [
+        ("recon", "", ""),
+        ("exploit", "auth.test", targets[0]),
+        ("exploit", "auth.test", targets[1]),
+    ]
+    assert summary["mission_status"] == "failed"  # first task failed; alternate still ran
+    assert summary["execution_complete"] is False
+    assert summary["stop_reason"] == "frontier_exhausted"
+    assert tree.node("auth.test", targets[0]).status == "todo"
+    assert tree.node("auth.test", targets[1]).status == "todo"
+
+
+def test_dynamic_mission_stops_immediately_when_objective_is_achieved(tmp_path):
+    from redteam.mission.executor import ExecutionResult
+
+    mission_dir, clock = H.make_mission_dir(tmp_path)
+    tree = AttackTree(tmp_path / "tree.json")
+    targets = ["https://api.acme.example/a", "https://api.acme.example/b"]
+    for target in targets:
+        tree.seed_endpoint(target)
+
+    class ObjectiveExecutor:
+        def __init__(self):
+            self.calls = []
+            self.achieved = False
+
+        def run(self, task_view):
+            self.calls.append(task_view["role"])
+            if task_view["role"] == "exploit":
+                self.achieved = True
+            return ExecutionResult(status=EXEC_SUCCEEDED, result="slice done")
+
+        def pending_findings(self):
+            return []
+
+        def attack_frontier(self, limit=6):
+            return [{"title": f"path {i}", "role": "exploit",
+                     "technique": "auth.test", "target": target, "max_steps": 8}
+                    for i, target in enumerate(targets)]
+
+        def objective_achieved(self):
+            return self.achieved
+
+        def budget_available(self):
+            return True
+
+    executor = ObjectiveExecutor()
+    summary = run_mission_driver(
+        engagement=_engagement(), out_dir=mission_dir, objective="reach the objective",
+        attack_tree=tree, executor=executor, clock=clock,
+        opts=_driver_opts(), say=lambda t: None)
+
+    assert executor.calls == ["recon", "exploit"]
+    assert summary["mission_status"] == "succeeded"
+    assert summary["objective_achieved"] is True
+    assert summary["stop_reason"] == "objective_achieved"
+    assert tree.node("auth.test", targets[1]).status == "todo"
+
+
 def test_mission_attempt_updates_the_scheduler_claimed_hypothesis(tmp_path):
     from redteam.attack_tree import TECHNIQUES
     from redteam.swarm import AWAITING_VERIFICATION, weakness_for_technique
