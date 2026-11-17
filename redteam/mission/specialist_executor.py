@@ -92,12 +92,16 @@ class MissionSpecialistExecutor:
             final_text = self._orchestrator.execute_task(
                 task_view, on_text=self._on_text, objective=self._objective)
         except Exception as exc:
+            evidence = self._new_evidence_refs(ctx, findings_before)
+            self._record_hypothesis_outcome(task_view, evidence)
             # Preserve the useful error information; the scheduler fences the
             # task failure + journal event — the executor only reports.
             return ExecutionResult(
                 status=EXEC_FAILED,
                 result="",
-                error=f"{type(exc).__name__}: {exc}")
+                error=f"{type(exc).__name__}: {exc}",
+                evidence=evidence)
+        evidence = self._new_evidence_refs(ctx, findings_before)
         # Soft failures: the agent loop degrades instead of raising when the
         # model layer is unavailable or the engagement budget halts the turn.
         # Those land in the audit (agent.no_models / agent.halt /
@@ -105,17 +109,26 @@ class MissionSpecialistExecutor:
         new_audit = ctx.audit.read_all()[audit_before:]
         soft = next((e for e in new_audit
                      if e.get("event") in _SOFT_FAILURE_AUDIT_EVENTS), None)
+        self._record_hypothesis_outcome(task_view, evidence)
         if soft is not None:
             detail = (soft.get("error") or soft.get("reason")
                       or soft.get("halt_reason") or "")
             return ExecutionResult(
                 status=EXEC_FAILED,
                 result=str(final_text or "")[:_RESULT_TEXT_CAP],
-                error=f"{soft.get('event')}: {detail}".strip(": "))
+                error=f"{soft.get('event')}: {detail}".strip(": "),
+                evidence=evidence)
         return ExecutionResult(
             status=EXEC_SUCCEEDED,
             result=str(final_text or "")[:_RESULT_TEXT_CAP],
-            evidence=self._new_evidence_refs(ctx, findings_before))
+            evidence=evidence)
+
+    def _record_hypothesis_outcome(self, task_view: dict, evidence) -> None:
+        try:
+            self._orchestrator.record_mission_task_outcome(task_view, evidence)
+        except Exception as exc:
+            self._orchestrator.ctx.audit.record(
+                "research.error", stage="mission_executor_outcome", error=str(exc))
 
     # -- evidence: real refs only ---------------------------------------------------
 
