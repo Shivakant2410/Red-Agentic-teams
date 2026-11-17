@@ -15,13 +15,13 @@ simulation / fault-injection seam: passing no executor prints a loud warning
 and the mock's own task results still say "mock execution" — mock execution is
 never silent.
 
-Task plan source: `mission_plan.json` in the run directory
-  {"tasks": [{"title", "role", "technique", "target", "dependencies": [..],
-              "max_steps", "opsec_allowance", "max_attempts"}, ...]}
-Node tasks are seeded into the tree as entry techniques before dispatch (the
-tree remains the work-selection authority — the driver never dispatches a node
-the tree does not hold). Without a plan file, one smoke task runs so the
-coordination path is observable end to end.
+Task plan source: `mission_plan.json` in the run directory remains an explicit
+operator/replay override. Without it, the default path runs a bounded RECON
+specialist, incrementally selects TODO work from the canonical ranked
+AttackTree, automatically dispatches independent VERIFY for pending findings,
+reconciles the existing graph/hypothesis/tree/credit authorities, then
+re-evaluates KillChain-gated ACCESS and workflow-gated LOGIC opportunities.
+Node tasks are never selected or claimed by a second planner.
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ from .registry import AgentRegistry
 from .scheduler import MissionScheduler
 from .task import TASK_LEASE_SECONDS
 
-MAX_ROUNDS = 50          # dependency-depth safety cap (a cycle cannot proceed)
+MAX_ROUNDS = 50          # bounded mission dispatch safety cap
 DRIVER_ACTOR = "mission-driver"
 
 
@@ -104,7 +104,10 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                        executor=None, hypotheses=None, clock=None,
                        access_gate=None,
                        say=lambda text: None) -> dict:
-    """Execute the mission coordination loop.
+    """Execute a mission, using an explicit plan only when the operator supplied one.
+
+    No-plan runs use the live AttackTree frontier and existing specialist/verifier
+    adapters; plan-file runs preserve the explicit dependency-round override.
 
     `executor`: the production path passes a MissionSpecialistExecutor built
     on the run's Orchestrator (run.py); tests inject scripted executors (and
