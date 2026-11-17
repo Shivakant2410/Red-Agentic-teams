@@ -241,6 +241,14 @@ class AttackTree:
         with self._lock:
             return self._nodes.get(f"{technique}@{target}")
 
+    def nodes_all(self) -> list[AttackNode]:
+        """Read-only snapshot of every node, for the attack-path projection and
+        the planner's read-time join — the projection must never reach into
+        private state. (actionable()/confirmed_chain() remain the ranked
+        frontier views; this is the unfiltered snapshot.)"""
+        with self._lock:
+            return list(self._nodes.values())
+
     # -- construction ----------------------------------------------------------
 
     def _add(self, technique: str, target: str, status: str = TODO, bucket: str = "") -> AttackNode:

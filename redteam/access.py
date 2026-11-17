@@ -233,6 +233,14 @@ class AccessGraph:
         with self._lock:
             return [n for n in self._nodes.values() if n.held]
 
+    def nodes(self) -> list[AccessNode]:
+        """Read-only snapshot of EVERY node (held, revoked, and observed-only),
+        for the attack-path projection and the planner's read-time join — the
+        projection must never reach into private state. (held() /
+        revoked_nodes() remain the status-filtered views.)"""
+        with self._lock:
+            return list(self._nodes.values())
+
     def reached(self, target_key: str) -> bool:
         """Do we hold the objective's target (by key, any kind)?"""
         with self._lock:

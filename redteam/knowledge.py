@@ -425,6 +425,14 @@ class KnowledgeGraph:
         with self._lock:
             return [n for n in self._nodes.values() if kind is None or n.kind == kind]
 
+    def edges(self) -> list[tuple[str, str, str]]:
+        """Read-only snapshot of the edge set (sorted, same shape the JSON
+        artifacts persist). The attack-path projection (graph_view) and the
+        planner's read-time join consume this — the projection must never
+        reach into private state."""
+        with self._lock:
+            return sorted(list(self._edges))
+
     def neighbors(self, node_id: str, relation: str | None = None) -> list[Node]:
         with self._lock:
             out = []
