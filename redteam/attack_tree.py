@@ -264,7 +264,24 @@ class AttackTree:
 
     def sync(self, graph=None, findings: list | None = None) -> None:
         """Grow the tree from current knowledge: seed new endpoints, and mark techniques
-        confirmed by findings (which unlocks their chained follow-ups)."""
+        confirmed by findings (which unlocks their chained follow-ups).
+
+        Phase E2: an INDEPENDENTLY FALSIFIED finding also reaches the tree — the
+        symmetric half of the same synchronization. The audit (F5) measured that
+        falsified findings were skipped entirely: the bandit never saw its loss
+        and the frontier kept offering the same dead class on that target. The
+        falsified branch is deliberately narrower than the confirmed one:
+          - only findings with confidence "falsified" (an independent-verify
+            verdict — a pending/tentative/agent claim can NEVER fail a node);
+          - only a node that ALREADY EXISTS on that (technique, target) is
+            marked (a falsified claim must not plant new failed rows for prose
+            targets);
+          - only the technique the same CWE mapping selected for confirmation —
+            sibling techniques on the same target stay untouched;
+          - mark() is idempotent (same-status re-marks are refused, so the
+            bandit is not re-fed the loss every turn).
+        FAILED remains exactly as retryable as before (retry_failed() once per
+        round) — the environment may have changed."""
         with self._lock:
             if graph is not None:
                 from .bandit import bucket_for_endpoint
@@ -273,13 +290,39 @@ class AttackTree:
                     self.seed_endpoint(ep.key, bucket=bucket_for_endpoint(ep.key, ep))
             for f in (findings or []):
                 confidence = getattr(f, "confidence", None) or (f.get("confidence") if isinstance(f, dict) else None)
-                if confidence != "confirmed":
-                    continue
-                cwe = getattr(f, "cwe", None) or (f.get("cwe") if isinstance(f, dict) else "")
-                target = getattr(f, "target", None) or (f.get("target") if isinstance(f, dict) else "")
-                tid = _CWE_TO_TECHNIQUE.get((cwe or "").upper())
-                if tid and target:
-                    self.confirm(tid, target)
+                if confidence == "confirmed":
+                    cwe = getattr(f, "cwe", None) or (f.get("cwe") if isinstance(f, dict) else "")
+                    target = getattr(f, "target", None) or (f.get("target") if isinstance(f, dict) else "")
+                    tid = _CWE_TO_TECHNIQUE.get((cwe or "").upper())
+                    if tid and target:
+                        self.confirm(tid, target)
+                elif confidence == "falsified":
+                    cwe = getattr(f, "cwe", None) or (f.get("cwe") if isinstance(f, dict) else "")
+                    target = getattr(f, "target", None) or (f.get("target") if isinstance(f, dict) else "")
+                    fid = getattr(f, "id", None) or (f.get("id") if isinstance(f, dict) else "")
+                    tid = _CWE_TO_TECHNIQUE.get((cwe or "").upper())
+                    if tid and target:
+                        self._fail_existing(tid, target, fid)
+
+    def _fail_existing(self, technique: str, target: str, finding_id: str = "") -> None:
+        """Mark FAILED the existing (technique, target) node a falsified finding
+        disproved — canonical target matching, no new nodes, no sibling damage
+        (Phase E2, see sync())."""
+        from .knowledge import canonical_url
+        canon_target = canonical_url(target)
+        with self._lock:
+            node = self._nodes.get(f"{technique}@{target}")  # exact first
+            if node is None:
+                for candidate in self._nodes.values():
+                    if candidate.technique != technique:
+                        continue
+                    if canonical_url(candidate.target) == canon_target:
+                        node = candidate
+                        break
+            if node is None:
+                return   # nothing to fail — a falsified claim plants no rows
+            # mark() under its own lock; same-status re-mark is already a no-op
+            self.mark(technique, node.target, FAILED, findings=finding_id or "")
 
     # -- state transitions -----------------------------------------------------
     #

@@ -259,6 +259,51 @@ TASK_TRANSITIONS: dict[str, tuple[str, ...]] = {
     TASK_CANCELLED: (),
 }
 
+# -- knowledge-graph node lifecycle (knowledge.py Node.lifecycle) ----------------------
+#
+# Phase E2 (docs/adr-002-unified-intelligence-graph.md): the graph keeps every
+# historical observation (nothing is ever deleted) and adds an explicit
+# currency dimension so old state can stop masquerading as current state.
+# STALE = the observation itself is no longer trusted (entity went quiet or a
+# retest invalidated the mapping); REMEDIATED = a finding-backed relationship
+# on this entity was independently proven fixed. ACTIVE = fresh observation.
+# A fresh observation clears STALE (re-observation is stronger evidence than
+# aging) but NOT REMEDIATED (an endpoint answering again says nothing about
+# whether the vulnerability is back — only a new confirmed finding could
+# re-establish that, and the finding pipeline, not the graph, owns that call).
+
+KG_ACTIVE = "active"
+KG_STALE = "stale"
+KG_REMEDIATED = "remediated"
+
+KG_LIFECYCLE_STATES = (KG_ACTIVE, KG_STALE, KG_REMEDIATED)
+KG_LIFECYCLE_INITIAL = KG_ACTIVE
+KG_LIFECYCLE_TRANSITIONS: dict[str, tuple[str, ...]] = {
+    KG_ACTIVE: (KG_STALE, KG_REMEDIATED),
+    KG_STALE: (KG_ACTIVE,),          # re-observation only (KnowledgeGraph.observe)
+    KG_REMEDIATED: (KG_ACTIVE,),     # only a future independently-confirmed re-proof
+}
+
+# -- access hold lifecycle (access.py AccessNode held/invalidated_at) ------------------
+#
+# The AccessGraph stays the sole authority for demonstrated access. REVOKED is
+# the honest answer to "we held it then; do we still?": the hold happened and
+# stays on record (append-only history), but a revoked node is no longer
+# current. Re-holding REQUIRES a new demonstration through the existing gate
+# (hold() with a REQUIRED_SOURCE-eligible source) — an agent assertion can
+# never resurrect a revoked holding. Written today by the retest-fixed bridge
+# (retest.invalidate_after_fix) and available to any future evidence path.
+
+HOLD_ACTIVE = "held"
+HOLD_REVOKED = "revoked"
+
+HOLD_LIFECYCLE_STATES = (HOLD_ACTIVE, HOLD_REVOKED)
+HOLD_LIFECYCLE_INITIAL = HOLD_ACTIVE
+HOLD_LIFECYCLE_TRANSITIONS: dict[str, tuple[str, ...]] = {
+    HOLD_ACTIVE: (HOLD_REVOKED,),
+    HOLD_REVOKED: (HOLD_ACTIVE,),    # only via hold() with a fresh demonstration
+}
+
 # -- machine registry -----------------------------------------------------------------
 #
 # Machines owned here, plus the hypothesis lifecycle, which stays authoritative
@@ -402,6 +447,49 @@ _OWNED: dict[str, dict] = {
                  "was confirmed or that the attack-tree node completed (C4); "
                  "the tree completes only via sync() on a CONFIRMED finding.",
     },
+    "kg_node_lifecycle": {
+        "states": KG_LIFECYCLE_STATES, "initial": KG_LIFECYCLE_INITIAL,
+        "terminal": (),
+        "transitions": KG_LIFECYCLE_TRANSITIONS,
+        "writers": (
+            {"writer": "retest-fixed bridge (retest.invalidate_after_fix via "
+                       "KnowledgeGraph.mark_remediated)",
+             "may_set": (KG_REMEDIATED,)},
+            {"writer": "graph maintenance (KnowledgeGraph.mark_stale)",
+             "may_set": (KG_STALE, KG_ACTIVE)},
+            {"writer": "re-observation (KnowledgeGraph.observe)",
+             "may_set": (KG_ACTIVE,)},
+        ),
+        "consumers": ("graph_view.py attack-path projection (status decoration)",
+                      "KnowledgeGraph.summary() lifecycle counts",
+                      "access/objective consumers read the graph only via "
+                      "existing node data"),
+        "notes": "Currency dimension, never deletion: stale/remediated nodes "
+                 "keep their full observation history. Re-observation clears "
+                 "stale but not remediated. Marking is a read-model decoration "
+                 "and can never authorize, execute, or confirm anything.",
+    },
+    "access_hold": {
+        "states": HOLD_LIFECYCLE_STATES, "initial": HOLD_LIFECYCLE_INITIAL,
+        "terminal": (),
+        "transitions": HOLD_LIFECYCLE_TRANSITIONS,
+        "writers": (
+            {"writer": "demonstration paths (hold() — set_session, "
+                       "postex, prove_privilege, creditor; source-gated "
+                       "downstream by objective.REQUIRED_SOURCE)",
+             "may_set": (HOLD_ACTIVE,)},
+            {"writer": "retest-fixed bridge (retest.invalidate_after_fix via "
+                       "AccessGraph.revoke)",
+             "may_set": (HOLD_REVOKED,)},
+        ),
+        "consumers": ("AccessGraph.held()/reached()/frontier() (revoked nodes "
+                      "drop out of current holdings)",
+                      "graph_view.py (revoked holdings never render as current)",
+                      "objective.autoevaluate (a revoked hold cannot credit)"),
+        "notes": "Append-only in spirit: revocation records when/why and keeps "
+                 "the historical evidence; re-holding requires a fresh "
+                 "demonstration, so an agent assertion cannot resurrect it.",
+    },
 }
 
 
@@ -465,8 +553,9 @@ def is_known(machine: str, status: str) -> bool:
     return status in describe(machine)["states"]
 
 
-EXPORT_VERSION = 2   # bump whenever a lifecycle table changes (Phase 2 added
-                     # the mission + mission_task machines)
+EXPORT_VERSION = 3   # bump whenever a lifecycle table changes (Phase 2 added
+                     # the mission + mission_task machines; Phase E2 added
+                     # kg_node_lifecycle + access_hold)
 
 
 def machines_json() -> dict:

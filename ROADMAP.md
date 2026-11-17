@@ -118,6 +118,18 @@ This project's differentiators, built in Gen-1 and preserved in Gen-2, remain ra
   `importers/assets.py` (ScopeSentry-style CSV/JSON/JSONL feed sync that is an
   INTERSECTION with the RoE, never a merge — out-of-scope entries are dropped and
   counted, scope.check still refuses them afterwards; validated 400 at launch).
+- **Unified attack intelligence graph (Phase E2, ADR-002)** — the seven state
+  stores now operate as one coherent intelligence architecture: canonical
+  cross-store identity (`knowledge.canonical_url/canonical_host`, no re-keying
+  of existing data), EvidenceRef-shaped provenance on graph nodes/edges/holds,
+  an append-only stale/remediated/revoked lifecycle (`states.py` machines
+  `kg_node_lifecycle` + `access_hold`), three idempotent synchronization
+  bridges (inventory→KG at the verify-pass chokepoints, falsified-finding→tree
+  in `AttackTree.sync`, retest-fixed→revocation in `retest_run`), and a
+  read-time attack-path projection in `graph_view` that joins real records
+  only. Authorities unchanged: the AttackTree still selects work, the
+  AccessGraph still owns demonstrated access, only independent verification
+  still confirms, and the EventBus is still telemetry.
 - **ARTEX port, round two** — two more capabilities taken from the same source
   after reading its last open-source release end to end: `spa_recon` (the api-recon
   technique that made ARTEX champion — a login-gated SPA's bootstrap endpoints are

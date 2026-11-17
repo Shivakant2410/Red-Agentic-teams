@@ -336,6 +336,16 @@ class RedTeamAgent:
                 from .planner import state_briefing
                 briefing_parts.append(state_briefing(self._graph))
             if self._attack_tree is not None:
+                # Phase E2 (deferred import: orchestrator imports agent at module
+                # load, so agent cannot import it at the top): inventory->KG
+                # bridge at the same sync point the tree uses. Idempotent; a
+                # broken bridge never breaks the turn.
+                try:
+                    from .orchestrator import sync_inventory_into_graph
+                    sync_inventory_into_graph(getattr(self._ctx, "inventory", None),
+                                              self._graph)
+                except Exception:
+                    pass
                 self._attack_tree.sync(graph=self._graph, findings=self._ctx.findings.all())
                 briefing_parts.append(self._attack_tree.briefing())
             if briefing_parts:

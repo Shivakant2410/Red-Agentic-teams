@@ -14,6 +14,7 @@ mirror of run_ids[0] for readers of the old shape). load() accepts either.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -70,8 +71,14 @@ class Mission:
 
     def save(self, path: str | Path) -> None:
         self.touch()
-        Path(path).write_text(json.dumps(self.to_dict(), indent=2),
-                              encoding="utf-8")
+        # Atomic replace: a concurrent reader (the API's mission poller, the
+        # recovery replay) must never observe a truncated/empty mission.json
+        # mid-write — write to a sibling temp file, then rename over the target.
+        target = Path(path)
+        tmp = target.with_name(target.name + ".tmp")
+        tmp.write_text(json.dumps(self.to_dict(), indent=2),
+                       encoding="utf-8")
+        os.replace(tmp, target)
 
     @classmethod
     def load(cls, path: str | Path) -> "Mission":
