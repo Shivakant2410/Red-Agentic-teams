@@ -24,8 +24,13 @@ from redteam.states import (can_transition, describe, is_known, machines,
 
 # -- structural integrity: every table is a well-formed FSM ----------------------
 
+# Phase 2 (docs/builder01-phase2-mission-design.md) added the mission +
+# mission_task machines per this file's documented drift procedure:
+# bump states.EXPORT_VERSION, update this tuple, check every consumer listed
+# in the machine specs.
 KNOWN_MACHINES = ("approval", "attack_tree_node", "finding_confidence",
-                  "hypothesis", "killchain_stage", "run")
+                  "hypothesis", "killchain_stage", "mission", "mission_task",
+                  "run")
 
 
 def test_all_machines_present():

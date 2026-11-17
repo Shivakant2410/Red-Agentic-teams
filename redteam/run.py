@@ -257,6 +257,12 @@ class RunOptions:
     # itself (scope self-targeting — the agent must never be authorized to attack its
     # own console). None in CLI/standalone mode (nothing to collide with).
     control_plane: tuple[str, int] | None = None
+    # Phase 2 mission coordination driver (docs/builder01-phase2-mission-design.md):
+    # "classic" (default) = the existing single-agent / multi-agent fork below;
+    # "mission" = the mission coordination core over a scripted executor (mock
+    # delegation is Phase 4). Separate from `multi_agent`, which remains the
+    # classic-mode swarm toggle.
+    driver: str = "classic"
 
 
 def execute_run(opts: RunOptions) -> dict:
@@ -506,6 +512,40 @@ def execute_run(opts: RunOptions) -> dict:
 
         safe_emit(bus, "run.start", objective=opts.objective, engagement=engagement.name,
                   mode="multi-agent swarm" if opts.multi_agent else "single agent")
+
+        if opts.driver == "mission":
+            # Phase 2 mission coordination core: the third branch of the same
+            # fork. Runs lifecycle/registry/claim-trio/lease/recovery machinery
+            # over a scripted executor (mock delegation is Phase 4); the
+            # coordination artifacts are real (mission.json, mission_journal.jsonl,
+            # attack_tree.json lease fields). Post-driver LLM machinery (verify
+            # pass, reports, memory reflection) does not apply — no model runs.
+            from .mission.driver import run_mission_driver
+            mission_summary = run_mission_driver(
+                engagement=engagement, out_dir=out, objective=opts.objective,
+                attack_tree=attack_tree, bus=bus, opts=opts, say=say)
+            manifest.status = "completed"
+            manifest.steps = len(mission_summary["tasks"])
+            manifest.save(out / "manifest.json")
+            safe_emit(bus, "run.finish", status="completed", findings=0,
+                      tokens=0, halt_reason="")
+            return {
+                "status": "completed", "halt_reason": "",
+                "driver": "mission",
+                "mission_id": mission_summary["mission_id"],
+                "run_id": mission_summary["run_id"],
+                "mission_status": mission_summary["status"],
+                "tasks": mission_summary["tasks"],
+                "rounds": mission_summary["rounds"],
+                "findings": 0, "confirmed": 0, "tokens": 0,
+                "steps": len(mission_summary["tasks"]),
+                "requests": 0, "objective_achieved": False,
+                "objective_done": 0, "objective_total": 0,
+                "report_path": "", "html_path": "",
+                "audit_intact": True, "out_dir": str(out),
+                "traffic_recorded": 0, "proxy": None,
+                "surface_hosts": 0, "surface_services": 0,
+            }
 
         if opts.multi_agent:
             from .orchestrator import Orchestrator

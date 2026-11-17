@@ -190,6 +190,75 @@ FINDING_WRITERS: tuple[dict, ...] = (
      "may_set": (CONF_FIRM, CONF_PENDING_VERIFICATION, CONF_CONFIRMED)},
 )
 
+# -- mission lifecycle (mission/commander.py — Phase 2 coordination core) -------------
+#
+# A mission is the operator-level unit of work (one objective, one authorized
+# engagement). The Commander is the lifecycle authority; the mission layer NEVER
+# decides offensive truth — task success, confirmed findings (FindingStore), and
+# AttackTree completion are three independent things (docs/builder01-phase2-
+# mission-design.md C-4).
+
+MISSION_PLANNED = "planned"
+MISSION_RUNNING = "running"
+MISSION_SUCCEEDED = "succeeded"
+MISSION_FAILED = "failed"
+MISSION_HALTED = "halted"
+MISSION_CANCELLED = "cancelled"
+
+MISSION_STATES = (MISSION_PLANNED, MISSION_RUNNING, MISSION_SUCCEEDED,
+                  MISSION_FAILED, MISSION_HALTED, MISSION_CANCELLED)
+MISSION_INITIAL = MISSION_PLANNED
+MISSION_TRANSITIONS: dict[str, tuple[str, ...]] = {
+    MISSION_PLANNED: (MISSION_RUNNING, MISSION_CANCELLED),
+    MISSION_RUNNING: (MISSION_SUCCEEDED, MISSION_FAILED, MISSION_HALTED,
+                      MISSION_CANCELLED),
+    # Terminal in every direction: a finished mission is never restarted in
+    # place (a new run dir + new mission_id, same as the run machine).
+    MISSION_SUCCEEDED: (),
+    MISSION_FAILED: (),
+    MISSION_HALTED: (),
+    MISSION_CANCELLED: (),
+}
+
+# -- mission task lifecycle (mission/task.py + mission/scheduler.py) -------------------
+#
+# A task is ONE claimable unit (normally one (technique, target) tree node).
+# Ownership is established by the claim trio (task CAS -> AttackTree.claim ->
+# HypothesisRegistry claim) and protected by a lease with a FENCING TOKEN:
+# every worker mutation must present the token it was dispatched with, so a
+# superseded worker's late write is rejected even before the wall-clock sweep
+# (the sweep bumps the token; timeout alone never proves an operation stopped).
+# EXPIRED is re-armable while attempts remain (retry policy), else FAILED.
+# BLOCKED_DUPLICATE = the hypothesis layer reported the same investigation as
+# already-owned this round; the tree node is released and the task re-arms.
+
+TASK_PENDING = "pending"
+TASK_CLAIMED = "claimed"
+TASK_RUNNING = "running"
+TASK_SUCCEEDED = "succeeded"
+TASK_FAILED = "failed"
+TASK_BLOCKED_DUPLICATE = "blocked_duplicate"
+TASK_EXPIRED = "expired"
+TASK_CANCELLED = "cancelled"
+
+TASK_STATES = (TASK_PENDING, TASK_CLAIMED, TASK_RUNNING, TASK_SUCCEEDED,
+               TASK_FAILED, TASK_BLOCKED_DUPLICATE, TASK_EXPIRED,
+               TASK_CANCELLED)
+TASK_INITIAL = TASK_PENDING
+TASK_TRANSITIONS: dict[str, tuple[str, ...]] = {
+    TASK_PENDING: (TASK_CLAIMED, TASK_CANCELLED),
+    # CLAIMED -> PENDING is the journaled rollback (TASK_CLAIM_ABORTED) when a
+    # later claim-trio step loses; recovery reconcile produces the same edge.
+    TASK_CLAIMED: (TASK_RUNNING, TASK_PENDING, TASK_BLOCKED_DUPLICATE,
+                   TASK_EXPIRED, TASK_CANCELLED),
+    TASK_RUNNING: (TASK_SUCCEEDED, TASK_FAILED, TASK_EXPIRED, TASK_CANCELLED),
+    TASK_BLOCKED_DUPLICATE: (TASK_PENDING, TASK_CANCELLED),
+    TASK_EXPIRED: (TASK_PENDING, TASK_FAILED),
+    TASK_FAILED: (TASK_PENDING,),      # retry policy: attempts < max_attempts only
+    TASK_SUCCEEDED: (),
+    TASK_CANCELLED: (),
+}
+
 # -- machine registry -----------------------------------------------------------------
 #
 # Machines owned here, plus the hypothesis lifecycle, which stays authoritative
@@ -283,6 +352,56 @@ _OWNED: dict[str, dict] = {
                  "record stays on file either way. Nothing may credit an "
                  "objective or access node from anything but confirmed.",
     },
+    "mission": {
+        "states": MISSION_STATES, "initial": MISSION_INITIAL,
+        "terminal": tuple(t for t, nxt in MISSION_TRANSITIONS.items() if not nxt),
+        "transitions": MISSION_TRANSITIONS,
+        "writers": (
+            {"writer": "commander (mission/commander.py — lifecycle authority)",
+             "may_set": MISSION_STATES},
+            {"writer": "operator via control plane (halt/cancel)",
+             "may_set": (MISSION_HALTED, MISSION_CANCELLED)},
+        ),
+        "consumers": ("mission.json record", "GET /api/missions*",
+                      "mission_journal.jsonl replay"),
+        "notes": "One mission : N run directories by model (run_ids is a list); "
+                 "in Phase 2 exactly one run is minted and mission_id == that "
+                 "run_id by CONSTRUCTION, never by hard-coded equality — "
+                 "downstream components must keep treating the two fields as "
+                 "independent (C1). A finished mission is never restarted in "
+                 "place. Mission success is an EXECUTION outcome: it never "
+                 "implies a confirmed finding (C4 — only the independent "
+                 "verification pipeline may confirm).",
+    },
+    "mission_task": {
+        "states": TASK_STATES, "initial": TASK_INITIAL,
+        "terminal": tuple(t for t, nxt in TASK_TRANSITIONS.items() if not nxt),
+        "transitions": TASK_TRANSITIONS,
+        "writers": (
+            {"writer": "scheduler via claim trio (mission/scheduler.py: "
+                       "task CAS -> AttackTree.claim -> hypothesis claim)",
+             "may_set": (TASK_CLAIMED, TASK_RUNNING, TASK_PENDING,
+                         TASK_BLOCKED_DUPLICATE)},
+            {"writer": "fenced worker completion (complete_task/fail_task with "
+                       "the current lease token)",
+             "may_set": (TASK_SUCCEEDED, TASK_FAILED)},
+            {"writer": "lease sweep (expire_claims; token bumped, liveness "
+                       "consulted before stealing a live worker)",
+             "may_set": (TASK_EXPIRED,)},
+            {"writer": "retry policy / recovery reconcile (re-arm or exhaust)",
+             "may_set": (TASK_PENDING, TASK_FAILED)},
+            {"writer": "operator cancel", "may_set": (TASK_CANCELLED,)},
+        ),
+        "consumers": ("mission.json task records", "GET /api/missions/{id}",
+                      "mission_journal.jsonl replay + recovery reconcile"),
+        "notes": "Ownership is journaled BEFORE any work starts (journal-first). "
+                 "Every worker mutation is fenced by the lease token issued at "
+                 "claim time; a rejected stale write is audited "
+                 "TASK_RESULT_REJECTED and never re-fed to the bandit. Task "
+                 "SUCCEEDED means EXECUTION succeeded — never that a finding "
+                 "was confirmed or that the attack-tree node completed (C4); "
+                 "the tree completes only via sync() on a CONFIRMED finding.",
+    },
 }
 
 
@@ -346,7 +465,8 @@ def is_known(machine: str, status: str) -> bool:
     return status in describe(machine)["states"]
 
 
-EXPORT_VERSION = 1   # bump whenever a lifecycle table changes
+EXPORT_VERSION = 2   # bump whenever a lifecycle table changes (Phase 2 added
+                     # the mission + mission_task machines)
 
 
 def machines_json() -> dict:

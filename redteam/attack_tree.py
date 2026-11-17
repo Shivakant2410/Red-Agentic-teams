@@ -17,10 +17,12 @@ branch — it spawns the follow-on attacks a real operator would pursue next
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Callable
 
 # Node lifecycle vocabulary + transition table live in states.py (the platform's
 # ONE lifecycle registry — see docs/state-machines.md). Aliased here so the rest
@@ -147,6 +149,12 @@ class AttackNode:
     status: str = TODO
     findings: str = ""
     bucket: str = ""   # endpoint-shape context for the bandit (see bandit.py); "" = unknown
+    # Phase 2 lease (docs/builder01-phase2-mission-design.md C2/C5): who holds the
+    # claim and until when. Both default to "" so every pre-Phase-2 attack_tree.json
+    # loads unchanged (dataclass defaults) and legacy claim() callers — which pass
+    # no owner — keep producing byte-identical artifacts.
+    owner: str = ""            # claiming agent id ("" = unowned, legacy/anonymous)
+    lease_expires_at: str = "" # ISO-8601 lease deadline ("" = no lease recorded)
 
     @property
     def id(self) -> str:
@@ -154,9 +162,13 @@ class AttackNode:
 
 
 class AttackTree:
-    def __init__(self, path: str | Path | None = None, bandit=None):
+    def __init__(self, path: str | Path | None = None, bandit=None,
+                 clock: Callable[[], _dt.datetime] | None = None):
         self._nodes: dict[str, AttackNode] = {}
         self._path = Path(path) if path else None
+        # Injectable clock for the Phase 2 lease deadlines (mission tests pass a
+        # fake clock); None = the real UTC clock. Never used by pre-Phase-2 paths.
+        self._clock = clock
         # Optional BanditStore (see bandit.py): when given, actionable()'s ranking blends
         # the static priority table with a learned per-(technique, bucket) win rate, and
         # mark()/claim() feed outcomes back into it. None (the default) preserves the old
@@ -186,6 +198,12 @@ class AttackTree:
         stays inside mark(), the single write path; the orchestrator only ever reads
         this for ranked selection (select) and learned-state export (export_state)."""
         return self._bandit
+
+    def node(self, technique: str, target: str):
+        """Read-only node accessor (Phase 2 recovery reconcile reads node
+        status/owner without touching the tree's internals)."""
+        with self._lock:
+            return self._nodes.get(f"{technique}@{target}")
 
     # -- construction ----------------------------------------------------------
 
@@ -343,20 +361,96 @@ class AttackTree:
             self._flush()
         return applied
 
-    def claim(self, technique: str, target: str) -> bool:
+    def claim(self, technique: str, target: str, *, owner: str = "",
+              lease_seconds: float | None = None) -> bool:
         """Atomically claim an actionable node for one swarm worker: set it to
         IN_PROGRESS only if it is currently TODO. Returns True if this call won the
         claim. Without this, two swarm workers could both read the same TODO node from
         actionable() and both work it — not incorrect (duplicate proof attempts just
         dedupe in FindingStore), but wasted turns/tokens, which matters under a tight
-        free-model budget."""
+        free-model budget.
+
+        Phase 2 (docs/builder01-phase2-mission-design.md C2): the claim may carry a
+        lease — `owner` is the claiming agent id and `lease_seconds` the deadline.
+        Keyword-only with empty defaults, so existing positional callers
+        (orchestrator's exploit swarm) compile and behave byte-identically: a
+        claim without `owner` clears any stale lease fields and writes a node
+        exactly as Phase 1 did."""
         with self._lock:
             node = self._nodes.get(f"{technique}@{target}")
             if node is None or node.status != TODO:
                 return False
             node.status = IN_PROGRESS
+            if owner:
+                node.owner = owner
+                node.lease_expires_at = (self._lease_deadline(lease_seconds) if
+                                         lease_seconds else "")
+            else:
+                node.owner = ""
+                node.lease_expires_at = ""
             self._flush()
             return True
+
+    def release(self, technique: str, target: str, actor: str, reason: str = "") -> bool:
+        """IN_PROGRESS -> TODO: the release path states.py has documented on the
+        TREE_IN_PROGRESS transitions since D1 ("a lease expiry may drop it back to
+        TODO"), now implemented for the mission layer's rollback and recovery
+        reconcile. Owner-only when the node IS owned (mirrors
+        HypothesisRegistry.release's contract); an UNOWNED IN_PROGRESS node
+        (legacy claim, or a crashed process that never recorded an owner) may be
+        released by any caller — there is no owner to protect. Returns True if the
+        node was released; callers journal the release (mission TREE_RELEASED).
+        Raises ValueError for a non-owner attempting to release an owned node."""
+        with self._lock:
+            node = self._nodes.get(f"{technique}@{target}")
+            if node is None or node.status != IN_PROGRESS:
+                return False
+            if node.owner and actor != node.owner:
+                raise ValueError(
+                    f"{node.id} is owned by {node.owner!r}, not {actor!r}")
+            node.status = TODO
+            node.owner = ""
+            node.lease_expires_at = ""
+            self._flush()
+            return True
+
+    def expire_claims(self, now=None) -> list[str]:
+        """Sweep every IN_PROGRESS node whose lease has lapsed back to TODO (the
+        documented release path, batched for the mission scheduler's round
+        boundary + recovery). Lease-less and unowned nodes are NEVER swept — a
+        legacy claim (owner="") has no recorded deadline to honor, so auto-dropping
+        it would change Phase 1 behavior. `now` is injectable (mission tests pass a
+        fake clock); defaults to the real UTC clock. Returns the released node ids;
+        callers journal each release (mission TREE_RELEASED)."""
+        now = now or _dt.datetime.now(_dt.timezone.utc)
+        released: list[str] = []
+        with self._lock:
+            for node in self._nodes.values():
+                if node.status != IN_PROGRESS or not node.owner:
+                    continue
+                if not node.lease_expires_at:
+                    continue
+                try:
+                    deadline = _dt.datetime.fromisoformat(node.lease_expires_at)
+                except ValueError:
+                    continue
+                if deadline.tzinfo is None:
+                    deadline = deadline.replace(tzinfo=_dt.timezone.utc)
+                if deadline <= now:
+                    node.status = TODO
+                    node.owner = ""
+                    node.lease_expires_at = ""
+                    released.append(node.id)
+            if released:
+                self._flush()
+        return released
+
+    def _lease_deadline(self, lease_seconds: float | None) -> str:
+        seconds = max(float(lease_seconds), 1.0) if lease_seconds else 0.0
+        if seconds <= 0:
+            return ""
+        now = self._clock() if self._clock else _dt.datetime.now(_dt.timezone.utc)
+        return (now + _dt.timedelta(seconds=seconds)).isoformat()
 
     def briefing(self, limit: int = 6) -> str:
         with self._lock:
