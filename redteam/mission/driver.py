@@ -92,7 +92,7 @@ def mission_outcome(tasks, *, objective_achieved=None,
     if objective_achieved is False:
         return MISSION_FAILED, stop_reason or "objective_not_achieved"
     if pending_verification:
-        return MISSION_FAILED, "unresolved_verification"
+        return MISSION_FAILED, stop_reason or "unresolved_verification"
     if tasks and all(t.status == TASK_SUCCEEDED for t in tasks):
         return MISSION_SUCCEEDED, ""
     return (MISSION_FAILED,
