@@ -212,7 +212,12 @@ class MissionScheduler:
         result = None
         if self.executor is not None:
             try:
-                result = self.executor.run(self.commander.task_view(task_id))
+                task_view = self.commander.task_view(task_id)
+                # Ephemeral handoff only: the scheduler remains the hypothesis
+                # claim authority; the executor uses this id to attach the
+                # attempt's real finding evidence to that same canonical record.
+                task_view["hypothesis_id"] = hyp_id
+                result = self.executor.run(task_view)
             except Exception as exc:
                 self.commander.fail_task(task_id, actor=agent, lease_token=token,
                                          error=f"executor error: {exc}")
