@@ -169,9 +169,9 @@ Test counts: baseline 1914 collected on main → 1995 passed + 16 skipped here
 (+98 net new tests, including the states drift-procedure additions and
 parametrized machine checks).
 
-**Final state (after review round 1, see §14):** `python -m pytest -q` →
-**2005 passed, 16 skipped, 3 warnings, 0 failed in 54.58 s** — the same 1995
-tests plus the 10 review-round regression tests, zero failures.
+**Final state (after review rounds 1–2, see §14–§15):** `python -m pytest -q` →
+**2006 passed, 16 skipped, 3 warnings, 0 failed in 61.41 s** — 1995 original +
+10 round-1 regression tests + 1 round-2 regression test, zero failures.
 
 ## 11. Controlled demonstration
 
@@ -272,3 +272,59 @@ reference exactly once — replacing the one append-always test);
   (1995 prior + 10 new; the warnings are the pre-existing sklearn SVD numerics)
 - Integration demonstration: **ALL 10 STEPS ASSERTED** (`python
   scripts/demo_unified_intelligence.py`)
+
+## 15. Review round 2 — stale-credit fix, PR #12 coordination, CI (final commit)
+
+**1. A FIXED finding can no longer recreate the holding it just invalidated
+(`redteam/credit.py`, `redteam/retest.py`).** The sweep selected findings on
+`confidence == "confirmed"` alone; a FIXED retest deliberately leaves that
+confidence untouched (verification record), so after `retest_run()` revoked the
+holding and marked the endpoint remediated, a later sweep (including the
+no-pending-findings `run_verify_pass()` early-return sweep) could see the
+still-confirmed finding, re-create the same holding with `finding_id` attached,
+and make the dead foothold read as current again.
+
+Fix — historical confirmation and current exploitability stay separate
+dimensions, and the creditor now respects the second one:
+- `retest.latest_verdict(finding)` (new, in the retest module — the verdict
+  vocabulary's owner) returns the LATEST retest verdict, "" when never retested.
+- `credit_confirmed_findings()` excludes findings whose latest verdict is
+  `fixed`: the confirmation survives, but a remediated proof can neither
+  re-create the revoked holding nor earn fresh credit. `cannot_confirm` /
+  `blocked` are NOT treated as remediation (never certify a fix over dead or
+  refused trials — same honesty rule as the retester itself); a newer
+  `reproducible` re-entry re-enables crediting, and a genuinely new
+  demonstration always re-establishes the holding through the normal `hold()`
+  path (re-hold of a revoked node stays legal ONLY there).
+- The open decision recorded in `test_creditor_does_not_double_credit_after_revocation`
+  ("the retest bridge, not the creditor, owns revocation") is resolved and its
+  comment updated: the bridge owns revocation, the creditor owns respecting it.
+
+Regression test (`test_retest.py::test_creditor_respects_latest_fixed_retest`)
+runs the full loop on a live local target: credit → retest FIXED (real replay)
+→ the no-pending-findings verification/finalization path (`run_verify_pass`)
+→ asserts the holding stays revoked, no fresh credit events, no re-credit via
+`autoevaluate`, the finding's confidence/retest-history survive intact, the KG
+endpoint reads `remediated`, a fresh demonstration re-establishes the holding,
+and a newer `reproducible` re-entry re-enables crediting.
+
+**2. PR #12 integration (merge sequence).** This PR's timestamped, structured
+revocation lifecycle (`revoke()` / `revoked_nodes()` + the `finding_id`
+invalidation bridge) is the single source of truth, as the review recommends.
+PR #12's branch (`phase-e2-mission-specialist-integration`) was merged with
+this branch and its duplicate lifecycle surface was REMOVED, not preserved:
+`release()` / `invalidated_holdings()` call sites now consume
+`revoke()` / `revoked_nodes()`; no shim methods exist. The integration commit
+on PR #12 documents the adaptation and carries this branch's full test suite
+green.
+
+**3. CI.** The 2,005/2,006-passed results were builder-reported with no check
+runs backing them — `.github/workflows/ci.yml` now runs the full suite on
+every push and PR (setup-python 3.12, `pip install -e ".[dev]"`,
+`python -m pytest -q`; no LLM keys, no external targets), so this and future
+heads carry verifiable check runs.
+
+**Results from the final commit (executed on this exact tree):** focused
+(retest / access invalidation / objective / orchestrator) **53 passed**;
+**full suite 2006 passed, 16 skipped, 0 failed, 3 warnings in 61.41 s**
+(2005 + 1 new regression test); demonstration **ALL 10 STEPS ASSERTED**.

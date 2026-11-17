@@ -122,10 +122,12 @@ def test_creditor_does_not_double_credit_after_revocation(tmp_path):
     assert access._nodes["resource:records"].attrs.get("finding_id") == "abc"
     access.revoke(RESOURCE, "records", reason="retest fixed: abc")
     # re-running the creditor on the SAME confirmed finding must not resurrect
-    # the hold (already_held checks CURRENT holdings; revoked is not current —
-    # the creditor would re-hold only from a *still-confirmed* finding, which is
-    # the documented open decision: remediation state is surfaced by retest, and
-    # the retest bridge, not the creditor, owns revocation)
+    # the hold. Two gates apply (review round 2 resolved the open decision):
+    # the criterion is already achieved (outstanding() is empty), and — should a
+    # fresh criterion ever target the same proof — a finding whose latest retest
+    # verdict is FIXED is excluded from the sweep entirely (credit.py uses
+    # retest.latest_verdict()). The retest bridge owns revocation; the creditor
+    # owns respecting it. See test_retest.py::test_creditor_respects_latest_fixed_retest
     credit_confirmed_findings(Ctx(), objective=obj, access=access)
     node = access._nodes["resource:records"]
     assert node.revoked is True

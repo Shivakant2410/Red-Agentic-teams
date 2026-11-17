@@ -53,6 +53,23 @@ REPRODUCIBLE, FIXED, CANNOT_CONFIRM, BLOCKED = (
     "reproducible", "fixed", "cannot_confirm", "blocked")
 
 
+def latest_verdict(finding) -> str:
+    """The most recent retest verdict for a finding — "" when never retested.
+
+    THE remediation-state read for consumers (the creditor sweep, reporting,
+    projections): `confidence` records whether the finding was REAL
+    (verification), this records whether it STILL IS (remediation) — the two
+    dimensions stay orthogonal by design. Only verdict == FIXED is remediation
+    proof; cannot_confirm / blocked explicitly are NOT (a fix is never
+    certified over dead or refused trials), and a newer reproducible entry
+    re-establishes exploitability after a fix — this reads the LATEST entry,
+    so the answer always reflects the current remediation cycle."""
+    history = getattr(finding, "retest_history", None) or []
+    if not history:
+        return ""
+    return str((history[-1] or {}).get("verdict") or "")
+
+
 class _TransportBox:
     """Counts trials whose transport died (status 0 — host down, DNS, refused).
     Fetch-level, not assertion-level: only real evidence the target was gone."""

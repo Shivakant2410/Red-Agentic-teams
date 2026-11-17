@@ -307,3 +307,78 @@ def test_invalidate_after_fix_only_on_fully_supported_holds():
     assert [n.key for n in g.held()] == ["other"]
     node = g._nodes["resource:mine"]
     assert node.evidence == "confirmed finding f1: x"   # history intact
+
+
+# --- creditor vs. remediation state (review round 2) ---------------------------
+
+def test_creditor_respects_latest_fixed_retest(tmp_path, target):
+    """A FIXED retest must not be undone by the creditor sweep.
+
+    The finding's confidence stays `confirmed` (verification record — orthogonal
+    by design), but its LATEST retest verdict is `fixed`: the finding no longer
+    demonstrates CURRENT exploitability. The full loop is exercised on a live
+    local target: credit -> retest(FIXED) -> the no-pending-findings
+    verification/finalization path (run_verify_pass early-return sweep) ->
+    assertions. Without the fix, the creditor re-created the very holding the
+    retest-fixed bridge had just revoked."""
+    from redteam.access import AccessGraph
+    from redteam.credit import credit_confirmed_findings
+    from redteam.knowledge import ENDPOINT, KnowledgeGraph
+    from redteam.objective import DATA_ACCESS, Objective, SuccessCriterion
+    from redteam.orchestrator import run_verify_pass
+
+    url = f"{target['base']}/patched"                # patched: marker is gone
+    f = _http_finding(target["base"], 0, path="/patched")
+    f.confidence = "confirmed"                       # historically verified real
+    rd, eng, ctx = _ctx_for(tmp_path, target, [f])
+    access = AccessGraph(rd / "access.json")
+    graph = KnowledgeGraph(rd / "graph.json")
+    graph.observe_canonical(ENDPOINT, url, source="recon")
+    obj = Objective(name="n", criteria=[SuccessCriterion(
+        id="c1", kind=DATA_ACCESS, description="read records", target=url)])
+    ctx.access, ctx.objective, ctx.graph = access, obj, graph
+
+    # 1) the still-confirmed finding legitimately credits the holding
+    applied = credit_confirmed_findings(ctx)
+    assert [e["finding"] for e in applied] == [f.id]
+    node = access._nodes["resource:" + url]
+    assert node.held and node.attrs.get("finding_id") == f.id
+    assert obj.achieved is True
+
+    # 2) retest the finding as FIXED — the bridge revokes + marks remediated
+    results = retest_run(ctx.findings, ctx, trials=3, need=2,
+                         access=access, graph=graph)
+    assert results[0]["verdict"] == FIXED
+    assert node.held is False and node.revoked is True
+    assert graph.nodes(ENDPOINT)[0].lifecycle_status() == "remediated"
+    # historical confirmation and the retest timeline both survive untouched
+    assert ctx.findings.all()[0].confidence == "confirmed"
+    assert ctx.findings.all()[0].retest_history[-1]["verdict"] == FIXED
+
+    # 3) the no-pending-findings verification/finalization path re-runs the
+    #    creditor sweep — the stale proof must NOT resurrect the holding
+    assert ctx.findings.pending() == []
+    assert run_verify_pass(eng, {}, ctx, None, "c1") == 0   # sweep ran, still nothing pending
+    assert credit_confirmed_findings(ctx) == []             # no fresh credit events
+    assert access.held() == []                              # holding stays revoked
+    assert node.revoked is True
+    assert obj.autoevaluate(access) == []                   # no re-credit from stale proof
+    assert obj.progress() == (1, 1)
+
+    # 4a) a genuinely NEW demonstration re-establishes the holding (the normal
+    #     hold() path — exactly what the remediation lifecycle intends)
+    access.hold("resource", url, evidence="fresh manual demonstration",
+                source="verified_finding")
+    assert any(n.held and n.key == url for n in access.held())
+
+    # 4b) fresh verification (a newer reproducible retest) re-enables crediting:
+    #     the LATEST verdict — not any historical fix — is what gates the sweep
+    obj2 = Objective(name="n2", criteria=[SuccessCriterion(
+        id="c2", kind=DATA_ACCESS, description="re-establish", target=url)])
+    ctx.objective = obj2
+    assert credit_confirmed_findings(ctx) == []            # still latest-fixed: no credit
+    ctx.findings.append_retest(f.id, {"when": "later", "verdict": "reproducible",
+                                      "reproductions": 3, "trials": 3,
+                                      "detail": "the hole is open again"})
+    applied2 = credit_confirmed_findings(ctx)
+    assert [e["criterion"] for e in applied2] == ["c2"]    # fresh proof may credit again
