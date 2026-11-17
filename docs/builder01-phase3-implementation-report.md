@@ -75,11 +75,13 @@ RunOptions.driver == "mission"  (run.py execute_run)
 | File | Change |
 | --- | --- |
 | `redteam/mission/specialist_executor.py` | **new (108 lines)** — `MissionSpecialistExecutor`: task_view → one real specialist invocation → `ExecutionResult`; soft-failure audit mapping (`agent.no_models` / `agent.halt` / `agent.budget_exhausted` → EXEC_FAILED); real-evidence diff over the shared FindingStore |
-| `redteam/orchestrator.py` | **+153/−2** — `execute_task()` task-level interface, `_profile_for_task()` (role→existing profile, `profile_for()` for exploit), `_task_instruction()` (concise, task-scoped), `_execute_verify_task()` (existing `run_verify_pass`), read-only `ctx` property, optional `max_steps` parameter on `_make_specialist()`, `_ROLE_TASK_LINES`; **correction**: `access_precondition_reason()` + `_active_foothold()` (the ACCESS foothold gate) enforced in `execute_task()` before any ACCESS construction |
+| `redteam/orchestrator.py` | **+153/−2** — `execute_task()` task-level interface, `_profile_for_task()` (role→existing profile, `profile_for()` for exploit), `_task_instruction()` (concise, task-scoped), `_execute_verify_task()` (existing `run_verify_pass`), read-only `ctx` property, optional `max_steps` parameter on `_make_specialist()`, `_ROLE_TASK_LINES`; **correction**: `access_precondition_reason()` + `_active_foothold()` (the ACCESS foothold gate) enforced in `execute_task()` before any ACCESS construction; **follow-up**: an invalidated holding (the graph's record) contradicts a stale KillChain INITIAL_ACCESS stage — fail closed |
+| `redteam/access.py` | **correction follow-up**: `release()` (the lifecycle inverse of `hold()` — flips `held`, RETAINS the evidence: the graph's own invalidation record) and the read-only `invalidated_holdings()` query; no new node fields, no new authority |
+| `redteam/credit.py` | **correction follow-up**: `invalidate_holdings_for_fixed_findings()` — the creditor's mirror step; findings whose LATEST retest verdict is FIXED revoke exactly the holdings their credit created (evidence marker `confirmed finding <id>:`), emitting `credit.invalidated`; retest.py/findings.py/killchain.py behavior unchanged |
 | `redteam/mission/driver.py` | `hypotheses` pass-through to `MissionScheduler` (the orchestrator's own `ResearchBundle` — one duplicate-suppression registry); **correction**: `access_gate` pass-through wired into the scheduler's readiness gate; the no-executor seam is now LOUD (unconditional stderr warning + `say`); summary reports `executor` class name; docstring updated to Phase 3 |
 | `redteam/mission/scheduler.py` | **correction**: duck-typed `prerequisite` readiness hook (task_view → "" \| reason) consulted in `ready_tasks()` — a gated task stays PENDING and is re-examined every round (the existing not-ready semantics); no claim, no lifecycle/status/journal change |
 | `redteam/run.py` | mission branch: constructs the shared `Orchestrator` + `MissionSpecialistExecutor`, passes both to the driver, `attack_tree.sync()` after the mission (same sync the orchestrator's verify passes use), falls through to the SHARED finalization (reports, objective scoring, memory reflection — the Phase 2 early return removed); **correction**: passes `access_gate=mission_orchestrator.access_precondition_reason`; `run.start` mode string is driver-aware; final summary carries mission fields (`mission_id`, `mission_status`, `tasks`, `rounds`, `mission_executor`) |
-| `tests/test_mission_specialist_executor.py` | **new (30 tests)** — executor contract, routing, shared context, claim ownership, task limits, verification, and the ACCESS prerequisite gate (no-foothold blocked/no-invocation, direct-dispatch refusal, demonstrated foothold executes, revoked foothold blocked, KillChain path, non-ACCESS unaffected, mid-mission foothold, driver wiring) |
+| `tests/test_mission_specialist_executor.py` | **new (36 tests)** — executor contract, routing, shared context, claim ownership, task limits, verification, and the ACCESS prerequisite gate (no-foothold blocked/no-invocation, direct-dispatch refusal, demonstrated foothold executes, revoked foothold blocked, KillChain path + invalidated-holding contradiction, non-ACCESS unaffected, mid-mission foothold, driver wiring, and the end-to-end FIXED-retest invalidation lab: real creditor → real retest_run → invalidation → blocked despite achieved stage → re-demonstration re-opens) |
 | `tests/test_mission_lab_e2e.py` | **new (398 lines, 2 tests)** — the controlled lab (below) |
 | `docs/builder01-phase3-implementation-report.md` | **new** — this report |
 
@@ -150,11 +152,40 @@ authority:
   `orchestrator.py`, next to the routing). It returns `""` (proceed) only when
   a valid, demonstrated, ACTIVE foothold exists per the existing evidence: an
   `AccessGraph` node with `held=True` ("demonstrated, not assumed" — the same
-  evidence the classic ACCESS loop consumes via `killchain.recommend()`) or a
-  `KillChain` INITIAL_ACCESS stage marked `achieved`. A revoked / invalidated
+  evidence the classic ACCESS loop consumes via `killchain.recommend()`) or —
+  when the graph carries no invalidation record — a `KillChain`
+  INITIAL_ACCESS stage marked `achieved`. A revoked / invalidated
   (`held=False`) / never-proven foothold never satisfies it, and a non-achieved
   stage (`in_progress`, …) never substitutes. The check is access-role-scoped:
   recon/exploit/logic/verify routing is untouched.
+- **Revocation vs the KillChain fallback (review follow-up, decided)**: an
+  achieved INITIAL_ACCESS stage is a HISTORICAL milestone and does **not**
+  remain sufficient once the evidence supporting the foothold is invalidated.
+  The intended lifecycle, all on the existing authorities:
+  1. *demonstrated* — `access.hold()` (tools, or the creditor
+     `credit_confirmed_findings` on a confirmed finding) sets `held=True`; the
+     KillChain may journal the milestone;
+  2. *invalidated* — a retest verdict of FIXED revokes the holding through the
+     graph's own lifecycle inverse `AccessGraph.release()`:
+     `held=False` with the evidence RETAINED — the graph's own invalidation
+     record (`invalidated_holdings()`); `credit.
+     invalidate_holdings_for_fixed_findings()` is the symmetric step (it
+     revokes exactly the holdings whose evidence reads "confirmed finding
+     <id>:", emits `credit.invalidated`, and touches nothing else);
+  3. *gate* — active holdings win; an invalidation record CONTRADICTS the
+     historical stage, so the gate fails closed (the stage must never stand in
+     for a foothold current evidence says is gone) until a foothold is
+     demonstrated again; only a graph with NO invalidation record (or no graph
+     at all — kill-chain-style deployments) may fall back to the achieved
+     stage; re-demonstration re-opens the gate for the SAME pending task.
+  Premise note (verified in code): before this change NO automated path
+  revoked holdings — `retest.py` is verdict-only by design (it appends to
+  `retest_history` and "never touches confidence"; verification, remediation
+  and access state are deliberately orthogonal there). The invalidation step
+  above is the explicit lifecycle link for flows that hold both the finding
+  store and the access graph, and the gate honors the resulting record no
+  matter who wrote it. `retest.py`/`findings.py`/`killchain.py` behavior is
+  unchanged.
 - **Dispatch-time enforcement (the lifecycle representation)**: the scheduler
   gained a duck-typed `prerequisite` hook consulted in `ready_tasks()` (same
   pattern as `worker_alive`/`hypotheses`); `run.py` wires it to the
@@ -181,10 +212,10 @@ authority:
 ```
 $ PYTHONPATH=src python3 -m pytest tests/test_mission_specialist_executor.py tests/test_mission_lab_e2e.py -q
 .................................................................           [100%]
-32 passed in 0.98s          (24 original + 8 ACCESS-gate tests)
+36 passed in 1.55s          (24 original + 12 ACCESS-gate/lifecycle tests)
 
 $ PYTHONPATH=src python3 -m pytest tests/ -q        (full repository regression)
-1930 passed, 16 skipped, 3 warnings in 54.11s          (exit 0)
+1932 passed, 16 skipped, 3 warnings in 49.72s          (exit 0)
 ```
 
 Baseline before this branch: 1898 passed / 16 skipped (24 new tests, 0

@@ -19,23 +19,30 @@ construction is stubbed at _make_specialist.
 from __future__ import annotations
 
 import datetime as _dt
+import http.server
 import json
 import threading
 
 import pytest
 
+from redteam.access import AccessGraph
 from redteam.attack_tree import AttackTree
 from redteam.config import Engagement, LlmConfig, SandboxConfig
+from redteam.credit import (credit_confirmed_findings,
+                            invalidate_holdings_for_fixed_findings)
 from redteam.findings import Finding, FindingStore
 from redteam.knowledge import KnowledgeGraph
-from redteam.killchain import ACHIEVED, INITIAL_ACCESS
+from redteam.killchain import ACHIEVED, INITIAL_ACCESS, KillChain
 from redteam.llm.openrouter import ChatResult
 from redteam.mission.executor import (EXEC_FAILED, EXEC_SUCCEEDED,
                                       ExecutionResult)
 from redteam.mission.specialist_executor import MissionSpecialistExecutor
+from redteam.objective import DATA_ACCESS, Objective, SuccessCriterion
 from redteam.orchestrator import (ACCESS, EXPLOIT, LOGIC, RECON, VERIFY,
                                   Orchestrator)
 from redteam.ratelimit import RateLimiter
+from redteam.retest import (FIXED, build_ctx_for_run,
+                            engagement_from_scope_json, retest_run)
 from redteam.runtime import BudgetTracker
 from redteam.scope import ScopeGuard
 from redteam.specialists import A03, profile_for
@@ -127,8 +134,6 @@ class _Env:
             # the REAL foothold authorities on the shared context (no fakes):
             # AccessGraph nodes are "demonstrated, not assumed"; KillChain
             # tracks INITIAL_ACCESS. Nothing else in the env changes.
-            from redteam.access import AccessGraph
-            from redteam.killchain import KillChain
             self.ctx.access = AccessGraph(tmp_path / "access.json")
             self.ctx.killchain = KillChain(tmp_path / "killchain.json")
         self.graph = KnowledgeGraph(tmp_path / "g.json")
@@ -643,11 +648,14 @@ def test_revoked_foothold_does_not_satisfy_the_gate(tmp_path):
     commander, scheduler, _clock = _access_stack(tmp_path, env)
     task = commander.create_task(title="press the foothold", role="access",
                                  actor="op")
-    node = env.ctx.access.hold("session", "web-sess-1", evidence="proven")
+    env.ctx.access.hold("session", "web-sess-1", evidence="proven")
     assert [t.task_id for t in scheduler.ready_tasks()] == [task.task_id]
-    # invalidated through the graph's OWN lifecycle field (held=False):
-    # a revoked/invalidated foothold is no longer active evidence
-    node.held = False
+    # invalidated through the graph's OWN lifecycle operation: release() flips
+    # held and KEEPS the evidence — the invalidation record (a revoked or
+    # otherwise invalidated foothold is no longer active evidence)
+    env.ctx.access.release("session", "web-sess-1")
+    assert env.ctx.access.held() == []
+    assert len(env.ctx.access.invalidated_holdings()) == 1
     assert scheduler.ready_tasks() == []
     assert commander.task(task.task_id).status == TASK_PENDING
     assert captured == {}
@@ -667,6 +675,29 @@ def test_killchain_initial_access_achieved_satisfies_the_gate(tmp_path):
     env2, _c2 = _access_env(tmp_path / "env2")
     env2.ctx.killchain.mark(INITIAL_ACCESS, "in_progress", note="trying")
     assert env2.orch.access_precondition_reason(view) != ""
+
+
+def test_invalidated_holding_contradicts_the_killchain_fallback(tmp_path):
+    # The fallback's boundary, made explicit: an achieved INITIAL_ACCESS stage
+    # is a HISTORICAL milestone — it never stands in for a foothold whose
+    # supporting evidence was invalidated (the graph's own record).
+    env, _ = _access_env(tmp_path)
+    view = _task_view(role="access")
+    env.ctx.access.hold("session", "web-sess-1", evidence="was proven")
+    env.ctx.killchain.mark(INITIAL_ACCESS, ACHIEVED, note="milestone")
+    assert env.orch.access_precondition_reason(view) == ""   # active holding wins
+    env.ctx.access.release("session", "web-sess-1")
+    reason = env.orch.access_precondition_reason(view)
+    assert "invalidated" in reason and "must not stand in" in reason
+    # re-demonstration re-opens the gate
+    env.ctx.access.hold("session", "web-sess-1", evidence="re-proven")
+    assert env.orch.access_precondition_reason(view) == ""
+    # a graph that NEVER tracked a holding (observe-only, no evidence) may
+    # still fall back to the stage — no invalidation record exists to contradict
+    env2, _c2 = _access_env(tmp_path / "env2")
+    env2.ctx.access.observe("session", "seen-only")
+    env2.ctx.killchain.mark(INITIAL_ACCESS, ACHIEVED, note="milestone")
+    assert env2.orch.access_precondition_reason(_task_view(role="access")) == ""
 
 
 def test_non_access_tasks_are_unaffected_by_the_gate(tmp_path):
@@ -726,3 +757,137 @@ def test_driver_wires_the_access_gate(tmp_path):
     assert summary["tasks"][0]["status"] == TASK_PENDING
     assert captured == {}
     assert "agent.start" not in [e["event"] for e in env.audit.events]
+
+
+# =============================================================================
+# Revocation vs the KillChain fallback (review follow-up): a FIXED retest must
+# invalidate the demonstrated foothold, and the achieved INITIAL_ACCESS stage
+# must NOT stand in for it. Run end to end on the REAL authorities — the
+# creditor, the retest machinery (stored-recipe replay against a live local
+# lab), and the graph's own release()/invalidation record. retest.py itself
+# stays verdict-only (verification, remediation and access state are
+# orthogonal there, by its own contract); the invalidation is the creditor's
+# explicit mirror step: credit.invalidate_holdings_for_fixed_findings().
+# =============================================================================
+
+
+class _GateLabHandler(http.server.BaseHTTPRequestHandler):
+    """Local lab: /vuln is vulnerable; every other path behaves patched."""
+
+    def _respond(self):
+        if self.path.startswith("/vuln"):
+            body = b"ADMIN PANEL secret"
+        else:
+            body = b"302 login required"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    do_GET = do_POST = _respond
+
+    def log_message(self, *a):  # silence test noise
+        pass
+
+
+@pytest.fixture()
+def gate_lab_target():
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _GateLabHandler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{srv.server_address[1]}"
+    srv.shutdown()
+
+
+def _gate_lab_env(tmp_path, base):
+    """A REAL retest-run context (frozen scope.json, FindingStore on disk, no
+    LLM — exactly what build_ctx_for_run gives a retest) with the shared
+    AccessGraph/KillChain authorities attached, and the run's Orchestrator
+    over that same context."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    port = int(base.rsplit(":", 1)[1])
+    (run_dir / "scope.json").write_text(json.dumps(
+        {"allowed_hosts": ["127.0.0.1"], "excluded_hosts": [],
+         "allowed_ports": [port], "allowed_schemes": ["http"],
+         "max_requests_per_second": 100.0, "max_total_requests": 1000,
+         "allow_private_ranges": True}), encoding="utf-8")
+    # the finding was CONFIRMED in the original run (historical state on disk);
+    # its stored recipe now replays against patched behavior -> FIXED verdict
+    finding = Finding(title="unauth admin panel", severity="high",
+                      target=f"{base}/patched",
+                      summary="admin panel reachable without a session",
+                      confidence="confirmed",
+                      evidence="200 with ADMIN PANEL marker", check_type="http",
+                      check_spec={"request": {"method": "GET",
+                                              "url": f"{base}/patched"},
+                                  "body_regex": "ADMIN PANEL"})
+    (run_dir / "findings.json").write_text(json.dumps([finding.__dict__]),
+                                           encoding="utf-8")
+    eng = engagement_from_scope_json(run_dir)
+    ctx = build_ctx_for_run(eng, run_dir)
+    ctx.access = AccessGraph(run_dir / "access.json")
+    ctx.killchain = KillChain(run_dir / "killchain.json")
+    ctx.objective = Objective(name="read the admin panel", criteria=[
+        SuccessCriterion(id="c-data", kind=DATA_ACCESS,
+                         description="read the admin panel data",
+                         target=f"{base}/patched")])
+    orch = Orchestrator(eng, build_registry(enable_sandbox=False,
+                                            enable_browser=False),
+                        ctx, FakeClient(),
+                        graph=KnowledgeGraph(tmp_path / "g.json"),
+                        attack_tree=AttackTree(tmp_path / "attack_tree.json"))
+    orch.with_runtime(budget=BudgetTracker(max_seconds=600, max_tokens=100000))
+    captured = {}
+    real_make = orch._make_specialist
+
+    def spy(profile, addon_suffix="", agent_name=None, max_steps=None):
+        captured["constructed"] = True
+        captured["profile"] = profile
+        return real_make(profile, addon_suffix, agent_name, max_steps)
+
+    orch._make_specialist = spy
+    return ctx, orch, captured
+
+
+def test_fixed_retest_invalidates_the_foothold_and_blocks_access(
+        tmp_path, gate_lab_target):
+    ctx, orch, captured = _gate_lab_env(tmp_path, gate_lab_target)
+    # 1. demonstrate a foothold: the CREDITOR holds it from the confirmed
+    #    finding; the KillChain journals the INITIAL_ACCESS milestone
+    applied = credit_confirmed_findings(ctx)
+    assert applied, "the confirmed finding must collect its criterion"
+    held = ctx.access.held()
+    assert len(held) == 1 and held[0].source == "verified_finding"
+    assert f"confirmed finding {applied[0]['finding']}" in held[0].evidence
+    ctx.killchain.mark(INITIAL_ACCESS, ACHIEVED, note="first foothold proven")
+    mission_dir, clock = H.make_mission_dir(tmp_path)
+    commander = H.make_commander(mission_dir, clock)
+    commander.start_mission("op")
+    executor = MissionSpecialistExecutor(orch, objective="press the foothold")
+    scheduler = H.make_scheduler(commander, tree=None, executor=executor,
+                                 clock=clock,
+                                 prerequisite=orch.access_precondition_reason)
+    task = commander.create_task(title="press the foothold", role="access",
+                                 actor="op")
+    assert [t.task_id for t in scheduler.ready_tasks()] == [task.task_id]
+    # 2. run a REAL retest of the stored recipe against the now-patched lab:
+    #    verdict FIXED, recorded on the finding's remediation timeline
+    results = retest_run(ctx.findings, ctx, trials=3, need=2)
+    assert results[0]["verdict"] == FIXED
+    # 3. the invalidation step revokes the holding the finding created —
+    #    held=False, evidence retained: the graph's own invalidation record
+    invalidated = invalidate_holdings_for_fixed_findings(ctx)
+    assert invalidated == [held[0].id]
+    assert ctx.access.held() == []
+    assert len(ctx.access.invalidated_holdings()) == 1
+    #    THE expected behavior, explicit: the achieved INITIAL_ACCESS stage is
+    #    a historical milestone and does NOT stand in for the invalidated
+    #    foothold — the ACCESS task is blocked, nothing constructed, nothing run
+    assert scheduler.ready_tasks() == []
+    assert commander.task(task.task_id).status == TASK_PENDING
+    assert captured == {}
+    # 4. a newly demonstrated foothold re-opens the gate for the SAME task
+    ctx.access.hold("resource", f"{gate_lab_target}/patched",
+                    evidence="re-proven by a fresh confirmed session")
+    assert [t.task_id for t in scheduler.ready_tasks()] == [task.task_id]
