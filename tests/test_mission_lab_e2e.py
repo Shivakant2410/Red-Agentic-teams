@@ -376,8 +376,8 @@ llm: {{}}
     # the production mission path ran the REAL executor (not the mock)
     assert summary["driver"] == "mission"
     assert summary["mission_executor"] == "MissionSpecialistExecutor"
-    # The explicit plan omits VERIFY. Task execution completed, but the
-    # mission must not report success while its finding remains pending.
+    # Default mission mode discovered the finding, verified it independently,
+    # and only then selected the two unlocked follow-up techniques.
     assert summary["mission_status"] == "succeeded"
     assert summary["mission_stop_reason"] == "frontier_exhausted"
     assert summary["mission_execution_complete"] is True
@@ -411,9 +411,8 @@ llm: {{}}
     journal = EventJournal("lab-e2e", path=tmp_path / "mission_journal.jsonl")
     types = [e["type"] for e in journal.read_all()]
     assert types.count("TASK_DISPATCHED") == 5
-    # C4 chain completed: the CONFIRMED... pending finding's node is claimed and
-    # held (no verify task in this plan — the node must NOT be completed by
-    # task success alone)
+    # Only the independently confirmed SQLi node is completed. The unlocked
+    # follow-up nodes were dispatched but not promoted without their own proof.
     tree_after = AttackTree(tmp_path / "attack_tree.json")
     node = tree_after.node("injection.sqli",
                            f"http://127.0.0.1:{lab_server}/api/orders")
