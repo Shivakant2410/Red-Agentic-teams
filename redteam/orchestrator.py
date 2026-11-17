@@ -1570,6 +1570,60 @@ class Orchestrator:
             selected=[f"{x['technique']}@{x['target']}" for x in selected])
         return selected
 
+    def record_mission_task_outcome(self, task_view: dict,
+                                    evidence: tuple[dict, ...] | list[dict]) -> None:
+        """Close the mission task's existing hypothesis claim with real outcomes.
+
+        The scheduler passes the hypothesis id it already claimed. Finding
+        evidence is attached before verification so the existing verifier
+        mirror can move that same hypothesis to CONFIRMED/REFUTED. An attempt
+        with no finding records counter-evidence and releases its lease.
+        """
+        hyp_id = str(task_view.get("hypothesis_id", "") or "")
+        node_id = str(task_view.get("node_id", "") or "")
+        if not hyp_id or not node_id:
+            return
+        agent = str(task_view.get("role", "exploit") or "exploit")
+        self._research_hyp_by_node[node_id] = hyp_id
+        finding_refs = [str(ev.get("ref", "")) for ev in evidence
+                        if ev.get("kind") == "finding" and ev.get("ref")]
+        try:
+            if finding_refs:
+                for finding_id in finding_refs:
+                    finding = self._ctx.findings.get(finding_id)
+                    if finding is None:
+                        continue
+                    self._research.registry.attach_evidence(
+                        hyp_id,
+                        EvidenceRef(
+                            evidence_id=f"ev-finding-{finding_id}",
+                            kind="finding", origin="agent",
+                            source_agent=agent, artifact_ref=finding_id,
+                            summary=f"{finding.severity}: {finding.title} @ {finding.target}",
+                            ts=self._research_ts()),
+                        agent)
+                    self._research.registry.set_status(
+                        hyp_id, AWAITING_VERIFICATION, agent,
+                        finding_id=finding_id,
+                        reason=f"mission task produced finding {finding_id}; awaiting independent verification")
+                    self._research_finding_hyp[finding_id] = hyp_id
+            else:
+                task_id = str(task_view.get("task_id", "mission-task") or "mission-task")
+                self._research.registry.attach_counter_evidence(
+                    hyp_id,
+                    EvidenceRef(
+                        evidence_id=f"ev-mission-empty-{task_id}",
+                        kind="observation", origin="agent",
+                        source_agent=agent, artifact_ref=task_id,
+                        summary="Mission task ended without producing a finding; no proof outcome asserted.",
+                        ts=self._research_ts()),
+                    agent)
+                self._research.registry.release(
+                    hyp_id, agent, reason="mission task ended without a finding")
+        except Exception as exc:
+            self._ctx.audit.record("research.error", stage="mission_attempt",
+                                   hypothesis_id=hyp_id, error=str(exc))
+
     def mission_reconcile_after_verification(self) -> dict:
         """Apply the classic loop's reusable post-verification joins.
 
