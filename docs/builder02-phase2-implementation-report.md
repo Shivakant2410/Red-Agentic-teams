@@ -58,17 +58,26 @@ Scheme+host lowercased; fragment dropped; default port dropped (non-default kept
 string dropped** — documented trade-off (ADR-002 §2.3): query = behavior, not
 resource identity; parameter names/values remain in the PARAMETER model and
 `attrs["url_raw"]`; different paths never merge. `www.` never stripped; IP
-literals validated but unchanged. Canonicalization is pure string work — no DNS,
-no network.
+literals validated but unchanged. IPv6 literals keep their **bracketed**
+authority form (`[2001:db8::1]:8443` — `urlsplit().hostname` strips the brackets
+and the canonical form restores them). A **malformed port** (`:abc`, out of
+range) or an unbracketed IPv6-ish authority is *unparseable input*: returned
+unchanged, never silently re-spelled into a valid-looking identity (review round
+1). Canonicalization is pure string work — no DNS, no network.
 
 ## 5. Evidence model
 
 The swarm `EvidenceRef` dict shape is THE contract (origin agent|target, source,
 source_agent, artifact_ref, kind, ts) — applied to KG nodes, KG edges
 (`edge_attrs` keyed by the existing triple, serialized as rows), and access
-nodes. Append-only; legacy data loads with empty refs (never fabricated);
-bounded strings; refs point at real persisted artifacts (traffic.jsonl lines,
-finding ids, inventory rows).
+nodes. Insertion is **idempotent on the reference's stable identity**
+(`evidence_id`, the same rule the swarm registry uses for hypothesis evidence):
+re-recording the same reference — e.g. the inventory bridge's `inv-{host}-{key}`
+id on every synchronization pass — does not grow provenance, while genuinely
+distinct references are all kept in arrival order; legacy rows without an id
+dedupe on full content (review round 1). Legacy data loads with empty refs
+(never fabricated); bounded strings; refs point at real persisted artifacts
+(traffic.jsonl lines, finding ids, inventory rows).
 
 ## 6. Lifecycle and invalidation behavior
 
@@ -160,6 +169,10 @@ Test counts: baseline 1914 collected on main → 1995 passed + 16 skipped here
 (+98 net new tests, including the states drift-procedure additions and
 parametrized machine checks).
 
+**Final state (after review round 1, see §14):** `python -m pytest -q` →
+**2005 passed, 16 skipped, 3 warnings, 0 failed in 54.58 s** — the same 1995
+tests plus the 10 review-round regression tests, zero failures.
+
 ## 11. Controlled demonstration
 
 `python scripts/demo_unified_intelligence.py` → **ALL 10 STEPS ASSERTED**.
@@ -203,3 +216,59 @@ faster, which bounds any per-test overhead).
   explicitly left for review (the retest bridge, not the creditor, owns revocation).
 - `trust_region` of the falsified→tree bridge is the CWE map: a falsified finding
   whose CWE has no mapping still fails no node (documented in the sync docstring).
+
+## 14. Review round 1 — PR #13 review fixes (final commit)
+
+The PR review found four correctness defects. All four are fixed in the final
+commit, each with a focused regression test:
+
+1. **`canonical_url()` IPv6 + malformed ports** (`redteam/knowledge.py`) — the
+   netloc was rebuilt from `urlsplit().hostname`, which strips the brackets
+   around an IPv6 literal (`https://[2001:db8::1]:8443/admin` lost its bracketed
+   form), and a `ValueError` from `.port` was swallowed into `port = None`,
+   silently re-spelling `https://example.com:abc/admin` into
+   `https://example.com/admin` — a wrong identity that merges distinct services.
+   Fix: the bracketed authority form is restored for IPv6 (default-port
+   normalization included), a malformed/out-of-range port or an unbracketed
+   IPv6-ish authority is **unparseable input returned unchanged** (the
+   function's documented policy), and the malformed-port values are never
+   normalized into valid-looking URLs. Policy recorded in ADR-002 §2.3.
+2. **`KnowledgeGraph.observe()` evidence-reference idempotency**
+   (`redteam/knowledge.py`) — node (and edge) evidence refs were extended on
+   every observation, so repeated inventory-bridge passes grew provenance even
+   though the bridge supplies the stable id `inv-{host}-{key}`. Fix: a shared
+   `merge_evidence_refs()` / `evidence_ref_key()` identity layer (same rule the
+   swarm registry already applies to hypothesis evidence, `hypotheses.py`) —
+   insertion keyed on `evidence_id` (content for legacy rows without an id);
+   the same reference is recorded once, distinct references all kept.
+   `test_duplicate_evidence_is_stored_as_delivered` (the old append-always
+   behavior) was replaced by `test_duplicate_evidence_id_recorded_once` — this
+   is a deliberate policy change, noted here for review visibility.
+3. **`AccessGraph.hold()` duplicate evidence refs** (`redteam/access.py`) —
+   `hold()` passed `evidence_refs` to `observe()` (which recorded them) and then
+   appended the same references again. Fix: the second append is removed —
+   `observe()` records them exactly once, idempotently (so a re-hold with the
+   same reference also stays a single record); hold/re-hold and revocation
+   history are untouched (asserted by the regression test).
+4. **`AccessGraph.observe()` persistence of existing-node updates**
+   (`redteam/access.py`) — the existing-node branch mutated attrs/source/evidence
+   and returned without `_flush()`, so a restart could lose the update. Fix: the
+   update path now persists exactly like new-node insertion. No new storage
+   layer; one `_flush()` call.
+
+**Regression tests added (10):** `test_identity_normalization.py` +5 (IPv6
+brackets, IPv6 default-port, malformed port, unbracketed IPv6, invalid-IPv6
+bracket); `test_graph_evidence_refs.py` +4 net (idempotent node refs, content-id
+dedup, bridge repeated-sync provenance, idempotent edge refs, hold records a
+reference exactly once — replacing the one append-always test); 
+`test_access_invalidation.py` +1 (observe update survives reload from disk).
+
+**Results from the final commit (all executed on this exact tree):**
+- Focused review-fix files (identity / evidence refs / access invalidation /
+  bridge / KG persistence / retest / graph_view / states): **110 passed**
+- Broader affected suites (orchestrator, credit, objective, killchain, server,
+  mission): **163 passed**
+- **Full suite: 2005 passed, 16 skipped, 0 failed, 3 warnings in 54.58 s**
+  (1995 prior + 10 new; the warnings are the pre-existing sklearn SVD numerics)
+- Integration demonstration: **ALL 10 STEPS ASSERTED** (`python
+  scripts/demo_unified_intelligence.py`)

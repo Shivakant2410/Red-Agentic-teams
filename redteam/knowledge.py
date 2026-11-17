@@ -21,7 +21,9 @@ Phase E2 additions (docs/adr-002-unified-intelligence-graph.md), all additive:
     reuse the swarm's EvidenceRef vocabulary (origin/source/artifact_ref/kind/ts)
     so a relationship can answer "who recorded this, when, and where is the
     full material". Provenance is optional-but-captured-when-available; old
-    files load with empty refs.
+    files load with empty refs. Insertion is IDEMPOTENT on the reference's
+    stable identity (evidence_id), so repeated synchronization passes do not
+    grow provenance.
   - LIFECYCLE — Node.lifecycle carries the states.py "kg_node_lifecycle"
     machine (active / stale / remediated) as a currency decoration. History is
     append-only; nothing is ever deleted; marking cannot authorize or execute
@@ -94,6 +96,13 @@ def _clip(text: str, limit: int) -> str:
 #   the default for the scheme; keep the path EXACTLY (path distinctions are
 #   real resources — no trailing-slash folding); DROP the query string.
 #
+#   IPv6 literals keep their bracketed authority form ([2001:db8::1]:8443) —
+#   urlsplit's .hostname strips the brackets, and rebuilding the netloc without
+#   them would corrupt the URL. A MALFORMED port (":abc", out of range) or an
+#   unbracketed IPv6-ish authority is unparseable input: it is returned
+#   unchanged, never silently re-spelled into a valid-looking identity (a
+#   dropped or guessed port would wrongly merge distinct services).
+#
 #   QUERY POLICY (the deliberate trade-off, ADR-002): canonical endpoint
 #   identity is scheme://host[:port]/path — query strings are excluded because
 #   they are behavior, not resource identity, and keeping them is what produced
@@ -127,31 +136,78 @@ def canonical_host(host: str) -> str:
 
 def canonical_url(url: str) -> str:
     """One spelling of a URL: lowercased scheme+host, no fragment, no default
-    port, exact path, no query (see the QUERY POLICY above). Unparseable or
-    empty input returns the trimmed input unchanged — canonicalization must
-    never lose a record it does not understand."""
+    port, exact path, no query (see the QUERY POLICY above). IPv6 literals keep
+    their bracketed authority syntax ([2001:db8::1]:8443). Unparseable input —
+    an empty authority, a malformed or out-of-range port, an unbracketed
+    IPv6-ish authority — is returned trimmed-but-unchanged: canonicalization
+    must never lose a record it does not understand, and must never silently
+    re-spell a malformed URL into a valid-looking identity (dropping a bad
+    port would merge distinct services into one)."""
     raw = str(url or "").strip()
     if not raw:
         return raw
     try:
         parts = urlsplit(raw)
+        if not parts.netloc:  # not scheme://host[/...] shaped — leave it alone
+            return raw
+        host = canonical_host(parts.hostname or "")
+        if not host:
+            return raw
+        port = parts.port  # raises ValueError on a malformed/out-of-range port
     except ValueError:
-        return raw
-    if not parts.netloc:  # not scheme://host[/...] shaped — leave it alone
+        # Unparseable (invalid IPv6 authority, malformed port): keep the input
+        # unchanged rather than discarding part of the authority and minting a
+        # wrong identity for it — the documented policy for records we cannot
+        # safely understand.
         return raw
     scheme = (parts.scheme or "").lower()
-    host = canonical_host(parts.hostname or "")
-    if not host:
+    hostinfo = parts.netloc.rpartition("@")[2]
+    if ":" in host and not hostinfo.startswith("["):
+        # a bare (unbracketed) IPv6-ish authority is not valid URL syntax; its
+        # host/port split is ambiguous, so no identity is guessed for it
         return raw
-    try:
-        port = parts.port
-    except ValueError:
-        port = None
-    netloc = host if port is None else f"{host}:{port}"
+    host_out = f"[{host}]" if ":" in host else host
+    netloc = host_out if port is None else f"{host_out}:{port}"
     if port is not None and scheme in _DEFAULT_PORTS and port == _DEFAULT_PORTS[scheme]:
-        netloc = host
+        netloc = host_out
     path = parts.path or "/"
     return f"{scheme}://{netloc}{path}"
+
+
+# -- evidence reference identity (Phase E2, Stage 8) --------------------------------
+#
+# One vocabulary, one identity rule, shared by every store that records
+# EvidenceRef-shaped provenance (KnowledgeGraph nodes/edges, AccessGraph
+# nodes). The swarm registry dedupes hypothesis evidence by evidence_id too
+# (swarm/hypotheses.py) — the graph follows the same contract: re-recording
+# the SAME reference (same evidence_id, e.g. the inventory bridge's stable
+# "inv-{host}-{key}" id on every synchronization pass) is a no-op, while
+# genuinely distinct references are all kept.
+
+def evidence_ref_key(ref) -> tuple:
+    """Stable identity of one evidence reference: its evidence_id when it
+    carries one, else its full content (legacy rows without an id)."""
+    if isinstance(ref, dict):
+        eid = ref.get("evidence_id")
+        if eid:
+            return ("evidence_id", str(eid))
+        return ("content", tuple(sorted((str(k), str(v)) for k, v in ref.items())))
+    return ("content", ("", str(ref)))  # legacy/odd rows: value identity
+
+
+def merge_evidence_refs(existing, incoming) -> list:
+    """Idempotent evidence-reference insertion: a reference whose identity is
+    already recorded is NOT appended again, distinct references are all kept
+    in arrival order. Returns a new list; the inputs are not mutated."""
+    out = list(existing or [])
+    seen = {evidence_ref_key(r) for r in out}
+    for ref in (incoming or []):
+        key = evidence_ref_key(ref)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(ref)
+    return out
 
 
 @dataclass
@@ -212,7 +268,12 @@ class KnowledgeGraph:
         Phase E2 optional parameters (existing callers are unaffected):
           evidence_refs — EvidenceRef-shaped provenance for the NODE observation
                           (see swarm/hypotheses.EvidenceRef; stored as dicts).
-          edge_evidence — provenance for the relate_to EDGE created by THIS call.
+                          Insertion is idempotent: a reference whose stable
+                          identity (evidence_id) is already recorded is not
+                          duplicated, so repeated synchronization passes do
+                          not grow provenance.
+          edge_evidence — provenance for the relate_to EDGE created by THIS call
+                          (same idempotent identity rule).
         Lifecycle policy: a fresh observation clears a STALE status (the entity
         answered again — stronger evidence than aging) but deliberately does NOT
         clear REMEDIATED (an endpoint answering says nothing about whether the
@@ -239,15 +300,15 @@ class KnowledgeGraph:
             if source and source not in node.sources:
                 node.sources.append(source)
             if evidence_refs:
-                node.evidence_refs.extend(evidence_refs)
+                node.evidence_refs = merge_evidence_refs(node.evidence_refs,
+                                                         evidence_refs)
             if relate_to and relate_to in self._nodes:
                 edge = (relate_to, relation, node_id)
                 self._edges.add(edge)
                 if edge_evidence:
                     ea = self._edge_attrs.setdefault(edge, {})
-                    refs = list(ea.get("evidence_refs") or [])
-                    refs.extend(edge_evidence)
-                    ea["evidence_refs"] = refs
+                    ea["evidence_refs"] = merge_evidence_refs(
+                        ea.get("evidence_refs"), edge_evidence)
                     ea["first_seen"] = ea.get("first_seen") or _now()
                     ea["last_seen"] = _now()
             self._flush()

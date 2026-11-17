@@ -76,6 +76,51 @@ def test_url_unparseable_input_unchanged():
     assert canonical_url(None) == "None" or canonical_url(None) == ""  # never raises
 
 
+# -- IPv6 authorities and malformed ports (review fixes) ----------------------------
+
+def test_url_ipv6_brackets_preserved():
+    """urlsplit's .hostname strips the brackets around an IPv6 literal; the
+    canonical form must restore them, or identity is corrupted (review fix)."""
+    assert (canonical_url("https://[2001:DB8::1]:8443/admin")
+            == "https://[2001:db8::1]:8443/admin")   # brackets kept, host lowercased
+    assert canonical_url("https://[2001:db8::1]/admin") == "https://[2001:db8::1]/admin"
+    # one identity across spellings — the join contract the projection relies on
+    assert (canonical_url("https://[2001:db8::1]:443/admin")
+            == canonical_url("https://[2001:db8::1]/admin"))
+
+
+def test_url_ipv6_default_port_dropped():
+    assert canonical_url("https://[2001:db8::1]:443/a") == "https://[2001:db8::1]/a"
+    assert canonical_url("http://[2001:db8::1]:80/a") == "http://[2001:db8::1]/a"
+    # non-default ports stay (a distinct service, same rule as IPv4)
+    assert (canonical_url("https://[2001:db8::1]:8443/a")
+            == "https://[2001:db8::1]:8443/a")
+
+
+def test_url_malformed_port_kept_unchanged():
+    """A malformed port is unparseable input: returned unchanged, NEVER silently
+    re-spelled — dropping it would mint a valid-looking identity that wrongly
+    merges two distinct services (review fix)."""
+    raw = "https://example.com:abc/admin"
+    assert canonical_url(raw) == raw
+    assert canonical_url(raw) != "https://example.com/admin"
+    assert canonical_url("https://example.com:99999/admin") == "https://example.com:99999/admin"
+    assert canonical_url("https://[2001:db8::1]:abc/admin") == "https://[2001:db8::1]:abc/admin"
+
+
+def test_url_unbracketed_ipv6_authority_unchanged():
+    """A bare (unbracketed) IPv6-ish authority is invalid URL syntax — its
+    host/port split is ambiguous, so no identity is guessed for it."""
+    assert canonical_url("https://2001:db8::1/admin") == "https://2001:db8::1/admin"
+    assert canonical_url("https://2001:db8::1:8080/admin") == "https://2001:db8::1:8080/admin"
+
+
+def test_url_invalid_ipv6_authority_unchanged():
+    """urlsplit itself rejects an unterminated bracket — same policy: unchanged."""
+    raw = "https://[::1/x"
+    assert canonical_url(raw) == raw
+
+
 # -- duplicate observations through the canonical layer ----------------------------
 
 def test_observe_canonical_merges_query_variants():

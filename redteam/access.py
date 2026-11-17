@@ -29,6 +29,11 @@ from collections import deque
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+# One evidence vocabulary, one identity rule (redteam.knowledge): access
+# provenance dedupes by the same stable evidence_id the swarm registry and the
+# KnowledgeGraph use, so repeated holds/synchronizations never grow it.
+from .knowledge import merge_evidence_refs
+
 # Phase E2: hold-lifecycle vocabulary lives in states.py (the one lifecycle
 # registry). REVOKED is a currency state, not deletion — the historical hold,
 # its evidence and its revocation record all stay on file.
@@ -120,8 +125,9 @@ class AccessGraph:
         defeated the DATA_ACCESS/HOST_ACCESS gating the first time it was exercised).
 
         Phase E2: `evidence_refs` (optional, EvidenceRef-shaped dicts from the swarm
-        vocabulary) appends provenance for this observation; existing callers are
-        unaffected."""
+        vocabulary) records provenance for this observation — idempotently: a
+        reference whose stable identity (evidence_id) is already recorded is not
+        duplicated. Existing callers are unaffected."""
         with self._lock:
             node = AccessNode(kind=kind, key=key, attrs=dict(attrs or {}), source=source)
             existing = self._nodes.get(node.id)
@@ -130,10 +136,15 @@ class AccessGraph:
                 if source:
                     existing.source = source
                 if evidence_refs:
-                    existing.evidence_refs.extend(evidence_refs)
+                    existing.evidence_refs = merge_evidence_refs(
+                        existing.evidence_refs, evidence_refs)
+                # the update path persists like new-node insertion — a memory-only
+                # update would be silently lost on restart
+                self._flush()
                 return existing
             if evidence_refs:
-                node.evidence_refs.extend(evidence_refs)
+                node.evidence_refs = merge_evidence_refs(node.evidence_refs,
+                                                         evidence_refs)
             self._nodes[node.id] = node
             self._flush()
             return node
@@ -148,7 +159,9 @@ class AccessGraph:
         (re-)hold can satisfy an objective criterion is still decided solely by the
         objective.REQUIRED_SOURCE gate on `source`, so an agent's unsupported
         assertion remains unable to credit anything, resurrected or not. The
-        revocation record survives the re-hold (append-only history in attrs)."""
+        revocation record survives the re-hold (append-only history in attrs).
+        Supplied evidence_refs are recorded exactly once — observe() records them
+        (idempotently), and this method must not append them again."""
         with self._lock:
             node = self.observe(kind, key, attrs, source, evidence_refs=evidence_refs)
             if node.revoked:
@@ -164,8 +177,6 @@ class AccessGraph:
             node.last_seen = _now()
             if evidence:
                 node.evidence = _clip(evidence, _MAX_RAW)
-            if evidence_refs:
-                node.evidence_refs.extend(evidence_refs)
             self._flush()
             return node
 

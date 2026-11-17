@@ -189,3 +189,24 @@ def test_legacy_access_file_loads(tmp_path):
     assert [n.key for n in g.held()] == ["old"]
     assert g._nodes["resource:old"].evidence_refs == []
     assert g._nodes["resource:old"].last_seen == ""   # pre-E2 field absent → default
+
+
+def test_observe_update_persists_to_disk(tmp_path):
+    """Review fix: observe() on an EXISTING node (attrs/source/evidence merge)
+    must persist like new-node insertion — otherwise access.json silently
+    disagrees with memory and a restart loses the update."""
+    p = tmp_path / "access.json"
+    g = AccessGraph(p)
+    g.observe(RESOURCE, "vault", source="agent")             # create + persist
+    g.observe(RESOURCE, "vault", source="creditor",          # update path
+              attrs={"note": "confirmed reachable"},
+              evidence_refs=[{"evidence_id": "ev-9", "kind": "observation",
+                              "origin": "agent", "source": "creditor",
+                              "source_agent": "credit",
+                              "artifact_ref": "finding:9", "summary": "s",
+                              "ts": "t"}])
+    g2 = AccessGraph(p)                                      # fresh graph, same file
+    node = g2._nodes["resource:vault"]
+    assert node.source == "creditor"
+    assert node.attrs.get("note") == "confirmed reachable"
+    assert [r["evidence_id"] for r in node.evidence_refs] == ["ev-9"]

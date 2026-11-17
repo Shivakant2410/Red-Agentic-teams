@@ -1,7 +1,9 @@
 """Phase E2 — evidence-backed graph relationships (Stage 8).
 
 EvidenceRef-shaped provenance on KG nodes, edges, and access nodes; the swarm
-vocabulary reused verbatim; append behavior; legacy files load clean.
+vocabulary reused verbatim; idempotent insertion on the stable evidence_id
+(review fix — repeated synchronization must not grow provenance); legacy files
+load clean.
 """
 
 from __future__ import annotations
@@ -40,13 +42,49 @@ def test_evidence_refs_append_not_replace():
     assert g.nodes(HOST)[0].confidence == "corroborated"
 
 
-def test_duplicate_evidence_is_stored_as_delivered():
-    """The graph stores what was recorded (append-only, like the swarm); dedup
-    is a caller concern — no silent dropping of delivered provenance."""
+def test_duplicate_evidence_id_recorded_once():
+    """Idempotent insertion (review fix): a reference whose stable identity is
+    already recorded is NOT appended again — the swarm registry dedupes
+    hypothesis evidence by evidence_id and the graph follows the same contract,
+    so provenance never grows from re-recording the same reference. Distinct
+    references are all kept."""
     g = KnowledgeGraph()
     g.observe(HOST, "h.example", source="recon", evidence_refs=[_ref(eid="a")])
     g.observe(HOST, "h.example", source="recon", evidence_refs=[_ref(eid="a")])
-    assert len(g.nodes(HOST)[0].evidence_refs) == 2
+    # same identity with different content details (e.g. a fresh ts each bridge
+    # pass) is still the SAME reference — identity, not content, decides
+    g.observe(HOST, "h.example", source="recon",
+              evidence_refs=[_ref(eid="a", ts="2026-02-02T00:00:00+00:00")])
+    refs = g.nodes(HOST)[0].evidence_refs
+    assert len(refs) == 1 and refs[0]["evidence_id"] == "a"
+    # genuinely distinct references are preserved
+    g.observe(HOST, "h.example", source="nikto", evidence_refs=[_ref(eid="b")])
+    assert [r["evidence_id"] for r in g.nodes(HOST)[0].evidence_refs] == ["a", "b"]
+
+
+def test_content_identical_refs_without_id_dedup():
+    """Legacy/odd rows without an evidence_id dedupe on full content — the
+    identity rule stays well-defined for references that predate the id."""
+    g = KnowledgeGraph()
+    plain = {"kind": "observation", "source": "recon", "artifact_ref": "a.jsonl:1"}
+    g.observe(HOST, "h.example", source="recon", evidence_refs=[dict(plain), dict(plain)])
+    assert len(g.nodes(HOST)[0].evidence_refs) == 1
+
+
+def test_inventory_bridge_repeated_sync_does_not_grow_provenance(tmp_path):
+    """The reviewer's exact scenario: the inventory bridge supplies a stable
+    evidence_id on every synchronization pass — node provenance stays ONE ref
+    no matter how many times the bridge runs."""
+    from redteam.inventory import AssetInventory
+    from redteam.orchestrator import sync_inventory_into_graph
+    inv = AssetInventory(tmp_path / "inventory.json")
+    inv.observe_http("h.example", 80, "http", 200, headers={}, body="", source="http")
+    g = KnowledgeGraph()
+    for _ in range(3):
+        sync_inventory_into_graph(inv, g)
+    host = g.nodes(HOST)[0]
+    assert len(host.evidence_refs) == 1
+    assert host.evidence_refs[0]["evidence_id"] == "inv-h.example-http/80"
 
 
 def test_provenance_without_evidence_still_works():
@@ -97,6 +135,19 @@ def test_edge_evidence_appends_across_observations():
     assert [r["evidence_id"] for r in meta["evidence_refs"]] == ["a", "b"]
 
 
+def test_edge_evidence_idempotent():
+    """Same identity rule as nodes: re-recording the same edge reference is a
+    no-op (review fix, same defect class)."""
+    g = KnowledgeGraph()
+    g.observe(HOST, "h.example", source="recon")
+    for _ in range(2):
+        g.observe(SERVICE, "h.example:443", source="recon",
+                  relate_to="host:h.example", relation="runs",
+                  edge_evidence=[_ref(eid="e1")])
+    meta = g.edge_attrs("host:h.example", "runs", "service:h.example:443")
+    assert [r["evidence_id"] for r in meta["evidence_refs"]] == ["e1"]
+
+
 def test_legacy_edges_load_without_edge_attrs(tmp_path):
     p = tmp_path / "graph.json"
     p.write_text(json.dumps({
@@ -123,6 +174,32 @@ def test_access_node_evidence_refs_and_hold(tmp_path):
     node = g2._nodes["resource:records"]
     assert node.evidence_refs[0]["artifact_ref"] == "finding:abc"
     assert node.last_seen and node.held is True
+
+
+def test_hold_records_evidence_reference_exactly_once():
+    """Review fix: hold() must not double-append the references it already
+    recorded through observe(); re-holding with the SAME reference stays one
+    record (idempotent insertion), while the hold/re-hold/revocation-history
+    behavior is untouched."""
+    g = AccessGraph()
+    ref = _ref(eid="finding-abc", kind="finding", origin="agent",
+               source="creditor", agent="credit", artifact="finding:abc")
+    g.hold(RESOURCE, "records", evidence="confirmed finding abc",
+           source="verified_finding", evidence_refs=[ref])
+    assert len(g._nodes["resource:records"].evidence_refs) == 1
+    # re-demonstration after revocation with the same reference: still exactly once
+    g.revoke(RESOURCE, "records", reason="retest fixed: abc")
+    g.hold(RESOURCE, "records", evidence="second demo",
+           source="verified_finding", evidence_refs=[ref])
+    node = g._nodes["resource:records"]
+    assert len(node.evidence_refs) == 1
+    assert node.held is True                       # re-hold behavior intact
+    assert node.attrs["invalidation_history"]      # revocation record survives
+    # a genuinely distinct reference still appends
+    g.hold(RESOURCE, "records", evidence="third demo",
+           source="verified_finding", evidence_refs=[_ref(eid="finding-xyz")])
+    assert [r["evidence_id"] for r in
+            g._nodes["resource:records"].evidence_refs] == ["finding-abc", "finding-xyz"]
 
 
 def test_swarm_evidenceref_shape_reused():

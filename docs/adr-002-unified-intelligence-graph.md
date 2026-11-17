@@ -68,7 +68,13 @@ Pure string work — no DNS, no network.
 
 `canonical_url(url)`: lowercase scheme+host; drop fragment; drop the port when it
 equals the scheme default; path kept EXACTLY (no trailing-slash folding — path
-distinctions are real resources); **query string DROPPED**.
+distinctions are real resources); **query string DROPPED**. IPv6 literals keep
+their bracketed authority form (`[2001:db8::1]:8443`) — `urlsplit().hostname`
+strips the brackets and the canonical form must restore them. A **malformed
+port** (`:abc`, out of range) or an unbracketed IPv6-ish authority is
+*unparseable input*: returned unchanged, never silently re-spelled into a
+valid-looking identity — a dropped or guessed port would wrongly merge distinct
+services (review round 1, canonical-identity fixes).
 
 The query trade-off (audit O1, resolved): query strings describe *behavior*, not
 *resource identity*; keeping them is what produced the duplicate-endpoint problem
