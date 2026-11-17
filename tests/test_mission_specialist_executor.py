@@ -839,6 +839,71 @@ def test_all_succeeded_mission_reports_succeeded(tmp_path):
     assert all(t["status"] == TASK_SUCCEEDED for t in summary["tasks"])
 
 
+def test_default_mission_generates_frontier_task_and_verifies_automatically(tmp_path):
+    """No mission_plan: recon -> canonical frontier -> exploit -> independent VERIFY."""
+    from redteam.mission.executor import ExecutionResult
+    mission_dir, clock = H.make_mission_dir(tmp_path)
+    tree = AttackTree(tmp_path / "tree.json")
+    target = "https://api.acme.example/orders"
+    tree.seed_endpoint(target)
+
+    class DynamicExecutor:
+        def __init__(self):
+            self.pending = []
+            self.frontier_used = False
+            self.calls = []
+            self.reconciled = 0
+
+        def run(self, task_view):
+            role = task_view["role"]
+            self.calls.append(role)
+            if role == "exploit":
+                self.pending = [type("FindingRef", (), {"id": "finding-1"})()]
+            elif role == "verify":
+                self.pending = []
+            return ExecutionResult(status=EXEC_SUCCEEDED, result=f"{role} slice done")
+
+        def pending_findings(self):
+            return list(self.pending)
+
+        def attack_frontier(self, limit=6):
+            if self.frontier_used:
+                return []
+            self.frontier_used = True
+            return [{"title": "a03-injection: injection.sqli on " + target,
+                     "role": "exploit", "technique": "injection.sqli",
+                     "target": target, "max_steps": 8}]
+
+        def reconcile_after_verification(self):
+            self.reconciled += 1
+            return {}
+
+        def objective_achieved(self):
+            return None
+
+        def budget_available(self):
+            return True
+
+    executor = DynamicExecutor()
+    summary = run_mission_driver(
+        engagement=_engagement(), out_dir=mission_dir, objective="prove an injection flaw",
+        attack_tree=tree, executor=executor, clock=clock,
+        opts=_driver_opts(), say=lambda t: None)
+
+    assert executor.calls == ["recon", "exploit", "verify"]
+    assert executor.reconciled == 1
+    assert [t["role"] for t in summary["tasks"]] == ["recon", "exploit", "verify"]
+    assert all(t["status"] == TASK_SUCCEEDED for t in summary["tasks"])
+    assert summary["dynamic"] is True
+    assert summary["pending_verification"] == 0
+    assert summary["objective_achieved"] is None
+    assert summary["stop_reason"] == "frontier_exhausted"
+    assert summary["execution_complete"] is True
+    # The scheduler releases the execution claim; it does not mark the node
+    # complete merely because the specialist task returned successfully.
+    assert tree.node("injection.sqli", target).status == "todo"
+
+
 def test_mission_outcome_counts_cancelled_as_failure():
     # TASK_CANCELLED exists in the states machine (reserved vocabulary — no
     # producer writes it yet); the outcome calc is safe against it regardless:
