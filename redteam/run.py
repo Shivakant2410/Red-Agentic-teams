@@ -696,5 +696,9 @@ def execute_run(opts: RunOptions) -> dict:
             "mission_executor": mission_summary.get("executor", ""),
             "tasks": mission_summary["tasks"],
             "rounds": mission_summary["rounds"],
+            "mission_stop_reason": mission_summary.get("stop_reason", ""),
+            "mission_objective_achieved": mission_summary.get("objective_achieved"),
+            "mission_execution_complete": mission_summary.get("execution_complete", False),
+            "mission_pending_verification": mission_summary.get("pending_verification", 0),
         })
     return summary
