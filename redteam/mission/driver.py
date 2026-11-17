@@ -229,7 +229,7 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                 if t.role == "recon")
             has_unverified = bool(unverified_ids) or active_verify
             if recon_done and not has_unverified:
-                frontier = (executor.attack_frontier(limit=6)
+                frontier = (executor.attack_frontier(limit=999)
                             if hasattr(executor, "attack_frontier") else [])
                 new_specs = []
                 for spec in frontier:
@@ -267,7 +267,8 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                     break
         for task in ready:
             result = scheduler.dispatch(task.task_id)
-            rounds += 1
+            if dynamic:
+                rounds += 1
             if dynamic:
                 if task.node_id:
                     # A task is attempted at most once per mission execution.
