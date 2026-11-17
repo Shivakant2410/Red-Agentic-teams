@@ -162,6 +162,8 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
     dynamic = not bool(plan)
     created: list[str] = []
     seen_nodes: set[str] = set()
+    seen_access_states: set[tuple] = set()
+    logic_task_created = False
     verified_pending_ids: set[str] = set()
     unresolved_verification = False
     stop_reason = ""
@@ -229,26 +231,52 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                 if t.role == "recon")
             has_unverified = bool(unverified_ids) or active_verify
             if recon_done and not has_unverified:
-                frontier = (executor.attack_frontier(limit=999)
-                            if hasattr(executor, "attack_frontier") else [])
-                new_specs = []
-                for spec in frontier:
-                    node_id = f"{spec.get('technique', '')}@{spec.get('target', '')}"
-                    if not spec.get("technique") or not spec.get("target") or node_id in seen_nodes:
-                        continue
-                    seen_nodes.add(node_id)
-                    cap = int(getattr(opts, "max_steps", 40) or 40)
-                    spec = dict(spec)
-                    spec["max_steps"] = min(int(spec.get("max_steps", cap)), cap)
-                    new_specs.append(spec)
-                    break  # incremental dispatch: one ranked node at a time
-                if new_specs:
-                    create_task(new_specs[0])
-                elif not any(t.status in ("pending", "claimed", "running")
-                             for t in commander.tasks.values()):
-                    stop_reason = ("unresolved_verification" if pending
-                                   else "frontier_exhausted")
-                    break
+                access_task_created = False
+                access_state = (executor.access_state()
+                                if hasattr(executor, "access_state") else {})
+                if access_state:
+                    signature = (
+                        tuple(access_state.get("recommendations", ())),
+                        tuple(access_state.get("achieved", ())),
+                        tuple(access_state.get("holdings", ())))
+                    if signature not in seen_access_states:
+                        seen_access_states.add(signature)
+                        cap = int(getattr(opts, "max_steps", 20) or 20)
+                        create_task({
+                            "title": "Press confirmed foothold toward: "
+                                     + ", ".join(access_state["recommendations"]),
+                            "role": "access", "max_steps": min(cap, 20)})
+                        access_task_created = True
+
+                if not access_task_created:
+                    frontier = (executor.attack_frontier(limit=999)
+                                if hasattr(executor, "attack_frontier") else [])
+                    new_specs = []
+                    for spec in frontier:
+                        node_id = f"{spec.get('technique', '')}@{spec.get('target', '')}"
+                        if (not spec.get("technique") or not spec.get("target")
+                                or node_id in seen_nodes):
+                            continue
+                        seen_nodes.add(node_id)
+                        cap = int(getattr(opts, "max_steps", 40) or 40)
+                        spec = dict(spec)
+                        spec["max_steps"] = min(int(spec.get("max_steps", cap)), cap)
+                        new_specs.append(spec)
+                        break  # incremental dispatch: one ranked node at a time
+                    if new_specs:
+                        create_task(new_specs[0])
+                    elif (not logic_task_created
+                          and hasattr(executor, "logic_required")
+                          and executor.logic_required()):
+                        cap = int(getattr(opts, "max_steps", 25) or 25)
+                        create_task({"title": "Test workflow and business-logic invariants",
+                                     "role": "logic", "max_steps": min(cap, 25)})
+                        logic_task_created = True
+                    elif not any(t.status in ("pending", "claimed", "running")
+                                 for t in commander.tasks.values()):
+                        stop_reason = ("unresolved_verification" if pending
+                                       else "frontier_exhausted")
+                        break
 
         ready = scheduler.ready_tasks()
         if not ready:
@@ -287,16 +315,21 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                     # the scheduler's existing recovery reconciliation path.
                     actions = scheduler.reconcile(now=clock())
                     scheduler.apply_reconcile(actions)
+                    if hasattr(executor, "reflect_after_round"):
+                        executor.reflect_after_round(objective, max(rounds - 1, 0))
                     break
-                if task.role == "exploit":
+                if task.role in ("exploit", "access", "logic"):
                     pending_now = (executor.pending_findings()
                                    if hasattr(executor, "pending_findings") else [])
                     if pending_now:
                         # Verification is a separate task and always precedes
-                        # the next frontier selection.
+                        # the next frontier selection or reflection boundary.
                         break
-                    actions = scheduler.reconcile(now=clock())
-                    scheduler.apply_reconcile(actions)
+                    if task.role == "exploit":
+                        actions = scheduler.reconcile(now=clock())
+                        scheduler.apply_reconcile(actions)
+                    if hasattr(executor, "reflect_after_round"):
+                        executor.reflect_after_round(objective, max(rounds - 1, 0))
                 if result.get("outcome") not in ("completed", "succeeded", "reserved"):
                     # Keep progressing through other ranked nodes; the failed
                     # node is not repeated within this mission execution.
