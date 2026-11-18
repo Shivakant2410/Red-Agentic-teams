@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import {
+  Chip,
   Dot,
   LogoMark,
   Micro,
@@ -25,6 +26,7 @@ import {
 import { EventFeed } from "./EventFeed";
 import { FindingsTable } from "./FindingsTable";
 import { KillChainList } from "./KillChainList";
+import { MissionPanel } from "./MissionPanel";
 import { ObjectiveProgress } from "./ObjectiveProgress";
 import { PhaseStepper } from "./PhaseStepper";
 import { ReflectionsFeed } from "./ReflectionsFeed";
@@ -36,7 +38,7 @@ import { fmtInt, formatDuration, formatTokens, parseTs } from "@/lib/format";
 import { useNow } from "@/lib/useNow";
 import { usePoll } from "@/lib/usePoll";
 import { useRunStream } from "@/lib/useRunStream";
-import type { Finding, RunDetail } from "@/lib/types";
+import type { Finding, MissionDetail, RunDetail } from "@/lib/types";
 
 const REFRESH_MS = 5000;
 
@@ -96,6 +98,25 @@ export default function MissionControl() {
 
   /* ── live event stream ──────────────────────────────────────────────────── */
   const { events, connection } = useRunStream(runId, ended);
+
+  /* ── mission coordination state (adaptive runs only) ────────────────────── */
+  // Which driver executes this run — run-detail's manifest carries it from the
+  // first second. Classic runs never touch the mission endpoint (the fetcher
+  // short-circuits), so the classic experience is byte-identical.
+  const driver = (detail?.driver ?? "classic").toLowerCase();
+  const isMission = driver === "mission";
+  const missionFetcher = useCallback(
+    () =>
+      isMission && runId
+        ? api.getMission(runId)
+        : Promise.resolve({} as MissionDetail),
+    [isMission, runId],
+  );
+  const mission = usePoll(
+    missionFetcher,
+    isMission && !ended ? REFRESH_MS : null,
+    `mission-${runId}-${ended ? "ended" : "live"}`,
+  );
 
   /* ── pending approvals (safety net beside approval.* events) ────────────── */
   const approvals = usePoll(
@@ -289,6 +310,11 @@ export default function MissionControl() {
               {runId}
             </span>
             <StatusBadge status={detail?.status} />
+            <span title="execution driver">
+              <Chip tone={isMission ? "purple" : "muted"}>
+                {isMission ? "MISSION" : "CLASSIC"}
+              </Chip>
+            </span>
             <div className="ml-auto flex items-center gap-2">
               <a
                 href={reportUrl(runId)}
@@ -390,6 +416,13 @@ export default function MissionControl() {
             />
           </div>
           <div className="scroll-slim flex min-h-0 flex-col gap-3 lg:overflow-y-auto lg:pr-1">
+            {isMission && (
+              <MissionPanel
+                mission={mission.data && Object.keys(mission.data).length > 0 ? mission.data : null}
+                missionErr={mission.error}
+                findings={findings}
+              />
+            )}
             <FindingsTable findings={findings} />
             <KillChainList stages={detail?.killchain} />
             <ReflectionsFeed reflections={detail?.reflections} />

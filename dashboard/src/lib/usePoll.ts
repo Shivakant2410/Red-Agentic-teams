@@ -27,12 +27,18 @@ export function usePoll<T>(
     }
   }, []);
 
+  // Fetch on mount and whenever the watch key changes (component-level state
+  // transitions, e.g. run ended). Cadence changes (5s active / 15s idle) must
+  // NOT re-fire a fetch — they only reset the timer below.
   useEffect(() => {
     void refresh();
+  }, [refresh, watch]);
+
+  useEffect(() => {
     if (intervalMs == null) return;
     const iv = setInterval(() => void refresh(), intervalMs);
     return () => clearInterval(iv);
-  }, [refresh, intervalMs, watch]);
+  }, [refresh, intervalMs]);
 
   return { data, error, refresh };
 }

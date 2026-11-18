@@ -1,12 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import {
-  Dot,
-  LogoMark,
-  Panel,
-  cx,
-} from "@/components/Bits";
+import { useEffect, useMemo, useState } from "react";
+import { Dot, LogoMark } from "@/components/Bits";
 import { LaunchRunPanel } from "@/components/LaunchRunPanel";
 import { BenchmarkBoard } from "@/components/BenchmarkBoard";
 import { RunsTable } from "@/components/RunsTable";
@@ -18,12 +13,39 @@ import type { Health } from "@/lib/types";
 
 export default function RunsOverviewPage() {
   const health = usePoll(api.health, 10_000, "health");
-  const { data: runsData, error: runsError } = usePoll(api.listRuns, null, "runs-init");
-  const runs = useMemo(() => runsData?.runs ?? [], [runsData]);
 
-  // Refresh every 5s while anything is active; back off when idle.
-  const anyActive = runs.some((r) => (r.status ?? "").toLowerCase() === "running");
-  usePoll(api.listRuns, anyActive ? 5_000 : 15_000, `runs-live-${anyActive}`);
+  // ONE authoritative poll owns the runs list: the table, total runs, active
+  // count, and finding totals all derive from this single state. (The previous
+  // code polled twice — a fetch-once hook rendered the table while a second
+  // live-cadence hook had its data discarded — so the table never updated.)
+  // Cadence adapts: 5s while any run is active, 15s when all idle. The cadence
+  // lives in state (updated by the effect below once the data shows an active
+  // run) so the hook receives a concrete value without depending on its own
+  // result. usePoll keeps the last good data on errors and clears its interval
+  // on unmount.
+  const [pollMs, setPollMs] = useState(15_000);
+  const { data: runsData, error: runsError, refresh: refreshRuns } = usePoll(
+    api.listRuns,
+    pollMs,
+    "runs",
+  );
+  const runs = useMemo(() => runsData?.runs ?? [], [runsData]);
+  const anyActive = useMemo(
+    () => runs.some((r) => (r.status ?? "").toLowerCase() === "running"),
+    [runs],
+  );
+  useEffect(() => {
+    setPollMs(anyActive ? 5_000 : 15_000);
+  }, [anyActive]);
+
+  // A successful launch dispatches this window event (LaunchRunPanel), so the
+  // overview reflects the new run immediately — including when navigation to
+  // the run page is interrupted and the operator lands back here.
+  useEffect(() => {
+    const onLaunched = () => void refreshRuns();
+    window.addEventListener("run:launched", onLaunched);
+    return () => window.removeEventListener("run:launched", onLaunched);
+  }, [refreshRuns]);
 
   const stats = useMemo(() => {
     let active = 0;

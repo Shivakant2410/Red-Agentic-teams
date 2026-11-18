@@ -8,6 +8,13 @@ import type {
   Health,
   LaunchRequest,
   LaunchResponse,
+  LlmModelsResponse,
+  LlmPreflightBody,
+  LlmPreflightResult,
+  MissionDetail,
+  MissionLaunchRequest,
+  MissionLaunchResponse,
+  MissionSummary,
   PendingApproval,
   RunDetail,
   RunSummary,
@@ -80,6 +87,41 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  /** Adaptive mission launch — the coordination core over the SAME engagement
+   *  validation and run registry (POST /api/missions, driver "mission"). */
+  launchMission: (body: MissionLaunchRequest) =>
+    request<MissionLaunchResponse>("/api/missions", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  listMissions: () => request<{ missions: MissionSummary[] }>("/api/missions"),
+
+  /** Mission detail for a run: mission_id, status, task list (lifecycle states),
+   *  halt reason, and the tail of the mission journal. 404 = the mission record
+   *  does not exist yet (or the run is not a mission) — callers must show an
+   *  honest unavailable state, never fabricated task states. */
+  getMission: (missionId: string) =>
+    request<MissionDetail>(`/api/missions/${encodeURIComponent(missionId)}`),
+
+  /** Launch preflight for the selected provider/model (server → LLM endpoint
+   *  only: reachability, model presence, tool-call capability with a harmless
+   *  synthetic call). The api_key, when supplied, is held in memory for this
+   *  single request and never echoed back in the result. */
+  preflightLlm: (body: LlmPreflightBody) =>
+    request<LlmPreflightResult>("/api/llm/preflight", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  /** Model discovery where the endpoint serves a catalog (Ollama, vLLM, ...).
+   *  502 = endpoint unreachable from the AGENT SERVER — shown as such. */
+  listLlmModels: (provider: string, baseUrl = "") =>
+    request<LlmModelsResponse>(
+      `/api/llm/models?provider=${encodeURIComponent(provider)}` +
+      (baseUrl ? `&base_url=${encodeURIComponent(baseUrl)}` : ""),
+    ),
 
   stopRun: (runId: string) =>
     request<{ ok: boolean }>(`/api/runs/${encodeURIComponent(runId)}/stop`, {

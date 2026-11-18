@@ -520,6 +520,11 @@ class Commander:
             raise ValueError(
                 f"journal inconsistency: mission {self.mission.status} -> {target}")
         self.mission.status = target
+        # A terminal FAILED transition carries its stop reason the same way a
+        # halt does — operators (and the mission API) must be able to read WHY
+        # a mission failed, not just that it did.
+        if payload.get("reason"):
+            self.mission.halt_reason = str(payload["reason"])
 
     def _on_mission_halted(self, event: dict, payload: dict) -> None:
         self.mission.status = MISSION_HALTED

@@ -29,7 +29,9 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..states import MISSION_FAILED, MISSION_SUCCEEDED, TASK_SUCCEEDED
+from ..states import (MISSION_FAILED, MISSION_HALTED, MISSION_SUCCEEDED,
+                      TASK_SUCCEEDED)
+from ..runtime import Halt
 from ..swarm.journal import EventJournal
 from .commander import Commander
 from .events import EVENT_MISSION_CREATED, new_mission_event
@@ -45,6 +47,17 @@ DRIVER_ACTOR = "mission-driver"
 
 def _injectable_clock(clock=None):
     return clock or (lambda: datetime.now(timezone.utc))
+
+
+def _safe_executor_call(executor, method: str, default):
+    """Call an optional executor introspection method, treating a raising
+    executor as "unknown" instead of crashing mission finalization."""
+    try:
+        if hasattr(executor, method):
+            return getattr(executor, method)()
+    except Exception:
+        pass
+    return default
 
 
 def build_mission(out_dir: Path, *, engagement_name: str, engagement_ticket: str,
@@ -79,13 +92,20 @@ def load_plan(out_dir: Path) -> list[dict]:
 
 def mission_outcome(tasks, *, objective_achieved=None,
                    pending_verification: int = 0,
-                   stop_reason: str = "") -> tuple[str, str]:
+                   stop_reason: str = "",
+                   interrupted: str = "") -> tuple[str, str]:
     """Return mission lifecycle status without conflating execution and impact.
 
     A structured objective is successful only when Objective.achieved is true.
     Without structured criteria, a mission is execution-complete only when all
     tasks succeeded AND no finding remains pending independent verification.
-    """
+
+    `interrupted` marks an INCOMPLETE mission: "halted" (budget/round-limit/kill
+    switch — the operator-recognizable stop) or "fault" (coordination crash).
+    An interrupted mission never reads SUCCEEDED merely because its dispatched
+    tasks succeeded: task success is not objective achievement. A structured
+    objective that was genuinely achieved still wins (the contract was met
+    before the interruption)."""
     tasks = list(tasks)
     if objective_achieved is True:
         return MISSION_SUCCEEDED, ""
@@ -93,6 +113,10 @@ def mission_outcome(tasks, *, objective_achieved=None,
         return MISSION_FAILED, stop_reason or "objective_not_achieved"
     if pending_verification:
         return MISSION_FAILED, stop_reason or "unresolved_verification"
+    if interrupted == "fault":
+        return MISSION_FAILED, stop_reason or "executor_failure"
+    if interrupted == "halted":
+        return MISSION_HALTED, stop_reason or "interrupted"
     if tasks and all(t.status == TASK_SUCCEEDED for t in tasks):
         return MISSION_SUCCEEDED, ""
     return (MISSION_FAILED,
@@ -203,185 +227,205 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
 
     rounds = 0
     reflection_round = 0
-    while rounds < MAX_ROUNDS:
-        if dynamic:
-            objective_state = (executor.objective_achieved()
-                               if hasattr(executor, "objective_achieved") else None)
-            if objective_state is True:
-                stop_reason = "objective_achieved"
-                break
-            if hasattr(executor, "budget_available") and not executor.budget_available():
-                stop_reason = "budget_exhausted"
-                break
+    interrupted_exc: BaseException | None = None
+    interrupted = ""           # "" | "halted" (budget/kill switch) | "fault" (crash)
+    try:
+        while rounds < MAX_ROUNDS:
+            if dynamic:
+                objective_state = (executor.objective_achieved()
+                                   if hasattr(executor, "objective_achieved") else None)
+                if objective_state is True:
+                    stop_reason = "objective_achieved"
+                    break
+                if hasattr(executor, "budget_available") and not executor.budget_available():
+                    stop_reason = "budget_exhausted"
+                    break
 
-            pending = (executor.pending_findings()
-                       if hasattr(executor, "pending_findings") else [])
-            pending_ids = {str(getattr(f, "id", "")) for f in pending}
-            unverified_ids = pending_ids - verified_pending_ids
-            active_verify = any(
-                t.role == "verify" and t.status in
-                ("pending", "claimed", "running")
-                for t in commander.tasks.values())
-            if unverified_ids and not active_verify:
-                verify_steps = min(int(getattr(opts, "max_steps", 15) or 15), 15)
-                create_task({"title": "Independently verify pending findings",
-                             "role": "verify", "max_steps": verify_steps})
+                pending = (executor.pending_findings()
+                           if hasattr(executor, "pending_findings") else [])
+                pending_ids = {str(getattr(f, "id", "")) for f in pending}
+                unverified_ids = pending_ids - verified_pending_ids
+                active_verify = any(
+                    t.role == "verify" and t.status in
+                    ("pending", "claimed", "running")
+                    for t in commander.tasks.values())
+                if unverified_ids and not active_verify:
+                    verify_steps = min(int(getattr(opts, "max_steps", 15) or 15), 15)
+                    create_task({"title": "Independently verify pending findings",
+                                 "role": "verify", "max_steps": verify_steps})
 
-            # Only ask the canonical selector for more exploit work after the
-            # recon task has completed and any newly-created VERIFY task has run.
-            has_recon = any(t.role == "recon" for t in commander.tasks.values())
-            recon_done = has_recon and all(
-                t.status == TASK_SUCCEEDED for t in commander.tasks.values()
-                if t.role == "recon")
-            has_unverified = bool(unverified_ids) or active_verify
-            if recon_done and not has_unverified:
-                access_task_created = False
-                access_state = (executor.access_state()
-                                if hasattr(executor, "access_state") else {})
-                if access_state:
-                    signature = (
-                        tuple(access_state.get("recommendations", ())),
-                        tuple(access_state.get("achieved", ())),
-                        tuple(access_state.get("holdings", ())))
-                    if signature not in seen_access_states:
-                        seen_access_states.add(signature)
-                        cap = int(getattr(opts, "max_steps", 20) or 20)
-                        create_task({
-                            "title": "Press confirmed foothold toward: "
-                                     + ", ".join(access_state["recommendations"]),
-                            "role": "access", "max_steps": min(cap, 20)})
-                        access_task_created = True
+                # Only ask the canonical selector for more exploit work after the
+                # recon task has completed and any newly-created VERIFY task has run.
+                has_recon = any(t.role == "recon" for t in commander.tasks.values())
+                recon_done = has_recon and all(
+                    t.status == TASK_SUCCEEDED for t in commander.tasks.values()
+                    if t.role == "recon")
+                has_unverified = bool(unverified_ids) or active_verify
+                if recon_done and not has_unverified:
+                    access_task_created = False
+                    access_state = (executor.access_state()
+                                    if hasattr(executor, "access_state") else {})
+                    if access_state:
+                        signature = (
+                            tuple(access_state.get("recommendations", ())),
+                            tuple(access_state.get("achieved", ())),
+                            tuple(access_state.get("holdings", ())))
+                        if signature not in seen_access_states:
+                            seen_access_states.add(signature)
+                            cap = int(getattr(opts, "max_steps", 20) or 20)
+                            create_task({
+                                "title": "Press confirmed foothold toward: "
+                                         + ", ".join(access_state["recommendations"]),
+                                "role": "access", "max_steps": min(cap, 20)})
+                            access_task_created = True
 
-                if not access_task_created:
-                    frontier = (executor.attack_frontier(limit=999)
-                                if hasattr(executor, "attack_frontier") else [])
-                    new_specs = []
-                    for spec in frontier:
-                        node_id = f"{spec.get('technique', '')}@{spec.get('target', '')}"
-                        if (not spec.get("technique") or not spec.get("target")
-                                or node_id in seen_nodes):
-                            continue
-                        seen_nodes.add(node_id)
-                        cap = int(getattr(opts, "max_steps", 40) or 40)
-                        spec = dict(spec)
-                        spec["max_steps"] = min(int(spec.get("max_steps", cap)), cap)
-                        new_specs.append(spec)
-                        break  # incremental dispatch: one ranked node at a time
-                    if new_specs:
-                        create_task(new_specs[0])
-                    elif (not logic_task_created
-                          and hasattr(executor, "logic_required")
-                          and executor.logic_required()):
-                        cap = int(getattr(opts, "max_steps", 25) or 25)
-                        create_task({"title": "Test workflow and business-logic invariants",
-                                     "role": "logic", "max_steps": min(cap, 25)})
-                        logic_task_created = True
-                    elif not any(t.status in ("pending", "claimed", "running")
-                                 for t in commander.tasks.values()):
-                        stop_reason = ("unresolved_verification" if pending
-                                       else "frontier_exhausted")
-                        break
+                    if not access_task_created:
+                        frontier = (executor.attack_frontier(limit=999)
+                                    if hasattr(executor, "attack_frontier") else [])
+                        new_specs = []
+                        for spec in frontier:
+                            node_id = f"{spec.get('technique', '')}@{spec.get('target', '')}"
+                            if (not spec.get("technique") or not spec.get("target")
+                                    or node_id in seen_nodes):
+                                continue
+                            seen_nodes.add(node_id)
+                            cap = int(getattr(opts, "max_steps", 40) or 40)
+                            spec = dict(spec)
+                            spec["max_steps"] = min(int(spec.get("max_steps", cap)), cap)
+                            new_specs.append(spec)
+                            break  # incremental dispatch: one ranked node at a time
+                        if new_specs:
+                            create_task(new_specs[0])
+                        elif (not logic_task_created
+                              and hasattr(executor, "logic_required")
+                              and executor.logic_required()):
+                            cap = int(getattr(opts, "max_steps", 25) or 25)
+                            create_task({"title": "Test workflow and business-logic invariants",
+                                         "role": "logic", "max_steps": min(cap, 25)})
+                            logic_task_created = True
+                        elif not any(t.status in ("pending", "claimed", "running")
+                                     for t in commander.tasks.values()):
+                            stop_reason = ("unresolved_verification" if pending
+                                           else "frontier_exhausted")
+                            break
 
-        ready = scheduler.ready_tasks()
-        if not ready:
-            scheduler.sweep(now=clock())
             ready = scheduler.ready_tasks()
             if not ready:
-                blocked_access = [t for t in commander.tasks.values()
-                                  if t.role == "access" and t.status == "pending"]
-                if blocked_access and access_gate is not None:
-                    gate_reason = access_gate(blocked_access[0].view())
-                    if gate_reason:
-                        stop_reason = "access_prerequisite_unmet"
+                scheduler.sweep(now=clock())
+                ready = scheduler.ready_tasks()
+                if not ready:
+                    blocked_access = [t for t in commander.tasks.values()
+                                      if t.role == "access" and t.status == "pending"]
+                    if blocked_access and access_gate is not None:
+                        gate_reason = access_gate(blocked_access[0].view())
+                        if gate_reason:
+                            stop_reason = "access_prerequisite_unmet"
+                            break
+                    active = [t for t in commander.tasks.values()
+                              if t.status in ("claimed", "running", "pending",
+                                              "expired", "blocked_duplicate")]
+                    if not active:
                         break
-                active = [t for t in commander.tasks.values()
-                          if t.status in ("claimed", "running", "pending",
-                                          "expired", "blocked_duplicate")]
-                if not active:
-                    break
-                # No progress possible (e.g. a permanently blocked duplicate):
-                # stop rather than spin or re-dispatch the same node in this round.
-                if rounds > 0:
-                    stop_reason = "frontier_exhausted" if dynamic else ""
-                    break
-        for task in ready:
-            result = scheduler.dispatch(task.task_id)
-            if dynamic:
-                rounds += 1
-            if dynamic:
-                if task.node_id:
-                    # A task is attempted at most once per mission execution.
-                    # A fresh mission may retry it; this run must move on.
-                    seen_nodes.add(task.node_id)
-                if task.role == "verify":
-                    if hasattr(executor, "reconcile_after_verification"):
-                        executor.reconcile_after_verification()
-                    pending_after = (executor.pending_findings()
-                                     if hasattr(executor, "pending_findings") else [])
-                    verified_pending_ids.update(
-                        str(getattr(f, "id", "")) for f in pending)
-                    if pending_after:
-                        unresolved_verification = True
-                    # Release any completed task's still-held tree claim through
-                    # the scheduler's existing recovery reconciliation path.
-                    actions = scheduler.reconcile(now=clock())
-                    scheduler.apply_reconcile(actions)
-                    if hasattr(executor, "reflect_after_round"):
-                        executor.reflect_after_round(objective, reflection_round)
-                        reflection_round += 1
-                    break
-                if task.role in ("exploit", "access", "logic"):
-                    pending_now = (executor.pending_findings()
-                                   if hasattr(executor, "pending_findings") else [])
-                    if pending_now:
-                        # Verification is a separate task and always precedes
-                        # the next frontier selection or reflection boundary.
+                    # No progress possible (e.g. a permanently blocked duplicate):
+                    # stop rather than spin or re-dispatch the same node in this round.
+                    if rounds > 0:
+                        stop_reason = "frontier_exhausted" if dynamic else ""
                         break
-                    if task.role == "exploit":
+            for task in ready:
+                result = scheduler.dispatch(task.task_id)
+                if dynamic:
+                    rounds += 1
+                if dynamic:
+                    if task.node_id:
+                        # A task is attempted at most once per mission execution.
+                        # A fresh mission may retry it; this run must move on.
+                        seen_nodes.add(task.node_id)
+                    if task.role == "verify":
+                        if hasattr(executor, "reconcile_after_verification"):
+                            executor.reconcile_after_verification()
+                        pending_after = (executor.pending_findings()
+                                         if hasattr(executor, "pending_findings") else [])
+                        verified_pending_ids.update(
+                            str(getattr(f, "id", "")) for f in pending)
+                        if pending_after:
+                            unresolved_verification = True
+                        # Release any completed task's still-held tree claim through
+                        # the scheduler's existing recovery reconciliation path.
                         actions = scheduler.reconcile(now=clock())
                         scheduler.apply_reconcile(actions)
-                    if hasattr(executor, "reflect_after_round"):
-                        executor.reflect_after_round(objective, reflection_round)
-                        reflection_round += 1
-                if result.get("outcome") not in ("completed", "succeeded", "reserved"):
-                    # Keep progressing through other ranked nodes; the failed
-                    # node is not repeated within this mission execution.
-                    actions = scheduler.reconcile(now=clock())
-                    scheduler.apply_reconcile(actions)
-            else:
-                # Explicit operator plans preserve their dependency-round behavior,
-                # but still use the same post-VERIFY reconciliation authority.
-                if (task.role == "verify"
-                        and result.get("outcome") in ("completed", "succeeded", "reserved")
-                        and hasattr(executor, "reconcile_after_verification")):
-                    executor.reconcile_after_verification()
-                    if hasattr(executor, "reflect_after_round"):
-                        executor.reflect_after_round(objective, reflection_round)
-                        reflection_round += 1
-                continue
-        if not dynamic:
-            rounds += 1
-        elif not ready:
-            break
+                        if hasattr(executor, "reflect_after_round"):
+                            executor.reflect_after_round(objective, reflection_round)
+                            reflection_round += 1
+                        break
+                    if task.role in ("exploit", "access", "logic"):
+                        pending_now = (executor.pending_findings()
+                                       if hasattr(executor, "pending_findings") else [])
+                        if pending_now:
+                            # Verification is a separate task and always precedes
+                            # the next frontier selection or reflection boundary.
+                            break
+                        if task.role == "exploit":
+                            actions = scheduler.reconcile(now=clock())
+                            scheduler.apply_reconcile(actions)
+                        if hasattr(executor, "reflect_after_round"):
+                            executor.reflect_after_round(objective, reflection_round)
+                            reflection_round += 1
+                    if result.get("outcome") not in ("completed", "succeeded", "reserved"):
+                        # Keep progressing through other ranked nodes; the failed
+                        # node is not repeated within this mission execution.
+                        actions = scheduler.reconcile(now=clock())
+                        scheduler.apply_reconcile(actions)
+                else:
+                    # Explicit operator plans preserve their dependency-round behavior,
+                    # but still use the same post-VERIFY reconciliation authority.
+                    if (task.role == "verify"
+                            and result.get("outcome") in ("completed", "succeeded", "reserved")
+                            and hasattr(executor, "reconcile_after_verification")):
+                        executor.reconcile_after_verification()
+                        if hasattr(executor, "reflect_after_round"):
+                            executor.reflect_after_round(objective, reflection_round)
+                            reflection_round += 1
+                    continue
+            if not dynamic:
+                rounds += 1
+            elif not ready:
+                break
+    except Halt as exc:
+        # Budget/kill-switch stop mid-round: the mission must still finalize.
+        # run.py translates the re-raise into a halted RUN manifest.
+        interrupted_exc = exc
+        interrupted = "halted"
+        stop_reason = str(getattr(exc, "reason", "") or exc) or "halted"
+        say(f"mission interrupted: {stop_reason}")
+    except Exception as exc:  # noqa: BLE001 — the snapshot must never dangle "running"
+        # A specialist/tool/coordination crash must not skip mission finalization
+        # (live-fire 20261118: an interrupted dispatch left mission.json "running"
+        # forever). Finalize honestly below, then let the caller see the failure.
+        interrupted_exc = exc
+        interrupted = "fault"
+        stop_reason = f"executor_failure: {type(exc).__name__}"
+        say(f"mission interrupted by executor failure: {exc}")
 
     if dynamic and not stop_reason:
-        objective_state = (executor.objective_achieved()
-                           if hasattr(executor, "objective_achieved") else None)
-        pending = (executor.pending_findings()
-                   if hasattr(executor, "pending_findings") else [])
+        objective_state = _safe_executor_call(executor, "objective_achieved", None)
+        pending = _safe_executor_call(executor, "pending_findings", [])
         if objective_state is True:
             stop_reason = "objective_achieved"
         elif pending or unresolved_verification:
             stop_reason = "unresolved_verification"
         elif rounds >= MAX_ROUNDS:
             stop_reason = "round_limit"
+            interrupted = "halted"
         else:
             stop_reason = "frontier_exhausted"
+    # An executor that reports the budget gone (or a coordination round cap hit)
+    # is an INCOMPLETE mission — never a quiet success (Builder 04 §8: task
+    # execution success must not be conflated with objective achievement).
+    if stop_reason in ("budget_exhausted", "round_limit") and not interrupted:
+        interrupted = "halted"
 
-    objective_state = (executor.objective_achieved()
-                       if hasattr(executor, "objective_achieved") else None)
-    pending = (executor.pending_findings()
-               if hasattr(executor, "pending_findings") else [])
+    objective_state = _safe_executor_call(executor, "objective_achieved", None)
+    pending = _safe_executor_call(executor, "pending_findings", [])
     if pending and not stop_reason:
         stop_reason = "unresolved_verification"
     failed_tasks = [t for t in commander.tasks.values()
@@ -392,10 +436,16 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
         commander.tasks.values(),
         objective_achieved=objective_state,
         pending_verification=len(pending),
-        stop_reason=stop_reason)
+        stop_reason=stop_reason,
+        interrupted=interrupted)
     if reason and not stop_reason:
         stop_reason = reason
-    commander.set_mission_status(status, DRIVER_ACTOR, reason=reason)
+    try:
+        commander.set_mission_status(status, DRIVER_ACTOR, reason=stop_reason)
+    except Exception:
+        # The journal holds the durable authority; a snapshot write failing here
+        # must never mask the original executor failure (or skip the return).
+        pass
     summary = {"mission_id": mission.mission_id, "run_id": mission.primary_run_id,
                "rounds": rounds, "tasks": commander.tasks_view(),
                "status": commander.mission.status,
@@ -408,4 +458,6 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                "pending_verification": len(pending)}
     say(f"mission {mission.mission_id}: {commander.mission.status} "
         f"({rounds} dispatches, {len(created)} tasks; {stop_reason or 'plan complete'})")
+    if interrupted_exc is not None:
+        raise interrupted_exc
     return summary

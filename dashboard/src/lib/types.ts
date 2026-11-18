@@ -1,6 +1,7 @@
 /**
- * Types mirroring the BINDING API contract (see /home/z/my-project/worklog.md).
- * Server: FastAPI at http://localhost:8000 (or same origin in production).
+ * Types mirroring the server's actual request/response models (redteam/server.py
+ * is the source of truth). Server: FastAPI at http://localhost:8000 (or same
+ * origin in production).
  * All payloads are parsed defensively: unknown fields are tolerated via index
  * signatures so a slightly-chatty server never crashes the UI.
  */
@@ -88,6 +89,8 @@ export interface RunManifest {
 export interface RunDetail {
   run_id: string;
   status: RunStatus;
+  /** "classic" (single agent / orchestrator swarm) or "mission" (coordination core). */
+  driver?: string;
   manifest: RunManifest;
   findings: Finding[];
   objective?: ObjectiveState;
@@ -197,8 +200,11 @@ export interface LlmOverride {
   provider: string;
   /** Empty = provider's natural rotation; a value pins llm.providers[].models_allow. */
   model?: string;
-  /** Placed in the provider's standard key env var on the server for this run;
-   *  never written to disk or echoed back. */
+  /** Run-scoped credential: carried on THIS run's server-side options only
+   *  (resolved into that run's provider sessions at construction). Never
+   *  written to the process env, engagement YAML, manifests, events, or logs —
+   *  concurrent runs with different keys cannot cross-use them. Omit to use
+   *  preconfigured env credentials. */
   api_key?: string;
   /** Override the kind's default endpoint (vLLM, LM Studio, a private proxy, ...). */
   base_url?: string;
@@ -214,6 +220,118 @@ export interface LaunchRequest {
   /** Optional model/provider selection from the launch form; omit to use
    *  whatever the engagement file configures. */
   llm?: LlmOverride;
+}
+
+/** POST /api/llm/preflight — server-side launch preflight (agent server → LLM
+ *  endpoint only; never the client's target). */
+export interface LlmPreflightBody {
+  provider: string;
+  model?: string;
+  base_url?: string;
+  /** Held in memory for this single request; never echoed in the result. */
+  api_key?: string;
+}
+
+export interface LlmPreflightCheck {
+  check: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface LlmPreflightResult {
+  provider: string;
+  base_url: string;
+  model: string;
+  reachable: boolean;
+  model_found: boolean;
+  tool_call_ok: boolean;
+  args_parsed: boolean;
+  ok: boolean;
+  latency_ms: number;
+  error: string;
+  checks: LlmPreflightCheck[];
+}
+
+/** GET /api/llm/models — real model ids served by the endpoint. */
+export interface LlmModelsResponse {
+  provider: string;
+  base_url: string;
+  models: string[];
+}
+
+/** POST /api/missions — adaptive mission launch (MissionBody server-side). */
+export interface MissionLaunchRequest {
+  engagement_path: string;
+  objective: string;
+  max_steps?: number;
+  asset_feed?: string;
+  yes_to_all?: boolean;
+  /** Deliberately opt-in static task plan. Omit/empty (the default) = the
+   *  dynamic AttackTree frontier plans and replans on its own. */
+  plan?: MissionPlanTask[];
+  /** Same provider/model selection contract as LaunchRequest.llm. */
+  llm?: LlmOverride;
+}
+
+export interface MissionPlanTask {
+  id?: string;
+  technique?: string;
+  target?: string;
+  objective?: string;
+  depends_on?: string[];
+  [k: string]: unknown;
+}
+
+/** Both launch endpoints mint one id; mission identity and run identity stay
+ *  separate logical fields (mission_id == run_id today, 1:N-capable later). */
+export interface MissionLaunchResponse {
+  mission_id: string;
+  run_id: string;
+  run_ids: string[];
+  engagement: string;
+  out_dir: string;
+  status: string;
+  driver: string;
+  [k: string]: unknown;
+}
+
+export interface MissionTask {
+  id?: string;
+  technique?: string;
+  target?: string;
+  objective?: string;
+  status?: string;
+  specialist?: string;
+  attempts?: number;
+  [k: string]: unknown;
+}
+
+export interface MissionSummary {
+  mission_id: string;
+  run_id: string;
+  run_ids: string[];
+  engagement: string;
+  ticket?: string;
+  objective: string;
+  status: string;
+  created: string;
+  updated: string;
+  tasks: number;
+  [k: string]: unknown;
+}
+
+export interface MissionDetail {
+  mission_id: string;
+  run_id: string;
+  run_ids: string[];
+  engagement: string;
+  ticket?: string;
+  objective: string;
+  status: string;
+  halt_reason?: string;
+  tasks: MissionTask[];
+  recent_events: RunEvent[];
+  [k: string]: unknown;
 }
 
 export interface LaunchResponse {
