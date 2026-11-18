@@ -100,9 +100,10 @@ def test_new_evidence_rearms_failed_node_once(tmp_path):
                                  say=lambda _t: None)
     assert "TASK_REARMED" in _journal_types(mission_dir)
     # recon success -> A failure -> (new evidence) access task -> A re-armed
-    # and executed again with the materially different situation
-    statuses = [t["status"] for t in summary["tasks"]]
-    assert statuses == ["succeeded", "failed", "succeeded", "succeeded"]
+    # and executed again with the materially different situation. The task
+    # VIEW is not chronological, so compare the outcome multiset.
+    statuses = sorted(t["status"] for t in summary["tasks"])
+    assert statuses == ["failed", "succeeded", "succeeded", "succeeded"]
     assert statuses.count("failed") == 1
     # exactly ONE re-arm despite the frontier still listing the node
     assert _journal_types(mission_dir).count("TASK_REARMED") == 1
