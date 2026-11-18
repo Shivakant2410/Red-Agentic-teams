@@ -94,17 +94,19 @@ def section(run_dir: Path) -> str:
     # Attack traces: real wire evidence only.
     lines.append("")
     if traffic:
-        paths = Counter(str(e.get("path")) for e in traffic)
+        paths = Counter(str(e.get("url") or e.get("path")) for e in traffic)
         lines.append(f"- **Attack traces (traffic.jsonl, {len(traffic)} requests):**"
-                     f" top paths {dict(list(paths.items())[:4])}")
+                     f" top URLs {dict(list(paths.items())[:4])}")
         interesting = [e for e in traffic
-                       if any(s in str(e.get("body", "")).upper()
-                              for s in ("UNION", "%27", "'1'='1", "OR ", "SELECT"))
+                       if any(s in str(e.get("req_body", "")).upper()
+                              + str(e.get("url", "")).upper()
+                              for s in ("UNION", "%27", "'1'='1", "SELECT", "8909"))
                        or e.get("status") in (500, 200)]
         for e in (interesting or traffic)[:5]:
-            body = str(e.get("body") or "").replace("\n", " ")[:90]
-            lines.append(f"  - `{e.get('method')} {e.get('path')}` ->"
-                         f" {e.get('status')} · body: `{body}`")
+            body = str(e.get("req_body") or "").replace("\n", " ")[:80]
+            lines.append(f"  - `{e.get('method')} {e.get('url')}` ->"
+                         f" {e.get('status')} ({e.get('tool') or 'no tool recorded'})"
+                         + (f" · body: `{body}`" if body else ""))
     else:
         lines.append("- **Attack traces:** none — no lab request was ever recorded"
                      " (see stop reason; a narration-only run produces no wire evidence)")
