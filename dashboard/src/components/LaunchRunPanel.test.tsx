@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { LaunchRunPanel } from "./LaunchRunPanel";
@@ -113,5 +113,44 @@ describe("LaunchRunPanel", () => {
     expect(api.launchMission.mock.calls[0][0].llm).toEqual({
       provider: "zai", model: "glm-5.3", api_key: "sk-run",
     });
+  });
+
+  it("preflight posts the selected provider/model to /api/llm/preflight and renders the checks", async () => {
+    const user = userEvent.setup();
+    render(<LaunchRunPanel />);
+    await user.selectOptions(screen.getByLabelText(/^provider/i), "ollama");
+    await user.type(screen.getByLabelText(/^model/i), "llama3.2");
+    await user.click(screen.getByRole("button", { name: /^preflight$/i }));
+    expect(api.preflightLlm).toHaveBeenCalledTimes(1);
+    expect(api.preflightLlm.mock.calls[0][0]).toMatchObject({
+      provider: "ollama", model: "llama3.2",
+    });
+    // check list renders with PASS/FAIL vocabulary (never a bare "ok" badge)
+    expect(await screen.findByText(/PASS/)).toBeInTheDocument();
+    expect(screen.getByText(/agent server →/)).toBeInTheDocument();
+    expect(screen.getByText(/READY — this model can drive tools/)).toBeInTheDocument();
+    // discovery: real ids from the endpoint merge into the suggestions (debounced)
+    await waitFor(() => expect(api.listLlmModels).toHaveBeenCalledWith("ollama", ""));
+  });
+
+  it("a failing preflight renders the FAIL detail honestly", async () => {
+    const user = userEvent.setup();
+    api.preflightLlm.mockResolvedValueOnce({
+      provider: "ollama", base_url: "http://127.0.0.1:11434/v1", model: "phi3",
+      reachable: true, model_found: true, tool_call_ok: false, args_parsed: false,
+      ok: false, latency_ms: 9, error: "",
+      checks: [
+        { check: "reachable", ok: true, detail: "3 model(s) listed" },
+        { check: "model_found", ok: true, detail: "'phi3' is served" },
+        { check: "tool_call_ok", ok: false,
+          detail: "model answered WITHOUT a tool call — it likely does not support tool calling" },
+      ],
+    });
+    render(<LaunchRunPanel />);
+    await user.selectOptions(screen.getByLabelText(/^provider/i), "ollama");
+    await user.type(screen.getByLabelText(/^model/i), "phi3");
+    await user.click(screen.getByRole("button", { name: /^preflight$/i }));
+    expect(await screen.findByText("FAIL")).toBeInTheDocument();
+    expect(screen.getByText(/NOT READY/)).toBeInTheDocument();
   });
 });

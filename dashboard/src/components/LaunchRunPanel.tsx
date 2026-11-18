@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   btnAccent,
@@ -12,7 +12,7 @@ import {
   Toggle,
 } from "./Bits";
 import { api, errMessage } from "@/lib/api";
-import type { LlmOverride, MissionPlanTask } from "@/lib/types";
+import type { LlmOverride, LlmPreflightResult, MissionPlanTask } from "@/lib/types";
 
 /**
  * Provider kinds the engine understands (mirrors server LLM_PROVIDER_SHORTCUTS
@@ -110,8 +110,54 @@ export function LaunchRunPanel({ className }: { className?: string }) {
   const [llmModel, setLlmModel] = useState("");
   const [llmApiKey, setLlmApiKey] = useState("");
   const [llmBaseUrl, setLlmBaseUrl] = useState("");
+  const [preflight, setPreflight] = useState<LlmPreflightResult | null>(null);
+  const [preflightPending, setPreflightPending] = useState(false);
+  const [discovered, setDiscovered] = useState<string[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
+
+  // Live model discovery (best effort): merge REAL ids served by the endpoint
+  // into the model suggestions. Failure is silent — presets remain, and the
+  // preflight reports endpoint problems authoritatively.
+  useEffect(() => {
+    if (!llmProvider) {
+      setDiscovered([]);
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      api
+        .listLlmModels(llmProvider, llmBaseUrl.trim())
+        .then((res) => {
+          if (!cancelled) setDiscovered(res.models);
+        })
+        .catch(() => {
+          if (!cancelled) setDiscovered([]);
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [llmProvider, llmBaseUrl]);
+
+  const runPreflight = async () => {
+    setPreflightPending(true);
+    setPreflight(null);
+    try {
+      const res = await api.preflightLlm({
+        provider: llmProvider,
+        ...(llmModel.trim() ? { model: llmModel.trim() } : {}),
+        ...(llmApiKey ? { api_key: llmApiKey } : {}),
+        ...(llmBaseUrl.trim() ? { base_url: llmBaseUrl.trim() } : {}),
+      });
+      setPreflight(res);
+    } catch (err) {
+      setErrors([`preflight: ${errMessage(err)}`]);
+    } finally {
+      setPreflightPending(false);
+    }
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -337,9 +383,26 @@ export function LaunchRunPanel({ className }: { className?: string }) {
           <div className="space-y-3 border-t border-edge/60 pt-3">
             <div className="flex items-center justify-between">
               <Micro>MODEL PROVIDER</Micro>
-              <span className="font-mono text-[9px] tracking-[0.14em] text-muted/60">
-                LLM OVERRIDE
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[9px] tracking-[0.14em] text-muted/60">
+                  LLM OVERRIDE
+                </span>
+                {llmProvider && (
+                  <button
+                    type="button"
+                    onClick={runPreflight}
+                    disabled={preflightPending}
+                    className={cx(
+                      "rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] transition-colors",
+                      preflightPending
+                        ? "border-edge text-muted/60"
+                        : "border-info/50 text-info hover:bg-info/10",
+                    )}
+                  >
+                    {preflightPending ? "CHECKING…" : "PREFLIGHT"}
+                  </button>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field
@@ -352,6 +415,8 @@ export function LaunchRunPanel({ className }: { className?: string }) {
                   onChange={(e) => {
                     setLlmProvider(e.target.value);
                     setLlmModel("");
+                    setPreflight(null);
+                    setDiscovered([]);
                   }}
                 >
                   {PROVIDERS.map((p) => (
@@ -381,13 +446,44 @@ export function LaunchRunPanel({ className }: { className?: string }) {
                 />
                 {llmProvider && MODEL_PRESETS[llmProvider] && (
                   <datalist id={`model-presets-${llmProvider}`}>
-                    {MODEL_PRESETS[llmProvider].map((m) => (
+                    {Array.from(
+                      new Set([...(MODEL_PRESETS[llmProvider] ?? []), ...discovered]),
+                    ).map((m) => (
                       <option key={m} value={m} />
                     ))}
                   </datalist>
                 )}
+                {llmProvider && discovered.length > 0 && (
+                  <span className="mt-1 block text-[10px] leading-snug text-muted/60">
+                    {discovered.length} model(s) discovered live from the endpoint —
+                    suggestions merged below.
+                  </span>
+                )}
               </Field>
             </div>
+            {preflight && (
+              <ul className="space-y-1 rounded-md border border-edge/60 bg-panel2/30 px-2.5 py-2">
+                {preflight.checks.map((c, i) => (
+                  <li key={i} className="flex gap-2 font-mono text-[10.5px] leading-snug">
+                    <span className={c.ok ? "text-ok" : "text-accent"}>
+                      {c.ok ? "PASS" : "FAIL"}
+                    </span>
+                    <span className="text-muted">{c.check}</span>
+                    <span className="min-w-0 flex-1 text-muted/80">{c.detail}</span>
+                  </li>
+                ))}
+                <li className="flex gap-2 pt-0.5 font-mono text-[10px] text-muted/60">
+                  <span>
+                    agent server → {preflight.base_url} · {preflight.latency_ms} ms
+                  </span>
+                  <span className="ml-auto">
+                    {preflight.ok
+                      ? "READY — this model can drive tools"
+                      : "NOT READY — fix the failing checks before launching"}
+                  </span>
+                </li>
+              </ul>
+            )}
             {llmProvider && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {PROVIDERS.find((p) => p.kind === llmProvider)?.keyHint ? (

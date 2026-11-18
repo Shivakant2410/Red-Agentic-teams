@@ -675,8 +675,16 @@ class Orchestrator:
         self._research_finding_hyp: dict[str, str] = {}       # finding id -> hypothesis id
         self._research_verdicts_seen: dict[str, str] = {}     # finding id -> last mirrored confidence
 
-    def with_runtime(self, budget=None, manifest=None, manifest_path=None):
+    def with_runtime(self, budget=None, manifest=None, manifest_path=None,
+                     terminal_manifest_writes: bool = True):
+        """Attach a BudgetTracker and/or a RunManifest for autonomous runs.
+
+        terminal_manifest_writes=False marks every specialist THIS orchestrator
+        builds as a task-scoped manifest writer (mission mode): they update
+        steps/tokens/findings on the shared run manifest but never its run-level
+        status — the mission driver owns the terminal state."""
         self._budget = budget
+        self._terminal_manifest_writes = terminal_manifest_writes
         if manifest is not None and manifest_path is not None:
             self._manifest = (manifest, manifest_path)
         return self
@@ -723,7 +731,9 @@ class Orchestrator:
                              graph=self._graph,
                              attack_tree=self._attack_tree, memory=self._memory,
                              system_addon=addon, role=profile.role,
-                             agent_name=agent_name or profile.name)
+                             agent_name=agent_name or profile.name,
+                             terminal_manifest_writes=getattr(
+                                 self, "_terminal_manifest_writes", True))
         if self._budget is not None:
             mpath = self._manifest[1] if self._manifest else None
             manifest = self._manifest[0] if self._manifest else None

@@ -519,7 +519,7 @@ def execute_run(opts: RunOptions) -> dict:
 
         tools = build_registry(enable_sandbox=sandbox is not None, enable_browser=use_browser)
 
-        from .runtime import BudgetTracker, RunManifest
+        from .runtime import BudgetTracker, Halt, RunManifest
         budget = BudgetTracker(max_seconds=engagement.max_run_seconds,
                                max_tokens=engagement.max_llm_tokens,
                                kill_file=out / "STOP")
@@ -552,28 +552,45 @@ def execute_run(opts: RunOptions) -> dict:
                 noise_budget=opts.round_noise_budget,
                 noise_mu=opts.noise_mu, noise_V=opts.noise_V,
                 research_dir=out)
+            # terminal_manifest_writes=False: mission specialists share the run's
+            # manifest for progress counters only — a specialist loop ending is a
+            # TASK ending, and must never flip the RUN's status (the pre-fix bug:
+            # a still-running mission flapped to "completed" in the API every time
+            # a recon specialist finished its loop).
             mission_orchestrator.with_runtime(budget=budget, manifest=manifest,
-                                              manifest_path=out / "manifest.json")
+                                              manifest_path=out / "manifest.json",
+                                              terminal_manifest_writes=False)
             mission_executor = MissionSpecialistExecutor(
                 mission_orchestrator, objective=opts.objective, on_text=on_text)
-            mission_summary = run_mission_driver(
-                engagement=engagement, out_dir=out, objective=opts.objective,
-                attack_tree=attack_tree, bus=bus, opts=opts,
-                executor=mission_executor,
-                # Duplicate suppression rides the orchestrator's own
-                # ResearchBundle — the scheduler's claim step 3, one registry.
-                hypotheses=mission_orchestrator._research,
-                # ACCESS prerequisite: the orchestrator's foothold gate (the
-                # existing AccessGraph/KillChain evidence) — a prerequisite-
-                # less ACCESS task stays PENDING, never claimed or dispatched.
-                access_gate=mission_orchestrator.access_precondition_reason,
-                say=say)
-            # C4: a CONFIRMED finding completes its tree node through the same
-            # idempotent sync() the orchestrator's verify passes use.
-            attack_tree.sync(graph=graph, findings=findings.all())
-            manifest.status = "completed"
-            manifest.steps = len(mission_summary["tasks"])
-            manifest.save(out / "manifest.json")
+            try:
+                mission_summary = run_mission_driver(
+                    engagement=engagement, out_dir=out, objective=opts.objective,
+                    attack_tree=attack_tree, bus=bus, opts=opts,
+                    executor=mission_executor,
+                    # Duplicate suppression rides the orchestrator's own
+                    # ResearchBundle — the scheduler's claim step 3, one registry.
+                    hypotheses=mission_orchestrator._research,
+                    # ACCESS prerequisite: the orchestrator's foothold gate (the
+                    # existing AccessGraph/KillChain evidence) — a prerequisite-
+                    # less ACCESS task stays PENDING, never claimed or dispatched.
+                    access_gate=mission_orchestrator.access_precondition_reason,
+                    say=say)
+            except Halt as exc:
+                # Budget/kill-switch stop mid-mission: the driver has already
+                # finalized the mission snapshot (failed, honest stop reason).
+                # The RUN ends halted — same vocabulary as a halted classic run —
+                # and the shared finalization below still runs (reports, credit).
+                manifest.status = "halted"
+                manifest.halt_reason = str(exc)
+                manifest.save(out / "manifest.json")
+                say(f"\nMission halted: {exc}")
+            else:
+                # C4: a CONFIRMED finding completes its tree node through the same
+                # idempotent sync() the orchestrator's verify passes use.
+                attack_tree.sync(graph=graph, findings=findings.all())
+                manifest.status = "completed"
+                manifest.steps = len(mission_summary["tasks"])
+                manifest.save(out / "manifest.json")
         else:
             if opts.multi_agent:
                 from .orchestrator import Orchestrator

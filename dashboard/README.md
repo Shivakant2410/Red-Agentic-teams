@@ -88,6 +88,26 @@ The launch panel's **MODEL PROVIDER** section sends an optional `llm` override
   key env var per kind, and whether that env var is currently set (presence
   only — never the key).
 
+### Preflight (especially for Ollama)
+
+Once a provider is selected, a **PREFLIGHT** button appears next to the section
+header. It calls `POST /api/llm/preflight` and renders the server's check list
+inline — `PASS`/`FAIL` per check, never a bare "ok" badge:
+
+1. `reachable` — the AGENT SERVER can reach the endpoint (the browser is not
+   involved; containers must use `host.docker.internal`, not `localhost`);
+2. `model_found` — the endpoint's live catalog serves that model id;
+3. `tool_call_ok` — a harmless synthetic request comes back WITH a tool call
+   (models without tool-calling support fail here with that stated plainly);
+4. `args_parsed` — the tool-call arguments parse as JSON (the same parse the
+   agent loop performs every turn).
+
+The preflight never contacts the engagement target. Alongside it, the model
+field's suggestions merge with ids discovered live from the endpoint
+(`GET /api/llm/models` — silent fallback to presets when the endpoint is
+unreachable). Until the preflight is green, expect a local model to either not
+start at all or to drive no tools.
+
 ## Testing
 
 ```bash

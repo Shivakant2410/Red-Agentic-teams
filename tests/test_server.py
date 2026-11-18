@@ -556,3 +556,221 @@ def test_launch_refuses_scope_self_targeting(harness, monkeypatch):
     assert r.status_code == 400
     assert "self-targeting" in r.json()["detail"]
     assert "8000" in r.json()["detail"]
+
+
+# =============================================================================
+# Builder 04 — unified LLM selection: preflight + model discovery endpoints,
+# startup reconciliation of interrupted runs, concurrent mission credential
+# isolation, and registry-level mission finalization.
+# =============================================================================
+
+def test_llm_preflight_endpoint_passthrough_and_no_key_echo(harness, monkeypatch):
+    from redteam.llm.preflight import PreflightCheck, PreflightResult
+    client, _, _ = harness
+    seen: dict = {}
+
+    def fake_preflight(provider, model="", base_url="", api_key=None):
+        seen.update(provider=provider, model=model, base_url=base_url, key=api_key)
+        return PreflightResult(
+            provider=provider, base_url=base_url or "http://127.0.0.1:11434/v1",
+            model=model, reachable=True, model_found=True, tool_call_ok=True,
+            args_parsed=True, ok=True, latency_ms=7, error="",
+            checks=[PreflightCheck("reachable", True, "2 model(s) listed by the endpoint")])
+
+    # the endpoint imports run_preflight at call time — patch the module attribute
+    monkeypatch.setattr("redteam.llm.preflight.run_preflight", fake_preflight)
+    r = client.post("/api/llm/preflight", json={
+        "provider": "ollama", "model": "llama3.2", "api_key": "sk-preflight-secret"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True and body["reachable"] is True
+    assert body["checks"][0]["check"] == "reachable"
+    assert seen == {"provider": "ollama", "model": "llama3.2", "base_url": "",
+                    "key": "sk-preflight-secret"}
+    # the result NEVER carries the key back to the client
+    assert "sk-preflight-secret" not in json.dumps(body)
+
+
+def test_llm_preflight_endpoint_requires_provider(harness):
+    client, _, _ = harness
+    r = client.post("/api/llm/preflight", json={"model": "llama3.2"})
+    assert r.status_code == 422  # pydantic: provider min_length=1
+
+
+def test_llm_models_endpoint_discovers_live_ids(harness, monkeypatch):
+    client, _, _ = harness
+
+    class FakeResp:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": [{"id": "qwen2.5:7b"}, {"id": "llama3.2:latest"},
+                             {"id": "llama3.2:latest"}]}  # duplicate id collapses
+
+    monkeypatch.setattr("requests.get", lambda url, timeout: FakeResp())
+    r = client.get("/api/llm/models", params={"provider": "ollama"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["provider"] == "ollama"
+    assert body["base_url"] == "http://127.0.0.1:11434/v1"
+    assert body["models"] == ["llama3.2:latest", "qwen2.5:7b"]
+
+
+def test_llm_models_endpoint_reports_unreachable_honestly(harness, monkeypatch):
+    import requests as rq
+    client, _, _ = harness
+
+    def boom(url, timeout):
+        raise rq.ConnectionError("connection refused")
+
+    monkeypatch.setattr("requests.get", boom)
+    r = client.get("/api/llm/models", params={"provider": "ollama"})
+    assert r.status_code == 502
+    assert "model discovery failed" in r.json()["detail"]
+
+
+def test_startup_reconciles_interrupted_runs(tmp_path, monkeypatch):
+    """Runs execute as threads of the server process; at startup a manifest that
+    still reads 'running' belongs to a dead process. The server must finalize
+    manifest AND mission snapshot so no dashboard polls a zombie forever."""
+    runs_root = tmp_path / "runs"
+    zombie = runs_root / "20260101-000000-zombie"
+    zombie.mkdir(parents=True)
+    RunManifest(objective="zombie", engagement="Lab", driver="mission").save(
+        zombie / "manifest.json")                       # status defaults to running
+    (zombie / "mission.json").write_text(json.dumps(
+        {"mission": {"mission_id": zombie.name, "status": "running",
+                     "halt_reason": ""}, "tasks": []}), encoding="utf-8")
+    # a run whose manifest finalized but whose mission record never did
+    dangling = runs_root / "20260101-000001-dangling"
+    dangling.mkdir(parents=True)
+    m2 = RunManifest(objective="dangling", engagement="Lab", driver="mission")
+    m2.status = "completed"
+    m2.save(dangling / "manifest.json")
+    (dangling / "mission.json").write_text(json.dumps(
+        {"mission": {"mission_id": dangling.name, "status": "running",
+                     "halt_reason": ""}, "tasks": []}), encoding="utf-8")
+
+    monkeypatch.setattr(config_mod, "load_engagement",
+                        lambda path: _make_engagement())
+    create_app(runs_root=runs_root, dashboard_dir=None)
+
+    m = json.loads((zombie / "manifest.json").read_text(encoding="utf-8"))
+    assert m["status"] == "error"
+    assert "server_restarted" in m["halt_reason"]
+    zrec = json.loads((zombie / "mission.json").read_text(encoding="utf-8"))["mission"]
+    assert zrec["status"] == "failed"
+    assert "server_restarted" in zrec["halt_reason"]
+    drec = json.loads((dangling / "mission.json").read_text(encoding="utf-8"))["mission"]
+    assert drec["status"] == "failed"
+    assert "run ended without mission finalization" in drec["halt_reason"]
+
+
+def test_concurrent_missions_isolate_providers_models_and_keys(harness, monkeypatch):
+    """Two missions launched together with DIFFERENT providers/models/keys: each
+    run dir must carry its own effective engagement and llm.selected event, and
+    NO key may appear in ANY persisted artifact of either run."""
+    client, runs_root, _ = harness
+
+    def slow_execute_run(opts):
+        time.sleep(0.4)  # force thread overlap
+        out = Path(opts.out_dir)
+        manifest = RunManifest.load(out / "manifest.json") or RunManifest(
+            objective=opts.objective, engagement="Lab")
+        manifest.status = "completed"
+        manifest.save(out / "manifest.json")
+
+    monkeypatch.setattr(server_mod, "execute_run", slow_execute_run)
+    src = runs_root.parent / "engagement-src.yaml"
+    src.write_text("name: Lab\nclient: Local\n")
+    r1 = client.post("/api/missions", json={
+        "engagement_path": str(src), "objective": "mission one", "max_steps": 3,
+        "llm": {"provider": "openrouter", "model": "z-ai/glm-4.6",
+                "api_key": "sk-mission-one-secret"}})
+    r2 = client.post("/api/missions", json={
+        "engagement_path": str(src), "objective": "mission two", "max_steps": 3,
+        "llm": {"provider": "zai", "model": "glm-5.3",
+                "api_key": "sk-mission-two-secret"}})
+    assert r1.status_code == 202 and r2.status_code == 202
+    run1, run2 = r1.json()["run_id"], r2.json()["run_id"]
+
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        s1 = json.loads((runs_root / run1 / "manifest.json").read_text())["status"]
+        s2 = json.loads((runs_root / run2 / "manifest.json").read_text())["status"]
+        if s1 != "running" and s2 != "running":
+            break
+        time.sleep(0.1)
+    assert s1 == "completed" and s2 == "completed"
+
+    eng1 = yaml.safe_load((runs_root / run1 / "engagement.yaml").read_text())
+    eng2 = yaml.safe_load((runs_root / run2 / "engagement.yaml").read_text())
+    providers1 = eng1["llm"]["providers"]
+    providers2 = eng2["llm"]["providers"]
+    assert [p["models_allow"] for p in providers1 if p["kind"] == "openrouter"] \
+        == [["z-ai/glm-4.6"]]
+    assert [p["models_allow"] for p in providers2 if p["kind"] == "zai"] \
+        == [["glm-5.3"]]
+
+    events1 = (runs_root / run1 / "events.jsonl").read_text()
+    events2 = (runs_root / run2 / "events.jsonl").read_text()
+    assert "llm.selected" in events1
+    sel1 = [json.loads(line) for line in events1.splitlines()
+            if "llm.selected" in line]
+    sel2 = [json.loads(line) for line in events2.splitlines()
+            if "llm.selected" in line]
+    assert sel1[0]["provider"] == "openrouter" and sel1[0]["model"] == "z-ai/glm-4.6"
+    assert sel2[0]["provider"] == "zai" and sel2[0]["model"] == "glm-5.3"
+
+    # credential isolation + persistence hygiene: scan EVERY byte of BOTH run dirs
+    for root in (runs_root / run1, runs_root / run2):
+        for path in root.rglob("*"):
+            if path.is_file():
+                blob = path.read_bytes()
+                assert b"sk-mission-one-secret" not in blob, path
+                assert b"sk-mission-two-secret" not in blob, path
+
+
+def test_registry_error_finalizes_running_mission_snapshot(harness, monkeypatch):
+    """Defense in depth: the mission driver is exception-safe, but if something
+    crashes AFTER a running mission.json exists and BEFORE the driver's own
+    finalization, the registry's error path must still close the snapshot."""
+    client, runs_root, _ = harness
+
+    def crashing_execute_run(opts):
+        out = Path(opts.out_dir)
+        (out / "mission.json").write_text(json.dumps(
+            {"mission": {"mission_id": out.name, "status": "running",
+                         "halt_reason": ""}, "tasks": []}), encoding="utf-8")
+        raise RuntimeError("coordination exploded pre-driver")
+
+    monkeypatch.setattr(server_mod, "execute_run", crashing_execute_run)
+    r = client.post("/api/missions", json={
+        "engagement_path": "e.yaml", "objective": "will crash", "max_steps": 2})
+    assert r.status_code == 202
+    run_id = r.json()["run_id"]
+    deadline = time.time() + 5
+    status = "running"
+    while time.time() < deadline:
+        try:
+            status = json.loads((runs_root / run_id / "manifest.json").read_text())["status"]
+        except (json.JSONDecodeError, OSError):
+            status = "running"   # transient torn read while the thread saves
+        if status != "running":
+            break
+        time.sleep(0.05)
+    assert status == "error"
+    deadline = time.time() + 5
+    while True:
+        try:
+            rec = json.loads((runs_root / run_id / "mission.json").read_text())["mission"]
+            break
+        except (json.JSONDecodeError, OSError):
+            if time.time() > deadline:
+                raise
+            time.sleep(0.05)
+    assert rec["status"] == "failed"
+    assert "mission_aborted" in rec["halt_reason"]

@@ -138,6 +138,67 @@ back of the queue. With no `providers:` block, behavior is byte-identical to the
 Any OpenAI-compatible endpoint (vLLM, LM Studio, a proxy) works via a custom
 `base_url`.
 
+## Using Ollama (local models, no API key)
+
+Both execution modes — classic run and adaptive mission — accept the same
+provider selection, and Ollama needs no key. Setup on the machine running the
+agent server (not the client browser — preflight and model traffic go
+agent-server → Ollama):
+
+```bash
+# 1. install and start Ollama (Linux; macOS/Windows: ollama.com/download)
+curl -fsSL https://ollama.com/install.sh | sh
+ollama serve                       # usually run as a service by the installer
+
+# 2. pull a TOOL-CAPABLE model — not every model supports tool calling
+ollama pull llama3.2               # 1B, needs ~4 GB RAM; tools: yes
+ollama pull qwen2.5:7b             # stronger, needs ~8 GB RAM; tools: yes
+ollama list                        # see what you actually have
+
+# 3. sanity-check the endpoint the engine uses (OpenAI-compatible, under /v1)
+curl -s http://127.0.0.1:11434/v1/models | jq '.data[].id'
+```
+
+Then pick **Ollama (local, no key)** in the launch form's MODEL PROVIDER section,
+type or pick a model id, and press **PREFLIGHT** before launching. The preflight
+runs entirely on the agent server and verifies, in order:
+
+1. **reachable** — the agent server can open `GET /v1/models` on the endpoint;
+2. **model_found** — the endpoint's catalog actually serves that model id;
+3. **tool_call_ok** — a harmless synthetic request ("call `report_preflight_ok`")
+   comes back WITH a tool call — models without tool support fail here, stated
+   plainly instead of producing a mission that cannot drive any tools;
+4. **args_parsed** — the tool-call arguments parse as JSON (the same parse the
+   agent loop performs every turn).
+
+The preflight never contacts the engagement target and never executes offensive
+tools — its only traffic is agent server → LLM endpoint. Keep the two
+connectivity facts separate: **agent server → Ollama** (the preflight checks
+this) vs **agent sandbox/browser → authorized target** (the RoE firewall and
+scope guard check this). `GET /api/llm/models?provider=ollama` lists the live
+catalog for the launch form's suggestions.
+
+Choosing a local model vs a hosted one: local Ollama costs nothing and keeps
+engagement data on your machine, but small models reason and use tools far more
+weakly than hosted frontier models — expect more stalls, weaker multi-step
+exploit chains, and shorter useful contexts. The engine does NOT assume a model
+supports tools; the preflight and the gateway's empty-response rotation handle
+the ones that don't.
+
+**Container/localhost pitfalls** (the most common "unreachable" report): Ollama
+bound to `127.0.0.1` inside a container is NOT the host's Ollama. If the agent
+server runs in a container, use `host.docker.internal:11434` (Docker Desktop /
+Docker Engine ≥ 20.10 with host-gateway) or the host IP, and start Ollama with
+`OLLAMA_HOST=0.0.0.0` so it accepts those connections. Conversely, never expose
+Ollama to the public internet to "make it reachable" — the engine only ever
+needs to reach it from the agent server's own network position.
+
+Hardware: a 1B model wants ~4 GB free RAM, 7B ~8 GB, larger ones
+proportionally more; tool-calling quality generally tracks model size. There is
+no universal "every Ollama model works" claim — check the model's tool support
+with the preflight, and expect latency in seconds-to-tens-of-seconds per step
+rather than the sub-second streaming of hosted providers.
+
 ## HTTP API
 
 Everything the dashboard does is plain HTTP (same origin):
@@ -155,13 +216,19 @@ curl -X POST localhost:8000/api/runs -H 'content-type: application/json' -d '{
 curl -X POST localhost:8000/api/missions -H 'content-type: application/json' -d '{
   "engagement_path": "/abs/path/to/engagement",
   "objective": "Reach the admin console and prove data access",
-  "max_steps": 40
+  "max_steps": 40,
+  "llm": {"provider": "ollama", "model": "llama3.2"}
 }'
+
+# preflight the selection BEFORE launching (server→endpoint only, never the target)
+curl -X POST localhost:8000/api/llm/preflight -H 'content-type: application/json' \
+  -d '{"provider": "ollama", "model": "llama3.2"}' | jq
 
 curl -s localhost:8000/api/runs | jq '.runs[0]'
 curl -s localhost:8000/api/missions | jq '.missions[0]'
 curl -s localhost:8000/api/missions/<id> | jq '{status, halt_reason, tasks}'
 curl -s localhost:8000/api/llm/providers | jq
+curl -s "localhost:8000/api/llm/models?provider=ollama" | jq '.models[:5]'
 curl -s localhost:8000/api/runs/<id>/events | jq '.events[-1]'
 curl -s localhost:8000/api/runs/<id>/traffic  | jq '.traffic[-1]'   # wire evidence
 curl -s localhost:8000/api/runs/<id>/inventory | jq '.summary'      # attack surface
@@ -172,8 +239,17 @@ Full lifecycle: `POST /api/runs`, `GET /api/runs`, `GET /api/runs/{id}` (include
 /api/runs/{id}/approvals`, `POST /api/approvals/{id}`, `POST /api/runs/{id}/stop`,
 `GET /api/runs/{id}/report`, `GET /api/runs/{id}/traffic`, `GET
 /api/runs/{id}/inventory`, `POST /api/missions`, `GET /api/missions`,
-`GET /api/missions/{mission_id}`, `GET /api/llm/providers`, `GET /api/health`.
+`GET /api/missions/{mission_id}`, `GET /api/llm/providers`,
+`POST /api/llm/preflight`, `GET /api/llm/models`, `GET /api/health`.
 The dashboard's run-detail route is `/runs?id={run_id}`.
+
+Mission lifecycle honesty: the mission record finalizes on EVERY exit path —
+objective achieved, budget/round-limit exhaustion (mission `halted`, run
+`completed`/`halted`), coordination fault (mission `failed`, run `error`), and a
+server restart reconciles artifacts left dangling "running" by the dead process
+at the next startup. A specialist task succeeding is never reported as the
+mission succeeding; findings are only `confirmed` through the independent
+verification pipeline.
 
 ## Safety model: how "give it all of Kali" stays scoped
 

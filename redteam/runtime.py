@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
 import threading
 import time
 from dataclasses import asdict, dataclass, field
@@ -159,7 +160,15 @@ class RunManifest:
 
     def save(self, path: str | Path) -> None:
         self.updated = _dt.datetime.now(_dt.timezone.utc).isoformat()
-        Path(path).write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
+        # ATOMIC write (temp + os.replace): the manifest is saved by the run
+        # thread after every agent turn while the API/dashboard poll it
+        # concurrently — a plain write_text let a reader catch a torn/empty
+        # file (JSONDecodeError → the run detail endpoint reported a phantom
+        # state). Same discipline the mission commander uses for mission.json.
+        p = Path(path)
+        tmp = p.with_suffix(p.suffix + ".tmp")
+        tmp.write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
+        os.replace(tmp, p)
 
     @classmethod
     def load(cls, path: str | Path) -> "RunManifest | None":

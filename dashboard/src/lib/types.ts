@@ -222,6 +222,43 @@ export interface LaunchRequest {
   llm?: LlmOverride;
 }
 
+/** POST /api/llm/preflight — server-side launch preflight (agent server → LLM
+ *  endpoint only; never the client's target). */
+export interface LlmPreflightBody {
+  provider: string;
+  model?: string;
+  base_url?: string;
+  /** Held in memory for this single request; never echoed in the result. */
+  api_key?: string;
+}
+
+export interface LlmPreflightCheck {
+  check: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface LlmPreflightResult {
+  provider: string;
+  base_url: string;
+  model: string;
+  reachable: boolean;
+  model_found: boolean;
+  tool_call_ok: boolean;
+  args_parsed: boolean;
+  ok: boolean;
+  latency_ms: number;
+  error: string;
+  checks: LlmPreflightCheck[];
+}
+
+/** GET /api/llm/models — real model ids served by the endpoint. */
+export interface LlmModelsResponse {
+  provider: string;
+  base_url: string;
+  models: string[];
+}
+
 /** POST /api/missions — adaptive mission launch (MissionBody server-side). */
 export interface MissionLaunchRequest {
   engagement_path: string;

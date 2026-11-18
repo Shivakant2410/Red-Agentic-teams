@@ -39,6 +39,16 @@ export const api = {
     mission_id: "R1", run_id: "R1", run_ids: ["R1"], status: "running", driver: "mission", ...body,
   })),
   listMissions: vi.fn<AnyAsync>(async () => ({ missions: [] })),
+  preflightLlm: vi.fn<AnyAsync>(async () => ({
+    provider: "ollama", base_url: "http://127.0.0.1:11434/v1", model: "llama3.2",
+    reachable: true, model_found: true, tool_call_ok: true, args_parsed: true,
+    ok: true, latency_ms: 12, error: "",
+    checks: [{ check: "reachable", ok: true, detail: "1 model(s) listed" }],
+  })),
+  listLlmModels: vi.fn<AnyAsync>(async () => ({
+    provider: "ollama", base_url: "http://127.0.0.1:11434/v1",
+    models: ["llama3.2:latest", "qwen2.5:7b"],
+  })),
   getMission: vi.fn<AnyAsync>(async () => ({})),
   stopRun: vi.fn<AnyAsync>(async () => ({ ok: true })),
   pendingApprovals: vi.fn<AnyAsync>(async () => ({ pending: [] })),

@@ -8,6 +8,9 @@ import type {
   Health,
   LaunchRequest,
   LaunchResponse,
+  LlmModelsResponse,
+  LlmPreflightBody,
+  LlmPreflightResult,
   MissionDetail,
   MissionLaunchRequest,
   MissionLaunchResponse,
@@ -101,6 +104,24 @@ export const api = {
    *  honest unavailable state, never fabricated task states. */
   getMission: (missionId: string) =>
     request<MissionDetail>(`/api/missions/${encodeURIComponent(missionId)}`),
+
+  /** Launch preflight for the selected provider/model (server → LLM endpoint
+   *  only: reachability, model presence, tool-call capability with a harmless
+   *  synthetic call). The api_key, when supplied, is held in memory for this
+   *  single request and never echoed back in the result. */
+  preflightLlm: (body: LlmPreflightBody) =>
+    request<LlmPreflightResult>("/api/llm/preflight", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  /** Model discovery where the endpoint serves a catalog (Ollama, vLLM, ...).
+   *  502 = endpoint unreachable from the AGENT SERVER — shown as such. */
+  listLlmModels: (provider: string, baseUrl = "") =>
+    request<LlmModelsResponse>(
+      `/api/llm/models?provider=${encodeURIComponent(provider)}` +
+      (baseUrl ? `&base_url=${encodeURIComponent(baseUrl)}` : ""),
+    ),
 
   stopRun: (runId: string) =>
     request<{ ok: boolean }>(`/api/runs/${encodeURIComponent(runId)}/stop`, {

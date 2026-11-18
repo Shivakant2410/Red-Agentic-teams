@@ -79,7 +79,8 @@ class RedTeamAgent:
     def __init__(self, engagement: Engagement, tools: dict[str, Tool], ctx: ToolContext,
                  client: OpenRouterClient, max_steps: int = 40, graph=None, attack_tree=None,
                  memory=None, system_addon: str = "", role: str = PLAN, agent_name: str = "single",
-                 terminal_on_budget_end: bool = False):
+                 terminal_on_budget_end: bool = False,
+                 terminal_manifest_writes: bool = True):
         self._eng = engagement
         self._tools = tools
         self._ctx = ctx
@@ -97,6 +98,14 @@ class RedTeamAgent:
         # run-terminal and must be reported honestly as "halted", not a green
         # "completed" an operator would read as success.
         self._terminal_on_budget_end = terminal_on_budget_end
+        # Who owns the RUN-level manifest status. In mission mode several specialist
+        # agents share the run's ONE manifest; a specialist finishing its loop is a
+        # TASK ending, not the run ending — a specialist writing "completed"/"halted"
+        # here made a still-running mission flap to completed in the API (live-fire
+        # 20261118: a mission reported completed mid-flight because its recon task's
+        # loop ended). With terminal_manifest_writes=False the agent may only update
+        # steps/tokens/findings; status and halt_reason belong to the mission driver.
+        self._terminal_manifest_writes = terminal_manifest_writes
         self._budget = None      # optional BudgetTracker
         self._manifest = None    # optional (RunManifest, path) tuple
 
@@ -414,6 +423,14 @@ class RedTeamAgent:
     def _update_manifest(self, **fields) -> None:
         if self._manifest is None:
             return
+        if not self._terminal_manifest_writes:
+            # A specialist sharing the run's manifest (mission mode) must not write
+            # run-terminal state: its loop ending is a TASK ending. Only the mission
+            # driver writes status/halt_reason; progress counters still update.
+            fields.pop("status", None)
+            fields.pop("halt_reason", None)
+            if not fields:
+                return
         manifest, path = self._manifest
         with _manifest_lock:
             for k, v in fields.items():

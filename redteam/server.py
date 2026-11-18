@@ -49,6 +49,87 @@ def _now() -> str:
     return _dt.datetime.now(_dt.timezone.utc).isoformat()
 
 
+def _finalize_mission_record(run_dir: Path, status: str, reason: str) -> bool:
+    """Mark a mission snapshot terminal if it still reads "running".
+
+    Handles both record shapes (the {mission: {...}, tasks: [...]} snapshot and
+    the legacy flat record). Best-effort: the mission journal stays the durable
+    authority, so a failed write here must never crash the caller. Returns True
+    when the record was actually updated."""
+    path = run_dir / "mission.json"
+    try:
+        rec = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(rec, dict):
+        return False
+    inner = rec.get("mission") if isinstance(rec.get("mission"), dict) else rec
+    if not isinstance(inner, dict) or str(inner.get("status", "")) != "running":
+        return False
+    inner["status"] = status
+    inner["halt_reason"] = reason
+    inner["updated"] = _now()
+    # ATOMIC: the API polls this file while run threads mutate it.
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        tmp.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+        return True
+    except OSError:
+        return False
+
+
+def _reconcile_interrupted_runs(runs_root: Path) -> int:
+    """Finalize artifacts left "running" by a dead process (server restart,
+    crash, or kill -9). Runs execute as threads of THIS process, so at startup
+    every manifest that still says "running" belongs to a run that can never
+    finish; mission snapshots dangle the same way. Returns the number of run
+    directories reconciled.
+
+    Without this, a restart leaves zombie runs the dashboard polls forever
+    (live-fire 20261118: a killed server left manifest.json and mission.json
+    both "running" with no run.finish event)."""
+    if not runs_root.is_dir():
+        return 0
+    touched = 0
+    for run_dir in sorted(runs_root.iterdir()):
+        if not run_dir.is_dir():
+            continue
+        mpath = run_dir / "manifest.json"
+        run_status = ""
+        try:
+            manifest = RunManifest.load(mpath)
+        except Exception:
+            manifest = None
+        if manifest is not None:
+            run_status = manifest.status
+            if run_status == "running":
+                manifest.status = "error"
+                manifest.halt_reason = "server_restarted: run interrupted before completion"
+                try:
+                    manifest.save(mpath)
+                    run_status = "error"
+                except OSError:
+                    pass
+        if (run_dir / "mission.json").exists():
+            if run_status == "error":
+                finalized = _finalize_mission_record(
+                    run_dir, "failed",
+                    "server_restarted: mission interrupted before completion")
+            elif run_status in ("completed", "halted"):
+                # The run ended but the mission driver never finalized (pre-fix
+                # artifacts, or a crash inside finalization itself).
+                finalized = _finalize_mission_record(
+                    run_dir, "failed", "run ended without mission finalization")
+            else:
+                finalized = False
+            if finalized:
+                touched += 1
+        if run_status == "error":
+            touched += 1
+    return touched
+
+
 # Operator-selectable LLM providers for the dashboard's launch form. Mirrors the
 # kind shortcuts in redteam/llm/providers.py ProviderConfig.resolved(); the value
 # is the env var the engine reads the API key from ("" = no key needed). A kind
@@ -66,16 +147,28 @@ LLM_PROVIDER_SHORTCUTS: dict[str, str] = {
 
 
 class LlmOverride(BaseModel):
-    """The operator's model choice for this run (dashboard selector → launch body).
+    """The operator's model choice for this launch (dashboard selector → launch body).
 
-    The API key is only placed in the server process env under the provider's
-    standard key env var — it is never written to disk, logged, or echoed back."""
+    The API key, when supplied, stays in memory as RUN-SCOPED credentials carried
+    on this run's RunOptions into provider construction — never written to disk,
+    the process env, logs, or echoed back. Concurrent runs each carry their own."""
     provider: str = Field(min_length=1, max_length=40)
     # Empty = let the provider's natural rotation pick; a value pins the fleet to
     # exactly this model id via llm.providers[].models_allow.
     model: str = Field(default="", max_length=160)
     api_key: str = Field(default="", max_length=4096)
     base_url: str = Field(default="", max_length=300)
+
+
+class PreflightBody(BaseModel):
+    """POST /api/llm/preflight — server-side launch preflight: verify the agent
+    server can reach the endpoint, the model exists, and it can emit a parseable
+    tool call, using a harmless synthetic request. The only traffic is agent
+    server → LLM endpoint; this never touches any engagement target."""
+    provider: str = Field(min_length=1, max_length=40)
+    model: str = Field(default="", max_length=200)
+    base_url: str = Field(default="", max_length=300)
+    api_key: str = Field(default="", max_length=4096)
 
 
 # Request models live at module level: with `from __future__ import annotations`,
@@ -177,6 +270,13 @@ class RunRegistry:
                 manifest.status = "error"
                 manifest.halt_reason = f"{type(exc).__name__}: {exc}"
                 manifest.save(out_dir / "manifest.json")
+                # The mission driver normally finalizes its own snapshot (the
+                # driver is exception-safe); this is defense in depth for a
+                # crash BEFORE the driver's try (e.g. building the mission
+                # record) or inside finalization itself.
+                if opts.driver == "mission":
+                    _finalize_mission_record(out_dir, "failed",
+                                             f"mission_aborted: {type(exc).__name__}")
                 bus = self.pop_bus(run_id)
                 if bus is not None:
                     try:
@@ -253,6 +353,10 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
     lesson — the operator error must be a 400 at launch, not a compromised run)."""
     runs_root = runs_root.resolve()
     runs_root.mkdir(parents=True, exist_ok=True)
+    reconciled = _reconcile_interrupted_runs(runs_root)
+    if reconciled:
+        print(f"[server] reconciled {reconciled} run dir(s) left dangling by a "
+              f"previous process (manifest/snapshot marked terminal)", flush=True)
     registry = RunRegistry(runs_root)
     app = FastAPI(title="red-team control plane", version=VERSION, docs_url=None, redoc_url=None)
     app.add_middleware(
@@ -378,6 +482,39 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
              "key_set": (bool(os.environ.get(env)) if env else True)}
             for kind, env in LLM_PROVIDER_SHORTCUTS.items()
         ]}
+
+    @app.post("/api/llm/preflight")
+    def llm_preflight(body: PreflightBody) -> dict:
+        from .llm.preflight import run_preflight
+        # The key lives only in this call's memory (same contract as launch):
+        # passed straight into the provider session header, never logged,
+        # persisted, or echoed — the result dict carries no credentials.
+        result = run_preflight(body.provider, model=body.model.strip(),
+                               base_url=body.base_url.strip(),
+                               api_key=body.api_key or None)
+        return result.as_dict()
+
+    @app.get("/api/llm/models")
+    def list_llm_models(provider: str = "", base_url: str = "") -> dict:
+        """Model discovery where the endpoint serves a catalog (Ollama, vLLM,
+        OpenRouter, ... do; keyless — the same reachability the preflight
+        checks). Feeds the launch form's model suggestions with REAL ids."""
+        from .llm.providers import ProviderConfig
+        kind = (provider or "").strip().lower()
+        if not kind:
+            raise HTTPException(400, "provider is required")
+        cfg = ProviderConfig(kind=kind, base_url=(base_url or "").strip()).resolved()
+        import requests as _rq
+        try:
+            resp = _rq.get(f"{cfg.base_url}/models", timeout=5)
+            resp.raise_for_status()
+            models = sorted({m.get("id", "") for m in (resp.json().get("data") or [])
+                             if isinstance(m, dict) and m.get("id")})
+        except (_rq.RequestException, ValueError) as exc:
+            raise HTTPException(502, f"model discovery failed for {kind}: "
+                                     f"{type(exc).__name__} — the endpoint may be "
+                                     f"down or unreachable from the agent server")
+        return {"provider": kind, "base_url": cfg.base_url, "models": models}
 
     @app.get("/api/runs")
     def list_runs() -> dict:
