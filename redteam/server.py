@@ -324,14 +324,18 @@ class RunRegistry:
                     or RunManifest(objective=opts.objective, engagement="")
                 manifest.status = "error"
                 manifest.halt_reason = f"{type(exc).__name__}: {exc}"
-                manifest.save(out_dir / "manifest.json")
                 # The mission driver normally finalizes its own snapshot (the
                 # driver is exception-safe); this is defense in depth for a
                 # crash BEFORE the driver's try (e.g. building the mission
-                # record) or inside finalization itself.
+                # record) or inside finalization itself. Snapshot first, THEN
+                # the manifest: pollers (dashboard, tests) leave their poll
+                # loop the moment the manifest stops reading "running", so a
+                # manifest already saved "error" with the snapshot still
+                # "running" is a race the slow CI scheduler loses.
                 if opts.driver == "mission":
                     _finalize_mission_record(out_dir, "failed",
                                              f"mission_aborted: {type(exc).__name__}")
+                manifest.save(out_dir / "manifest.json")
                 bus = self.pop_bus(run_id)
                 if bus is not None:
                     try:
