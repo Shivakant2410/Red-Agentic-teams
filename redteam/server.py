@@ -22,11 +22,13 @@ import argparse
 import asyncio
 import datetime as _dt
 import json
+import os
 import re
 import threading
 import time
 from pathlib import Path
 
+import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
@@ -47,6 +49,35 @@ def _now() -> str:
     return _dt.datetime.now(_dt.timezone.utc).isoformat()
 
 
+# Operator-selectable LLM providers for the dashboard's launch form. Mirrors the
+# kind shortcuts in redteam/llm/providers.py ProviderConfig.resolved(); the value
+# is the env var the engine reads the API key from ("" = no key needed). A kind
+# outside this table is still accepted when the operator supplies base_url —
+# that is the openai_compat escape hatch (vLLM, LM Studio, a private proxy, ...).
+LLM_PROVIDER_SHORTCUTS: dict[str, str] = {
+    "openai": "OPENAI_API_KEY",
+    "zai": "ZAI_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "ollama": "",
+}
+
+
+class LlmOverride(BaseModel):
+    """The operator's model choice for this run (dashboard selector → launch body).
+
+    The API key is only placed in the server process env under the provider's
+    standard key env var — it is never written to disk, logged, or echoed back."""
+    provider: str = Field(min_length=1, max_length=40)
+    # Empty = let the provider's natural rotation pick; a value pins the fleet to
+    # exactly this model id via llm.providers[].models_allow.
+    model: str = Field(default="", max_length=160)
+    api_key: str = Field(default="", max_length=4096)
+    base_url: str = Field(default="", max_length=300)
+
+
 # Request models live at module level: with `from __future__ import annotations`,
 # FastAPI resolves parameter annotations by name, so a closure-local class would
 # break schema generation (unresolvable ForwardRef).
@@ -62,6 +93,9 @@ class LaunchBody(BaseModel):
     # ARTEX-port: optional operator-supplied asset feed (CSV/JSON/JSONL) seeded into
     # the run's asset inventory after a FAIL-CLOSED intersection with the RoE.
     asset_feed: str = ""
+    # Optional model/provider selection from the dashboard (None = use whatever
+    # the engagement file itself configures).
+    llm: LlmOverride | None = None
 
 
 class MissionBody(BaseModel):
@@ -154,6 +188,25 @@ class RunRegistry:
 
         t = threading.Thread(target=target, name=f"run-{run_id}", daemon=True)
         t.start()
+
+
+def _write_effective_engagement(src_path: str, out_dir: Path, llm: LlmOverride) -> str:
+    """Copy the engagement YAML into the run dir with the llm block replaced by
+    the operator's selection. The run then launches against that copy, so every
+    artifact the run produces records the exact model config it ran with —
+    and the original engagement file is never modified in place."""
+    data = yaml.safe_load(Path(src_path).read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise HTTPException(400, "engagement is not a YAML mapping")
+    entry: dict = {"kind": llm.provider.strip().lower()}
+    if llm.base_url:
+        entry["base_url"] = llm.base_url
+    if llm.model:
+        entry["models_allow"] = [llm.model]
+    data["llm"] = {"providers": [entry]}
+    dest = out_dir / "engagement.yaml"
+    dest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return str(dest)
 
 
 def create_app(runs_root: Path, dashboard_dir: Path | None = None,
@@ -250,6 +303,23 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         run_id = registry.new_run_id(body.objective)
         out_dir = runs_root / run_id
         out_dir.mkdir(parents=True, exist_ok=True)
+
+        launch_path = body.engagement_path
+        if body.llm is not None:
+            kind = body.llm.provider.strip().lower()
+            if kind not in LLM_PROVIDER_SHORTCUTS and not body.llm.base_url:
+                # Without a base_url the engine has no endpoint to connect to —
+                # a client mistake must be a 400 at launch, never a dead run.
+                raise HTTPException(
+                    400,
+                    f"unknown llm provider '{kind}' — choose one of "
+                    f"{sorted(LLM_PROVIDER_SHORTCUTS)} or pass base_url")
+            key_env = LLM_PROVIDER_SHORTCUTS.get(kind, "")
+            if body.llm.api_key and key_env:
+                os.environ[key_env] = body.llm.api_key
+            launch_path = _write_effective_engagement(
+                body.engagement_path, out_dir, body.llm)
+
         RunManifest(objective=body.objective, engagement=engagement.name).save(
             out_dir / "manifest.json")
 
@@ -257,8 +327,13 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         from .run import HeadlessApprover
         bus = EventBus(run_id=run_id, sink_path=out_dir / "events.jsonl")
         registry.register_bus(run_id, bus)
+        if body.llm is not None:
+            # Surface the operator's selection in the event feed; EventRow renders
+            # unknown types defensively, so this is safe for older dashboards too.
+            bus.emit("llm.selected", provider=body.llm.provider.strip().lower(),
+                     model=body.llm.model, base_url=body.llm.base_url)
 
-        opts = launch_form(body.engagement_path, body.objective, body.multi_agent,
+        opts = launch_form(launch_path, body.objective, body.multi_agent,
                            body.max_steps, body.source_dir, body.yes_to_all,
                            body.asset_feed)
         opts.out_dir = out_dir
@@ -267,6 +342,17 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
 
         registry.launch(run_id, out_dir, opts)
         return {"run_id": run_id, "out_dir": str(out_dir), "status": "running"}
+
+    @app.get("/api/llm/providers")
+    def list_llm_providers() -> dict:
+        """Provider catalog for the dashboard selector: which kinds the engine
+        supports and whether the standard key env var is already set in the
+        server process. Reports key presence only — never the key itself."""
+        return {"providers": [
+            {"kind": kind, "api_key_env": env,
+             "key_set": (bool(os.environ.get(env)) if env else True)}
+            for kind, env in LLM_PROVIDER_SHORTCUTS.items()
+        ]}
 
     @app.get("/api/runs")
     def list_runs() -> dict:

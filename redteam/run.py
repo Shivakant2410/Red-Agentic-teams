@@ -39,7 +39,7 @@ from .audit import AuditLog
 from .config import load_engagement
 from .events import EventBus, safe_emit
 from .findings import FindingStore
-from .llm.gateway import build_llm_client
+from .llm.gateway import UnconfiguredClient, build_llm_client
 from .ratelimit import RateLimiter
 from .report import build_html_report, build_report
 from .scope import ScopeGuard
@@ -384,7 +384,15 @@ def execute_run(opts: RunOptions) -> dict:
                   imported=feed_stats["imported"], dropped=feed_stats["dropped"],
                   source="asset_feed")
 
-    client = build_llm_client(engagement.llm, audit=audit)
+    try:
+        client = build_llm_client(engagement.llm, audit=audit)
+    except Exception as exc:  # noqa: BLE001 — no usable fleet is a run-shape, not a crash
+        # Gen-1 path without a key (RuntimeError) or every provider excluded at
+        # build time (NoModelsAvailable): degrade to the engine's designed
+        # "no models" path — deterministic recon runs, tasks fail honestly with
+        # agent.no_models, the stop reason records why. Mirrors make_chat_fn's
+        # contract in llm/planner.py.
+        client = UnconfiguredClient(str(exc))
 
     approver = opts.approve if opts.approve is not None else interactive_approver(opts.yes_to_all)
 

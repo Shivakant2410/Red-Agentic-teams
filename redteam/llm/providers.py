@@ -57,8 +57,8 @@ class ProviderError(Exception):
 class ProviderConfig:
     """One backend in the fleet. `kind` accepts a convenience shortcut or 'openai_compat'.
 
-    Shortcuts: openrouter | openai | zai | ollama | groq | anthropic — each pre-fills
-    base_url/api_key_env so a minimal YAML entry is `[{kind: anthropic}]`."""
+    Shortcuts: openrouter | openai | zai | gemini | ollama | groq | anthropic — each
+    pre-fills base_url/api_key_env so a minimal YAML entry is `[{kind: anthropic}]`."""
 
     name: str = ""
     kind: str = "openai_compat"
@@ -79,6 +79,10 @@ class ProviderConfig:
             "openrouter": ("openrouter", "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY", 100),
             "openai": ("openai", "https://api.openai.com/v1", "OPENAI_API_KEY", 60),
             "zai": ("zai", "https://api.z.ai/api/paas/v4", "ZAI_API_KEY", 70),
+            # Gemini ships an OpenAI-compatible endpoint over its generative
+            # language API, so the same OpenAICompatProvider handles it.
+            "gemini": ("gemini", "https://generativelanguage.googleapis.com/v1beta/openai",
+                       "GEMINI_API_KEY", 90),
             "ollama": ("ollama", "http://127.0.0.1:11434/v1", "", 200),
             "groq": ("groq", "https://api.groq.com/openai/v1", "GROQ_API_KEY", 80),
             "anthropic": ("anthropic", "https://api.anthropic.com/v1", "ANTHROPIC_API_KEY", 50),
