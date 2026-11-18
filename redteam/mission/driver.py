@@ -193,6 +193,7 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
     logic_task_created = False
     verified_pending_ids: set[str] = set()
     unresolved_verification = False
+    no_models_streak = 0
     stop_reason = ""
 
     def create_task(spec: dict):
@@ -375,6 +376,19 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                         # node is not repeated within this mission execution.
                         actions = scheduler.reconcile(now=clock())
                         scheduler.apply_reconcile(actions)
+                        # Reliability (live-fire 20261118 campaign matrix): a
+                        # specialist that dies on `agent.no_models` means the
+                        # configured provider is unavailable — grinding the rest
+                        # of the frontier through it only burns the engagement
+                        # window and the provider quota. Halt honestly after two
+                        # consecutive provider-dead failures instead of
+                        # advancing a static task list through an outage.
+                        if "no_models" in str(getattr(task, "error", "") or ""):
+                            no_models_streak += 1
+                            if no_models_streak >= 2:
+                                raise Halt("provider_unavailable")
+                        else:
+                            no_models_streak = 0
                 else:
                     # Explicit operator plans preserve their dependency-round behavior,
                     # but still use the same post-VERIFY reconciliation authority.
