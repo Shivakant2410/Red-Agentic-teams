@@ -32,7 +32,12 @@ class RecordFindingTool:
                     "evidence": {"type": "string", "description": "Request/response snippet or observation."},
                     "recommendation": {"type": "string"},
                     "cwe": {"type": "string", "description": "Optional, e.g. CWE-89."},
-                    "confidence": {"type": "string", "enum": ["tentative", "firm", "confirmed"]},
+                    "confidence": {"type": "string",
+                                   "enum": ["tentative", "firm"],
+                                   "description": "Only the independent verifier (k-of-n "
+                                                  "differential with negative control) may "
+                                                  "confirm; specialists record tentative or "
+                                                  "firm evidence."},
                 },
                 "required": ["title", "severity", "target", "summary", "evidence"],
             },
@@ -42,6 +47,17 @@ class RecordFindingTool:
     def run(self, ctx: ToolContext, title: str, severity: str, target: str, summary: str,
             evidence: str, recommendation: str = "", cwe: str = "",
             confidence: str = "tentative") -> str:
+        # FindingStore authority (live-fire 20261118): a specialist asserting
+        # "confirmed" must never reach the store as confirmed — confirmation is
+        # owned exclusively by the independent verifier (FindingStore.promote /
+        # verify_finding_independently). Anything else is downgraded to firm
+        # and the attempt is audited so self-confirmation attempts stay visible.
+        if confidence not in ("tentative", "firm"):
+            ctx.audit.record("finding.self_confirm_downgraded", requested=confidence,
+                             title=title, target=target)
+            safe_emit(getattr(ctx, "events", None), "finding.self_confirm_downgraded",
+                      requested=confidence, title=title, target=target)
+            confidence = "firm"
         finding = ctx.findings.add(Finding(
             title=title, severity=severity, target=target, summary=summary,
             evidence=evidence, recommendation=recommendation, cwe=cwe, confidence=confidence,
