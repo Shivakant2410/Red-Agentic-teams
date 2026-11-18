@@ -9,170 +9,93 @@ Instead of a handful of narrow tools, the agent gets two full execution surfaces
   DOM and JavaScript.
 
 Model backends: **OpenRouter** (free-pool rotation, the zero-config default) or the
-**Gen-2 multi-provider gateway** (OpenAI, Anthropic, Z.ai, Groq, Ollama, vLLM — role-routed
-with cross-provider failover). Runs are observable in real time from the bundled
-**mission-control dashboard** (see Gen-2 below).
+multi-provider gateway (**OpenAI, Anthropic, Z.ai, Gemini, Groq, Ollama, vLLM** —
+role-routed with cross-provider failover). Runs are observable in real time from the
+bundled **mission-control dashboard**.
 
 > **Authorized use only.** Run this only against systems you own or have **written
 > permission** to test (a signed SOW/engagement, or a bug-bounty program within its
 > published scope), or an isolated lab. The engagement file is your authorization
 > boundary.
 
-## How "give it all of Kali" stays safe
+## Prerequisites
 
-When the agent can run arbitrary tools, you can't enforce scope by inspecting commands.
-So scope is enforced at the **network layer**:
+| Requirement | Why |
+| --- | --- |
+| Python ≥ 3.10 | the engine (`pip install -e ".[dev]"`) |
+| Docker, running | the Kali sandbox container (skip if you use `--no-sandbox`) |
+| Node.js ≥ 18 | only for building the dashboard UI |
+| One LLM API key | `OPENROUTER_API_KEY` by default; see [Models & providers](#models--providers) |
 
-- **Sandbox egress firewall** — the Kali container runs `default-DROP` on OUTPUT. Only
-  IPs/CIDRs derived from the RoE (`redteam/sandbox/egress.py`) are reachable; the
-  entrypoint installs the rules before any tool runs and the container **refuses to
-  start** if it can't (fail closed). Off-scope hosts are simply unreachable. On top of
-  that, `KaliSandbox.start()` runs an **egress self-test**: it probes a destination that
-  should never be in scope (TEST-NET-1) and tears the sandbox down if that probe
-  succeeds, rather than trusting the entrypoint's "ready" log line alone — a log line
-  only proves the script ran, not that the firewall rules actually took effect.
-- **No self-unlocking** — tools run as a non-root user, the container drops all
-  capabilities except `NET_ADMIN`/`NET_RAW`, sets `no-new-privileges`, and `kali_exec`
-  refuses commands that touch iptables/ipset/routing/`sudo`/namespaces.
-- **Browser scope interception** — every request the browser makes (page + every
-  subresource) is checked against the scope guard; out-of-scope requests are aborted.
-- **Approval gates** — destructive/DoS-shaped commands require an interactive human "yes".
-- **Rate limit + request budget**, **append-only JSONL audit log**, and an
-  **engagement window** the agent won't run outside of.
-
-## Layout
-
-```text
-redteam/
-  config.py          RoE + LLM config (OpenRouter default / multi-provider gateway) + sandbox
-  scope.py           ScopeGuard — SSRF-aware target boundary
-  ratelimit.py       Token-bucket limiter + request budget
-  audit.py           Append-only JSONL audit log
-  findings.py        Finding model + JSON store
-  report.py          Markdown + HTML report
-  agent.py           OpenAI-style tool-use loop (owned explicitly)
-  orchestrator.py    Multi-agent swarm: recon -> exploit -> verify -> access -> logic
-  run.py             execute_run() — the ONE run assembly line shared by CLI and API
-  cli.py             Terminal entrypoint: preflight, console output, interactive approvals
-  server.py          Headless control plane (FastAPI): runs lifecycle, SSE, approvals,
-                     static dashboard hosting
-  events.py          EventBus + JSONL sink: the live telemetry the dashboard consumes
-  traffic.py         TrafficRecorder — per-run wire evidence (traffic.jsonl), credential
-                     headers masked both ways, bodies truncatable/droppable
-  inventory.py       AssetInventory — attack-surface map (host -> port -> service/
-                     banner/title), built passively from every response + surface_scan
-  importers/assets.py  ScopeSentry-style asset-feed sync (CSV/JSON/JSONL) — FAIL-CLOSED:
-                     feed entries outside the RoE are dropped; the feed can never widen scope
-  reflection.py      LLM strategist self-critique between orchestrator rounds (re-rank only)
-  llm/openrouter.py  Free-model discovery + rotation/fallback (default backend)
-  llm/providers.py   OpenAI-compatible + Anthropic providers (Gen-2)
-  llm/gateway.py     Multi-provider role-routed gateway with cross-provider failover
-  memory.py          ExperienceStore — persistent cross-run tradecraft lessons
-  memory_backend/    Semantic recall backends: local_semantic.py (zero dependencies,
-                      JSON + on-device/hashing embeddings) and HelixDB (Docker, opt-in)
-  sandbox/           Kali container: egress firewall, self-test, lifecycle
-  tools/             kali_exec, browser_*, record_finding, request_approval,
-                     verify_vulnerability, verify_finding_independently, jwt_inspect,
-                     nuclei_scan (leads only), content_discovery / crawl /
-                     param_discovery (W1 lead generators), host_probe / port_scan
-                     (W1b deep probes: httpx + nmap, RoE-fenced), xss_reflect_probe /
-                     graphql_inspect (W2 inspectors — reflection mapping and GraphQL
-                     checklists that emit READY check_specs for verify_vulnerability),
-                     find_techniques (offline playbook library in data/playbooks/),
-                     crosscheck_lead (never believe a tool's direct output — every lead
-                     re-verified by a second method),
-                     template/skill tools, postex, ... — the capability ladder lives in
-                     docs/tool-integration-plan.md, the phase inventory in
-                     docs/tool-inventory.md
-dashboard/           Next.js mission-control UI (static export, served by server.py)
-states.py            Lifecycle registry — every state machine (run, approval, finding
-                     confidence, attack-tree node, kill-chain stage, hypothesis) in one
-                     place: vocabulary, transition tables, writer matrix. Introspect via
-                     `python -m redteam.states --json` or GET /api/state-machines;
-                     rationale + inventory in docs/state-machines.md
-hands.py             Agent hands and skills — every agent's tool set is a stated
-                     capability surface (purpose/cost/trust/obligation per hand,
-                     trust classes locked to the crosscheck matrix) plus declared
-                     skills (entry -> steps -> exit -> proof). Introspect via
-                     `python -m redteam.hands --json`; rendering in
-                     docs/hands-and-skills.md; operator tooling research in
-                     docs/operator-tooling-research.md
-offensive.py         Deterministic offensive engine — declared skills executed as
-                     code through the scoped ToolContext (recon -> crosschecked
-                     leads -> prove with negative control -> verify pass), no model
-                     calls; live-fire: `python3 scripts/live_offensive_run.py`
-                     (engine vs the lab targets, scored against ground truth)
-synthesis.py         Evidence-join layer (docs/synthesis.md): deterministic rules turn
-                     run observations (params, identities, findings) into evidence-
-                     carrying attack ideas with draft checks, injected into the swarm's
-                     claim->worker handoff. Never selects, never proves; no tool
-config/engagement.example.yaml
-GEN2-ARCHITECTURE.md Gen-2 design doc — how the pieces fit and which invariants hold
-ROADMAP.md           Gap analysis vs CAI / PentestGPT / Nebula + the path forward
-tests/
-```
-
-## Setup
+## Quickstart (CLI)
 
 ```bash
-pip install -e .                        # requests, pyyaml, playwright
+pip install -e ".[dev]"                 # engine + server deps + test deps
 python -m playwright install chromium   # one-time, for the browser tools
 export OPENROUTER_API_KEY=sk-or-...      # your OpenRouter key
-cp config/engagement.example.yaml config/engagement.yaml   # edit to your signed scope
-# Docker must be installed and running for the Kali sandbox.
-```
 
-## Run
+cp config/engagement.example.yaml config/engagement.yaml
+# edit it to your signed scope: name, window (starts/ends), allowed hosts/ports
 
-```bash
 python -m redteam.cli \
   --engagement config/engagement.yaml \
   --objective "Map the API surface and test authentication and access controls" \
   --out runs/acme-2026-09-26
 ```
 
-First run builds the Kali image (large, one-time). You confirm scope at the preflight
-prompt and approve sensitive actions as they come up. Outputs land in `--out`:
-`report.md`, `findings.json`, `audit.log.jsonl`, `screenshots/`.
+The first run builds the Kali image (large, one-time). You confirm scope at the preflight
+prompt and approve sensitive actions as they come up. Every flag:
 
-Flags: `--no-sandbox`, `--no-browser`, `--yes-to-all` (isolated labs only), `--multi-agent`
-(orchestrator + specialist swarm), `--semantic-memory` (local, zero-dependency semantic
-recall), `--helix-memory` (HelixDB backend, needs Docker), `--events` (write the live
-event stream to the run directory).
+`--multi-agent` (orchestrator + specialist swarm), `--max-steps N`, `--source-dir DIR`
+(local source tree for whitebox runs), `--asset-feed feeds.csv` (seed the asset
+inventory), `--semantic-memory` / `--helix-memory` (cross-run recall), `--events`,
+`--no-traffic-bodies`, and — isolated labs only — `--no-sandbox`, `--no-browser`,
+`--yes-to-all`.
 
-## Gen-2: dashboard + headless control plane
+For a target to practice against, the repo ships isolated lab apps in `lab/` (deliberately
+vulnerable, bound to 127.0.0.1); `scripts/run_live_mission.py` boots one end to end.
 
-The CLI and the API drive the **same** `execute_run()`. To run with the live dashboard:
+## Running with the dashboard (recommended)
+
+The CLI and the API drive the **same** `execute_run()`. To run from the browser:
 
 ```bash
-pip install "fastapi>=0.110" "uvicorn[standard]"   # server deps
 npm --prefix dashboard install && npm --prefix dashboard run build   # one-time UI build
 python -m redteam.server --runs-root runs --port 8000
 ```
 
 Then open `http://127.0.0.1:8000`:
 
-- **Launch runs** from the browser (engagement path, objective, swarm mode, budgets) —
-  the RoE is validated before anything starts.
+- **Launch runs** from the browser — engagement path, objective, swarm mode, budgets,
+  and the **model provider / model** for the run. The RoE is validated before anything
+  starts.
 - **Watch the attack live**: every agent turn, tool call/result, finding, phase change,
   model rotation, and reflection streams over SSE into the mission-control page.
 - **Approve sensitive actions** in one click (`request_approval` blocks the agent until
   you decide; a STOP kill file auto-denies and halts — fail closed).
-- **Stop runs, read reports**, and inspect the objective score, kill chain, attack tree,
-  and per-round strategist reflections.
+- **Stop runs and read reports**: objective score, kill chain, attack tree, per-round
+  strategist reflections, wire-level traffic, asset inventory.
 
-The API (same origin as the dashboard): `POST /api/runs`, `GET /api/runs`,
-`GET /api/runs/{id}`, `GET /api/runs/{id}/events`, `GET /api/runs/{id}/stream` (SSE),
-`POST /api/runs/{id}/stop`, `GET /api/runs/{id}/report`, `GET /api/runs/{id}/approvals`,
-`POST /api/approvals/{id}`, `GET /api/health`. Telemetry lives in each run directory as
-`events.jsonl` — replay, live-tail, and post-mortems all read the same bytes the engine
-wrote. See **GEN2-ARCHITECTURE.md** for the full contract and design rules.
+Server flags: `--host`, `--port`, `--runs-root` (default `./runs`), `--dashboard`
+(defaults to `<repo>/dashboard/out` when it exists — build the UI once and it is served
+automatically).
 
-### Multi-provider LLM gateway (optional)
+## Models & providers
 
-By default the agent uses OpenRouter's free pool exactly as before. To route roles
-across providers with automatic failover, add a `providers:` block to the engagement's
-`llm:` section:
+**Default:** OpenRouter's free pool with live discovery and rotation — zero config.
+
+**Per run, from the dashboard:** the launch form's MODEL PROVIDER section picks the
+backend (**OpenAI / Z.ai / Gemini / OpenRouter / Ollama / Groq / Anthropic** or *engine
+default*), the model (free text with per-provider presets — `glm-5.3`, `gpt-sol`,
+`gemini-argon`, …), an API key for the run, and an optional `base_url` override (vLLM /
+LM Studio / a private proxy). The key lives only in the provider's standard env var for
+that server process — never written to disk or logged. The selection is materialized as
+an effective `engagement.yaml` inside the run dir and surfaced as an `llm.selected`
+event, so every artifact records the exact model config the run used.
+`GET /api/llm/providers` lists the supported kinds and whether each key env var is set.
+
+**Per engagement, in YAML:** route roles across providers with failover by adding a
+`providers:` block to the engagement's `llm:` section:
 
 ```yaml
 llm:
@@ -188,142 +111,137 @@ llm:
   role_models: {plan: "openai:gpt-4.1", poc: "anthropic:claude-sonnet-4-5"}
 ```
 
-Candidates interleave round-robin by priority (A best, B best, A second, …); two
-consecutive 429s demote a pair to the back of the queue. With no `providers:` block,
-behavior is byte-identical to Gen-1.
+Candidates interleave round-robin by priority; two consecutive 429s demote a pair to the
+back of the queue. With no `providers:` block, behavior is byte-identical to the default.
 
-### Strategist reflection (multi-agent mode)
+| Kind | Base URL (default) | Key env var |
+| --- | --- | --- |
+| `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
+| `openai` | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
+| `zai` | `https://api.z.ai/api/paas/v4` | `ZAI_API_KEY` |
+| `gemini` | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` |
+| `anthropic` | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` |
+| `groq` | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` |
+| `ollama` | `http://127.0.0.1:11434/v1` | — (local, no key) |
 
-After every orchestrator round, a strong-role LLM receives a deterministic digest of
-the run (objective progress, findings, tree state, failure signals) and returns a
-JSON critique. It may only **re-rank existing attack-tree techniques** (+25/-25) — it
-cannot create targets, authorize gated actions, or override the proof pipeline. Any
-failure skips reflection silently; the deterministic plan always stands.
+Any OpenAI-compatible endpoint (vLLM, LM Studio, a proxy) works via a custom
+`base_url`.
 
-## Attack-surface evidence (ARTEX-inspired)
+## HTTP API
 
-Three capabilities ported from ARTEX (mhtsec/ARTEX — an autonomous pentesting platform;
-note it was recently abused in the wild, which is exactly why our ports keep the
-authorization-first discipline):
-
-- **Traffic recording** (`traffic.py`) — every in-scope exchange on the shared fetch
-  path (probes, proofs, verify passes, surface sweeps) lands in `traffic.jsonl` as
-  wire evidence: method, URL, status, timing, headers both ways. Credential-adjacent
-  headers (Authorization, Cookie, Set-Cookie, API keys) are masked in BOTH directions;
-  bodies are truncated (16 KB) and can be dropped entirely with `--no-traffic-bodies`.
-  Scope-denied attempts are recorded too — the log shows the boundary holding.
-  Served at `GET /api/runs/{id}/traffic?after=<seq>` with the same cursor contract
-  as the event stream.
-- **Asset inventory** (`inventory.py` + `surface_scan`) — a per-run map of which
-  in-scope hosts answered, on which ports, with which server banner, page title, and
-  auth challenge. It builds itself passively from every response, and the RECON
-  specialist's `surface_scan` tool fills it actively by knocking once on every
-  host:port the RoE already allows (never widens scope, never records findings,
-  stops honestly at budget exhaustion). Served at `GET /api/runs/{id}/inventory`.
-- **Asset-feed sync** (`importers/assets.py`) — `--asset-feed feeds.csv` (or JSON /
-  JSONL, ScopeSentry-style columns `host|domain|ip, port, scheme, service`) seeds the
-  inventory before the run starts. It is an INTERSECTION, not a merge: each record is
-  re-checked against the RoE by the ScopeGuard itself, out-of-scope entries are
-  dropped and counted with samples, and `scope.check()` still refuses them afterwards.
-  The server validates the feed at launch (400 on unreadable files).
+Everything the dashboard does is plain HTTP (same origin):
 
 ```bash
-# operator view of what the team actually put on the wire
-curl -s localhost:8000/api/runs/<id>/traffic | jq '.traffic[-1]'
-curl -s localhost:8000/api/runs/<id>/inventory | jq '.summary'
+# launch with an explicit provider/model choice
+curl -X POST localhost:8000/api/runs -H 'content-type: application/json' -d '{
+  "engagement_path": "/abs/path/to/engagement",
+  "objective": "Map the API surface and test authentication",
+  "multi_agent": true, "max_steps": 40,
+  "llm": {"provider": "zai", "model": "glm-5.3", "api_key": "..."}
+}'
+
+curl -s localhost:8000/api/runs | jq '.runs[0]'
+curl -s localhost:8000/api/llm/providers | jq
+curl -s localhost:8000/api/runs/<id>/events | jq '.events[-1]'
+curl -s localhost:8000/api/runs/<id>/traffic  | jq '.traffic[-1]'   # wire evidence
+curl -s localhost:8000/api/runs/<id>/inventory | jq '.summary'      # attack surface
 ```
 
-## Semantic memory (optional)
+Full lifecycle: `POST /api/runs`, `GET /api/runs`, `GET /api/runs/{id}`,
+`GET /api/runs/{id}/events`, `GET /api/runs/{id}/stream` (SSE), `GET
+/api/runs/{id}/approvals`, `POST /api/approvals/{id}`, `POST /api/runs/{id}/stop`,
+`GET /api/runs/{id}/report`, `GET /api/runs/{id}/traffic`, `GET
+/api/runs/{id}/inventory`, `GET /api/llm/providers`, `GET /api/health`.
 
-`memory.py`'s `ExperienceStore` persists cross-run tradecraft (which CWE classes proved
-out, which proof oracles work) as flat JSON by default, recalled by tag/keyword overlap.
-Two semantic backends upgrade recall from shared vocabulary to *meaning* — "broken
-object reference" matching a lesson phrased around "IDOR" — and add a second kind of
-fact, **app-shape patterns** ("this app uses a two-step login," "sequential numeric IDs,
-worth enumerating"), distilled from each run's knowledge graph so a brand-new target
-isn't started blind:
+## Safety model: how "give it all of Kali" stays scoped
 
-- **`--semantic-memory` (local, default):** one JSON file, embeddings from the on-device
-  `all-MiniLM-L6-v2` when installed, otherwise a built-in hashing embedder (stopword-
-  filtered words + character trigrams). Zero dependencies, zero Docker, deterministic.
-- **`--helix-memory` (opt-in):** HelixDB graph+vector backend in Docker with a persistent
-  named volume (see the notes in `memory_backend/helix_server.py`). Deepest semantic
-  quality; needs Docker.
+When the agent can run arbitrary tools, you can't enforce scope by inspecting commands —
+so scope is enforced at the **network layer**:
 
-```bash
-python -m redteam.cli ... --semantic-memory      # no extra install
-pip install -e .[semantic-memory]                # optional: real transformer embeddings
-python -m redteam.cli ... --helix-memory         # Docker path
+- **Sandbox egress firewall** — the Kali container runs `default-DROP` on OUTPUT; only
+  IPs/CIDRs derived from the RoE are reachable. The entrypoint installs the rules before
+  any tool runs and the container **refuses to start** if it can't (fail closed). An
+  egress self-test probes an address that must never be in scope (TEST-NET-1) and tears
+  the sandbox down if the probe succeeds — a "ready" log line alone is not trusted.
+- **No self-unlocking** — tools run as non-root, all capabilities dropped except
+  `NET_ADMIN`/`NET_RAW`, `no-new-privileges` set, and `kali_exec` refuses commands that
+  touch iptables/ipset/routing/`sudo`/namespaces.
+- **Browser scope interception** — every request the browser makes (page + every
+  subresource) is checked against the scope guard; out-of-scope requests are aborted.
+- **Approval gates** — destructive/DoS-shaped commands require an interactive "yes".
+- Plus a **rate limit + request budget**, an **append-only JSONL audit log**, and an
+  **engagement window** the agent won't run outside of.
+
+## What a run produces
+
+Everything lands in the run directory (`--out` / the server's `runs-root`):
+
+- `report.md` / `report.html`, `findings.json` — the deliverables
+- `audit.log.jsonl` — append-only audit trail of every action and decision
+- `events.jsonl` — the live telemetry the dashboard consumes (replay reads the same bytes)
+- `traffic.jsonl` — wire evidence of every in-scope exchange (credential headers masked
+  both ways, bodies truncated, droppable with `--no-traffic-bodies`)
+- `inventory.json` — attack-surface map (host → port → service/banner/title), built
+  passively from every response and actively by `surface_scan`
+- `engagement.yaml` (server-launched runs with a model override) — the exact model config
+  the run executed with
+- `attack_tree.json`, `objective.json`, mission/research journals — planning and swarm state
+
+## Repository layout
+
+```text
+redteam/
+  config.py          RoE + LLM config (OpenRouter default / multi-provider gateway) + sandbox
+  scope.py           ScopeGuard — SSRF-aware target boundary
+  ratelimit.py       Token-bucket limiter + request budget
+  audit.py           Append-only JSONL audit log
+  findings.py        Finding model + JSON store
+  report.py          Markdown + HTML report
+  agent.py           OpenAI-style tool-use loop
+  orchestrator.py    Multi-agent swarm: recon -> exploit -> verify -> access -> logic
+  run.py             execute_run() — the ONE run assembly line shared by CLI and API
+  cli.py             Terminal entrypoint: preflight, console output, interactive approvals
+  server.py          Headless control plane (FastAPI): run lifecycle, SSE, approvals,
+                     static dashboard hosting
+  events.py          EventBus + JSONL sink: the live telemetry the dashboard consumes
+  traffic.py         TrafficRecorder — per-run wire evidence, credentials masked
+  inventory.py       AssetInventory — attack-surface map built from every response
+  importers/assets.py  Asset-feed sync (CSV/JSON/JSONL) — fail-closed intersection with RoE
+  llm/               OpenRouter default, multi-provider gateway, role-routed failover
+  sandbox/           Kali container: egress firewall, self-test, lifecycle
+  tools/             kali_exec, browser_*, verification, probing and inspector tools
+  swarm/             Hypothesis registry + research forum (collective intelligence)
+  memory.py          ExperienceStore — persistent cross-run tradecraft lessons
+  memory_backend/    Semantic recall: local (zero deps) and HelixDB (Docker, opt-in)
+  reflection.py      LLM strategist self-critique between orchestrator rounds (re-rank only)
+  states.py / hands.py  Lifecycle registries and declared agent capabilities (introspectable)
+  attack_tree.py / bandit.py  Technique ranking + learned win rates across runs
+dashboard/           Next.js mission-control UI (static export, served by server.py)
+lab/                 Isolated, deliberately vulnerable practice targets (127.0.0.1)
+config/              engagement.example.yaml — the RoE template
+scripts/             Live-fire demos, smoke tests, lab helpers
+docs/                Design docs, ADRs, research notes
+tests/               pytest suite (CI runs `python -m pytest -q`)
 ```
 
-Both paths degrade gracefully: if the embedder or the container fails, the store falls
-back to plain tag-matched memory and the run continues.
+## Optional capabilities (all degrade gracefully)
 
-## Learned technique selection (bandit, optional)
+| Capability | How | What it does |
+| --- | --- | --- |
+| Semantic memory | `--semantic-memory` (local) / `--helix-memory` (Docker) / `pip install -e ".[semantic-memory]"` | Cross-run recall by meaning, plus app-shape patterns ("two-step login", "sequential IDs") |
+| Strategist reflection | automatic in `--multi-agent` | A strong-role LLM re-ranks existing attack-tree techniques between rounds; it can never create targets or authorize gated actions |
+| Learned technique ranking | on by default (`bandit.py`) | Thompson-sampling bandit learns per-(technique, endpoint-shape) win rates across runs; persisted to `memory/bandit.json` |
+| Hypothesis registry | automatic in `--multi-agent` | The swarm shares research: atomic claims, leases, typed forum, duplicate matching; an observation is not a finding — only the verify pipeline confirms |
+| Asset-feed sync | `--asset-feed feeds.csv` | Seeds the inventory from ScopeSentry-style feeds; strictly intersected with the RoE — a feed can never widen scope |
 
-`attack_tree.py` ranks techniques (SQLi, IDOR, XSS, ...) for the swarm to try next by a
-fixed, hand-set priority table — the same order against every target, with no memory of
-what's actually confirmed before. `bandit.py` adds a contextual multi-armed bandit
-(Thompson sampling) that learns a per-(technique, endpoint-shape) win rate across runs and
-nudges that static order, without ever overriding the priority tiers outright (chained
-follow-ups always still outrank fresh entry techniques).
-
-The "context" is a coarse, reusable endpoint-shape bucket (`numeric-id`, `auth-wall`,
-`workflow-shaped`, ...) — the same vocabulary `memory_backend/app_patterns.py` already
-derives for cross-run pattern recall. The reward is 1.0 when a technique confirms on that
-shape, 0.0 when the swarm marks it `FAILED` having found nothing — both already happen in
-`attack_tree.py`'s existing control flow; the bandit just tallies them instead of
-discarding them. Learned win rates persist to `memory/bandit.json`, so technique selection
-keeps specializing across engagements, not resetting every run.
-
-This is wired on by default (`cli.py` always attaches a `BanditStore` to `AttackTree`) and
-needs no flag — with no evidence yet, it samples around neutral and leaves the static
-order effectively unchanged; it only pays off once there's a track record to learn from.
-
-## Collective intelligence: the hypothesis registry (Phase C1)
-
-The swarm now shares *research*, not just state. `redteam/swarm/` adds a run-scoped
-**hypothesis registry**, a typed **research forum**, two-stage **duplicate/relationship
-matching**, and **event-sourced replay** — governed by one principle:
-
-> an observation is not a hypothesis; a hypothesis is not a finding; a finding is not
-> confirmed until the independent verification pipeline confirms it.
-
-What each swarm worker gets, mediated by the orchestrator (no new agent tools, no new
-worker count, attack-tree selection untouched):
-
-- every claimed (technique, target) becomes a registered hypothesis with an **atomic
-  claim** and a lease (two workers can never hold the same hypothesis; an abandoned
-  lease is reclaimable; a stale holder's writes are rejected);
-- a **bounded research briefing** injected into the specialist prompt: prior attempts
-  (counter-evidence), sibling hypotheses on the same asset, forum observations — a
-  wasted attempt becomes reusable context for the next round;
-- landed findings attach as evidence and the hypothesis moves to
-  `AWAITING_VERIFICATION`; after the independent VERIFY pass, verdicts are **mirrored**
-  onto hypotheses (`CONFIRMED`/`REFUTED` are reflections of the pipeline, never causes
-  of finding confidence — `FindingStore.promote()` remains the only writer);
-- all research traffic is typed, attributed, **quarantined** (directive-shaped peer
-  content is held by the swarmguard screen, never re-enters a peer's context),
-  **redacted** (token-shaped secrets masked), and persisted as
-  `research_journal.jsonl` / `research_forum.jsonl` in the run dir — a killed run's
-  hypothesis state replays deterministically (`redteam.swarm.projections.replay`).
-
-Lifecycle: `PROPOSED → ACTIVE → AWAITING_VERIFICATION → CONFIRMED / REFUTED`, with
-reversible `BLOCKED` (waiting on a prerequisite) and `STALE` (target changed) states.
-Every mutation is one domain event — append-only, version-checked, auditable.
-
-Safety properties (tested): engagement isolation is structural (one registry/forum per
-engagement; cross-engagement queries fail closed), evidence provenance is mandatory
-(`origin: agent | target` decided at write time), no agent can self-confirm anything,
-candidate relationships never merge or delete (only an explicit, attributed `link()`
-does), and `SUPERSEDES` is never machine-generated. Full design rationale lives in
-`docs/adr-001-collective-intelligence-foundation.md`; a synthetic A/B/C/D benchmark
-harness (clearly labeled, not live-fire) is in `benchmarks/phase1_collective.py`.
+Design details: `docs/adr-001-collective-intelligence-foundation.md`,
+`docs/synthesis.md`, `GEN2-ARCHITECTURE.md`, `ROADMAP.md`.
 
 ## Tests
 
 ```bash
-pytest -q
+pip install -e ".[dev]"   # once: adds pytest + httpx (testclient)
+python -m pytest -q       # full suite
 ```
 
 ## Notes & limits
@@ -335,5 +253,6 @@ pytest -q
 - **Free models vary:** not every free model supports tool calling; the router filters
   for `supported_parameters: tools` and rotates on rate-limits/outages. Availability of
   free models changes constantly — that's why discovery is live, not hardcoded.
-- Add a tool by implementing `schema()` + `run(ctx, ...)` in `redteam/tools/` and
-  registering it in `build_registry`.
+- **Add a tool** by implementing `schema()` + `run(ctx, ...)` in `redteam/tools/` and
+  registering it in `build_registry`; the capability ladder lives in
+  `docs/tool-integration-plan.md`, the phase inventory in `docs/tool-inventory.md`.
