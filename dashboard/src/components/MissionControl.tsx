@@ -25,6 +25,7 @@ import {
 } from "./Bits";
 import { EventFeed } from "./EventFeed";
 import { FindingsTable } from "./FindingsTable";
+import { AssetsPanel } from "./AssetsPanel";
 import { KillChainList } from "./KillChainList";
 import { MissionPanel } from "./MissionPanel";
 import { ObjectiveProgress } from "./ObjectiveProgress";
@@ -423,6 +424,7 @@ export default function MissionControl() {
                 findings={findings}
               />
             )}
+            <AssetsPanel detail={detail} />
             <FindingsTable findings={findings} />
             <KillChainList stages={detail?.killchain} />
             <ReflectionsFeed reflections={detail?.reflections} />
