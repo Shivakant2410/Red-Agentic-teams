@@ -5,7 +5,7 @@ secrets.env
 .env
 
 # Run outputs (findings, audit logs, reports, graphs)
-runs/
+/runs/
 runs_*.log
 
 # Proven-proof templates can embed literal auth headers/credentials — keep local.
