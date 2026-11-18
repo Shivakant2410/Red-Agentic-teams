@@ -8,6 +8,10 @@ import type {
   Health,
   LaunchRequest,
   LaunchResponse,
+  MissionDetail,
+  MissionLaunchRequest,
+  MissionLaunchResponse,
+  MissionSummary,
   PendingApproval,
   RunDetail,
   RunSummary,
@@ -80,6 +84,23 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  /** Adaptive mission launch — the coordination core over the SAME engagement
+   *  validation and run registry (POST /api/missions, driver "mission"). */
+  launchMission: (body: MissionLaunchRequest) =>
+    request<MissionLaunchResponse>("/api/missions", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  listMissions: () => request<{ missions: MissionSummary[] }>("/api/missions"),
+
+  /** Mission detail for a run: mission_id, status, task list (lifecycle states),
+   *  halt reason, and the tail of the mission journal. 404 = the mission record
+   *  does not exist yet (or the run is not a mission) — callers must show an
+   *  honest unavailable state, never fabricated task states. */
+  getMission: (missionId: string) =>
+    request<MissionDetail>(`/api/missions/${encodeURIComponent(missionId)}`),
 
   stopRun: (runId: string) =>
     request<{ ok: boolean }>(`/api/runs/${encodeURIComponent(runId)}/stop`, {

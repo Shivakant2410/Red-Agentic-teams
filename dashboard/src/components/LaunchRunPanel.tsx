@@ -9,11 +9,10 @@ import {
   inputCls,
   Micro,
   Panel,
-  PanelHead,
   Toggle,
 } from "./Bits";
 import { api, errMessage } from "@/lib/api";
-import type { LlmOverride } from "@/lib/types";
+import type { LlmOverride, MissionPlanTask } from "@/lib/types";
 
 /**
  * Provider kinds the engine understands (mirrors server LLM_PROVIDER_SHORTCUTS
@@ -43,6 +42,22 @@ const MODEL_PRESETS: Record<string, string[]> = {
   ollama: ["llama3.2", "qwen2.5", "mistral", "gemma2"],
 };
 
+/** The two execution drivers, with the operator-facing difference spelled out. */
+const MODES: { id: "classic" | "mission"; label: string; endpoint: string; hint: string }[] = [
+  {
+    id: "classic",
+    label: "Classic run",
+    endpoint: "POST /API/RUNS",
+    hint: "Autonomous orchestrator swarm: recon → exploit → verify → access → logic rounds driven by the existing Orchestrator.",
+  },
+  {
+    id: "mission",
+    label: "Adaptive mission",
+    endpoint: "POST /API/MISSIONS",
+    hint: "Mission coordination driver: claims tasks from the live AttackTree frontier, dispatches specialists, verifies independently, replans between rounds.",
+  },
+];
+
 function Field({
   label,
   children,
@@ -70,18 +85,27 @@ function Field({
 }
 
 /**
- * Collapsible "Launch run" form → POST /api/runs.
- * On 202 the operator is redirected straight into mission control.
+ * Collapsible launch form. EXECUTION MODE selects the driver:
+ *   classic → POST /api/runs    (multi-agent swarm toggle, source_dir)
+ *   mission → POST /api/missions (optional asset feed; explicit plan ONLY when
+ *              the operator deliberately writes one — empty plan = the dynamic
+ *              AttackTree frontier; the server never fabricates a static plan)
+ * Both endpoints accept the same provider/model override; on 202 the operator
+ * is redirected straight into mission control at /runs?id={run_id}.
  */
 export function LaunchRunPanel({ className }: { className?: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(true);
+  const [mode, setMode] = useState<"classic" | "mission">("classic");
   const [engagementPath, setEngagementPath] = useState("");
   const [objective, setObjective] = useState("");
   const [sourceDir, setSourceDir] = useState("");
   const [maxSteps, setMaxSteps] = useState("40");
   const [multiAgent, setMultiAgent] = useState(true);
   const [yesToAll, setYesToAll] = useState(false);
+  const [assetFeed, setAssetFeed] = useState("");
+  const [planText, setPlanText] = useState("");
+  const [planOpen, setPlanOpen] = useState(false);
   const [llmProvider, setLlmProvider] = useState("");
   const [llmModel, setLlmModel] = useState("");
   const [llmApiKey, setLlmApiKey] = useState("");
@@ -98,34 +122,63 @@ export function LaunchRunPanel({ className }: { className?: string }) {
     if (!Number.isInteger(steps) || steps < 1 || steps > 1000) {
       errs.push("max_steps must be an integer between 1 and 1000");
     }
+    // An explicit mission plan is strictly opt-in AND must parse as a JSON
+    // array of tasks — a typo must fail HERE, not become a malformed plan file.
+    let plan: MissionPlanTask[] | undefined;
+    if (mode === "mission" && planText.trim()) {
+      try {
+        const parsed: unknown = JSON.parse(planText);
+        if (!Array.isArray(parsed)) throw new Error("not an array");
+        plan = parsed as MissionPlanTask[];
+      } catch {
+        errs.push("explicit mission plan must be a JSON array of task objects (leave empty for the dynamic AttackTree frontier)");
+      }
+    }
     setErrors(errs);
     if (errs.length > 0) return;
 
-    const body: Parameters<typeof api.launchRun>[0] = {
-      engagement_path: engagementPath.trim(),
-      objective: objective.trim(),
-      multi_agent: multiAgent,
-      max_steps: steps,
-      source_dir: sourceDir.trim(),
-      yes_to_all: yesToAll,
-    };
-    if (llmProvider) {
-      const override: LlmOverride = { provider: llmProvider };
-      if (llmModel.trim()) override.model = llmModel.trim();
-      if (llmApiKey) override.api_key = llmApiKey;
-      if (llmBaseUrl.trim()) override.base_url = llmBaseUrl.trim();
-      body.llm = override;
-    }
+    const llm: LlmOverride | undefined = llmProvider
+      ? {
+          provider: llmProvider,
+          ...(llmModel.trim() ? { model: llmModel.trim() } : {}),
+          ...(llmApiKey ? { api_key: llmApiKey } : {}),
+          ...(llmBaseUrl.trim() ? { base_url: llmBaseUrl.trim() } : {}),
+        }
+      : undefined;
 
     setPending(true);
     try {
-      const res = await api.launchRun(body);
+      const res = mode === "classic"
+        ? await api.launchRun({
+            engagement_path: engagementPath.trim(),
+            objective: objective.trim(),
+            multi_agent: multiAgent,
+            max_steps: steps,
+            source_dir: sourceDir.trim(),
+            yes_to_all: yesToAll,
+            ...(llm ? { llm } : {}),
+          })
+        : await api.launchMission({
+            engagement_path: engagementPath.trim(),
+            objective: objective.trim(),
+            max_steps: steps,
+            asset_feed: assetFeed.trim(),
+            yes_to_all: yesToAll,
+            ...(plan ? { plan } : {}),
+            ...(llm ? { llm } : {}),
+          });
+      // Let a mounted overview refresh immediately, then hand over to the
+      // run-detail page (mission_id == run_id today; the run id is the one the
+      // detail route tracks).
+      window.dispatchEvent(new Event("run:launched"));
       router.push(`/runs?id=${encodeURIComponent(res.run_id)}`);
     } catch (err) {
       setErrors([errMessage(err)]);
       setPending(false);
     }
   };
+
+  const activeMode = MODES.find((m) => m.id === mode)!;
 
   return (
     <Panel className={cx("self-start", className)}>
@@ -143,12 +196,36 @@ export function LaunchRunPanel({ className }: { className?: string }) {
         />
         <Micro>LAUNCH RUN</Micro>
         <span className="ml-auto font-mono text-[9px] tracking-[0.14em] text-muted/60">
-          POST /API/RUNS
+          {activeMode.endpoint}
         </span>
       </button>
 
       {open && (
         <form onSubmit={submit} noValidate className="space-y-3 border-t border-edge px-3 py-3">
+          {/* execution mode */}
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="execution mode">
+              {MODES.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={mode === m.id}
+                  onClick={() => setMode(m.id)}
+                  className={cx(
+                    "rounded-md border px-2 py-1.5 text-center font-mono text-[10px] uppercase tracking-[0.14em] transition-colors",
+                    mode === m.id
+                      ? "border-info/60 bg-info/15 text-ink"
+                      : "border-edge bg-panel2/40 text-muted hover:border-muted/40",
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] leading-snug text-muted/70">{activeMode.hint}</p>
+          </div>
+
           <Field
             label="engagement_path"
             hint="Path to the engagement directory (YAML + scope) on the server host."
@@ -187,22 +264,75 @@ export function LaunchRunPanel({ className }: { className?: string }) {
                 onChange={(e) => setMaxSteps(e.target.value)}
               />
             </Field>
-            <Field label="source_dir" hint="Optional local source code for static recon.">
-              <input
-                className={inputCls}
-                value={sourceDir}
-                onChange={(e) => setSourceDir(e.target.value)}
-                placeholder="(optional)"
-                spellCheck={false}
-                autoComplete="off"
-              />
-            </Field>
+            {mode === "classic" ? (
+              <Field label="source_dir" hint="Optional local source code for static recon.">
+                <input
+                  className={inputCls}
+                  value={sourceDir}
+                  onChange={(e) => setSourceDir(e.target.value)}
+                  placeholder="(optional)"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+              </Field>
+            ) : (
+              <Field label="asset_feed" hint="Optional CSV/JSON/JSONL asset feed — strictly intersected with the RoE.">
+                <input
+                  className={inputCls}
+                  value={assetFeed}
+                  onChange={(e) => setAssetFeed(e.target.value)}
+                  placeholder="(optional)"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+              </Field>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-edge/60 pt-3">
-            <Toggle checked={multiAgent} onChange={setMultiAgent} label="multi_agent" />
+            {mode === "classic" && (
+              <Toggle checked={multiAgent} onChange={setMultiAgent} label="multi_agent" />
+            )}
             <Toggle checked={yesToAll} onChange={setYesToAll} label="yes_to_all" />
           </div>
+
+          {mode === "mission" && (
+            <div className="space-y-1.5 rounded-md border border-edge/60 bg-panel2/30 px-2.5 py-2">
+              <button
+                type="button"
+                onClick={() => setPlanOpen((o) => !o)}
+                aria-expanded={planOpen}
+                className="flex w-full items-center gap-2 text-left"
+              >
+                <IconChevron
+                  className={cx(
+                    "h-3 w-3 shrink-0 text-muted transition-transform",
+                    !planOpen && "rotate-180",
+                  )}
+                />
+                <span className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-muted">
+                  explicit plan (optional)
+                </span>
+                <span className="ml-auto font-mono text-[9px] text-muted/50">
+                  {planText.trim() ? "STATIC OVERRIDE" : "DYNAMIC FRONTIER"}
+                </span>
+              </button>
+              {planOpen && (
+                <Field
+                  label="plan (JSON array)"
+                  hint="Leave EMPTY for the default: live AttackTree frontier selection + replanning. Only write a plan if you deliberately want a static task script."
+                >
+                  <textarea
+                    className={cx(inputCls, "min-h-[64px] resize-y font-mono text-[10.5px] leading-relaxed")}
+                    value={planText}
+                    onChange={(e) => setPlanText(e.target.value)}
+                    placeholder={'[{"technique": "sqli", "target": "/orders", "objective": "prove injection"}]'}
+                    spellCheck={false}
+                  />
+                </Field>
+              )}
+            </div>
+          )}
 
           <div className="space-y-3 border-t border-edge/60 pt-3">
             <div className="flex items-center justify-between">
@@ -214,7 +344,7 @@ export function LaunchRunPanel({ className }: { className?: string }) {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field
                 label="provider"
-                hint="Which LLM backend the fleet runs on for this run."
+                hint="Which LLM backend the fleet runs on for this run (both drivers)."
               >
                 <select
                   className={inputCls}
@@ -263,7 +393,7 @@ export function LaunchRunPanel({ className }: { className?: string }) {
                 {PROVIDERS.find((p) => p.kind === llmProvider)?.keyHint ? (
                   <Field
                     label="api key"
-                    hint={`Goes to ${PROVIDERS.find((p) => p.kind === llmProvider)?.keyHint} in the server process for this run — never written to disk.`}
+                    hint={`Run-scoped credential for this run (${PROVIDERS.find((p) => p.kind === llmProvider)?.keyHint} channel) — held in memory server-side, never written to disk or the process env.`}
                   >
                     <input
                       className={inputCls}
@@ -307,7 +437,7 @@ export function LaunchRunPanel({ className }: { className?: string }) {
             disabled={pending}
             className={cx(btnAccent, "w-full py-2", "hover:bg-accent/25")}
           >
-            {pending ? "LAUNCHING…" : "LAUNCH RUN"}
+            {pending ? "LAUNCHING…" : mode === "classic" ? "LAUNCH RUN" : "LAUNCH MISSION"}
           </button>
         </form>
       )}
