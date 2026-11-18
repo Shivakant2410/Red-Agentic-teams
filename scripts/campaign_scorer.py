@@ -117,6 +117,13 @@ def score_campaign(run_dir: Path, canary_hits: int | None = None) -> dict:
     mission = {}
     if (run_dir / "mission.json").exists():
         mission = json.loads((run_dir / "mission.json").read_text())
+        # mission.json is the driver's snapshot: {"mission": {...}, "tasks": [...]}
+        # (legacy runs wrote the flat record). Read the INNER record — the outer
+        # envelope has no status/stop_reason, so run 20261118-213302 scored
+        # mission_status=null and the honest budget_exhausted halt was lost.
+        inner = mission.get("mission")
+        if isinstance(inner, dict):
+            mission = inner
 
     gt: dict[str, bool] = {}
 
