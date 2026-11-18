@@ -115,6 +115,23 @@ export function MissionPanel({
               — no task snapshot available yet
             </div>
           )}
+          {/* recent tasks: technique -> target with terminal state (the
+              AttackTree (technique, target) pairs the scheduler claimed) */}
+          {tasks.length > 0 && (
+            <ul className="mt-1.5 space-y-0.5">
+              {tasks.slice(-3).reverse().map((t) => (
+                <li key={String(t.id ?? `${t.technique}-${t.target}`)}
+                    className="flex min-w-0 flex-wrap items-center gap-1.5 font-mono text-[10.5px]">
+                  <span className="min-w-0 truncate text-ink/85">
+                    {t.technique ?? "(no technique)"} → {t.target ?? "(no target)"}
+                  </span>
+                  <Chip tone={t.status === "succeeded" ? "ok" : t.status === "failed" ? "accent" : "muted"}>
+                    {t.status ?? "unknown"}
+                  </Chip>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         {/* verification authority: FindingStore + independent verifier ONLY */}
