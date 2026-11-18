@@ -23,10 +23,22 @@ keep working exactly as before.
 from __future__ import annotations
 
 import threading
+from collections.abc import Mapping
 
 from ..config import LlmConfig
 from .openrouter import ChatResult, NoModelsAvailable, OpenRouterClient
 from .providers import ROTATE_STATUSES, AnthropicProvider, OpenAICompatProvider, ProviderConfig, ProviderError
+
+
+def resolve_api_key(pcfg: ProviderConfig,
+                    credentials: Mapping[str, str] | None = None) -> str:
+    """Resolve one provider's API key: run-scoped credential first, then the
+    process environment. The mapping is keyed by the provider's STANDARD env-var
+    name (the YAML channel), so preconfigured operators need nothing and per-run
+    keys never touch the environment — concurrent runs cannot cross-use them."""
+    if credentials and pcfg.api_key_env and pcfg.api_key_env in credentials:
+        return credentials[pcfg.api_key_env]
+    return pcfg.api_key()
 
 
 class UnconfiguredClient:
@@ -54,25 +66,33 @@ class UnconfiguredClient:
 
 
 class LLMGateway:
-    """Fleet-of-providers client with role routing and cross-provider failover."""
+    """Fleet-of-providers client with role routing and cross-provider failover.
 
-    def __init__(self, cfg: LlmConfig, audit=None):
+    `credentials`: optional run-scoped mapping {api_key_env -> api_key} supplied by
+    the caller (server launch) so concurrent runs each use their own key. It takes
+    precedence over the process environment at provider construction ONLY — it is
+    never persisted, logged, or echoed; env-based configuration keeps working when
+    the mapping is empty or lacks the provider's env var name.
+    """
+
+    def __init__(self, cfg: LlmConfig, audit=None, credentials=None):
         self._cfg = cfg
         self._audit = audit
         self._providers = []
         self._excluded: list[tuple[str, str]] = []   # (name, reason) for diagnostics
         for pcfg in cfg.providers:
             pcfg = pcfg.resolved()
-            if pcfg.api_key_env and not pcfg.api_key():
+            key = resolve_api_key(pcfg, credentials)
+            if pcfg.api_key_env and not key:
                 self._excluded.append((pcfg.name, f"{pcfg.api_key_env} not set"))
                 if audit:
                     audit.record("llm.provider_skipped", provider=pcfg.name,
                                  reason=f"{pcfg.api_key_env} not set")
                 continue
             if pcfg.kind == "anthropic":
-                self._providers.append(AnthropicProvider(pcfg, audit=audit))
+                self._providers.append(AnthropicProvider(pcfg, audit=audit, api_key=key))
             else:
-                self._providers.append(OpenAICompatProvider(pcfg, audit=audit))
+                self._providers.append(OpenAICompatProvider(pcfg, audit=audit, api_key=key))
         if not self._providers:
             raise NoModelsAvailable(
                 "no LLM providers available (configure llm.providers and export their "
@@ -180,9 +200,14 @@ class LLMGateway:
             self._audit.record(event, **fields)
 
 
-def build_llm_client(cfg: LlmConfig, audit=None):
+def build_llm_client(cfg: LlmConfig, audit=None, credentials: Mapping[str, str] | None = None):
     """Factory used by run.py / server: legacy single-provider config -> Gen-1 client
-    (byte-for-byte behavior); multi-provider config -> LLMGateway."""
+    (byte-for-byte behavior); multi-provider config -> LLMGateway.
+
+    `credentials` (run-scoped {api_key_env -> key}) applies to the gateway path only;
+    the Gen-1 OpenRouterClient keeps its env-var configuration (the server's model
+    override always writes an effective engagement WITH a providers block, so per-run
+    keys never reach the legacy path)."""
     if not cfg.providers:
         return OpenRouterClient(cfg, audit=audit)
-    return LLMGateway(cfg, audit=audit)
+    return LLMGateway(cfg, audit=audit, credentials=credentials)

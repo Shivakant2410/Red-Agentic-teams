@@ -152,6 +152,10 @@ class RunManifest:
     findings: int = 0
     tokens: int = 0
     halt_reason: str = ""
+    # Which driver executes this run: "classic" (single agent / orchestrator swarm)
+    # or "mission" (the coordination core over the same specialist path). Additive —
+    # older manifests simply read back as classic.
+    driver: str = "classic"
 
     def save(self, path: str | Path) -> None:
         self.updated = _dt.datetime.now(_dt.timezone.utc).isoformat()

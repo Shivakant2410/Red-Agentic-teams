@@ -166,21 +166,201 @@ def test_launch_without_llm_override_leaves_engagement_alone(harness):
     assert not (runs_root / r.json()["run_id"] / "engagement.yaml").exists()
 
 
-def test_launch_llm_override_sets_key_env(harness, monkeypatch):
-    """The typed API key lands in the provider's standard env var (engine reads
-    it from there) — and is never written into the effective engagement."""
+def test_launch_llm_override_uses_run_scoped_credentials(harness, monkeypatch):
+    """Builder-04A credential isolation: the typed key is carried RUN-SCOPED on
+    the run's RunOptions (resolved into that run's provider sessions at
+    construction) — the process environment is NOT mutated, so concurrent runs
+    with different keys cannot cross-use credentials. The key never hits disk."""
     client, runs_root, engagement = harness
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    captured: list = []
+
+    def capturing_execute_run(opts):
+        captured.append(opts)
+        with (Path(opts.out_dir) / "events.jsonl").open("a", encoding="utf-8") as f:
+            f.write("")  # keep the server-emitted events (llm.selected) intact
+
+    monkeypatch.setattr(server_mod, "execute_run", capturing_execute_run)
     src = runs_root.parent / "engagement-src.yaml"
     src.write_text("name: Lab\nclient: Local\n")
     r = client.post("/api/runs", json={
-        "engagement_path": str(src), "objective": "key env",
+        "engagement_path": str(src), "objective": "run scoped",
         "llm": {"provider": "openai", "model": "gpt-sol", "api_key": "sk-test"}})
     assert r.status_code == 202
-    assert os.environ.get("OPENAI_API_KEY") == "sk-test"
+    assert os.environ.get("OPENAI_API_KEY") != "sk-test"      # env untouched
+    assert captured[0].llm_credentials == {"OPENAI_API_KEY": "sk-test"}
     eff = yaml.safe_load((runs_root / r.json()["run_id"] / "engagement.yaml").read_text())
-    assert "api_key" not in json.dumps(eff)  # the key itself never hits disk
+    assert "sk-test" not in json.dumps(eff)                   # never on disk
     assert eff["llm"]["providers"][0]["models_allow"] == ["gpt-sol"]
+    # no persisted artifact in the run dir carries the key
+    run_dir = runs_root / r.json()["run_id"]
+    for p in run_dir.iterdir():
+        assert "sk-test" not in p.read_text(encoding="utf-8", errors="ignore"), p.name
+
+
+def test_concurrent_runs_same_provider_different_keys_isolated(harness, monkeypatch):
+    """The exact PR #21 failure mode: run A (OpenAI, key A) and run B (OpenAI,
+    key B) launched back-to-back. Each run's options must carry ITS key — no
+    shared env var, no cross-use."""
+    client, runs_root, engagement = harness
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    captured: list = []
+
+    def capturing_execute_run(opts):
+        captured.append(opts)
+        with (Path(opts.out_dir) / "events.jsonl").open("a", encoding="utf-8") as f:
+            f.write("")  # keep the server-emitted events (llm.selected) intact
+
+    monkeypatch.setattr(server_mod, "execute_run", capturing_execute_run)
+    src = runs_root.parent / "engagement-src.yaml"
+    src.write_text("name: Lab\nclient: Local\n")
+    ra = client.post("/api/runs", json={
+        "engagement_path": str(src), "objective": "run a",
+        "llm": {"provider": "openai", "api_key": "sk-key-a"}})
+    rb = client.post("/api/runs", json={
+        "engagement_path": str(src), "objective": "run b",
+        "llm": {"provider": "openai", "api_key": "sk-key-b"}})
+    assert ra.status_code == rb.status_code == 202
+    creds = [o.llm_credentials.get("OPENAI_API_KEY") for o in captured]
+    assert sorted(creds) == ["sk-key-a", "sk-key-b"]
+    assert os.environ.get("OPENAI_API_KEY") != "sk-key-a"
+    assert os.environ.get("OPENAI_API_KEY") != "sk-key-b"
+
+
+def test_env_preconfigured_key_still_reaches_run(harness, monkeypatch):
+    """No per-run key submitted -> run-scoped credentials stay empty; operators
+    who preconfigure the standard env var are unaffected."""
+    client, runs_root, engagement = harness
+    monkeypatch.setenv("ZAI_API_KEY", "env-preset")
+    captured: list = []
+
+    def capturing_execute_run(opts):
+        captured.append(opts)
+        with (Path(opts.out_dir) / "events.jsonl").open("a", encoding="utf-8") as f:
+            f.write("")  # keep the server-emitted events (llm.selected) intact
+
+    monkeypatch.setattr(server_mod, "execute_run", capturing_execute_run)
+    src = runs_root.parent / "engagement-src.yaml"
+    src.write_text("name: Lab\nclient: Local\n")
+    r = client.post("/api/runs", json={
+        "engagement_path": str(src), "objective": "env preset",
+        "llm": {"provider": "zai", "model": "glm-5.3"}})
+    assert r.status_code == 202
+    assert captured[0].llm_credentials == {}                  # env path unchanged
+
+
+def test_mission_launch_basic(harness, monkeypatch):
+    """POST /api/missions: mission identity == run identity (same minted id,
+    separate logical fields), driver recorded in the manifest + detail API, and
+    the mission list sees it."""
+    client, runs_root, engagement = harness
+
+    def mission_execute_run(opts):
+        out = Path(opts.out_dir)
+        manifest = RunManifest.load(out / "manifest.json") or RunManifest(
+            objective=opts.objective, engagement="Lab")
+        manifest.status = "completed"
+        manifest.save(out / "manifest.json")
+        (out / "events.jsonl").write_text(
+            json.dumps({"seq": 1, "ts": "t", "run_id": out.name, "type": "run.start"}) + "\n",
+            encoding="utf-8")
+        (out / "mission.json").write_text(json.dumps({
+            "mission": {"mission_id": out.name, "run_id": out.name,
+                        "run_ids": [out.name], "engagement": "Lab",
+                        "objective": opts.objective, "status": "succeeded"},
+            "tasks": [{"id": "T-1", "technique": "sqli", "target": "/orders",
+                       "status": "succeeded"}]}), encoding="utf-8")
+
+    monkeypatch.setattr(server_mod, "execute_run", mission_execute_run)
+    r = client.post("/api/missions", json={
+        "engagement_path": str(engagement), "objective": "adaptive mission"})
+    assert r.status_code == 202, r.text
+    body = r.json()
+    assert body["mission_id"] == body["run_id"]               # same value, two fields
+    run_id = body["run_id"]
+    manifest = (runs_root / run_id / "manifest.json")
+    assert json.loads(manifest.read_text())["driver"] == "mission"
+    detail = client.get(f"/api/runs/{run_id}").json()
+    assert detail["driver"] == "mission"
+    mdetail = client.get(f"/api/missions/{run_id}").json()
+    assert mdetail["status"] == "succeeded"
+    assert mdetail["tasks"][0]["technique"] == "sqli"
+    listed = client.get("/api/missions").json()["missions"]
+    assert any(m["mission_id"] == run_id for m in listed)
+
+
+def test_mission_launch_llm_override(harness, monkeypatch):
+    """Both drivers share the same provider/model contract: effective engagement
+    written, run-scoped credentials, llm.selected event, driver stays mission."""
+    client, runs_root, engagement = harness
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    captured: list = []
+
+    def capturing_execute_run(opts):
+        captured.append(opts)
+        with (Path(opts.out_dir) / "events.jsonl").open("a", encoding="utf-8") as f:
+            f.write("")  # keep the server-emitted events (llm.selected) intact
+
+    monkeypatch.setattr(server_mod, "execute_run", capturing_execute_run)
+    src = runs_root.parent / "engagement-src.yaml"
+    src.write_text("name: Lab\nclient: Local\n")
+    r = client.post("/api/missions", json={
+        "engagement_path": str(src), "objective": "mission with model",
+        "llm": {"provider": "gemini", "model": "gemini-argon", "api_key": "sk-g"}})
+    assert r.status_code == 202, r.text
+    run_id = r.json()["run_id"]
+    assert os.environ.get("GEMINI_API_KEY") != "sk-g"         # env untouched
+    assert captured[0].llm_credentials == {"GEMINI_API_KEY": "sk-g"}
+    assert captured[0].driver == "mission"
+    eff = yaml.safe_load((runs_root / run_id / "engagement.yaml").read_text())
+    assert eff["llm"]["providers"][0]["kind"] == "gemini"
+    assert eff["llm"]["providers"][0]["models_allow"] == ["gemini-argon"]
+    assert "sk-g" not in (runs_root / run_id / "engagement.yaml").read_text()
+    assert "llm.selected" in (runs_root / run_id / "events.jsonl").read_text()
+
+
+def test_mission_unknown_provider_needs_base_url(harness):
+    client, runs_root, engagement = harness
+    src = runs_root.parent / "engagement-src.yaml"
+    src.write_text("name: Lab\nclient: Local\n")
+    r = client.post("/api/missions", json={
+        "engagement_path": str(src), "objective": "x",
+        "llm": {"provider": "notaprovider"}})
+    assert r.status_code == 400
+    assert "notaprovider" in r.json()["detail"]
+    r2 = client.post("/api/missions", json={
+        "engagement_path": str(src), "objective": "x",
+        "llm": {"provider": "lmstudio", "base_url": "http://127.0.0.1:1234/v1"}})
+    assert r2.status_code == 202, r2.text
+
+
+def test_mission_launch_rejects_bad_engagement(harness, monkeypatch):
+    """Invalid engagement on the mission endpoint is a 400 and — unlike a dead
+    run thread — leaves NO partially registered run behind."""
+    client, runs_root, engagement = harness
+    monkeypatch.setattr(config_mod, "load_engagement",
+                        lambda path: (_ for _ in ()).throw(
+                            config_mod.ConfigError("not a valid engagement")))
+    before = set(runs_root.iterdir()) if runs_root.exists() else set()
+    r = client.post("/api/missions", json={
+        "engagement_path": "/nonexistent/engagement.yaml", "objective": "x"})
+    assert r.status_code == 400
+    after = set(runs_root.iterdir()) if runs_root.exists() else set()
+    assert before == after                                    # nothing registered
+
+
+def test_mission_unknown_404(harness):
+    client, _, _ = harness
+    assert client.get("/api/missions/does-not-exist").status_code == 404
+
+
+def test_run_detail_includes_driver_classic(harness):
+    client, runs_root, engagement = harness
+    r = client.post("/api/runs", json={
+        "engagement_path": str(engagement), "objective": "classic default"})
+    assert r.status_code == 202
+    detail = client.get(f"/api/runs/{r.json()['run_id']}").json()
+    assert detail["driver"] == "classic"
 
 
 def test_launch_llm_override_unknown_provider_needs_base_url(harness):

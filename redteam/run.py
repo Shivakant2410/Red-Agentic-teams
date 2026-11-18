@@ -30,7 +30,7 @@ import json
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -263,6 +263,13 @@ class RunOptions:
     # delegation is Phase 4). Separate from `multi_agent`, which remains the
     # classic-mode swarm toggle.
     driver: str = "classic"
+    # Run-scoped LLM credentials ({api_key_env -> api_key}), set by the server
+    # launch for THIS run only. Lives in memory on the RunOptions — never written
+    # to engagement YAML, manifests, events, logs, or any persistent artifact —
+    # so concurrent runs with different keys cannot cross-use them (each thread
+    # resolves its own provider keys at construction via build_llm_client).
+    # Empty dict = preconfigured environment credentials (unchanged behavior).
+    llm_credentials: dict = field(default_factory=dict)
 
 
 def execute_run(opts: RunOptions) -> dict:
@@ -385,7 +392,8 @@ def execute_run(opts: RunOptions) -> dict:
                   source="asset_feed")
 
     try:
-        client = build_llm_client(engagement.llm, audit=audit)
+        client = build_llm_client(engagement.llm, audit=audit,
+                                  credentials=opts.llm_credentials or None)
     except Exception as exc:  # noqa: BLE001 — no usable fleet is a run-shape, not a crash
         # Gen-1 path without a key (RuntimeError) or every provider excluded at
         # build time (NoModelsAvailable): degrade to the engine's designed
@@ -515,7 +523,8 @@ def execute_run(opts: RunOptions) -> dict:
         budget = BudgetTracker(max_seconds=engagement.max_run_seconds,
                                max_tokens=engagement.max_llm_tokens,
                                kill_file=out / "STOP")
-        manifest = RunManifest(objective=opts.objective, engagement=engagement.name)
+        manifest = RunManifest(objective=opts.objective, engagement=engagement.name,
+                               driver=opts.driver)
         manifest.save(out / "manifest.json")  # exists from the first second (API listing)
 
         run_mode = ("mission coordination" if opts.driver == "mission"

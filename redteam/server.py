@@ -100,16 +100,19 @@ class LaunchBody(BaseModel):
 
 class MissionBody(BaseModel):
     # Phase 2 missions (additive): same launch validation as /api/runs; the run
-    # is executed by the mission coordination driver (RunOptions.driver="mission",
-    # scripted executors — mock delegation is Phase 4). plan is an optional
-    # inline task plan (otherwise mission_plan.json in the run dir, else the
-    # coordination self-check smoke task).
+    # is executed by the mission coordination driver (RunOptions.driver="mission").
+    # plan is an OPTIONAL inline task plan for operators who deliberately want a
+    # static script — empty (the default) runs Builder 03's dynamic AttackTree
+    # frontier; the server never fabricates a plan on the operator's behalf.
     engagement_path: str
     objective: str = Field(min_length=1, max_length=20000)
     max_steps: int = Field(default=40, ge=1, le=1000)
     asset_feed: str = ""
     yes_to_all: bool = False
     plan: list = []
+    # Same provider/model selection contract as LaunchBody.llm (run-scoped
+    # credentials; see _prepare_llm).
+    llm: LlmOverride | None = None
 
 
 class ApprovalBody(BaseModel):
@@ -209,6 +212,37 @@ def _write_effective_engagement(src_path: str, out_dir: Path, llm: LlmOverride) 
     return str(dest)
 
 
+def _prepare_llm(llm: LlmOverride | None, src_path: str,
+                 out_dir: Path) -> tuple[str, dict]:
+    """Shared launch-path preparation for BOTH drivers (POST /api/runs and
+    POST /api/missions). Returns (effective_engagement_path, credentials):
+
+    - None override -> the original engagement path, empty credentials.
+    - Override      -> an effective engagement.yaml written into the run dir
+      (providers block WITHOUT any key material — the original file is never
+      modified), plus a RUN-SCOPED credentials dict {api_key_env -> key} carried
+      in memory on the run's RunOptions. The key never touches the process
+      environment (concurrent runs with different keys stay isolated), never
+      lands in the YAML, manifests, events, logs, or any persistent artifact.
+
+    An unknown kind without base_url is a client 400 at launch, never a dead run.
+    """
+    if llm is None:
+        return src_path, {}
+    kind = llm.provider.strip().lower()
+    if kind not in LLM_PROVIDER_SHORTCUTS and not llm.base_url:
+        raise HTTPException(
+            400,
+            f"unknown llm provider '{kind}' — choose one of "
+            f"{sorted(LLM_PROVIDER_SHORTCUTS)} or pass base_url")
+    key_env = LLM_PROVIDER_SHORTCUTS.get(kind, "")
+    credentials = {}
+    if llm.api_key and key_env:
+        credentials[key_env] = llm.api_key
+    launch_path = _write_effective_engagement(src_path, out_dir, llm)
+    return launch_path, credentials
+
+
 def create_app(runs_root: Path, dashboard_dir: Path | None = None,
                control_plane: tuple[str, int] | None = None) -> FastAPI:
     """Build the control-plane app.
@@ -240,13 +274,18 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         return _read_json(run_dir / "manifest.json", {}) or {}
 
     def launch_form(engagement_path: str, objective: str, multi_agent: bool, max_steps: int,
-                    source_dir: str, yes_to_all: bool, asset_feed: str = "") -> RunOptions:
+                    source_dir: str, yes_to_all: bool, asset_feed: str = "",
+                    llm_credentials: dict | None = None) -> RunOptions:
         return RunOptions(
             engagement_path=engagement_path, objective=objective,
             out_dir=runs_root / "<set-by-caller>", multi_agent=multi_agent,
             max_steps=max_steps, source_dir=source_dir, yes_to_all=yes_to_all,
             quiet=True, on_text=None, control_plane=control_plane,
             asset_feed=asset_feed,
+            # Run-scoped {api_key_env -> key} for THIS run only — in-memory on the
+            # options object, resolved into provider sessions at construction;
+            # never persisted or logged (see _prepare_llm).
+            llm_credentials=llm_credentials or {},
         )
 
     # -- API: health -----------------------------------------------------------
@@ -304,24 +343,10 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         out_dir = runs_root / run_id
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        launch_path = body.engagement_path
-        if body.llm is not None:
-            kind = body.llm.provider.strip().lower()
-            if kind not in LLM_PROVIDER_SHORTCUTS and not body.llm.base_url:
-                # Without a base_url the engine has no endpoint to connect to —
-                # a client mistake must be a 400 at launch, never a dead run.
-                raise HTTPException(
-                    400,
-                    f"unknown llm provider '{kind}' — choose one of "
-                    f"{sorted(LLM_PROVIDER_SHORTCUTS)} or pass base_url")
-            key_env = LLM_PROVIDER_SHORTCUTS.get(kind, "")
-            if body.llm.api_key and key_env:
-                os.environ[key_env] = body.llm.api_key
-            launch_path = _write_effective_engagement(
-                body.engagement_path, out_dir, body.llm)
+        launch_path, llm_credentials = _prepare_llm(body.llm, body.engagement_path, out_dir)
 
-        RunManifest(objective=body.objective, engagement=engagement.name).save(
-            out_dir / "manifest.json")
+        RunManifest(objective=body.objective, engagement=engagement.name,
+                    driver="classic").save(out_dir / "manifest.json")
 
         from .events import EventBus
         from .run import HeadlessApprover
@@ -335,7 +360,7 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
 
         opts = launch_form(launch_path, body.objective, body.multi_agent,
                            body.max_steps, body.source_dir, body.yes_to_all,
-                           body.asset_feed)
+                           body.asset_feed, llm_credentials=llm_credentials)
         opts.out_dir = out_dir
         opts.events = bus
         opts.approve = HeadlessApprover(out_dir, bus, kill_file=out_dir / "STOP")
@@ -418,6 +443,7 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         reflections = _read_json(run_dir / "reflections.json", [])
 
         return {"run_id": run_id, "status": manifest.get("status", "running"),
+                "driver": manifest.get("driver", "classic"),
                 "manifest": manifest, "findings": findings, "objective": objective,
                 "killchain": killchain, "graph": graph, "attack_tree": tree,
                 "reflections": reflections}
@@ -659,16 +685,23 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         run_id = registry.new_run_id(body.objective)
         out_dir = runs_root / run_id
         out_dir.mkdir(parents=True, exist_ok=True)
-        RunManifest(objective=body.objective,
-                    engagement=engagement.name).save(out_dir / "manifest.json")
+
+        launch_path, llm_credentials = _prepare_llm(body.llm, body.engagement_path, out_dir)
+
+        RunManifest(objective=body.objective, engagement=engagement.name,
+                    driver="mission").save(out_dir / "manifest.json")
 
         from .events import EventBus
         from .run import HeadlessApprover
         bus = EventBus(run_id=run_id, sink_path=out_dir / "events.jsonl")
         registry.register_bus(run_id, bus)
+        if body.llm is not None:
+            bus.emit("llm.selected", provider=body.llm.provider.strip().lower(),
+                     model=body.llm.model, base_url=body.llm.base_url)
 
-        opts = launch_form(body.engagement_path, body.objective, False,
-                           body.max_steps, "", body.yes_to_all, body.asset_feed)
+        opts = launch_form(launch_path, body.objective, False,
+                           body.max_steps, "", body.yes_to_all, body.asset_feed,
+                           llm_credentials=llm_credentials)
         opts.out_dir = out_dir
         opts.driver = "mission"
         opts.events = bus

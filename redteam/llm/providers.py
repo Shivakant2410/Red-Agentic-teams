@@ -141,12 +141,17 @@ class OpenAICompatProvider:
     server implements it (OpenRouter, OpenAI, Ollama, vLLM all do), else a static
     allowlist from config serves as the candidate list."""
 
-    def __init__(self, cfg: ProviderConfig, audit=None, timeout: int = 120):
+    def __init__(self, cfg: ProviderConfig, audit=None, timeout: int = 120,
+                 api_key: str | None = None):
+        """`api_key` overrides the process env for THIS instance (run-scoped
+        credentials — concurrent runs each carry their own key). None = read the
+        configured env var, unchanged behavior. The key is captured once, here,
+        into the session's Authorization header; it is never logged or echoed."""
         self.cfg = cfg.resolved()
         self._audit = audit
         self._timeout = timeout
         self._session = requests.Session()
-        key = self.cfg.api_key()
+        key = api_key if api_key is not None else self.cfg.api_key()
         headers = {"Content-Type": "application/json"}
         if key:
             headers["Authorization"] = f"Bearer {key}"
@@ -262,11 +267,14 @@ class AnthropicProvider:
     codebase keeps speaking OpenAI shape (messages in, message dict out, tool_calls
     synthesized from tool_use blocks)."""
 
-    def __init__(self, cfg: ProviderConfig, audit=None, timeout: int = 180):
+    def __init__(self, cfg: ProviderConfig, audit=None, timeout: int = 180,
+                 api_key: str | None = None):
+        """`api_key` overrides the process env for THIS instance (run-scoped
+        credentials). None = read the configured env var, unchanged behavior."""
         self.cfg = cfg.resolved()
         self._audit = audit
         self._timeout = timeout
-        key = self.cfg.api_key()
+        key = api_key if api_key is not None else self.cfg.api_key()
         if not key:
             # Constructor is only called with a key present (gateway filters), but a
             # revoked key mid-run shouldn't traceback — requests will 401 and rotate.
