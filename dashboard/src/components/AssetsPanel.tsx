@@ -16,6 +16,12 @@ export function AssetsPanel({ detail }: { detail: RunDetail | null }) {
   const params = Array.isArray(graph.params) ? graph.params : [];
 
   const shown = endpoints.slice(0, 12) as Record<string, unknown>[];
+  const nodeLabel = (n: Record<string, unknown>): string =>
+    String(n.key ?? n.url ?? n.value ?? n.name ?? "?");
+  const nodeDoc = (n: Record<string, unknown>): string => {
+    const attrs = (n.attrs ?? {}) as Record<string, unknown>;
+    return String(attrs.doc ?? attrs.title ?? "");
+  };
 
   return (
     <Panel>
@@ -38,7 +44,7 @@ export function AssetsPanel({ detail }: { detail: RunDetail | null }) {
                   key={`h-${i}`}
                   className="rounded border border-edge bg-panel2/40 px-1.5 py-0.5 font-mono text-[10px] text-ink/90"
                 >
-                  {String(h.value ?? h.name ?? h.url ?? "?")}
+                  {nodeLabel(h)}
                 </span>
               ))}
             </div>
@@ -46,12 +52,12 @@ export function AssetsPanel({ detail }: { detail: RunDetail | null }) {
           <ul className="space-y-1">
             {shown.map((e, i) => (
               <li key={`e-${i}`} className="flex items-baseline gap-2 font-mono text-[10.5px] leading-snug">
-                {e.method ? (
-                  <span className="shrink-0 text-muted">{String(e.method).toUpperCase()}</span>
-                ) : null}
-                <span className="min-w-0 truncate text-ink/90" title={String(e.url ?? e.value ?? "")}>
-                  {String(e.url ?? e.value ?? "?")}
+                <span className="min-w-0 truncate text-ink/90" title={nodeDoc(e) || nodeLabel(e)}>
+                  {nodeLabel(e)}
                 </span>
+                {nodeDoc(e) && (
+                  <span className="min-w-0 truncate text-muted/60">{nodeDoc(e)}</span>
+                )}
               </li>
             ))}
             {endpoints.length > shown.length && (
