@@ -34,7 +34,8 @@ from ..states import (MISSION_FAILED, MISSION_HALTED, MISSION_SUCCEEDED,
 from ..runtime import Halt
 from ..swarm.journal import EventJournal
 from .commander import Commander
-from .events import EVENT_MISSION_CREATED, new_mission_event
+from .events import (EVENT_MISSION_CREATED, EVENT_TASK_REARMED,
+                     new_mission_event)
 from .executor import MockExecutor
 from .mission import Mission
 from .registry import AgentRegistry
@@ -194,7 +195,29 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
     verified_pending_ids: set[str] = set()
     unresolved_verification = False
     no_models_streak = 0
+    failed_nodes: dict[str, tuple] = {}   # node_id -> evidence fingerprint at failure
+    rearm_counts: dict[str, int] = {}     # bounded: ONE evidence-driven re-arm per node
     stop_reason = ""
+
+    def evidence_fingerprint() -> tuple:
+        """Cheap observable evidence signal: access holds, pending findings and
+        the frontier's distinct targets. A CHANGE means the previously failed
+        approach may now be materially different (new endpoints discovered, new
+        access demonstrated) — which is the only honest reason to retry it."""
+        try:
+            access = str(executor.access_state() or "")[:200]
+        except Exception:
+            access = ""
+        try:
+            pending = len(executor.pending_findings() or [])
+        except Exception:
+            pending = -1
+        try:
+            targets = tuple(sorted({str(s.get("target", "")) for s in
+                                    (executor.attack_frontier(limit=999) or [])}))[:24]
+        except Exception:
+            targets = ()
+        return (access, pending, targets)
 
     def create_task(spec: dict):
         technique = str(spec.get("technique", "") or "")
@@ -281,6 +304,21 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                             access_task_created = True
 
                     if not access_task_created:
+                        # Evidence-driven re-arm pass (before selection): a failed
+                        # node whose evidence fingerprint changed gets ONE more
+                        # attempt; the journaled TASK_REARMED keeps it observable.
+                        if failed_nodes:
+                            fp = evidence_fingerprint()
+                            for stale in [n for n, f in failed_nodes.items()
+                                          if f != fp and rearm_counts.get(n, 0) < 1]:
+                                failed_nodes.pop(stale)
+                                rearm_counts[stale] = rearm_counts.get(stale, 0) + 1
+                                seen_nodes.discard(stale)
+                                journal.append(new_mission_event(
+                                    EVENT_TASK_REARMED, engagement_id=engagement.name,
+                                    mission_id=mission.mission_id, actor=DRIVER_ACTOR,
+                                    payload={"node_id": stale,
+                                             "reason": "new evidence since failure"}))
                         frontier = (executor.attack_frontier(limit=999)
                                     if hasattr(executor, "attack_frontier") else [])
                         new_specs = []
@@ -389,6 +427,13 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                                 raise Halt("provider_unavailable")
                         else:
                             no_models_streak = 0
+                        if task.node_id:
+                            # Replanning (Builder 04): remember WHY the node failed.
+                            # If observable evidence changes later (new endpoints in
+                            # the frontier, new access holds, new findings), the node
+                            # becomes re-armable ONCE — a materially different next
+                            # attempt, not a blind static-list advance.
+                            failed_nodes[task.node_id] = evidence_fingerprint()
                 else:
                     # Explicit operator plans preserve their dependency-round behavior,
                     # but still use the same post-VERIFY reconciliation authority.
