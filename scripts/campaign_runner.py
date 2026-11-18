@@ -199,7 +199,23 @@ def wait_http(url: str, seconds: float = 15.0) -> bool:
 
 def build_providers_yaml(provider: str, or_model: str) -> tuple[str, list[str]]:
     """Returns (yaml block, provider labels). The OpenRouter block has NO key
-    material: the key rides run-scoped credentials by env-var name."""
+    material: the key rides run-scoped credentials by env-var name. Ollama is
+    keyless (http://127.0.0.1:11434/v1); tool-calling capability is proven by
+    the preflight, not assumed from discovery, so require_tool_support stays
+    off (Ollama's /v1/models listing does not advertise supported_parameters)."""
+    if provider == "ollama":
+        lines = [
+            "llm:",
+            "  providers:",
+            "    - name: ollama",
+            "      kind: openai_compat",
+            "      base_url: http://127.0.0.1:11434/v1",
+            f"      models_allow: [\"{or_model}\"]",
+            "      prefer_free: false",
+            "      require_tool_support: false",
+            "      priority: 10",
+        ]
+        return "\n".join(lines) + "\n", [f"ollama/{or_model}"]
     lines = ["llm:", "  providers:"]
     labels: list[str] = []
     if provider in ("both", "openrouter"):
@@ -225,13 +241,24 @@ def build_providers_yaml(provider: str, or_model: str) -> tuple[str, list[str]]:
     return "\n".join(lines) + "\n", labels
 
 
+PROVIDER_DEFAULT_MODELS = {
+    "ollama": "qwen2.5:7b-instruct",
+    "openrouter": "baidu/ernie-5.5-flash-preview:free",
+    "both": "baidu/ernie-5.5-flash-preview:free",
+    "zai": "glm-4.6",
+}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--scenario", required=True, choices=[*SCENARIOS, "S-EGRESS"])
     ap.add_argument("--driver", default="mission", choices=["mission", "classic"])
-    ap.add_argument("--provider", default="both", choices=["both", "openrouter", "zai"])
-    ap.add_argument("--model", default="baidu/ernie-5.5-flash-preview:free",
-                    help="OpenRouter model id (must advertise tool support)")
+    ap.add_argument("--provider", default="ollama",
+                    choices=["ollama", "both", "openrouter", "zai"],
+                    help="ollama = local keyless default; both = openrouter + z-ai fallback")
+    ap.add_argument("--model", default="",
+                    help="primary model id; empty = provider default "
+                         "(ollama: qwen2.5:7b-instruct, openrouter: ernie-5.5-flash-preview:free)")
     ap.add_argument("--api-key-file", default=str(DEFAULT_KEY_FILE))
     ap.add_argument("--port", type=int, default=8901)
     ap.add_argument("--budget-seconds", type=int, default=900)
@@ -239,6 +266,8 @@ def main() -> int:
     ap.add_argument("--tag", default="")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
+    if not args.model:
+        args.model = PROVIDER_DEFAULT_MODELS[args.provider]
 
     need_bridge = args.provider in ("both", "zai")
     if need_bridge and not bridge_alive():
