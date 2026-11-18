@@ -230,7 +230,7 @@ def main() -> int:
     ap.add_argument("--scenario", required=True, choices=[*SCENARIOS, "S-EGRESS"])
     ap.add_argument("--driver", default="mission", choices=["mission", "classic"])
     ap.add_argument("--provider", default="both", choices=["both", "openrouter", "zai"])
-    ap.add_argument("--model", default="deepseek/deepseek-chat-v3-0324:free",
+    ap.add_argument("--model", default="baidu/ernie-5.5-flash-preview:free",
                     help="OpenRouter model id (must advertise tool support)")
     ap.add_argument("--api-key-file", default=str(DEFAULT_KEY_FILE))
     ap.add_argument("--port", type=int, default=8901)
