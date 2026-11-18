@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
 import time
 from pathlib import Path
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 import redteam.config as config_mod
@@ -132,6 +134,86 @@ def test_launch_rejects_invalid_engagement_values(harness, monkeypatch):
         "engagement_path": "/tmp/engagement.yaml", "objective": "x"})
     assert r.status_code == 400
     assert "surface_map" in r.json()["detail"]
+
+
+def test_launch_llm_override_writes_effective_engagement(harness):
+    """The dashboard's provider/model selector arrives as LaunchBody.llm; the
+    server must materialize it as an effective engagement.yaml inside the run
+    dir (engine runs THAT copy) and launch the run with it."""
+    client, runs_root, engagement = harness
+    src = runs_root.parent / "engagement-src.yaml"
+    src.write_text("name: Lab\nclient: Local\nllm:\n  providers: []\n")
+    r = client.post("/api/runs", json={
+        "engagement_path": str(src), "objective": "Prove auth bypass",
+        "llm": {"provider": "zai", "model": "glm-5.3", "api_key": "sk-test"}})
+    assert r.status_code == 202, r.text
+    eff = runs_root / r.json()["run_id"] / "engagement.yaml"
+    assert eff.exists()
+    data = yaml.safe_load(eff.read_text())
+    prov = data["llm"]["providers"][0]
+    assert prov["kind"] == "zai"
+    assert prov["models_allow"] == ["glm-5.3"]
+    # the operator's selection is surfaced in the event feed
+    ev_lines = (runs_root / r.json()["run_id"] / "events.jsonl").read_text()
+    assert "llm.selected" in ev_lines
+
+
+def test_launch_without_llm_override_leaves_engagement_alone(harness):
+    client, runs_root, engagement = harness
+    r = client.post("/api/runs", json={
+        "engagement_path": str(engagement), "objective": "no override"})
+    assert r.status_code == 202
+    assert not (runs_root / r.json()["run_id"] / "engagement.yaml").exists()
+
+
+def test_launch_llm_override_sets_key_env(harness, monkeypatch):
+    """The typed API key lands in the provider's standard env var (engine reads
+    it from there) — and is never written into the effective engagement."""
+    client, runs_root, engagement = harness
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    src = runs_root.parent / "engagement-src.yaml"
+    src.write_text("name: Lab\nclient: Local\n")
+    r = client.post("/api/runs", json={
+        "engagement_path": str(src), "objective": "key env",
+        "llm": {"provider": "openai", "model": "gpt-sol", "api_key": "sk-test"}})
+    assert r.status_code == 202
+    assert os.environ.get("OPENAI_API_KEY") == "sk-test"
+    eff = yaml.safe_load((runs_root / r.json()["run_id"] / "engagement.yaml").read_text())
+    assert "api_key" not in json.dumps(eff)  # the key itself never hits disk
+    assert eff["llm"]["providers"][0]["models_allow"] == ["gpt-sol"]
+
+
+def test_launch_llm_override_unknown_provider_needs_base_url(harness):
+    """An unknown kind without an endpoint is a client 400 at launch, not a
+    dead run thread; with base_url it is the openai_compat escape hatch."""
+    client, runs_root, engagement = harness
+    src = runs_root.parent / "engagement-src.yaml"
+    src.write_text("name: Lab\nclient: Local\n")
+    r = client.post("/api/runs", json={
+        "engagement_path": str(src), "objective": "x",
+        "llm": {"provider": "notaprovider"}})
+    assert r.status_code == 400
+    assert "notaprovider" in r.json()["detail"]
+    r2 = client.post("/api/runs", json={
+        "engagement_path": str(src), "objective": "x",
+        "llm": {"provider": "vllm", "base_url": "http://127.0.0.1:9999/v1",
+                "model": "qwen2.5"}})
+    assert r2.status_code == 202, r2.text
+    eff = yaml.safe_load((runs_root / r2.json()["run_id"] / "engagement.yaml").read_text())
+    assert eff["llm"]["providers"][0]["base_url"] == "http://127.0.0.1:9999/v1"
+
+
+def test_llm_providers_endpoint(harness, monkeypatch):
+    """Catalog reports key PRESENCE only — never the key itself."""
+    client, _, _ = harness
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    body = client.get("/api/llm/providers").json()
+    kinds = {p["kind"] for p in body["providers"]}
+    assert {"openai", "zai", "gemini", "openrouter", "ollama"} <= kinds
+    by_kind = {p["kind"]: p for p in body["providers"]}
+    assert by_kind["ollama"]["key_set"] is True          # no key needed
+    assert by_kind["openrouter"]["key_set"] is False     # deleted above
+    assert "sk-" not in json.dumps(body)
 
 
 def test_unknown_run_404(harness):

@@ -29,6 +29,30 @@ from .openrouter import ChatResult, NoModelsAvailable, OpenRouterClient
 from .providers import ROTATE_STATUSES, AnthropicProvider, OpenAICompatProvider, ProviderConfig, ProviderError
 
 
+class UnconfiguredClient:
+    """Stand-in client when no LLM fleet can be built at all.
+
+    Every turn raises NoModelsAvailable, so the engine degrades exactly the way it
+    already does when a fleet's models all fail: deterministic recon still runs,
+    tasks fail honestly with `agent.no_models`, and the stop reason records why —
+    instead of the run thread dying with an uncaught construction error."""
+
+    def __init__(self, reason: str = "no LLM provider configured"):
+        self.reason = reason
+
+    def chat(self, messages: list[dict], tools: list[dict] | None = None,
+             role: str = "") -> ChatResult:
+        raise NoModelsAvailable(self.reason)
+
+    @property
+    def providers(self) -> list[str]:
+        return []
+
+    @property
+    def skipped(self) -> list[tuple[str, str]]:
+        return [(self.reason, "unconfigured")]
+
+
 class LLMGateway:
     """Fleet-of-providers client with role routing and cross-provider failover."""
 

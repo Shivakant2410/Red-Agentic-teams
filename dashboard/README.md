@@ -31,6 +31,32 @@ NEXT_PUBLIC_API_BASE=http://localhost:8000 npm run dev   # dashboard on :3000
 - CORS: the dev contract allows all origins, so `:3000 → :8000` works while
   developing.
 
+## Model & provider selection
+
+The launch panel's **MODEL PROVIDER** section sends an optional `llm` override on
+`POST /api/runs`:
+
+```json
+{ "provider": "zai", "model": "glm-5.3", "api_key": "...", "base_url": "" }
+```
+
+- `provider` — a kind the engine understands: `openai | zai | gemini | openrouter |
+  ollama | groq | anthropic`, or anything else **when `base_url` is also sent**
+  (the `openai_compat` escape hatch: vLLM, LM Studio, a private proxy).
+- `model` — pins the run's rotation to this model id via `llm.providers[].models_allow`;
+  empty = the provider's natural rotation. The field is free text with per-provider
+  presets as suggestions (OpenAI `gpt-sol`, Z.ai `glm-5.3` / `glm-5.2`,
+  Gemini `argon` / `hydrogen`, ...).
+- `api_key` — placed under the provider's standard env var (`OPENAI_API_KEY`,
+  `ZAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`,
+  `ANTHROPIC_API_KEY`) in the server process for this run. It is never written to
+  disk, logged, or echoed back. Ollama needs no key.
+- The server materializes the override as `engagement.yaml` inside the run dir
+  (the engine runs that copy) and emits an `llm.selected` event into the feed, so
+  every artifact records the exact model config the run used.
+- `GET /api/llm/providers` returns the catalog: supported kinds, the standard key
+  env var per kind, and whether that env var is currently set (presence only).
+
 ## Notes
 
 - `next.config.ts` sets `output: "export"`, `trailingSlash: true`

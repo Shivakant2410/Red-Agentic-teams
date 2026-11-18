@@ -191,6 +191,19 @@ export interface PendingApproval {
   [k: string]: unknown;
 }
 
+export interface LlmOverride {
+  /** Provider kind the engine understands: openai | zai | gemini | openrouter |
+   *  ollama | groq | anthropic — or any kind + base_url (openai_compat escape hatch). */
+  provider: string;
+  /** Empty = provider's natural rotation; a value pins llm.providers[].models_allow. */
+  model?: string;
+  /** Placed in the provider's standard key env var on the server for this run;
+   *  never written to disk or echoed back. */
+  api_key?: string;
+  /** Override the kind's default endpoint (vLLM, LM Studio, a private proxy, ...). */
+  base_url?: string;
+}
+
 export interface LaunchRequest {
   engagement_path: string;
   objective: string;
@@ -198,6 +211,9 @@ export interface LaunchRequest {
   max_steps?: number;
   source_dir?: string;
   yes_to_all?: boolean;
+  /** Optional model/provider selection from the launch form; omit to use
+   *  whatever the engagement file configures. */
+  llm?: LlmOverride;
 }
 
 export interface LaunchResponse {
