@@ -26,6 +26,7 @@ Node tasks are never selected or claimed by a second planner.
 from __future__ import annotations
 
 import json
+import time as _time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,6 +44,11 @@ from .scheduler import MissionScheduler
 from .task import TASK_LEASE_SECONDS
 
 MAX_ROUNDS = 50          # bounded mission dispatch safety cap
+# Provider-outage policy (live-fire 20261118): `agent.no_models` is a
+# transient infra condition, not a target result. Retry the SAME node with
+# a pause between attempts; halt honestly only after the bounded streak.
+PROVIDER_OUTAGE_MAX_STREAK = 6
+PROVIDER_OUTAGE_RETRY_PAUSE_S = 45.0   # tests patch this to 0
 DRIVER_ACTOR = "mission-driver"
 
 
@@ -416,18 +422,24 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                         actions = scheduler.reconcile(now=clock())
                         scheduler.apply_reconcile(actions)
                         # Reliability (live-fire 20261118 campaign matrix): a
-                        # specialist that dies on `agent.no_models` means the
-                        # configured provider is unavailable — grinding the rest
-                        # of the frontier through it only burns the engagement
-                        # window and the provider quota. Halt honestly after two
-                        # consecutive provider-dead failures instead of
-                        # advancing a static task list through an outage.
+                        # specialist dying on `agent.no_models` means the
+                        # configured provider(s) are transiently unavailable —
+                        # that is an OUTAGE, not a target result. Pause and
+                        # retry the SAME node a bounded number of times before
+                        # halting honestly; grinding the frontier through an
+                        # outage (old behavior) or dying on the first two
+                        # failures (too eager) both waste the engagement.
                         if "no_models" in str(getattr(task, "error", "") or ""):
                             no_models_streak += 1
-                            if no_models_streak >= 2:
+                            if no_models_streak >= PROVIDER_OUTAGE_MAX_STREAK:
                                 raise Halt("provider_unavailable")
-                        else:
-                            no_models_streak = 0
+                            if task.node_id:
+                                # allow the frontier to re-select this node next
+                                # round (a fresh task, same (technique, target))
+                                seen_nodes.discard(task.node_id)
+                            _time.sleep(PROVIDER_OUTAGE_RETRY_PAUSE_S)
+                            continue
+                        no_models_streak = 0
                         if task.node_id:
                             # Replanning (Builder 04): remember WHY the node failed.
                             # If observable evidence changes later (new endpoints in

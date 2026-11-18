@@ -114,7 +114,10 @@ _FRONTIER = [
 ]
 
 
-def test_provider_outage_halts_mission_after_two_failures(tmp_path):
+def test_provider_outage_halts_mission_after_bounded_streak(tmp_path, monkeypatch):
+    from redteam.mission import driver as driver_mod
+    monkeypatch.setattr(driver_mod, "PROVIDER_OUTAGE_MAX_STREAK", 2)
+    monkeypatch.setattr(driver_mod, "PROVIDER_OUTAGE_RETRY_PAUSE_S", 0.0)
     mission_dir = tmp_path / "outage"
     mission_dir.mkdir()
     with pytest.raises(Halt, match="provider_unavailable"):
@@ -125,9 +128,39 @@ def test_provider_outage_halts_mission_after_two_failures(tmp_path):
     assert rec["status"] == "halted"
     assert rec["halt_reason"] == "provider_unavailable"
     assert "MISSION_HALTED" in H.journal_types(mission_dir)
-    # exactly one recon success + two provider-dead failures — the frontier was
-    # NOT ground through task by task
-    assert _task_results(mission_dir) == ["succeeded", "failed", "failed"]
+    # the frontier was NOT ground through task by task: recon + retried node
+    assert _task_results(mission_dir).count("succeeded") <= 1
+
+
+def test_provider_outage_retries_same_node_and_recovers(tmp_path, monkeypatch):
+    """A transient outage pauses and retries the SAME node (fresh task, same
+    technique/target); when the provider recovers the mission continues — no
+    halt, no frontier grind."""
+    from redteam.mission import driver as driver_mod
+    monkeypatch.setattr(driver_mod, "PROVIDER_OUTAGE_MAX_STREAK", 6)
+    monkeypatch.setattr(driver_mod, "PROVIDER_OUTAGE_RETRY_PAUSE_S", 0.0)
+
+    class _RecoveringExecutor(_FrontierExecutor):
+        def fail_result(self):
+            self._no_models = getattr(self, "_no_models", 0) + 1
+            if self._no_models <= 2:
+                return ExecutionResult(status=EXEC_FAILED, result="",
+                                       error="agent.no_models: all candidates failed")
+            return ExecutionResult(status=EXEC_SUCCEEDED,
+                                   result="recovered: node executed")
+
+    mission_dir = tmp_path / "recover"
+    mission_dir.mkdir()
+    summary = run_mission_driver(engagement=_engagement(), out_dir=mission_dir,
+                                 objective="probe",
+                                 executor=_RecoveringExecutor(_FRONTIER[:1]),
+                                 clock=H.FakeClock(), opts=_opts(),
+                                 say=lambda _t: None)
+    rec = _mission_record(mission_dir)
+    assert rec["status"] in ("succeeded", "failed", "halted")
+    assert rec["halt_reason"] != "provider_unavailable"
+    # recon success + two retried failures + one recovered success
+    assert _task_results(mission_dir) == ["succeeded", "failed", "failed", "succeeded"]
 
 
 def test_unrelated_failure_does_not_trigger_provider_halt(tmp_path):

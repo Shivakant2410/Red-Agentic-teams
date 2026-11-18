@@ -253,6 +253,11 @@ def main() -> int:
             print("BLOCKER: no OpenRouter key (secrets file or $OPENROUTER_API_KEY).",
                   file=sys.stderr)
             return 2
+        # The Gen-1 OpenRouterClient (kind "openrouter") resolves its key from
+        # the process env — set it in-process for THIS run only. It is never
+        # written to engagement YAML, manifests, events, logs, or artifacts;
+        # the gateway path additionally carries it via RunOptions.llm_credentials.
+        os.environ["OPENROUTER_API_KEY"] = key
 
     stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     run_id = f"{stamp}-{args.scenario}-{args.driver}" + (f"-{args.tag}" if args.tag else "")
