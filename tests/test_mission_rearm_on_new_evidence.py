@@ -45,6 +45,7 @@ class _ReplayingExecutor:
     def __init__(self, new_access: bool):
         self.new_access = new_access
         self._runs = 0
+        self._access_calls = 0
 
     def run(self, task_view):
         self._runs += 1
@@ -67,10 +68,12 @@ class _ReplayingExecutor:
         return []
 
     def access_state(self):
-        # The evidence change the driver can observe. The driver contract wants
-        # recommendations/achieved/holdings keys; truthiness gates the access
-        # task path, and dict CONTENT drives the fingerprint change.
-        if self.new_access and self._runs >= 2:
+        # The evidence change the driver can observe, appearing AFTER the
+        # failure has been recorded (driver polls access_state repeatedly; the
+        # third poll is when the "new evidence" lands). Dict content drives the
+        # fingerprint change; truthiness gates the access-task path.
+        self._access_calls += 1
+        if self.new_access and self._access_calls >= 3:
             return {"recommendations": ["reset admin"], "achieved": [],
                     "holdings": ["admin"]}
         return {}

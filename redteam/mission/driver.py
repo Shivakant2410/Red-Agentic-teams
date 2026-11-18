@@ -195,7 +195,7 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
     verified_pending_ids: set[str] = set()
     unresolved_verification = False
     no_models_streak = 0
-    failed_nodes: dict[str, tuple] = {}   # node_id -> evidence fingerprint at failure
+    failed_nodes: dict[str, tuple] = {}   # node_id -> (evidence fingerprint, failed task id)
     rearm_counts: dict[str, int] = {}     # bounded: ONE evidence-driven re-arm per node
     stop_reason = ""
 
@@ -310,13 +310,14 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                         if failed_nodes:
                             fp = evidence_fingerprint()
                             for stale in [n for n, f in failed_nodes.items()
-                                          if f != fp and rearm_counts.get(n, 0) < 1]:
-                                failed_nodes.pop(stale)
+                                          if f[0] != fp and rearm_counts.get(n, 0) < 1]:
+                                _fp, orig_task_id = failed_nodes.pop(stale)
                                 rearm_counts[stale] = rearm_counts.get(stale, 0) + 1
                                 seen_nodes.discard(stale)
                                 journal.append(new_mission_event(
                                     EVENT_TASK_REARMED, engagement_id=engagement.name,
                                     mission_id=mission.mission_id, actor=DRIVER_ACTOR,
+                                    task_id=orig_task_id,
                                     payload={"node_id": stale,
                                              "reason": "new evidence since failure"}))
                         frontier = (executor.attack_frontier(limit=999)
@@ -433,7 +434,8 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                             # the frontier, new access holds, new findings), the node
                             # becomes re-armable ONCE — a materially different next
                             # attempt, not a blind static-list advance.
-                            failed_nodes[task.node_id] = evidence_fingerprint()
+                            failed_nodes[task.node_id] = (evidence_fingerprint(),
+                                                          task.task_id)
                 else:
                     # Explicit operator plans preserve their dependency-round behavior,
                     # but still use the same post-VERIFY reconciliation authority.
