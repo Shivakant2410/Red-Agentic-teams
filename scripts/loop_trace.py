@@ -33,7 +33,15 @@ def _jsonl(path: Path) -> list[dict]:
 
 def trace_run(run_dir: Path) -> dict:
     journal = _jsonl(run_dir / "mission_journal.jsonl")
-    events = _jsonl(run_dir / "events.jsonl")
+    # this codebase records the event bus into the hash-chained audit log
+    # (events.jsonl is not written by execute_run); audit rows carry the same
+    # type/fields either as {"event": ...} or {"type": ...}
+    events = []
+    for row in _jsonl(run_dir / "audit.log.jsonl"):
+        row = dict(row)
+        if "type" not in row and "event" in row:
+            row["type"] = row["event"]
+        events.append(row)
 
     tasks: dict[str, dict] = {}
     mission_meta: dict = {}
