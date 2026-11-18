@@ -145,6 +145,23 @@ LLM_PROVIDER_SHORTCUTS: dict[str, str] = {
     "ollama": "",
 }
 
+# Initial-selection heuristic for the Ollama model dropdown, in MODELS order:
+# the first installed model whose name matches a family with a reputation for
+# tool calling. A HEURISTIC ONLY — discovery never proves tool-calling
+# capability; the preflight is the authority (and the dashboard runs it).
+_OLLAMA_TOOL_HINTS = ("qwen3", "qwen2.5", "qwen2", "llama3.3", "llama3.2",
+                      "llama3.1", "mistral-nemo", "mistral-small", "mistral",
+                      "glm4", "command-r", "granite3", "phi4", "firefunction",
+                      "hermes")
+
+
+def _pick_ollama_default(models: list[str]) -> str:
+    for model in models:
+        low = model.lower()
+        if any(hint in low for hint in _OLLAMA_TOOL_HINTS):
+            return model
+    return models[0] if models else ""
+
 
 class LlmOverride(BaseModel):
     """The operator's model choice for this launch (dashboard selector → launch body).
@@ -205,6 +222,44 @@ class MissionBody(BaseModel):
     plan: list = []
     # Same provider/model selection contract as LaunchBody.llm (run-scoped
     # credentials; see _prepare_llm).
+    llm: LlmOverride | None = None
+
+
+class LaunchAuthorization(BaseModel):
+    """URL-first launch authorization (Builder 04). A checkbox alone is NOT
+    proof of authorization: the launch fails closed unless the operator records
+    WHO authorized the test, against WHICH reference, and WHEN it expires."""
+    confirmed: bool = False
+    authorized_by: str = Field(default="", max_length=300)
+    ticket: str = Field(default="", max_length=300)
+    starts: str = Field(default="", max_length=10)   # ISO date; default today
+    ends: str = Field(default="", max_length=10)     # ISO date; default today+7
+    # Local-lab opt-in for loopback/RFC1918 targets (same switch ScopeGuard
+    # enforces per request — never set by the server on the operator's behalf).
+    allow_private_ranges: bool = False
+    excluded_hosts: list[str] = Field(default_factory=list, max_length=100)
+
+
+class UrlLaunchBody(BaseModel):
+    """POST /api/launch — URL-first engagement creation (Builder 04).
+
+    The operator supplies the authorized web application URL; the server parses
+    and normalizes it, validates the authorization metadata fail-closed, builds
+    the internal RoE (via redteam.launch), validates it with the existing
+    loader, and arms the SAME launch pipeline as /api/runs and /api/missions."""
+    target_url: str = Field(min_length=1, max_length=2000)
+    objective: str = Field(min_length=1, max_length=20000)
+    mode: str = Field(default="classic", max_length=20)  # classic | mission
+    authorization: LaunchAuthorization = Field(default_factory=LaunchAuthorization)
+    intensity: str = Field(default="standard", max_length=20)  # low|standard|high
+    max_steps: int = Field(default=40, ge=1, le=1000)
+    max_run_seconds: int = Field(default=0, ge=0, le=7 * 24 * 3600)
+    max_llm_tokens: int = Field(default=0, ge=0)
+    multi_agent: bool = True          # classic driver only
+    yes_to_all: bool = False
+    source_dir: str = Field(default="", max_length=1000)  # classic driver only
+    asset_feed: str = Field(default="", max_length=2_000_000)
+    plan: list = []                   # mission driver only (deliberate static plan)
     llm: LlmOverride | None = None
 
 
@@ -482,6 +537,144 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
              "key_set": (bool(os.environ.get(env)) if env else True)}
             for kind, env in LLM_PROVIDER_SHORTCUTS.items()
         ]}
+
+    @app.get("/api/llm/ollama/status")
+    def ollama_status(base_url: str = "") -> dict:
+        """Ollama auto-connect probe (Builder 04): REAL HTTP checks against the
+        configured Ollama endpoint — a configured URL alone never counts as
+        connected. Model discovery lists the INSTALLED models (native /api/tags,
+        the canonical Ollama listing); discovery does NOT prove tool-calling
+        capability — that is what /api/llm/preflight verifies on demand."""
+        from .llm.providers import ProviderConfig
+        cfg = ProviderConfig(kind="ollama", base_url=(base_url or "").strip()).resolved()
+        root = cfg.base_url[:-3] if cfg.base_url.endswith("/v1") else cfg.base_url
+        import requests as _rq
+        try:
+            resp = _rq.get(f"{root}/api/tags", timeout=4)
+            resp.raise_for_status()
+            payload = resp.json()
+            models = sorted({str((m.get("name") or m.get("model") or "")).strip()
+                             for m in (payload.get("models") or [])
+                             if isinstance(m, dict) and (m.get("name") or m.get("model"))})
+            version = ""
+            try:
+                version = str(_rq.get(f"{root}/api/version", timeout=2).json().get("version", ""))
+            except (_rq.RequestException, ValueError):
+                pass
+            if not models:
+                return {"provider": "ollama", "base_url": root, "connected": True,
+                        "state": "no_models", "version": version, "models": [],
+                        "default_model": "",
+                        "message": "Ollama is running, but no models are installed. "
+                                   "Pull a supported model first."}
+            return {"provider": "ollama", "base_url": root, "connected": True,
+                    "state": "connected", "version": version, "models": models,
+                    "default_model": _pick_ollama_default(models),
+                    "message": f"Ollama connected — {len(models)} model"
+                               f"{'s' if len(models) != 1 else ''} available"}
+        except (_rq.RequestException, ValueError) as exc:
+            return {"provider": "ollama", "base_url": root, "connected": False,
+                    "state": "not_running", "version": "", "models": [],
+                    "default_model": "",
+                    "message": "Ollama is not running. Start Ollama and retry.",
+                    "detail": f"{type(exc).__name__}: {str(exc)[:200]}"}
+
+    @app.post("/api/launch", status_code=202)
+    def launch_from_url(body: UrlLaunchBody) -> dict:
+        """URL-first launch (Builder 04): target URL + authorization metadata →
+        server-side engagement generation (redteam.launch, fail-closed) → the
+        SAME arm pipeline as /api/runs and /api/missions. Every rejection is an
+        actionable 400. Nothing here widens scope: the generated RoE is validated
+        by the existing loader, the control-plane overlap check still applies,
+        and ScopeGuard keeps checking every request (redirects included)."""
+        from .launch import LaunchError, build_engagement, write_launch_artifacts
+
+        mode = body.mode.strip().lower()
+        if mode not in ("classic", "mission"):
+            raise HTTPException(400, f"unknown mode '{body.mode}' — choose 'classic' or 'mission'")
+
+        try:
+            engagement_data, summary = build_engagement(
+                body.target_url, body.objective,
+                authorization=body.authorization.model_dump(),
+                intensity=body.intensity,
+                max_run_seconds=body.max_run_seconds,
+                max_llm_tokens=body.max_llm_tokens)
+        except LaunchError as exc:
+            raise HTTPException(400, str(exc))
+
+        if body.asset_feed:
+            from .importers.assets import load_asset_feed
+            try:
+                load_asset_feed(body.asset_feed)
+            except ValueError as exc:
+                raise HTTPException(400, f"bad asset_feed: {exc}")
+
+        run_id = registry.new_run_id(body.objective)
+        out_dir = runs_root / run_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+        engagement_path = write_launch_artifacts(out_dir, engagement_data, summary)
+
+        from .config import ConfigError, load_engagement
+        try:
+            engagement = load_engagement(engagement_path)
+        except (ConfigError, ValueError) as exc:
+            raise HTTPException(400, f"generated engagement failed validation: {exc}")
+        if not engagement.is_active:
+            raise HTTPException(400, "authorization window is not active — check the start/end dates")
+        if control_plane is not None:
+            from .scope import check_control_plane_overlap
+            try:
+                check_control_plane_overlap(engagement, control_plane[0], control_plane[1])
+            except ConfigError as exc:
+                raise HTTPException(400, f"generated engagement rejected: {exc}")
+
+        launch_path, llm_credentials = _prepare_llm(body.llm, engagement_path, out_dir)
+
+        RunManifest(objective=body.objective, engagement=engagement.name,
+                    driver=mode).save(out_dir / "manifest.json")
+
+        from .events import EventBus
+        from .run import HeadlessApprover
+        bus = EventBus(run_id=run_id, sink_path=out_dir / "events.jsonl")
+        registry.register_bus(run_id, bus)
+        bus.emit("launch.authorized",
+                 target=f"{summary['scheme']}://{summary['host']}:{summary['port']}",
+                 authorized_by=summary["authorized_by"], ticket=summary["ticket"],
+                 starts=summary["starts"], ends=summary["ends"],
+                 intensity=summary["intensity"],
+                 allow_private_ranges=summary["allow_private_ranges"])
+        if body.llm is not None:
+            bus.emit("llm.selected", provider=body.llm.provider.strip().lower(),
+                     model=body.llm.model, base_url=body.llm.base_url)
+
+        opts = launch_form(launch_path, body.objective,
+                           body.multi_agent and mode == "classic",
+                           body.max_steps,
+                           body.source_dir if mode == "classic" else "",
+                           body.yes_to_all, body.asset_feed,
+                           llm_credentials=llm_credentials)
+        opts.out_dir = out_dir
+        opts.events = bus
+        opts.approve = HeadlessApprover(out_dir, bus, kill_file=out_dir / "STOP")
+        if mode == "mission":
+            opts.driver = "mission"
+            if body.plan:
+                (out_dir / "mission_plan.json").write_text(
+                    json.dumps({"tasks": body.plan}, indent=2), encoding="utf-8")
+
+        registry.launch(run_id, out_dir, opts)
+        return {"run_id": run_id,
+                "mission_id": run_id if mode == "mission" else "",
+                "run_ids": [run_id] if mode == "mission" else [],
+                "engagement": engagement.name, "out_dir": str(out_dir),
+                "status": "running", "driver": mode,
+                "target": {"url": summary["target_url"], "scheme": summary["scheme"],
+                           "host": summary["host"], "port": summary["port"]},
+                "authorization": {k: summary[k] for k in
+                                  ("authorized_by", "ticket", "starts", "ends",
+                                   "intensity", "allow_private_ranges",
+                                   "excluded_hosts")}}
 
     @app.post("/api/llm/preflight")
     def llm_preflight(body: PreflightBody) -> dict:
