@@ -325,8 +325,10 @@ def test_execute_run_mission_branch_uses_the_real_executor(tmp_path, lab_server,
                                                            monkeypatch):
     from redteam.run import RunOptions, execute_run
 
+    # build_llm_client gained a run-scoped credentials kwarg (builder-04a); the
+    # scripted client ignores it — the injection seam stays client-only.
     monkeypatch.setattr("redteam.run.build_llm_client",
-                        lambda llm, audit=None: ScriptedClient(lab_server))
+                        lambda llm, audit=None, credentials=None: ScriptedClient(lab_server))
 
     today = _dt.date.today()
     engagement_yaml = f"""

@@ -66,11 +66,19 @@ python -m redteam.server --runs-root runs --port 8000
 
 Then open `http://127.0.0.1:8000`:
 
-- **Launch runs** from the browser — engagement path, objective, swarm mode, budgets,
-  and the **model provider / model** for the run. The RoE is validated before anything
-  starts.
-- **Watch the attack live**: every agent turn, tool call/result, finding, phase change,
-  model rotation, and reflection streams over SSE into the mission-control page.
+- **Launch runs from the browser** — engagement path, objective, budgets, and the
+  **model provider / model** for the run. The launch panel's **EXECUTION MODE**
+  selector picks the driver: a **classic run** (`POST /api/runs`, the orchestrator
+  swarm) or an **adaptive mission** (`POST /api/missions`, the mission coordination
+  driver over the same specialists/verifier — it claims tasks from the live
+  AttackTree frontier and replans between rounds; an explicit static plan is
+  strictly opt-in). The RoE is validated before anything starts.
+- **Watch the attack live**: every agent turn, tool call/result, finding, phase
+  change, model rotation, and reflection streams over SSE into the run-detail page
+  (`/runs?id={run_id}` — survives refresh and direct navigation; unknown ids get a
+  clear not-found state). Mission runs additionally show the coordination panel:
+  mission status, current task + specialist, task lifecycle, the verification
+  split, and the mission-journal tail.
 - **Approve sensitive actions** in one click (`request_approval` blocks the agent until
   you decide; a STOP kill file auto-denies and halts — fail closed).
 - **Stop runs and read reports**: objective score, kill chain, attack tree, per-round
@@ -88,11 +96,14 @@ automatically).
 backend (**OpenAI / Z.ai / Gemini / OpenRouter / Ollama / Groq / Anthropic** or *engine
 default*), the model (free text with per-provider presets — `glm-5.3`, `gpt-sol`,
 `gemini-argon`, …), an API key for the run, and an optional `base_url` override (vLLM /
-LM Studio / a private proxy). The key lives only in the provider's standard env var for
-that server process — never written to disk or logged. The selection is materialized as
-an effective `engagement.yaml` inside the run dir and surfaced as an `llm.selected`
-event, so every artifact records the exact model config the run used.
-`GET /api/llm/providers` lists the supported kinds and whether each key env var is set.
+LM Studio / a private proxy). The typed key is a **run-scoped credential**: it travels
+in memory on that run's options and is resolved into that run's provider sessions at
+construction — never written to the process environment, engagement YAML, manifests,
+events, or logs, so concurrent runs with different keys cannot cross-use them. Omit the
+key to use preconfigured env credentials. The selection is materialized as an effective
+`engagement.yaml` inside the run dir and surfaced as an `llm.selected` event, so every
+artifact records the exact model config the run used. `GET /api/llm/providers` lists
+the supported kinds and whether each key env var is set (presence only).
 
 **Per engagement, in YAML:** route roles across providers with failover by adding a
 `providers:` block to the engagement's `llm:` section:
@@ -132,7 +143,7 @@ Any OpenAI-compatible endpoint (vLLM, LM Studio, a proxy) works via a custom
 Everything the dashboard does is plain HTTP (same origin):
 
 ```bash
-# launch with an explicit provider/model choice
+# classic run with an explicit provider/model choice
 curl -X POST localhost:8000/api/runs -H 'content-type: application/json' -d '{
   "engagement_path": "/abs/path/to/engagement",
   "objective": "Map the API surface and test authentication",
@@ -140,18 +151,29 @@ curl -X POST localhost:8000/api/runs -H 'content-type: application/json' -d '{
   "llm": {"provider": "zai", "model": "glm-5.3", "api_key": "..."}
 }'
 
+# adaptive mission (same llm contract; plan omitted = dynamic AttackTree frontier)
+curl -X POST localhost:8000/api/missions -H 'content-type: application/json' -d '{
+  "engagement_path": "/abs/path/to/engagement",
+  "objective": "Reach the admin console and prove data access",
+  "max_steps": 40
+}'
+
 curl -s localhost:8000/api/runs | jq '.runs[0]'
+curl -s localhost:8000/api/missions | jq '.missions[0]'
+curl -s localhost:8000/api/missions/<id> | jq '{status, halt_reason, tasks}'
 curl -s localhost:8000/api/llm/providers | jq
 curl -s localhost:8000/api/runs/<id>/events | jq '.events[-1]'
 curl -s localhost:8000/api/runs/<id>/traffic  | jq '.traffic[-1]'   # wire evidence
 curl -s localhost:8000/api/runs/<id>/inventory | jq '.summary'      # attack surface
 ```
 
-Full lifecycle: `POST /api/runs`, `GET /api/runs`, `GET /api/runs/{id}`,
-`GET /api/runs/{id}/events`, `GET /api/runs/{id}/stream` (SSE), `GET
+Full lifecycle: `POST /api/runs`, `GET /api/runs`, `GET /api/runs/{id}` (includes
+`driver`), `GET /api/runs/{id}/events`, `GET /api/runs/{id}/stream` (SSE), `GET
 /api/runs/{id}/approvals`, `POST /api/approvals/{id}`, `POST /api/runs/{id}/stop`,
 `GET /api/runs/{id}/report`, `GET /api/runs/{id}/traffic`, `GET
-/api/runs/{id}/inventory`, `GET /api/llm/providers`, `GET /api/health`.
+/api/runs/{id}/inventory`, `POST /api/missions`, `GET /api/missions`,
+`GET /api/missions/{mission_id}`, `GET /api/llm/providers`, `GET /api/health`.
+The dashboard's run-detail route is `/runs?id={run_id}`.
 
 ## Safety model: how "give it all of Kali" stays scoped
 
@@ -241,7 +263,16 @@ Design details: `docs/adr-001-collective-intelligence-foundation.md`,
 
 ```bash
 pip install -e ".[dev]"   # once: adds pytest + httpx (testclient)
-python -m pytest -q       # full suite
+python -m pytest -q       # full python suite (engine, server, credentials, …)
+
+npm --prefix dashboard install
+npm --prefix dashboard test           # dashboard component suite (vitest)
+cd dashboard && npx tsc --noEmit && cd ..   # dashboard type check
+
+# browser E2E (drives a real FastAPI server + built UI through the full
+# operator workflow with a deterministic fake engine; needs chromium):
+npm --prefix dashboard run build
+python -m pytest tests/test_dashboard_e2e.py -q
 ```
 
 ## Notes & limits
