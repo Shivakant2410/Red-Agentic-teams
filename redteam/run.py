@@ -439,7 +439,11 @@ def execute_run(opts: RunOptions) -> dict:
         # becomes wire evidence instead of a blind spot behind the firewall. The
         # proxy shares the run's RateLimiter, so the RoE request budget is global
         # across the fetch path AND every proxied tool exchange.
-        if use_sandbox and not opts.no_evidence_proxy:
+        # Browser runs start it too: the Playwright browser routes through the
+        # same listener (RECON agent -> browser -> EvidenceProxy -> target), so
+        # browser-originated traffic gets the same scope checks, budget and
+        # wire evidence (RECON-first upgrade, 2026-11-18).
+        if (use_sandbox or use_browser) and not opts.no_evidence_proxy:
             try:
                 from .proxy import EvidenceProxy
                 proxy = EvidenceProxy(scope=scope, traffic=traffic, audit=audit,
@@ -484,19 +488,35 @@ def execute_run(opts: RunOptions) -> dict:
 
         if use_browser:
             from .tools.browser import BrowserController
-            browser = BrowserController(scope, limiter, audit, out / "screenshots")
+            browser = BrowserController(
+                scope, limiter, audit, out / "screenshots",
+                traffic=traffic,
+                # Route ALL browser traffic through the evidence proxy when it
+                # runs: scope checks + RoE budget + wire evidence for every
+                # page-initiated exchange (proxied rows land as source=proxy /
+                # proxy-mitm; the controller skips direct recording then, so
+                # no exchange is double-counted).
+                proxy_server=(f"http://127.0.0.1:{proxy.port}"
+                              if proxy is not None else ""),
+                live_dir=out / "recon_live")
 
         from .session import SessionStore
         from .skills import SkillLibrary
         # Proven proofs, cross-run: learned skills plus imported corpora (e.g. nuclei).
         skills = SkillLibrary(Path(opts.memory_dir) / "skills.json", max_skills=50000)
+        # RECON evidence plane: provenance + validation lifecycle for every
+        # discovery claim, mirrored into the shared graph (see observations.py).
+        from .observations import ObservationLog
+        observations = ObservationLog(out / "observations.jsonl", graph=graph,
+                                      audit=audit)
         ctx = ToolContext(scope=scope, limiter=limiter, audit=audit, findings=findings,
                           approve=approver,
                           sandbox=sandbox, browser=browser, graph=graph,
                           sessions=SessionStore(), skills=skills,
                           access=access, objective=engagement.objective,
                           killchain=killchain, events=bus,
-                          traffic=traffic, inventory=inventory)
+                          traffic=traffic, inventory=inventory,
+                          observations=observations, proxy=proxy)
 
         # Cross-engagement memory: a single global store the agent learns into over time,
         # bootstrapped with curated tradecraft (correct oracle recipes) on first use.

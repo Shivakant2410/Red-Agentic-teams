@@ -112,6 +112,17 @@ EXEMPT: dict[str, str] = {
                     "crosscheck for its endpoints is host_probe/http_probe, not a re-derivation.",
     "jwt_inspect": "offline deterministic parse of a token we already hold; its "
                    "verification is the proof pipeline that USES the token.",
+    "observations": "read side of the run's own observation log — the log already "
+                    "carries per-claim provenance and validation states; re-deriving "
+                    "it would be the same method twice.",
+    "proxy_status": "introspection of OUR evidence proxy's own listener state; "
+                    "nothing here is a claim about the target.",
+    "proxy_history": "read-back of exchanges OUR proxy already captured on the wire "
+                     "— the wire row IS the first-party observation.",
+    "proxy_inspect": "detail read-back of one already-captured exchange (masked "
+                     "by the recorder); no new claim to verify.",
+    "proxy_filter": "filtered read-back of already-captured exchanges; no new "
+                    "claim to verify.",
 }
 
 
@@ -208,6 +219,8 @@ class CrossCheckTool:
                           "detail": detail, "promotion_rule": "proof pipeline only"}
                 ctx.audit.record("crosscheck.result", tool=tool, claim=claim,
                                  verdict=v, detail=detail)
+                self._record_validation(ctx, tool, claim, url, param, host,
+                                        port, v, detail)
                 return json.dumps(result, ensure_ascii=False)
             return json.dumps({"error": (
                 f"tool {tool!r} has no second method for claim {claim!r} "
@@ -235,7 +248,50 @@ class CrossCheckTool:
                   "detail": detail, "promotion_rule": spec["rule"]}
         ctx.audit.record("crosscheck.result", tool=tool, claim=claim, method=method,
                          verdict=v, detail=detail)
+        self._record_validation(ctx, tool, claim, url, param, host, port,
+                                v, detail)
         return json.dumps(result, ensure_ascii=False)
+
+    # -- observation-log validation ------------------------------------------------
+
+    def _record_validation(self, ctx: ToolContext, tool: str, claim: str,
+                           url: str, param: str, host: str, port: int,
+                           verdict: str, detail: str) -> None:
+        """Land the verdict in the observation log's validation lifecycle so
+        the whole team sees which leads are corroborated / contradicted /
+        unverifiable (the audit record above is the legal trail; this is the
+        working state — see observations.py). A corroborated lead is STILL a
+        lead: this never creates or promotes a finding."""
+        observations = getattr(ctx, "observations", None)
+        if observations is None:
+            return
+        obs_type = {"endpoint": "endpoint", "hidden_param": "parameter",
+                    "service": "service"}.get(claim, "endpoint")
+        target = url or (f"{host}:{port}" if host else "")
+        if not target:
+            return
+        base = target.split("?")[0]
+        rows = observations.filter(obs_type=obs_type,
+                                   target_contains=base, limit=20)
+        for row in rows:
+            if row["target"].startswith(base):
+                observations.mark_validation(row["obs_id"], verdict,
+                                             by=f"crosscheck_lead({tool})",
+                                             reason=detail)
+                return
+        # No prior observation recorded this lead: enter it WITH its verdict
+        # so the state is visible immediately (source = the claiming tool).
+        try:
+            stored = observations.record(obs_type, target,
+                                         source_tool=tool, mode="active",
+                                         metadata={"claim": claim,
+                                                   "crosscheck": verdict,
+                                                   "detail": detail})
+            observations.mark_validation(stored["obs_id"], verdict,
+                                         by=f"crosscheck_lead({tool})",
+                                         reason=detail)
+        except Exception:  # noqa: BLE001 — validation must never break the tool
+            pass
 
     # -- methods -----------------------------------------------------------------
 
