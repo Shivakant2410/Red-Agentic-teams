@@ -155,3 +155,26 @@ def test_uninterrupted_all_succeeded_still_succeeds(tmp_path):
     assert summary["status"] == "succeeded"
     rec = _mission_record(mission_dir)
     assert rec["status"] == "succeeded"
+
+
+def test_mission_run_terminal_refuses_completed_for_incomplete_mission():
+    """Run-level manifest mirrors the driver's honest snapshot when the driver
+    RETURNS normally (executor reported the budget gone / objective unmet, no
+    Halt propagated). Live-fire 20261118: a budget-exhausted mission showed run
+    "completed" next to mission "failed"."""
+    from redteam.run import _mission_run_terminal
+
+    # objective genuinely achieved wins (contract met before interruption)
+    assert _mission_run_terminal({"status": "succeeded",
+                                  "objective_achieved": True}) == ("completed", "")
+    # executor-reported budget stop must read halted with the same reason
+    assert _mission_run_terminal({"status": "failed", "objective_achieved": False,
+                                  "stop_reason": "budget_exhausted"}) == \
+        ("halted", "budget_exhausted")
+    # round cap is the operator-recognizable halted stop too
+    assert _mission_run_terminal({"status": "halted", "objective_achieved": None,
+                                  "stop_reason": "round_limit"}) == \
+        ("halted", "round_limit")
+    # no reason at all -> still halted, never quietly completed
+    assert _mission_run_terminal({"status": "failed", "stop_reason": ""}) == \
+        ("halted", "mission_incomplete")

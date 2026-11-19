@@ -98,6 +98,23 @@ export const api = {
 
   listMissions: () => request<{ missions: MissionSummary[] }>("/api/missions"),
 
+  /** URL-first launch (Builder 04): the server builds and validates the
+   *  engagement from the authorized target URL + authorization metadata and
+   *  arms the selected driver. Rejections are actionable 400s. */
+  launchFromUrl: (body: import("./types").UrlLaunchRequest) =>
+    request<import("./types").UrlLaunchResponse>("/api/launch", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  /** Ollama auto-connect: REAL probe of the configured endpoint + installed
+   *  model discovery (native /api/tags). Never "connected" on a URL alone. */
+  ollamaStatus: (baseUrl = "") =>
+    request<import("./types").OllamaStatus>(
+      `/api/llm/ollama/status` +
+      (baseUrl ? `?base_url=${encodeURIComponent(baseUrl)}` : ""),
+    ),
+
   /** Mission detail for a run: mission_id, status, task list (lifecycle states),
    *  halt reason, and the tail of the mission journal. 404 = the mission record
    *  does not exist yet (or the run is not a mission) — callers must show an

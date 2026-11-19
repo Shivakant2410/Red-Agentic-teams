@@ -22,6 +22,7 @@ keep working exactly as before.
 
 from __future__ import annotations
 
+import os
 import threading
 from collections.abc import Mapping
 
@@ -75,9 +76,15 @@ class LLMGateway:
     the mapping is empty or lacks the provider's env var name.
     """
 
-    def __init__(self, cfg: LlmConfig, audit=None, credentials=None):
+    def __init__(self, cfg: LlmConfig, audit=None, credentials=None, timeout=None):
         self._cfg = cfg
         self._audit = audit
+        # Opt-in per-request read timeout (seconds) for OpenAI-compatible
+        # providers. None = provider default (120s). Local CPU-only backends
+        # (ollama on a small box) can exceed 120s on ONE completion once the
+        # context grows — live-fire 20261118: llama3.2:1b died with a read
+        # timeout at ~9.7k tokens. No default behavior change.
+        self._timeout = int(timeout) if timeout else None
         self._providers = []
         self._excluded: list[tuple[str, str]] = []   # (name, reason) for diagnostics
         for pcfg in cfg.providers:
@@ -92,7 +99,9 @@ class LLMGateway:
             if pcfg.kind == "anthropic":
                 self._providers.append(AnthropicProvider(pcfg, audit=audit, api_key=key))
             else:
-                self._providers.append(OpenAICompatProvider(pcfg, audit=audit, api_key=key))
+                kw = {"timeout": self._timeout} if self._timeout else {}
+                self._providers.append(OpenAICompatProvider(pcfg, audit=audit,
+                                                            api_key=key, **kw))
         if not self._providers:
             raise NoModelsAvailable(
                 "no LLM providers available (configure llm.providers and export their "
@@ -210,4 +219,7 @@ def build_llm_client(cfg: LlmConfig, audit=None, credentials: Mapping[str, str] 
     keys never reach the legacy path)."""
     if not cfg.providers:
         return OpenRouterClient(cfg, audit=audit)
-    return LLMGateway(cfg, audit=audit, credentials=credentials)
+    # REDTEAM_LLM_TIMEOUT: operator opt-in for slow local backends (seconds).
+    raw = os.environ.get("REDTEAM_LLM_TIMEOUT", "").strip()
+    return LLMGateway(cfg, audit=audit, credentials=credentials,
+                      timeout=int(raw) if raw else None)

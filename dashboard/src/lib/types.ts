@@ -259,6 +259,73 @@ export interface LlmModelsResponse {
   models: string[];
 }
 
+/** POST /api/launch — URL-first engagement creation (Builder 04). The server
+ *  parses/validates the target URL, enforces fail-closed authorization, builds
+ *  the internal RoE, and arms the same pipeline as /api/runs (classic) and
+ *  /api/missions (mission). A checkbox alone is NOT proof of authorization. */
+export interface LaunchAuthorization {
+  /** The explicit operator confirmation — false rejects the launch. */
+  confirmed: boolean;
+  /** WHO authorized the assessment (name or reference) — required. */
+  authorized_by?: string;
+  /** Reference to the signed authorization (SOW, bounty scope URL) — required. */
+  ticket?: string;
+  /** ISO dates bounding the assessment window (YYYY-MM-DD). */
+  starts?: string;
+  ends?: string;
+  /** Local-lab opt-in for loopback/RFC1918 targets — same switch ScopeGuard
+   *  enforces per request; never set on the operator's behalf. */
+  allow_private_ranges?: boolean;
+  /** Explicit carve-outs that always win. */
+  excluded_hosts?: string[];
+}
+
+export interface UrlLaunchRequest {
+  target_url: string;
+  objective: string;
+  mode: "classic" | "mission";
+  authorization: LaunchAuthorization;
+  /** Permitted test intensity dial: low | standard | high (bounded, honest). */
+  intensity?: "low" | "standard" | "high";
+  max_steps?: number;
+  max_run_seconds?: number;
+  max_llm_tokens?: number;
+  multi_agent?: boolean;
+  yes_to_all?: boolean;
+  source_dir?: string;
+  asset_feed?: string;
+  plan?: MissionPlanTask[];
+  llm?: LlmOverride;
+}
+
+export interface UrlLaunchResponse {
+  run_id: string;
+  mission_id: string;
+  run_ids: string[];
+  engagement: string;
+  out_dir: string;
+  status: string;
+  driver: string;
+  target: { url: string; scheme: string; host: string; port: number };
+  authorization: Record<string, unknown>;
+  [k: string]: unknown;
+}
+
+/** GET /api/llm/ollama/status — REAL HTTP probe of the Ollama endpoint (a
+ *  configured URL alone never counts as connected). `models` lists INSTALLED
+ *  models; discovery is NOT proof of tool-calling — run the preflight. */
+export interface OllamaStatus {
+  provider: string;
+  base_url: string;
+  connected: boolean;
+  state: "connected" | "not_running" | "no_models" | "error";
+  version: string;
+  models: string[];
+  default_model: string;
+  message: string;
+  detail?: string;
+}
+
 /** POST /api/missions — adaptive mission launch (MissionBody server-side). */
 export interface MissionLaunchRequest {
   engagement_path: string;

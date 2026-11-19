@@ -26,6 +26,7 @@ Node tasks are never selected or claimed by a second planner.
 from __future__ import annotations
 
 import json
+import time as _time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -34,7 +35,8 @@ from ..states import (MISSION_FAILED, MISSION_HALTED, MISSION_SUCCEEDED,
 from ..runtime import Halt
 from ..swarm.journal import EventJournal
 from .commander import Commander
-from .events import EVENT_MISSION_CREATED, new_mission_event
+from .events import (EVENT_MISSION_CREATED, EVENT_TASK_REARMED,
+                     new_mission_event)
 from .executor import MockExecutor
 from .mission import Mission
 from .registry import AgentRegistry
@@ -42,6 +44,11 @@ from .scheduler import MissionScheduler
 from .task import TASK_LEASE_SECONDS
 
 MAX_ROUNDS = 50          # bounded mission dispatch safety cap
+# Provider-outage policy (live-fire 20261118): `agent.no_models` is a
+# transient infra condition, not a target result. Retry the SAME node with
+# a pause between attempts; halt honestly only after the bounded streak.
+PROVIDER_OUTAGE_MAX_STREAK = 6
+PROVIDER_OUTAGE_RETRY_PAUSE_S = 45.0   # tests patch this to 0
 DRIVER_ACTOR = "mission-driver"
 
 
@@ -193,7 +200,30 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
     logic_task_created = False
     verified_pending_ids: set[str] = set()
     unresolved_verification = False
+    no_models_streak = 0
+    failed_nodes: dict[str, tuple] = {}   # node_id -> (evidence fingerprint, failed task id)
+    rearm_counts: dict[str, int] = {}     # bounded: ONE evidence-driven re-arm per node
     stop_reason = ""
+
+    def evidence_fingerprint() -> tuple:
+        """Cheap observable evidence signal: access holds, pending findings and
+        the frontier's distinct targets. A CHANGE means the previously failed
+        approach may now be materially different (new endpoints discovered, new
+        access demonstrated) — which is the only honest reason to retry it."""
+        try:
+            access = str(executor.access_state() or "")[:200]
+        except Exception:
+            access = ""
+        try:
+            pending = len(executor.pending_findings() or [])
+        except Exception:
+            pending = -1
+        try:
+            targets = tuple(sorted({str(s.get("target", "")) for s in
+                                    (executor.attack_frontier(limit=999) or [])}))[:24]
+        except Exception:
+            targets = ()
+        return (access, pending, targets)
 
     def create_task(spec: dict):
         technique = str(spec.get("technique", "") or "")
@@ -280,6 +310,22 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                             access_task_created = True
 
                     if not access_task_created:
+                        # Evidence-driven re-arm pass (before selection): a failed
+                        # node whose evidence fingerprint changed gets ONE more
+                        # attempt; the journaled TASK_REARMED keeps it observable.
+                        if failed_nodes:
+                            fp = evidence_fingerprint()
+                            for stale in [n for n, f in failed_nodes.items()
+                                          if f[0] != fp and rearm_counts.get(n, 0) < 1]:
+                                _fp, orig_task_id = failed_nodes.pop(stale)
+                                rearm_counts[stale] = rearm_counts.get(stale, 0) + 1
+                                seen_nodes.discard(stale)
+                                journal.append(new_mission_event(
+                                    EVENT_TASK_REARMED, engagement_id=engagement.name,
+                                    mission_id=mission.mission_id, actor=DRIVER_ACTOR,
+                                    task_id=orig_task_id,
+                                    payload={"node_id": stale,
+                                             "reason": "new evidence since failure"}))
                         frontier = (executor.attack_frontier(limit=999)
                                     if hasattr(executor, "attack_frontier") else [])
                         new_specs = []
@@ -375,6 +421,33 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                         # node is not repeated within this mission execution.
                         actions = scheduler.reconcile(now=clock())
                         scheduler.apply_reconcile(actions)
+                        # Reliability (live-fire 20261118 campaign matrix): a
+                        # specialist dying on `agent.no_models` means the
+                        # configured provider(s) are transiently unavailable —
+                        # that is an OUTAGE, not a target result. Pause and
+                        # retry the SAME node a bounded number of times before
+                        # halting honestly; grinding the frontier through an
+                        # outage (old behavior) or dying on the first two
+                        # failures (too eager) both waste the engagement.
+                        if "no_models" in str(getattr(task, "error", "") or ""):
+                            no_models_streak += 1
+                            if no_models_streak >= PROVIDER_OUTAGE_MAX_STREAK:
+                                raise Halt("provider_unavailable")
+                            if task.node_id:
+                                # allow the frontier to re-select this node next
+                                # round (a fresh task, same (technique, target))
+                                seen_nodes.discard(task.node_id)
+                            _time.sleep(PROVIDER_OUTAGE_RETRY_PAUSE_S)
+                            continue
+                        no_models_streak = 0
+                        if task.node_id:
+                            # Replanning (Builder 04): remember WHY the node failed.
+                            # If observable evidence changes later (new endpoints in
+                            # the frontier, new access holds, new findings), the node
+                            # becomes re-armable ONCE — a materially different next
+                            # attempt, not a blind static-list advance.
+                            failed_nodes[task.node_id] = (evidence_fingerprint(),
+                                                          task.task_id)
                 else:
                     # Explicit operator plans preserve their dependency-round behavior,
                     # but still use the same post-VERIFY reconciliation authority.

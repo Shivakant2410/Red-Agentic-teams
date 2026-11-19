@@ -43,7 +43,7 @@ from .llm.gateway import UnconfiguredClient, build_llm_client
 from .ratelimit import RateLimiter
 from .report import build_html_report, build_report
 from .scope import ScopeGuard
-from .states import APPROVAL_PENDING, APPROVAL_RESOLVED
+from .states import APPROVAL_PENDING, APPROVAL_RESOLVED, MISSION_SUCCEEDED
 from .tools import ToolContext, build_registry
 
 
@@ -270,6 +270,22 @@ class RunOptions:
     # resolves its own provider keys at construction via build_llm_client).
     # Empty dict = preconfigured environment credentials (unchanged behavior).
     llm_credentials: dict = field(default_factory=dict)
+
+
+def _mission_run_terminal(mission_summary: dict) -> tuple[str, str]:
+    """(manifest.status, halt_reason) for a mission driver that RETURNED normally.
+
+    The driver always finalizes its snapshot honestly; the RUN manifest must
+    tell the same story: an incomplete mission (objective unmet, budget gone,
+    tasks failed) never reads "completed" at the run level. Same vocabulary as
+    a Halt-propagated stop ("halted" + the driver's stop reason). Mirrors the
+    mission_outcome contract: objective achieved wins even after an
+    interruption; everything else is an INCOMPLETE mission (Builder 04 §8).
+    """
+    if (mission_summary.get("objective_achieved") is True
+            or mission_summary.get("status") == MISSION_SUCCEEDED):
+        return "completed", ""
+    return "halted", str(mission_summary.get("stop_reason") or "mission_incomplete")
 
 
 def execute_run(opts: RunOptions) -> dict:
@@ -588,7 +604,14 @@ def execute_run(opts: RunOptions) -> dict:
                 # C4: a CONFIRMED finding completes its tree node through the same
                 # idempotent sync() the orchestrator's verify passes use.
                 attack_tree.sync(graph=graph, findings=findings.all())
-                manifest.status = "completed"
+                # The driver returned instead of raising (the executor reported
+                # the budget gone or the objective unmet — no Halt propagated
+                # here). The run manifest must tell the same story as the
+                # snapshot the driver already finalized (live-fire 20261118: a
+                # budget-exhausted mission showed run "completed" side by side
+                # with mission "failed").
+                manifest.status, manifest.halt_reason = \
+                    _mission_run_terminal(mission_summary)
                 manifest.steps = len(mission_summary["tasks"])
                 manifest.save(out / "manifest.json")
         else:

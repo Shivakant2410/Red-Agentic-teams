@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { LaunchRunPanel } from "./LaunchRunPanel";
 import { api, clearApiMocks, navState } from "@/test/mocks";
 
@@ -13,144 +13,166 @@ vi.mock("next/navigation", async () => {
   return m.makeNavigationMock();
 });
 
-/** Phase 8: launch form — endpoint selection per driver, provider/model
- *  behavior, plan validation, redirect target. */
-describe("LaunchRunPanel", () => {
+/** Builder 04: URL-first launch — no engagement_path anywhere, Ollama
+ *  auto-connect with honest states, fail-closed authorization, preflight
+ *  gating, scope summary, and the /api/launch contract for BOTH drivers. */
+describe("LaunchRunPanel (URL-first)", () => {
   beforeEach(() => {
     clearApiMocks();
     navState.search = "";
   });
+  afterEach(() => cleanup());
 
-  it("classic mode posts to /api/runs and redirects to the run page", async () => {
-    const user = userEvent.setup();
+  /** Fill everything EXCEPT the listed fields, then try to launch. */
+  async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(screen.getByLabelText(/target url/i), "https://demo.testfire.net");
+    await user.type(screen.getByLabelText(/objective/i), "Assess the authorized web app");
+    await user.type(screen.getByLabelText(/^authorized by/i), "Shivakant, security owner");
+    await user.type(screen.getByLabelText(/^ticket/i), "ROE-2026-041");
+    await user.click(screen.getByLabelText(/confirm authorization/i));
+  }
+
+  it("has no engagement_path field — the operator enters a target URL", () => {
     render(<LaunchRunPanel />);
-    await user.type(screen.getByLabelText(/engagement_path/i), "/eng");
-    await user.type(screen.getByLabelText(/objective/i), "do it");
-    await user.click(screen.getByRole("button", { name: /^launch run$/i }));
-    expect(api.launchRun).toHaveBeenCalledTimes(1);
-    expect(api.launchMission).not.toHaveBeenCalled();
-    expect(api.launchRun.mock.calls[0][0]).toMatchObject({ engagement_path: "/eng", multi_agent: true });
-    expect(navState.push).toHaveBeenCalledWith("/runs?id=R1");
+    expect(screen.queryByLabelText(/engagement_path/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/target url/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/confirm authorization/i)).not.toBeChecked();
   });
 
-  it("mission mode posts to /api/missions (no multi_agent, no source_dir), redirects the same way", async () => {
+  it("classic mode posts to /api/launch with fail-closed authorization and redirects", async () => {
     const user = userEvent.setup();
     render(<LaunchRunPanel />);
-    await user.click(screen.getByRole("radio", { name: /adaptive mission/i }));
-    expect(screen.queryByLabelText(/multi_agent/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/^source_dir/i)).not.toBeInTheDocument();
-    expect(screen.getByLabelText(/asset_feed/i)).toBeInTheDocument();
-    await user.type(screen.getByLabelText(/engagement_path/i), "/eng");
-    await user.type(screen.getByLabelText(/objective/i), "adapt");
-    await user.click(screen.getByRole("button", { name: /^launch mission$/i }));
-    expect(api.launchMission).toHaveBeenCalledTimes(1);
-    const body = api.launchMission.mock.calls[0][0];
-    expect(body).toMatchObject({ engagement_path: "/eng" });
-    expect(body.plan).toBeUndefined();          // default = dynamic frontier
+    await fillValidForm(user);
+    await user.click(screen.getByRole("button", { name: /^launch run$/i }));
+    await waitFor(() => expect(api.launchFromUrl).toHaveBeenCalledTimes(1));
+    const body = api.launchFromUrl.mock.calls[0][0];
+    expect(body).toMatchObject({
+      target_url: "https://demo.testfire.net",
+      mode: "classic",
+      intensity: "standard",
+      max_steps: 40,
+    });
+    expect(body.authorization).toMatchObject({
+      confirmed: true,
+      authorized_by: "Shivakant, security owner",
+      ticket: "ROE-2026-041",
+    });
+    expect(body.llm).toMatchObject({ provider: "ollama" });
     expect(api.launchRun).not.toHaveBeenCalled();
+    expect(api.launchMission).not.toHaveBeenCalled();
     expect(navState.push).toHaveBeenCalledWith("/runs?id=R1");
   });
 
-  it("an explicit mission plan is opt-in and validated as a JSON array", async () => {
+  it("mission mode posts mode=mission through the same URL-first endpoint", async () => {
     const user = userEvent.setup();
     render(<LaunchRunPanel />);
     await user.click(screen.getByRole("radio", { name: /adaptive mission/i }));
-    await user.click(screen.getByRole("button", { name: /explicit plan/i }));
-    await user.type(screen.getByLabelText(/plan \(json array\)/i), "plain invalid text");
-    await user.type(screen.getByLabelText(/engagement_path/i), "/eng");
-    await user.type(screen.getByLabelText(/objective/i), "x");
+    await fillValidForm(user);
     await user.click(screen.getByRole("button", { name: /^launch mission$/i }));
-    expect(api.launchMission).not.toHaveBeenCalled();
-    expect(screen.getByText(/must be a JSON array/i)).toBeInTheDocument();
-
-    // fireEvent for the JSON text: userEvent.type treats "{" as a key modifier
-    const planArea = screen.getByLabelText(/plan \(json array\)/i);
-    fireEvent.change(planArea, { target: { value: '[{"technique":"sqli","target":"/orders"}]' } });
-    await user.click(screen.getByRole("button", { name: /^launch mission$/i }));
-    expect(api.launchMission).toHaveBeenCalledTimes(1);
-    expect(api.launchMission.mock.calls[0][0].plan).toEqual([
-      { technique: "sqli", target: "/orders" },
-    ]);
+    await waitFor(() => expect(api.launchFromUrl).toHaveBeenCalledTimes(1));
+    expect(api.launchFromUrl.mock.calls[0][0].mode).toBe("mission");
+    expect(navState.push).toHaveBeenCalledWith("/runs?id=R1");
   });
 
-  it("provider change resets the model field (presets are per provider)", async () => {
+  it("fails closed in the UI: no confirmation checkbox → no POST, actionable error", async () => {
     const user = userEvent.setup();
     render(<LaunchRunPanel />);
-    await user.selectOptions(screen.getByLabelText(/^provider/i), "zai");
-    const model = screen.getByLabelText(/^model/i);
-    await user.type(model, "glm-5.3");
-    expect(model).toHaveValue("glm-5.3");
-    await user.selectOptions(screen.getByLabelText(/^provider/i), "openai");
-    expect(screen.getByLabelText(/^model/i)).toHaveValue("");     // reset
-    expect(screen.queryByDisplayValue("glm-5.3")).not.toBeInTheDocument();
-  });
-
-  it("provider/model/key/base_url flow into BOTH drivers' llm override", async () => {
-    const user = userEvent.setup();
-    // one render per driver: a successful launch leaves the panel in its
-    // post-launch state (the real app navigates away), so the mission run
-    // goes through a fresh mount with the same form values re-typed.
-    render(<LaunchRunPanel />);
-    await user.selectOptions(screen.getByLabelText(/^provider/i), "zai");
-    await user.type(screen.getByLabelText(/^model/i), "glm-5.3");
-    await user.type(screen.getByLabelText(/^api key/i), "sk-run");
-    await user.type(screen.getByLabelText(/engagement_path/i), "/eng");
-    await user.type(screen.getByLabelText(/objective/i), "x");
+    await user.type(screen.getByLabelText(/target url/i), "https://demo.testfire.net");
+    await user.type(screen.getByLabelText(/objective/i), "assess");
+    await user.type(screen.getByLabelText(/^authorized by/i), "owner");
+    await user.type(screen.getByLabelText(/^ticket/i), "ROE-1");
     await user.click(screen.getByRole("button", { name: /^launch run$/i }));
-    expect(api.launchRun.mock.calls[0][0].llm).toEqual({
-      provider: "zai", model: "glm-5.3", api_key: "sk-run",
-    });
-
-    cleanup();
-    render(<LaunchRunPanel />);
-    await user.click(screen.getByRole("radio", { name: /adaptive mission/i }));
-    await user.selectOptions(screen.getByLabelText(/^provider/i), "zai");
-    await user.type(screen.getByLabelText(/^model/i), "glm-5.3");
-    await user.type(screen.getByLabelText(/^api key/i), "sk-run");
-    await user.type(screen.getByLabelText(/engagement_path/i), "/eng");
-    await user.type(screen.getByLabelText(/objective/i), "x");
-    await user.click(screen.getByRole("button", { name: /^launch mission$/i }));
-    expect(api.launchMission.mock.calls[0][0].llm).toEqual({
-      provider: "zai", model: "glm-5.3", api_key: "sk-run",
-    });
+    expect(api.launchFromUrl).not.toHaveBeenCalled();
+    expect(await screen.findByText(/authorization confirmation is required/i)).toBeInTheDocument();
   });
 
-  it("preflight posts the selected provider/model to /api/llm/preflight and renders the checks", async () => {
+  it("missing authorized_by or ticket → actionable error, no POST", async () => {
     const user = userEvent.setup();
     render(<LaunchRunPanel />);
-    await user.selectOptions(screen.getByLabelText(/^provider/i), "ollama");
-    await user.type(screen.getByLabelText(/^model/i), "llama3.2");
-    await user.click(screen.getByRole("button", { name: /^preflight$/i }));
-    expect(api.preflightLlm).toHaveBeenCalledTimes(1);
+    await user.type(screen.getByLabelText(/target url/i), "https://demo.testfire.net");
+    await user.type(screen.getByLabelText(/objective/i), "assess");
+    await user.click(screen.getByLabelText(/confirm authorization/i));
+    await user.click(screen.getByRole("button", { name: /^launch run$/i }));
+    expect(api.launchFromUrl).not.toHaveBeenCalled();
+    expect(await screen.findByText(/authorized_by is required/i)).toBeInTheDocument();
+    expect(screen.getByText(/ticket is required/i)).toBeInTheDocument();
+  });
+
+  it("scheme-less URL gets instant client-side feedback", async () => {
+    const user = userEvent.setup();
+    render(<LaunchRunPanel />);
+    await user.type(screen.getByLabelText(/target url/i), "demo.testfire.net");
+    expect(await screen.findByText(/include the scheme/i)).toBeInTheDocument();
+  });
+
+  it("shows the exact scope that will be generated before launch", async () => {
+    const user = userEvent.setup();
+    render(<LaunchRunPanel />);
+    await user.type(screen.getByLabelText(/target url/i), "https://demo.testfire.net/login");
+    expect(await screen.findByText(/demo\.testfire\.net:443/i)).toBeInTheDocument();
+    expect(screen.getByText(/redirects and discovered hosts are re-checked/i)).toBeInTheDocument();
+  });
+
+  it("ollama auto-connect: probes on mount, lists installed models, auto-selects the default, runs preflight once", async () => {
+    const user = userEvent.setup();
+    render(<LaunchRunPanel />);
+    expect(await screen.findByText("Ollama connected — 2 models available")).toBeInTheDocument();
+    expect(api.ollamaStatus).toHaveBeenCalled();
+    const modelInput = screen.getByLabelText(/^model/i) as HTMLInputElement;
+    await waitFor(() => expect(modelInput.value).toBe("qwen2.5:7b-instruct"));
+    await waitFor(() => expect(api.preflightLlm).toHaveBeenCalledTimes(1));
     expect(api.preflightLlm.mock.calls[0][0]).toMatchObject({
-      provider: "ollama", model: "llama3.2",
+      provider: "ollama",
+      model: "qwen2.5:7b-instruct",
     });
-    // check list renders with PASS/FAIL vocabulary (never a bare "ok" badge)
-    expect(await screen.findByText(/PASS/)).toBeInTheDocument();
-    expect(screen.getByText(/agent server →/)).toBeInTheDocument();
-    expect(screen.getByText(/READY — this model can drive tools/)).toBeInTheDocument();
-    // discovery: real ids from the endpoint merge into the suggestions (debounced)
-    await waitFor(() => expect(api.listLlmModels).toHaveBeenCalledWith("ollama", ""));
+    // launch stays enabled once connected + prefighted OK
+    await fillValidForm(user);
+    expect(screen.getByRole("button", { name: /^launch run$/i })).toBeEnabled();
   });
 
-  it("a failing preflight renders the FAIL detail honestly", async () => {
-    const user = userEvent.setup();
-    api.preflightLlm.mockResolvedValueOnce({
-      provider: "ollama", base_url: "http://127.0.0.1:11434/v1", model: "phi3",
-      reachable: true, model_found: true, tool_call_ok: false, args_parsed: false,
-      ok: false, latency_ms: 9, error: "",
-      checks: [
-        { check: "reachable", ok: true, detail: "3 model(s) listed" },
-        { check: "model_found", ok: true, detail: "'phi3' is served" },
-        { check: "tool_call_ok", ok: false,
-          detail: "model answered WITHOUT a tool call — it likely does not support tool calling" },
-      ],
+  it('ollama not running shows "Ollama is not running. Start Ollama and retry." and blocks launch', async () => {
+    api.ollamaStatus.mockResolvedValueOnce({
+      provider: "ollama", base_url: "http://127.0.0.1:11434", connected: false,
+      state: "not_running", version: "", models: [], default_model: "",
+      message: "Ollama is not running. Start Ollama and retry.",
     });
     render(<LaunchRunPanel />);
-    await user.selectOptions(screen.getByLabelText(/^provider/i), "ollama");
-    await user.type(screen.getByLabelText(/^model/i), "phi3");
-    await user.click(screen.getByRole("button", { name: /^preflight$/i }));
-    expect(await screen.findByText("FAIL")).toBeInTheDocument();
-    expect(screen.getByText(/NOT READY/)).toBeInTheDocument();
+    // the message shows in the status panel AND the launch-blocker list
+    expect((await screen.findAllByText("Ollama is not running. Start Ollama and retry.")).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole("button", { name: /^launch run$/i })).toBeDisabled();
+  });
+
+  it("ollama with no models shows the pull-a-model message and blocks launch", async () => {
+    api.ollamaStatus.mockResolvedValueOnce({
+      provider: "ollama", base_url: "http://127.0.0.1:11434", connected: true,
+      state: "no_models", version: "0.6.2", models: [], default_model: "",
+      message: "Ollama is running, but no models are installed. Pull a supported model first.",
+    });
+    render(<LaunchRunPanel />);
+    expect((await screen.findAllByText(/no models are installed\. Pull a supported model first\./i)).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole("button", { name: /^launch run$/i })).toBeDisabled();
+  });
+
+  it("a failed tool-call preflight blocks launch with the exact guidance", async () => {
+    api.preflightLlm.mockResolvedValueOnce({
+      provider: "ollama", base_url: "http://127.0.0.1:11434/v1", model: "plainmodel:latest",
+      reachable: true, model_found: true, tool_call_ok: false, args_parsed: false,
+      ok: false, latency_ms: 9, error: "no tool call in response",
+      checks: [{ check: "tool_call_ok", ok: false, detail: "model answered in plain text" }],
+    });
+    render(<LaunchRunPanel />);
+    await screen.findByText("Ollama connected — 2 models available");
+    await waitFor(() => expect(api.preflightLlm).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/did not pass tool-calling preflight\. Select another model\./i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^launch run$/i })).toBeDisabled();
+  });
+
+  it("the scope summary names the local-lab opt-in when private ranges are authorized", async () => {
+    const user = userEvent.setup();
+    render(<LaunchRunPanel />);
+    await user.type(screen.getByLabelText(/target url/i), "http://127.0.0.1:8901/");
+    await user.click(screen.getByLabelText(/local \/ private lab target/i));
+    expect(await screen.findByText(/127\.0\.0\.1:8901/i)).toBeInTheDocument();
+    expect(screen.getByText(/explicitly authorized for this local-lab target/i)).toBeInTheDocument();
   });
 });

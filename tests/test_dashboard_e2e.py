@@ -230,11 +230,20 @@ def page(dashboard_ready, server):
 
 
 def _launch(page, server, tmp_factory, mode: str, objective: str) -> str:
-    """Fill + submit the launch form; returns the run id from the URL."""
-    eng = _engagement_yaml(tmp_factory)
+    """Fill + submit the URL-first launch form (Builder 04); returns the run id.
+
+    The server builds and validates the engagement from the target URL
+    (POST /api/launch) — no engagement file is authored by hand. The provider
+    stays on "engine default" here because the e2e engine is a fixture and the
+    sandbox has no Ollama; the ollama gate stays honest for real operators."""
     page.goto(server["base"] + "/")
-    page.get_by_label("engagement_path").fill(eng)
+    page.get_by_label("target url").fill("http://127.0.0.1:8896/")
     page.get_by_label("objective").fill(objective)
+    page.get_by_label("authorized by").fill("e2e operator")
+    page.get_by_label("ticket").fill("T-E2E")
+    page.get_by_role("switch", name="local / private lab target").click()
+    page.get_by_label("confirm authorization").check()
+    page.get_by_label("provider").select_option(label="engine default (engagement yaml)")
     if mode == "mission":
         page.get_by_role("radio", name="Adaptive mission").click()
         page.get_by_role("button", name="LAUNCH MISSION").click()

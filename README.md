@@ -66,19 +66,28 @@ python -m redteam.server --runs-root runs --port 8000
 
 Then open `http://127.0.0.1:8000`:
 
-- **Launch runs from the browser** — engagement path, objective, budgets, and the
-  **model provider / model** for the run. The launch panel's **EXECUTION MODE**
-  selector picks the driver: a **classic run** (`POST /api/runs`, the orchestrator
-  swarm) or an **adaptive mission** (`POST /api/missions`, the mission coordination
-  driver over the same specialists/verifier — it claims tasks from the live
-  AttackTree frontier and replans between rounds; an explicit static plan is
-  strictly opt-in). The RoE is validated before anything starts.
+- **URL-first launch (Builder 04)** — enter the authorized **target URL** (no
+  engagement filesystem path), the objective, the fail-closed authorization
+  record (who/ticket/window/confirmation), the intensity dial and budgets, and
+  review the exact **scope summary** before arming. The backend parses and
+  normalizes the URL, generates the RoE (`redteam.launch`), validates it with
+  the same loader the CLI uses, and arms `POST /api/launch` for **either**
+  driver: a **classic run** (orchestrator swarm) or an **adaptive mission**
+  (mission coordination driver over the same specialists/verifier — it claims
+  tasks from the live AttackTree frontier and replans between rounds; an
+  explicit static plan is strictly opt-in).
+- **Ollama auto-connect (Builder 04)** — the default provider is local
+  **Ollama** (no hosted API key): the panel really probes the endpoint, lists
+  **installed** models, preselects a usable one, and runs tool-call **preflight**
+  before launch (discovery is never claimed as proof of tool-calling). Any
+  other provider stays one click away, with run-scoped credential isolation.
 - **Watch the attack live**: every agent turn, tool call/result, finding, phase
   change, model rotation, and reflection streams over SSE into the run-detail page
   (`/runs?id={run_id}` — survives refresh and direct navigation; unknown ids get a
   clear not-found state). Mission runs additionally show the coordination panel:
   mission status, current task + specialist, task lifecycle, the verification
-  split, and the mission-journal tail.
+  split, and the mission-journal tail, plus the **discovered-assets** map
+  (hosts/endpoints from the canonical knowledge graph).
 - **Approve sensitive actions** in one click (`request_approval` blocks the agent until
   you decide; a STOP kill file auto-denies and halts — fail closed).
 - **Stop runs and read reports**: objective score, kill chain, attack tree, per-round
