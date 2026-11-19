@@ -39,6 +39,14 @@ from .task import TASK_LEASE_SECONDS
 
 RECOVERY_ACTOR = "mission-recovery"
 
+# Bounded execution-failure retry policy (RECON-first reliability). The lease
+# sweep re-arms only EXPIRED tasks; an execution FAILURE used to be terminal,
+# and a failed initial recon task made the driver report "frontier_exhausted"
+# over a surface it had never mapped. Recon is the prerequisite for every
+# other specialist, so it is the one role requeued on failure — bounded by
+# max_attempts (dynamic recon ships 2), journaled TASK_REQUEUED/TASK_EXHAUSTED.
+RETRY_ON_EXEC_FAILURE_ROLES = ("recon",)
+
 
 def _expired(lease_expires_at: str, now: _dt.datetime) -> bool:
     if not lease_expires_at:
@@ -224,6 +232,7 @@ class MissionScheduler:
             except Exception as exc:
                 self.commander.fail_task(task_id, actor=agent, lease_token=token,
                                          error=f"executor error: {exc}")
+                self._maybe_requeue_failed(task_id, str(exc))
                 return {"dispatched": True, "outcome": "failed",
                         "task_id": task_id, "lease_token": token,
                         "hypothesis_id": hyp_id, "result": str(exc)}
@@ -239,6 +248,7 @@ class MissionScheduler:
             else:
                 self.commander.fail_task(task_id, actor=agent, lease_token=token,
                                          error=result.error)
+                self._maybe_requeue_failed(task_id, result.error)
         return {"dispatched": True,
                 "outcome": (result.status if result is not None else "reserved"),
                 "task_id": task_id, "lease_token": token,
@@ -246,6 +256,24 @@ class MissionScheduler:
                 "result": result.result if result is not None else ""}
 
     # -- sweep ---------------------------------------------------------------------
+
+    def _maybe_requeue_failed(self, task_id: str, error: str) -> None:
+        """Requeue a retry-eligible FAILED task (see RETRY_ON_EXEC_FAILURE_
+        ROLES). Deliberately narrow: recon only, bounded by the task's own
+        max_attempts — the commander journals TASK_REQUEUED while attempts
+        remain, TASK_EXHAUSTED on the final failure. A non-eligible or
+        non-FAILED task is left exactly where it is."""
+        try:
+            task = self.commander.task(task_id)
+        except UnknownTaskError:
+            return
+        if task.role not in RETRY_ON_EXEC_FAILURE_ROLES:
+            return
+        if task.status != TASK_FAILED:
+            return
+        self.commander.requeue_failed_task(
+            task_id, actor="scheduler",
+            reason=f"execution_failure: {str(error)[:160]}")
 
     def sweep(self, *, now: _dt.datetime | None = None) -> dict:
         """Round-boundary lease sweep: expired tasks (fenced, no-steal honored)

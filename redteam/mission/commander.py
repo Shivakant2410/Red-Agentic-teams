@@ -41,6 +41,7 @@ from .events import (EVENT_MISSION_CREATED, EVENT_MISSION_STARTED,
                      EVENT_TASK_EVIDENCE, EVENT_TASK_EXHAUSTED,
                      EVENT_TASK_FAILED, EVENT_TASK_LEASE_EXPIRED,
                      EVENT_TASK_LEASE_RENEWED, EVENT_TASK_REARMED,
+                     EVENT_TASK_REQUEUED,
                      EVENT_TASK_RESULT_REJECTED, EVENT_TASK_SUCCEEDED,
                      new_mission_event)
 from .mission import Mission
@@ -364,6 +365,41 @@ class Commander:
             self._expire_one(task, now or self._clock())
             return task
 
+    def requeue_failed_task(self, task_id: str, *, actor: str,
+                            reason: str = "") -> MissionTask:
+        """Bounded execution-failure retry: FAILED -> PENDING while attempts
+        remain, otherwise journal TASK_EXHAUSTED and stay FAILED.
+
+        The lease sweep only ever re-armed EXPIRED tasks (a lapsed lease), so
+        an execution FAILURE was terminal for the run — the FAILED->PENDING
+        edge the state machine already documents ("retry policy: attempts <
+        max_attempts only") had no writer, and a failed initial recon task
+        disguised itself as an exhausted frontier (live-fire 20261118).
+        Journal sequence mirrors the lease path: TASK_REQUEUED consumes one
+        attempt; the final failure records TASK_EXHAUSTED. The caller bounds
+        eligibility by role policy (scheduler: recon only) and max_attempts —
+        no unbounded retry loop is possible from here."""
+        with self._lock:
+            task = self._task(task_id)
+            if task.status != TASK_FAILED:
+                raise InvalidTaskTransitionError(
+                    f"task {task_id} is {task.status}; only a FAILED task can "
+                    f"be requeued")
+            consumed = task.attempts + 1
+            if consumed < task.max_attempts:
+                event = self._event(EVENT_TASK_REQUEUED, actor=actor,
+                                    task_id=task_id,
+                                    payload={"reason": reason[:200],
+                                             "attempts_after": consumed,
+                                             "max_attempts": task.max_attempts})
+            else:
+                event = self._event(EVENT_TASK_EXHAUSTED, actor=actor,
+                                    task_id=task_id,
+                                    payload={"attempts": consumed,
+                                             "trigger": "execution_failure"})
+            self._append_and_apply(event)
+            return task
+
     def _expire_one(self, task: MissionTask, now: _dt.datetime) -> None:
         token_after = int(task.lease_token) + 1
         event = self._event(EVENT_TASK_LEASE_EXPIRED, actor="lease-sweep",
@@ -605,9 +641,22 @@ class Commander:
         task.status = TASK_PENDING
         task.touch()
 
+    def _on_task_requeued(self, event: dict, payload: dict) -> None:
+        task = self._require_task(event)
+        if task.status != TASK_FAILED:
+            raise ValueError(f"TASK_REQUEUED on {task.status} task")
+        task.status = TASK_PENDING
+        task.attempts = int(payload.get("attempts_after") or task.attempts + 1)
+        task.owner = ""
+        task.lease_expires_at = ""
+        task.touch()
+
     def _on_task_exhausted(self, event: dict, payload: dict) -> None:
         task = self._require_task(event)
-        if task.status != TASK_EXPIRED:
+        # Exhaustion is reached from BOTH retry paths: the lease sweep
+        # (EXPIRED, no attempts left) and the execution-failure requeue
+        # (FAILED, no attempts left).
+        if task.status not in (TASK_EXPIRED, TASK_FAILED):
             raise ValueError(f"TASK_EXHAUSTED on {task.status} task")
         task.status = TASK_FAILED
         task.error = payload.get("attempts", "") and \
