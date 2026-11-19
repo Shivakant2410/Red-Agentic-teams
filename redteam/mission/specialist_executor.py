@@ -29,6 +29,9 @@ verification pipeline remains the only confirmation authority).
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from .executor import EXEC_FAILED, EXEC_SUCCEEDED, ExecutionResult
 
 # Soft failures RedTeamAgent.run returns as TEXT instead of raising (its own
@@ -129,8 +132,69 @@ class MissionSpecialistExecutor:
                 evidence=evidence)
         return ExecutionResult(
             status=EXEC_SUCCEEDED,
-            result=str(final_text or "")[:_RESULT_TEXT_CAP],
+            result=self._recon_result(task_view, ctx, final_text),
             evidence=evidence)
+
+    def _recon_result(self, task_view: dict, ctx, final_text) -> str:
+        """RECON phase G: prefix the specialist's prose with a STRUCTURED
+        handoff compiled from shared artifacts (graph/inventory/observations).
+        Written to <run>/recon_handoff.json for EXPLOIT/LOGIC/VERIFY — task
+        success reflects produced coverage, not exhausted LLM steps, and the
+        unverified-lead bucket travels WITH the summary (never silently
+        dropped). Best-effort: any shared-state gap degrades to plain prose."""
+        if str(task_view.get("role", "")) != "recon":
+            return str(final_text or "")[:_RESULT_TEXT_CAP]
+        handoff = self._build_recon_handoff(ctx)
+        if not handoff:
+            return str(final_text or "")[:_RESULT_TEXT_CAP]
+        prefix = "RECON HANDOFF " + json.dumps(handoff, default=str)
+        return (prefix + "\n" + str(final_text or ""))[:_RESULT_TEXT_CAP]
+
+    def _build_recon_handoff(self, ctx) -> dict:
+        """Artifacts-only recon handoff (no agent narration). Derived from the
+        shared KnowledgeGraph / AssetInventory / ObservationLog / traffic the
+        run already holds — the same state every other specialist reads."""
+        try:
+            observations = getattr(ctx, "observations", None)
+            graph = getattr(ctx, "graph", None)
+            inventory = getattr(ctx, "inventory", None)
+            handoff: dict = {}
+            if graph is not None:
+                try:
+                    gsum = graph.summary()
+                    handoff["graph"] = {k: gsum.get(k) for k in
+                                        ("nodes", "edges", "corroborated")
+                                        if k in gsum}
+                    handoff["untested_endpoints"] = len(graph.untested() or [])
+                except Exception:
+                    pass
+            if inventory is not None:
+                try:
+                    handoff["inventory"] = inventory.summary()
+                except Exception:
+                    pass
+            if observations is not None:
+                handoff["observations"] = observations.stats()
+                handoff["unverified_leads"] = \
+                    observations.pending_corroboration(limit=40)
+            # Persist for the run record (path via the traffic artifact's dir —
+            # no new plumbing; legacy stubs without traffic skip the file).
+            try:
+                traffic_path = ctx.traffic.summary().get("path", "")
+                out_dir = Path(traffic_path).parent if traffic_path else None
+                if out_dir:
+                    (out_dir / "recon_handoff.json").write_text(
+                        json.dumps(handoff, indent=2, default=str),
+                        encoding="utf-8")
+                    handoff["artifact"] = "recon_handoff.json"
+            except Exception:
+                pass
+            ctx.audit.record("recon.handoff",
+                             endpoints=handoff.get("graph", {}).get("nodes"),
+                             unverified=len(handoff.get("unverified_leads", [])))
+            return handoff
+        except Exception:  # noqa: BLE001 — handoff must never fail a recon task
+            return {}
 
     def _record_hypothesis_outcome(self, task_view: dict, evidence) -> None:
         try:
