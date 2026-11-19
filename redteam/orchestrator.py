@@ -221,11 +221,20 @@ RECON = SpecialistProfile(
            "corroborated leads go in the graph, contradicted ones are dropped. Use "
            "http_probe for raw API surfaces the browser cannot reach (JSON endpoints, API "
            "roots, robots.txt, versioned APIs) and for anything behind a session — it is a "
-           "cheap fetch, not a proof. Be broad and fast."),
+           "cheap fetch, not a proof. Your EVIDENCE WORKSPACE is inspectable: "
+           "evidence_search / evidence_inspect query the observations you and your tools "
+           "accumulated (each carries provenance, validation and scope status); "
+           "proxy_history_query reads the wire history (browser, proxy and tools all land "
+           "in the same traffic log); replay_request re-issues one recorded request through "
+           "the same scope/budget/approval controls (approval-gated); asset_read shows the "
+           "inventory surface_scan filled. Use them instead of re-scanning: search your "
+           "evidence FIRST, then act. Be broad and fast."),
     tool_names=["surface_scan", "host_probe", "port_scan", "content_discovery", "crawl",
                 "param_discovery", "spa_recon", "crosscheck_lead", "http_probe",
                 "browser_navigate", "browser_content", "browser_click",
-                "authenticate", "set_session", "kali_exec", "search_peer_traces"],
+                "authenticate", "set_session", "kali_exec", "search_peer_traces",
+                "evidence_search", "evidence_inspect", "proxy_history_query",
+                "replay_request", "asset_read"],
     role=PARSE,          # breadth work -> cheaper model
     max_steps=22,        # was 15: the discovery stack is the mapping job now, not an extra
 )

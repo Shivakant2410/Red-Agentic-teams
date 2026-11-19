@@ -122,7 +122,8 @@ def parse_target_url(target_url: str,
             kind = "loopback host" if host == "localhost" else "private/reserved address"
             raise LaunchError(
                 f"target {host} is a {kind} — enable 'allow private ranges' in the "
-                "authorization section to confirm you own this local-lab target")
+                "authorization section to attest you are authorized to test this "
+                "local-lab target")
     return {"scheme": scheme, "host": host, "port": port}
 
 
@@ -157,7 +158,10 @@ def build_engagement(
 
     `authorization` (fail-closed — every field below is required):
       confirmed: bool          — the explicit checkbox; False rejects the launch
-      authorized_by: str       — the human/authority that approved testing
+      authorized_by: str       — the human/authority that authorized testing
+                                (authorization, not runtime approval: the
+                                signed RoE grants the RIGHT to test; runtime
+                                approvals gate individual actions inside it)
       ticket: str              — reference to the signed authorization document
       starts / ends: str       — ISO dates bounding the assessment window
       allow_private_ranges: bool — opt-in for loopback/RFC1918 lab targets

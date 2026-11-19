@@ -38,6 +38,72 @@ from .routing import candidates_for_role, classify_pools
 ROTATE_STATUSES = {429, 402, 403, 404, 500, 502, 503}
 
 
+class ProviderEndpointError(ValueError):
+    """A provider endpoint that fails the SSRF guard (fail-closed config)."""
+
+
+def validate_provider_endpoint(base_url: str) -> str:
+    """SSRF guard for LLM provider endpoints (PR #25 review fix).
+
+    The operator configures WHERE model traffic goes; the AGENT must never be
+    able to influence it. Applied at the single config choke point
+    (`ProviderConfig.resolved`) and at the `/api/llm/ollama/status` probe (a
+    client-supplied URL), so a malformed or hostile endpoint fails CLOSED
+    before any request is made.
+
+    Allowed: http/https, any host the OPERATOR chose — including loopback and
+    RFC1918 (the default Ollama endpoint IS http://127.0.0.1:11434/v1).
+    Rejected, with an actionable message:
+      - non-http(s) schemes (file:, gopher:, javascript:, scheme-less);
+      - embedded credentials (user:pass@host — keys never belong in URLs);
+      - empty hosts;
+      - link-local / unspecified / multicast / reserved addresses — the
+        169.254.169.254 cloud-metadata range is INSIDE this block: a probe to
+        a "provider" at a link-local address is a metadata pivot, not an
+        endpoint choice (ScopeGuard's pivot rule, applied to the provider
+        plane; RFC1918 remains allowed because local backends are the point).
+
+    Returns the normalized URL (no trailing spaces). Empty input passes
+    through (the kind default fills it in later).
+    """
+    from urllib.parse import urlsplit
+    raw = (base_url or "").strip()
+    if not raw:
+        return raw   # empty = "use the kind default" (resolved fills it in)
+    try:
+        parts = urlsplit(raw)
+    except ValueError as exc:
+        raise ProviderEndpointError(f"provider endpoint is malformed: {exc}") from exc
+    scheme = (parts.scheme or "").lower()
+    if scheme not in ("http", "https"):
+        raise ProviderEndpointError(
+            f"provider endpoint must be an http(s) URL (got scheme {scheme!r}) — "
+            "model backends are HTTP APIs")
+    if parts.username or parts.password:
+        raise ProviderEndpointError(
+            "provider endpoint must not embed credentials (user:pass@host) — "
+            "API keys travel in the key env var, never in the URL")
+    host = (parts.hostname or "").strip().lower().rstrip(".")
+    if not host:
+        raise ProviderEndpointError("provider endpoint has no host")
+    import ipaddress as _ip
+    try:
+        addr = _ip.ip_address(host)
+    except ValueError:
+        addr = None
+    if addr is not None:
+        if (addr.is_link_local or addr.is_unspecified or addr.is_multicast
+                or addr.is_reserved):
+            raise ProviderEndpointError(
+                f"provider endpoint {host} is a link-local/reserved address — "
+                "refusing: a 'provider' at a link-local address (e.g. "
+                "169.254.169.254) is a cloud-metadata pivot, not a backend")
+    elif host == "metadata.google.internal":
+        raise ProviderEndpointError(
+            "provider endpoint refuses cloud-metadata hostnames")
+    return raw
+
+
 class ProviderError(Exception):
     """An HTTP-level failure from one provider/model; the gateway rotates instead of dying."""
 
@@ -73,7 +139,11 @@ class ProviderConfig:
     priority: int = 100                  # lower = tried first (role routing refines this)
 
     def resolved(self) -> "ProviderConfig":
-        """Fill kind-specific defaults (idempotent)."""
+        """Fill kind-specific defaults (idempotent). The SSRF guard runs HERE —
+        the single choke point every provider config passes through (the
+        /api/llm/ollama/status probe and the LLM client build both go via
+        resolved()); an invalid endpoint fails closed before any request."""
+        validated_url = validate_provider_endpoint(self.base_url)
         kind = (self.kind or "openai_compat").lower()
         defaults = {
             "openrouter": ("openrouter", "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY", 100),
@@ -88,11 +158,11 @@ class ProviderConfig:
             "anthropic": ("anthropic", "https://api.anthropic.com/v1", "ANTHROPIC_API_KEY", 50),
         }
         if kind in defaults:
-            name, base_url, key_env, prio = defaults[kind]
+            name, default_url, key_env, prio = defaults[kind]
             return ProviderConfig(
                 name=self.name or name,
                 kind="anthropic" if kind == "anthropic" else "openai_compat",
-                base_url=self.base_url or base_url,
+                base_url=validated_url or default_url,
                 api_key_env=self.api_key_env or key_env,
                 models_allow=self.models_allow,
                 models_deny=self.models_deny,
@@ -106,7 +176,7 @@ class ProviderConfig:
         return ProviderConfig(
             name=self.name or kind,
             kind="anthropic" if kind == "anthropic" else "openai_compat",
-            base_url=self.base_url,
+            base_url=validated_url,
             api_key_env=self.api_key_env,
             models_allow=self.models_allow,
             models_deny=self.models_deny,

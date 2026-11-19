@@ -200,7 +200,7 @@ def _ollama_tags(models):
 
         def json(self):
             return {"models": [{"name": m} for m in models]}
-    return lambda url, timeout=None: R()
+    return lambda url, timeout=None, **kw: R()
 
 
 def test_ollama_status_connected_lists_models(client, monkeypatch):
@@ -229,7 +229,7 @@ def test_ollama_status_no_models(client, monkeypatch):
 def test_ollama_status_not_running_is_honest(client, monkeypatch):
     client, _ = client
 
-    def boom(url, timeout=None):
+    def boom(url, timeout=None, **kw):
         raise _requests.ConnectionError("ECONNREFUSED")
 
     monkeypatch.setattr(_requests, "get", boom)
@@ -243,7 +243,7 @@ def test_ollama_status_custom_endpoint_override(client, monkeypatch):
     client, _ = client
     seen = []
 
-    def fake_get(url, timeout=None):
+    def fake_get(url, timeout=None, **kw):
         seen.append(url)
         return _ollama_tags(["llama3.2:latest"])(url)
 

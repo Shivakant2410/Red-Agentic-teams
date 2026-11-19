@@ -85,6 +85,30 @@ class ScopeGuard:
     def allowed_ports(self) -> tuple[int, ...]:
         return tuple(self._eng.allowed_ports)
 
+    def host_scope_status(self, host: str) -> bool:
+        """AUTHORITY check for one bare host: allowlist + exclusions by name
+        (wildcard/CIDR aware), NO DNS resolution. Answers "is this host within
+        the signed scope", not "can I reach it" — the asset-attribution plane
+        (recon_v2) uses this to label third-party discoveries conservatively.
+        IPs are matched the same way `check` matches them (network containment).
+        """
+        host = (host or "").strip().lower().rstrip(".")
+        if not host:
+            return False
+        for entry in self._eng.excluded_hosts:
+            if _host_matches(host, entry):
+                return False
+        return any(_host_matches(host, entry) for entry in self._eng.allowed_hosts)
+
+    @staticmethod
+    def host_of(url: str) -> str:
+        """Hostname of a URL (no port, no scheme) — lowercase, bracket-stripped."""
+        from urllib.parse import urlsplit
+        try:
+            return (urlsplit(url).hostname or "").lower()
+        except ValueError:
+            return ""
+
     def _resolved_ips(self, host: str) -> list[ipaddress._BaseAddress]:
         try:
             ipaddress.ip_address(host)

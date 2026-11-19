@@ -232,6 +232,11 @@ class RunOptions:
     #   log entirely (headers are still recorded, credential values always masked).
     asset_feed: str = ""
     record_traffic_bodies: bool = True
+    # RECON V2: route the Playwright browser through the run's EvidenceProxy when
+    # one is active, so browser traffic lands in the SAME evidence history and
+    # request budget as every proxied tool exchange. Without a proxy the browser
+    # records directly into the same traffic log (source="browser").
+    browser_through_proxy: bool = True
     # Per-round OPSEC budget (noise credits) for the exploit swarm's cost-aware
     # selection (docs/multi-gambit.md §3.4): techniques carry an OPSEC price
     # (attack_tree.TECHNIQUE_COST) and each round the swarm may only spend this
@@ -390,6 +395,13 @@ def execute_run(opts: RunOptions) -> dict:
                               record_bodies=opts.record_traffic_bodies)
     inventory = AssetInventory(out / "inventory.json")
 
+    # RECON V2: the run-scoped evidence workspace (observations + assets +
+    # agent-readable search) every recon capability shares. Built before
+    # deterministic recon so passive fetches land in it too.
+    from .recon_v2 import build_recon_v2
+    reconv2 = build_recon_v2(out, scope=scope, limiter=limiter, audit=audit,
+                             traffic=traffic)
+
     # Operator-supplied asset feed (ScopeSentry-style): intersected with the RoE
     # BEFORE anything else touches the network. Dropped records are counted, never
     # widened into scope — the importer is an intersection, not a merge.
@@ -425,7 +437,9 @@ def execute_run(opts: RunOptions) -> dict:
 
     from .recon import run_deterministic_recon
     recon_summary = run_deterministic_recon(engagement, graph, attack_tree, audit=audit,
-                                            source_dir=opts.source_dir)
+                                            source_dir=opts.source_dir,
+                                            store=reconv2.store,
+                                            limiter=limiter, traffic=traffic)
     if recon_summary.get("endpoints_discovered") or recon_summary.get("static_routes_found"):
         say(f"Deterministic recon (no LLM calls): {recon_summary}")
 
@@ -484,7 +498,20 @@ def execute_run(opts: RunOptions) -> dict:
 
         if use_browser:
             from .tools.browser import BrowserController
-            browser = BrowserController(scope, limiter, audit, out / "screenshots")
+            # Browser↔proxy integration (RECON V2): when the run's EvidenceProxy
+            # is active the browser routes through it — same scope plane, same
+            # request budget, same traffic.jsonl evidence history. Without a
+            # proxy the controller records directly (source="browser").
+            browser_proxy = ""
+            if proxy is not None and opts.browser_through_proxy:
+                try:
+                    browser_proxy = f"http://127.0.0.1:{proxy.status()['port']}"
+                except Exception:
+                    browser_proxy = ""
+            browser = BrowserController(scope, limiter, audit, out / "screenshots",
+                                        traffic=traffic, store=reconv2.store,
+                                        assets=reconv2.assets,
+                                        proxy_url=browser_proxy)
 
         from .session import SessionStore
         from .skills import SkillLibrary
@@ -496,7 +523,9 @@ def execute_run(opts: RunOptions) -> dict:
                           sessions=SessionStore(), skills=skills,
                           access=access, objective=engagement.objective,
                           killchain=killchain, events=bus,
-                          traffic=traffic, inventory=inventory)
+                          traffic=traffic, inventory=inventory,
+                          evidence_store=reconv2.store,
+                          workspace=reconv2.workspace)
 
         # Cross-engagement memory: a single global store the agent learns into over time,
         # bootstrapped with curated tradecraft (correct oracle recipes) on first use.
@@ -724,6 +753,25 @@ def execute_run(opts: RunOptions) -> dict:
     safe_emit(bus, "run.finish", status=status, findings=len(findings.all()),
               tokens=tokens, halt_reason=halt_reason)
 
+    # RECON V2 final pass: corroboration + scope re-attribution over everything
+    # the run observed, then the structured handoff artifact downstream
+    # specialists (and the operator) consume. Telemetry discipline: a store
+    # failure must never break a finished run's summary.
+    recon_evidence_stats = {}
+    try:
+        from .recon_v2.capabilities import validate_and_attribute
+        validate_and_attribute(reconv2.store, reconv2.assets, scope, audit=audit)
+        handoff = reconv2.handoff()
+        (out / "recon_v2_handoff.json").write_text(
+            json.dumps(handoff, indent=2, default=str), encoding="utf-8")
+        recon_evidence_stats = {
+            "evidence_observations": handoff.get("stats", {}).get("observations", 0),
+            "evidence_corroborated": handoff.get("stats", {}).get("corroborated", 0),
+            "handoff_path": str(out / "recon_v2_handoff.json"),
+        }
+    except Exception:
+        recon_evidence_stats = {}
+
     summary = {
         "status": status,
         "halt_reason": halt_reason,
@@ -743,6 +791,7 @@ def execute_run(opts: RunOptions) -> dict:
         "proxy": proxy.status() if proxy is not None else None,
         "surface_hosts": inventory.summary()["hosts"],
         "surface_services": inventory.summary()["services"],
+        **recon_evidence_stats,
     }
     if mission_summary is not None:
         summary.update({

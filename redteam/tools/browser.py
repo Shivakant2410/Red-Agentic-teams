@@ -20,16 +20,39 @@ from . import ToolContext
 
 
 class BrowserController:
-    """Owns the Playwright lifecycle and a single page. Constructed lazily on first use."""
+    """Owns the Playwright lifecycle and a single page. Constructed lazily on first use.
 
-    def __init__(self, scope: ScopeGuard, limiter, audit, screenshot_dir: Path):
+    RECON V2 integration:
+      - every request the page makes (navigation AND subresources) consumes the
+        run's shared request budget — the SAME limiter the EvidenceProxy and
+        every tool use, so the RoE budget is genuinely global;
+      - when `proxy_url` is set the browser routes through the run's
+        EvidenceProxy: one scope plane, one budget, one evidence history (the
+        proxy records the wire; the browser records nothing to avoid double rows);
+      - without a proxy the controller records each completed exchange into the
+        SAME traffic.jsonl (source="browser") itself — browser requests are
+        always evidence, never a blind spot;
+      - console errors and page errors are captured (capped) and surfaced to
+        the agent, then folded into the observation store as evidence.
+    """
+
+    _MAX_CONSOLE = 50
+
+    def __init__(self, scope: ScopeGuard, limiter, audit, screenshot_dir: Path,
+                 traffic=None, store=None, assets=None, proxy_url: str = ""):
         self._scope = scope
         self._limiter = limiter
         self._audit = audit
         self._screenshot_dir = screenshot_dir
+        self._traffic = traffic
+        self._store = store
+        self._assets = assets
+        self._proxy_url = proxy_url
         self._pw = None
         self._browser = None
         self._page = None
+        self.console_errors: list[str] = []
+        self._console_seen: set[str] = set()
 
     def _ensure(self):
         if self._page is not None:
@@ -42,9 +65,68 @@ class BrowserController:
                 "`python -m playwright install chromium`."
             ) from exc
         self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch(headless=True)
+        launch_kwargs = {"headless": True}
+        if self._proxy_url:
+            launch_kwargs["proxy"] = {"server": self._proxy_url}
+        self._browser = self._pw.chromium.launch(**launch_kwargs)
         self._page = self._browser.new_page()
         self._page.route("**/*", self._route)
+        self._page.on("console", self._on_console)
+        self._page.on("pageerror", self._on_pageerror)
+        # Wire-evidence capture: every completed response becomes a traffic
+        # record (direct mode only — through the proxy the proxy is the
+        # single evidence writer). Bodies are best-effort: binary or failed
+        # reads still leave status+headers evidence.
+        if self._traffic is not None and not self._proxy_url:
+            self._page.on("response", self._on_response)
+
+    def _on_console(self, msg) -> None:
+        if str(getattr(msg, "type", "")) not in ("error", "warning"):
+            return
+        entry = f"{msg.type}: {msg.text[:300]}"
+        if entry not in self._console_seen:
+            self._console_seen.add(entry)
+            self.console_errors.append(entry)
+            del self.console_errors[:-self._MAX_CONSOLE]
+
+    def _on_pageerror(self, exc) -> None:
+        entry = f"pageerror: {str(exc)[:300]}"
+        if entry not in self._console_seen:
+            self._console_seen.add(entry)
+            self.console_errors.append(entry)
+            del self.console_errors[:-self._MAX_CONSOLE]
+
+    def _on_response(self, response) -> None:
+        try:
+            req = response.request
+            body = ""
+            try:
+                if (response.headers.get("content-type", "").startswith(
+                        ("text/", "application/json"))
+                        and response.status < 300):
+                    body = response.text()[:16384]
+            except Exception:
+                body = ""
+            self._traffic.record_http(
+                method=req.method, url=response.url, status=response.status,
+                elapsed_ms=0, tool="browser", source="browser",
+                req_headers=dict(req.headers or {}),
+                resp_headers=dict(response.headers or {}), resp_body=body)
+        except Exception:
+            pass   # telemetry never breaks the run
+
+    def _record_observation(self, url: str, *, title: str = "",
+                            status=None) -> None:
+        if self._store is None:
+            return
+        try:
+            from ..recon_v2.capabilities import record_page_evidence
+            record_page_evidence(
+                self._store, url, title=title, status=status,
+                console_errors=list(self.console_errors[-5:]),
+                tool="browser")
+        except Exception:
+            pass
 
     def _route(self, route):
         url = route.request.url
@@ -54,20 +136,30 @@ class BrowserController:
             self._audit.record("browser.request.blocked", url=url)
             route.abort()
             return
+        # Every wire request spends the run's shared budget — navigations and
+        # subresources alike (through the proxy the proxy enforces it instead,
+        # keeping exactly one acquisition per wire request).
+        if not self._proxy_url:
+            self._limiter.acquire()
         route.continue_()
 
     def navigate(self, url: str) -> dict:
         # Scope-check the top-level URL before we even open it (clear error to the model).
         self._scope.check(url)
-        self._limiter.acquire()
         self._ensure()
         self._audit.record("browser.navigate", url=url)
         resp = self._page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        return {
+        status = resp.status if resp else None
+        self._record_observation(self._page.url,
+                                 title=self._page.title()[:200], status=status)
+        result = {
             "url": self._page.url,
-            "status": resp.status if resp else None,
+            "status": status,
             "title": self._page.title(),
         }
+        if self.console_errors:
+            result["console_errors"] = self.console_errors[-5:]
+        return result
 
     def content(self, max_chars: int = 8000) -> dict:
         self._ensure()

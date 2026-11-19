@@ -336,6 +336,38 @@ _HAND: dict[str, Hand] = {
         purpose="run a local assessment step (lab mode)",
         cost="step", trust="first-party-observation",
         obligation="observations only"),
+    # -- RECON V2 evidence workspace (read our own evidence, no new claim) ------
+    "evidence_search": Hand(
+        tool="evidence_search",
+        purpose="search the run's accumulated evidence observations (each carries "
+                "provenance, validation and scope status)",
+        cost="step", trust="first-party-observation",
+        obligation="search BEFORE re-scanning: an already-recorded observation needs "
+                   "no second probe; entries are evidence, not findings"),
+    "evidence_inspect": Hand(
+        tool="evidence_inspect",
+        purpose="read ONE observation's full record (attrs, evidence refs, scope)",
+        cost="step", trust="first-party-observation",
+        obligation="cite the evidence refs when acting on what it shows"),
+    "proxy_history_query": Hand(
+        tool="proxy_history_query",
+        purpose="query the wire history (browser + proxy + tool exchanges in "
+                "traffic.jsonl) — what actually went over the wire",
+        cost="step", trust="first-party-observation",
+        obligation="the wire log is the truth of what was SENT, not what succeeded; "
+                   "status codes and errors are part of the record"),
+    "replay_request": Hand(
+        tool="replay_request",
+        purpose="re-issue ONE recorded request through the shared scope/budget/"
+                "approval controls",
+        cost="step", trust="first-party-observation",
+        obligation="approval-gated; replay an authorized request only, and treat "
+                   "the fresh exchange (source=replay) as new evidence"),
+    "asset_read": Hand(
+        tool="asset_read",
+        purpose="read the asset inventory surface_scan and the fetch path filled",
+        cost="step", trust="ground-truth",
+        obligation="a host it did not record is not alive to this run"),
 }
 
 # ---------------------------------------------------------------------------
@@ -349,7 +381,9 @@ HANDS: dict[str, tuple[Hand, ...]] = {
         "surface_scan", "host_probe", "port_scan", "content_discovery", "crawl",
         "param_discovery", "spa_recon", "crosscheck_lead", "http_probe",
         "browser_navigate", "browser_content", "browser_click", "authenticate",
-        "set_session", "kali_exec", "search_peer_traces")),
+        "set_session", "kali_exec", "search_peer_traces",
+        "evidence_search", "evidence_inspect", "proxy_history_query",
+        "replay_request", "asset_read")),
     "exploit": tuple(_HAND[t] for t in (
         "find_techniques", "crosscheck_lead", "apply_skill", "http_probe",
         "authenticate", "set_session", "verify_vulnerability", "confirm_finding",
