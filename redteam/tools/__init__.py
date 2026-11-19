@@ -52,6 +52,11 @@ class ToolContext:
     # the Gen-1 zero-overhead behavior; run.py wires both for every new run.
     traffic: Optional[object] = None   # TrafficRecorder | None
     inventory: Optional[object] = None # AssetInventory | None
+    # RECON V2: the run's shared evidence workspace (observation store +
+    # traffic query/annotate layer). None keeps legacy behavior (tools that
+    # need it degrade to an honest "not available" message).
+    evidence_store: Optional[object] = None   # EvidenceStore | None
+    workspace: Optional[object] = None        # EvidenceWorkspace | None
     # Phase B3: the run's detection BeliefFilter (sandbox/detection_belief.py) —
     # fed by tools/http.py's observation hook at every response return point and
     # read by the orchestrator's DriftPlusPenaltyScheduler to throttle the swarm.
@@ -146,6 +151,16 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # keyword-search sibling specialists' raw process traces for observations that
     # never became findings. Read-only over this run's event log, costs no budget.
     tools.append(SearchPeerTracesTool())
+    # RECON V2 evidence workspace (redteam/recon_v2/): the specialist's read
+    # side over its OWN accumulated evidence — observations (provenance,
+    # validation, scope) and the wire history (browser + proxy + tools land in
+    # the same traffic.jsonl). replay_request re-issues a recorded request
+    # THROUGH the shared scope/budget/traffic plane (approval-gated).
+    from .recon_workspace import (AssetReadTool, EvidenceInspectTool,
+                                  EvidenceSearchTool, ProxyHistoryQueryTool,
+                                  ReplayRequestTool)
+    tools += [EvidenceSearchTool(), EvidenceInspectTool(),
+              ProxyHistoryQueryTool(), ReplayRequestTool(), AssetReadTool()]
     # Operator tools: track what we hold and what it unlocks; claim the objective.
     tools += [RecordAccessTool(), ClaimObjectiveTool()]
     # Post-exploitation: harvest -> use -> prove the privilege boundary moved.

@@ -211,8 +211,23 @@ def spa_walk(controller, entry_url: str, *, audit, scope, limiter,
                 # the page is still walked (it loaded; that is what matters).
                 page.goto(url, wait_until="networkidle",
                           timeout=NETWORK_IDLE_TIMEOUT_MS)
+            except RequestBudgetExceeded as exc:
+                # The browser now spends the shared budget on EVERY wire
+                # request (subresources included — RECON V2). A budget raise
+                # surfaced through goto is a stop-and-report, not a slow page.
+                budget_error = str(exc)
+                audit.record("spa.walk.stopped", reason="budget", url=url)
+                break
             except Exception as exc:
-                audit.record("spa.page.timeout", url=url, note=str(exc)[:120])
+                note = str(exc)[:200]
+                # Playwright serializes route-handler exceptions into generic
+                # Error objects — the shared-budget exhaustion surfaces by TEXT.
+                if ("budget exhausted" in note
+                        or "RequestBudgetExceeded" in note):
+                    budget_error = note
+                    audit.record("spa.walk.stopped", reason="budget", url=url)
+                    break
+                audit.record("spa.page.timeout", url=url, note=note[:120])
             visited.append(url)
             audit.record("spa.page", url=url, page=len(visited))
             try:

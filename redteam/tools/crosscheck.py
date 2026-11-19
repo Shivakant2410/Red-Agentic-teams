@@ -112,6 +112,15 @@ EXEMPT: dict[str, str] = {
                     "crosscheck for its endpoints is host_probe/http_probe, not a re-derivation.",
     "jwt_inspect": "offline deterministic parse of a token we already hold; its "
                    "verification is the proof pipeline that USES the token.",
+    "asset_read": "readback of the inventory OUR OWN tools filled (surface_scan, the "
+                  "fetch path) — it observes recorded state, it makes no new target "
+                  "claim to crosscheck.",
+    "evidence_search": "readback of the run's own evidence store — observations are "
+                       "already provenance-tagged; searching makes no new claim.",
+    "evidence_inspect": "readback of one evidence observation — same class as "
+                        "evidence_search.",
+    "proxy_history_query": "readback of the wire-evidence log — the record of what "
+                           "our own requests actually did.",
 }
 
 

@@ -9,6 +9,7 @@ codebase — passive recon is "don't ask the model," not "skip authorization."
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import re
 from urllib.parse import urljoin, urlsplit
@@ -37,16 +38,33 @@ _SCHEMA_PATHS = (
 _SITEMAP_NS = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
 
 
-def _get(guard: ScopeGuard, url: str) -> tuple[int, str]:
+def _get(guard: ScopeGuard, url: str, limiter=None, traffic=None) -> tuple[int, str]:
     try:
         guard.check(url)
     except ScopeViolation:
         return 0, ""
+    # RECON V2: passive recon fetches spend the run's SHARED request budget and
+    # land in the SAME traffic evidence log as every tool/proxy/browser exchange
+    # (source="passive_recon") — recon is wire evidence too, not a blind spot.
+    if limiter is not None:
+        limiter.acquire()
+    started = _dt.time.monotonic() if traffic is not None else 0.0
     try:
         r = requests.get(url, timeout=_TIMEOUT, allow_redirects=True,
                          headers={"User-Agent": "redteam-agent-recon/1.0"})
+        if traffic is not None:
+            traffic.record_http(method="GET", url=url, status=r.status_code,
+                                elapsed_ms=round((_dt.time.monotonic() - started) * 1000),
+                                tool="passive_recon", source="passive_recon",
+                                resp_headers=dict(r.headers),
+                                resp_body=r.text[:16384])
         return r.status_code, r.text[:_MAX_BODY]
-    except requests.RequestException:
+    except requests.RequestException as exc:
+        if traffic is not None:
+            traffic.record_http(method="GET", url=url, status=0,
+                                elapsed_ms=round((_dt.time.monotonic() - started) * 1000),
+                                tool="passive_recon", source="passive_recon",
+                                error=str(exc)[:160])
         return 0, ""
 
 
@@ -145,24 +163,30 @@ def _endpoints_from_schema(doc: dict, base_url: str) -> dict[str, str]:
     return out
 
 
-def run_passive_recon(engagement, graph, attack_tree=None, audit=None) -> dict:
+def run_passive_recon(engagement, graph, attack_tree=None, audit=None,
+                      store=None, limiter=None, traffic=None) -> dict:
     """Fetch robots.txt, sitemap.xml, and common API-schema paths for every concrete
     host in scope; seed discovered endpoints into the knowledge graph (and attack tree,
-    if given). Returns a summary dict for logging. Pure HTTP GETs, no LLM calls."""
+    if given). Returns a summary dict for logging. Pure HTTP GETs, no LLM calls.
+
+    RECON V2: fetches spend the shared budget and record into traffic.jsonl;
+    every discovery also becomes a provenance-tagged Observation in the
+    shared evidence store (when one is wired)."""
     from ..knowledge import ENDPOINT, TECHNOLOGY
 
     guard = ScopeGuard(engagement)
     discovered: set[str] = set()
     doc_notes: dict[str, str] = {}
     schemas_found = 0
+    spec_urls: list[str] = []
 
     for base in _candidate_base_urls(engagement):
-        status, body = _get(guard, f"{base}/robots.txt")
+        status, body = _get(guard, f"{base}/robots.txt", limiter, traffic)
         if status and 200 <= status < 300:
             for p in _parse_robots(body):
                 discovered.add(urljoin(base + "/", p.lstrip("/")))
 
-        status, body = _get(guard, f"{base}/sitemap.xml")
+        status, body = _get(guard, f"{base}/sitemap.xml", limiter, traffic)
         if status and 200 <= status < 300:
             for u in _parse_sitemap(body):
                 host = urlsplit(u).hostname
@@ -170,13 +194,14 @@ def run_passive_recon(engagement, graph, attack_tree=None, audit=None) -> dict:
                     discovered.add(u)
 
         for schema_path in _SCHEMA_PATHS:
-            status, body = _get(guard, f"{base}{schema_path}")
+            status, body = _get(guard, f"{base}{schema_path}", limiter, traffic)
             if not status or not (200 <= status < 300):
                 continue
             doc = _looks_like_schema(body)
             if doc is None:
                 continue
             schemas_found += 1
+            spec_urls.append(f"{base}{schema_path}")
             for ep, doc_text in _endpoints_from_schema(doc, base).items():
                 discovered.add(ep)
                 if doc_text:
@@ -198,6 +223,18 @@ def run_passive_recon(engagement, graph, attack_tree=None, audit=None) -> dict:
                       source="passive_recon")
         if attack_tree is not None:
             attack_tree.seed_endpoint(ep)
+        if store is not None:
+            store.observe(
+                "endpoint", ep, tool="passive_recon", provenance="passive",
+                attrs=({"doc": note[:200]} if note else {}),
+                evidence=[{"kind": "traffic", "ref": f"passive_recon#{ep}",
+                           "tool": "passive_recon"}])
+    for spec in spec_urls:
+        if store is not None:
+            store.observe(
+                "api_spec", spec, tool="passive_recon", provenance="passive",
+                evidence=[{"kind": "traffic", "ref": f"passive_recon#{spec}",
+                           "tool": "passive_recon"}])
 
     if audit is not None:
         audit.record("recon.passive", endpoints=len(discovered), schemas=schemas_found,

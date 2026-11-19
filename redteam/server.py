@@ -548,21 +548,40 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         configured Ollama endpoint — a configured URL alone never counts as
         connected. Model discovery lists the INSTALLED models (native /api/tags,
         the canonical Ollama listing); discovery does NOT prove tool-calling
-        capability — that is what /api/llm/preflight verifies on demand."""
-        from .llm.providers import ProviderConfig
-        cfg = ProviderConfig(kind="ollama", base_url=(base_url or "").strip()).resolved()
-        root = cfg.base_url[:-3] if cfg.base_url.endswith("/v1") else cfg.base_url
+        capability — that is what /api/llm/preflight verifies on demand.
+
+        SSRF controls (PR #25 review fix): the client-supplied base_url goes
+        through the provider endpoint guard (ProviderConfig.resolved fails
+        closed on non-http(s) schemes, embedded credentials, and
+        link-local/metadata addresses — RFC1918/loopback stay allowed because
+        local Ollama IS the point); the probe itself never follows redirects
+        (a redirect cannot smuggle the request past the guard) and reads a
+        bounded body."""
+        from .llm.providers import ProviderConfig, ProviderEndpointError
         import requests as _rq
         try:
-            resp = _rq.get(f"{root}/api/tags", timeout=4)
+            cfg = ProviderConfig(kind="ollama",
+                                 base_url=(base_url or "").strip()).resolved()
+        except ProviderEndpointError as exc:
+            return {"provider": "ollama", "base_url": base_url,
+                    "connected": False, "state": "endpoint_rejected",
+                    "version": "", "models": [], "default_model": "",
+                    "message": "Provider endpoint rejected by the SSRF guard.",
+                    "detail": str(exc)[:300]}
+        root = cfg.base_url[:-3] if cfg.base_url.endswith("/v1") else cfg.base_url
+        try:
+            resp = _rq.get(f"{root}/api/tags", timeout=4, allow_redirects=False)
             resp.raise_for_status()
+            if len(getattr(resp, "content", b"")) > 1_000_000:
+                raise _rq.RequestException("model listing too large")
             payload = resp.json()
             models = sorted({str((m.get("name") or m.get("model") or "")).strip()
                              for m in (payload.get("models") or [])
                              if isinstance(m, dict) and (m.get("name") or m.get("model"))})
             version = ""
             try:
-                version = str(_rq.get(f"{root}/api/version", timeout=2).json().get("version", ""))
+                version = str(_rq.get(f"{root}/api/version", timeout=2,
+                                      allow_redirects=False).json().get("version", ""))
             except (_rq.RequestException, ValueError):
                 pass
             if not models:

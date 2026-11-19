@@ -9,14 +9,20 @@ from __future__ import annotations
 
 
 def run_deterministic_recon(engagement, graph, attack_tree=None, audit=None,
-                            source_dir: str = "") -> dict:
+                            source_dir: str = "", store=None, limiter=None,
+                            traffic=None) -> dict:
     """Run every zero-LLM-cost recon step once, before either driver (single-agent or
     orchestrator) starts: passive fetches (robots.txt/sitemap.xml/API schema) always, plus
     static source-route extraction when a local source tree is given. One call site
-    (cli.py) means single-agent and multi-agent runs get identical treatment."""
+    (cli.py) means single-agent and multi-agent runs get identical treatment.
+
+    RECON V2: `store` (the run's evidence store) makes every discovery a
+    provenance-tagged observation; `limiter`/`traffic` put passive fetches on
+    the shared request budget and wire-evidence log."""
     from .passive import run_passive_recon
 
-    summary = run_passive_recon(engagement, graph, attack_tree, audit=audit)
+    summary = run_passive_recon(engagement, graph, attack_tree, audit=audit,
+                                store=store, limiter=limiter, traffic=traffic)
 
     if source_dir:
         from .static_source import seed_from_source

@@ -51,6 +51,29 @@ PROVIDER_OUTAGE_MAX_STREAK = 6
 PROVIDER_OUTAGE_RETRY_PAUSE_S = 45.0   # tests patch this to 0
 DRIVER_ACTOR = "mission-driver"
 
+# RECON recovery (PR #25 live-fire): the mission's FIRST task is recon, and a
+# recon task that died used to stall the whole mission — the driver created it
+# exactly once, nothing else was dispatchable while `recon_done` stayed False,
+# and the loop spun to the round cap. An initial recon failure is an
+# infrastructure event until proven otherwise: recreate the bounded recon task
+# (pausing on provider-shaped errors) before giving up honestly.
+RECON_MAX_ATTEMPTS = 3
+# Terminal task statuses that are NOT success (everything dispatchable is
+# gone; nothing will ever complete the recon phase by itself).
+RECON_TERMINAL_FAILED = ("failed", "blocked_duplicate", "expired", "cancelled")
+# Error fingerprints that mean "the MODEL PROVIDER hiccuped", not "the target
+# answered". Matched case-insensitively against the task error string.
+_PROVIDER_ERROR_MARKERS = (
+    "no_models", "provider", "connection", "timeout", "timed out",
+    "unreachable", "econnrefused", "502", "503", "529", "overloaded",
+    "temporarily", "rate limit", "unavailable",
+)
+
+
+def _is_provider_error(error_text: str) -> bool:
+    text = (error_text or "").lower()
+    return any(marker in text for marker in _PROVIDER_ERROR_MARKERS)
+
 
 def _injectable_clock(clock=None):
     return clock or (lambda: datetime.now(timezone.utc))
@@ -201,6 +224,7 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
     verified_pending_ids: set[str] = set()
     unresolved_verification = False
     no_models_streak = 0
+    recon_attempts = 0
     failed_nodes: dict[str, tuple] = {}   # node_id -> (evidence fingerprint, failed task id)
     rearm_counts: dict[str, int] = {}     # bounded: ONE evidence-driven re-arm per node
     stop_reason = ""
@@ -286,10 +310,33 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
 
                 # Only ask the canonical selector for more exploit work after the
                 # recon task has completed and any newly-created VERIFY task has run.
-                has_recon = any(t.role == "recon" for t in commander.tasks.values())
+                recon_tasks = [t for t in commander.tasks.values()
+                               if t.role == "recon"]
+                has_recon = bool(recon_tasks)
                 recon_done = has_recon and all(
-                    t.status == TASK_SUCCEEDED for t in commander.tasks.values()
-                    if t.role == "recon")
+                    t.status == TASK_SUCCEEDED for t in recon_tasks)
+                # RECON recovery: a recon phase whose task went terminal without
+                # success leaves the mission with NOTHING dispatchable. Recreate
+                # the bounded recon task — pausing on provider-shaped errors —
+                # until attempts run out, then stop honestly instead of stalling.
+                recon_terminal_failed = has_recon and not recon_done and all(
+                    t.status in RECON_TERMINAL_FAILED for t in recon_tasks)
+                if recon_terminal_failed:
+                    if recon_attempts >= RECON_MAX_ATTEMPTS:
+                        stop_reason = "recon_failed"
+                        break
+                    last_error = str(getattr(recon_tasks[-1], "error", "") or "")
+                    if _is_provider_error(last_error):
+                        _time.sleep(PROVIDER_OUTAGE_RETRY_PAUSE_S)
+                    recon_attempts += 1
+                    journal.append(new_mission_event(
+                        EVENT_TASK_REARMED, engagement_id=engagement.name,
+                        mission_id=mission.mission_id, actor=DRIVER_ACTOR,
+                        task_id=recon_tasks[-1].task_id,
+                        payload={"role": "recon", "attempt": recon_attempts,
+                                 "error": last_error[:200]}))
+                    create_task({"title": "Map the discovered attack surface",
+                                 "role": "recon", "max_steps": recon_steps})
                 has_unverified = bool(unverified_ids) or active_verify
                 if recon_done and not has_unverified:
                     access_task_created = False
