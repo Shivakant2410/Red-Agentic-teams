@@ -44,7 +44,7 @@ FIELD_MAPS: dict[str, dict] = {
                         "content_length", "timestamp")},
     "naabu": {"kind": KIND_SERVICE, "provenance": PROVENANCE_ACTIVE,
               "subject": "host", "attrs": ("port", "ip", "timestamp")},
-    "dnsx": {"kind": KIND_DNS_RECORD, "provenance": PROVENANCE_ACTIVE,
+    "dnsx": {"kind": KIND_DNS_RECORD, "provenance": PROVENANCE_PASSIVE,
              "subject": "host", "attrs": ("a", "aaaa", "cname", "mx", "ns",
                                           "timestamp")},
     "tlsx": {"kind": KIND_CERTIFICATE, "provenance": PROVENANCE_ACTIVE,
@@ -61,7 +61,7 @@ FIELD_MAPS: dict[str, dict] = {
                          "timestamp")},
 }
 
-PASSIVE_TOOLS = frozenset({"subfinder", "asnmap"})
+PASSIVE_TOOLS = frozenset({"subfinder", "asnmap", "dnsx"})
 
 
 class AdapterError(RuntimeError):
