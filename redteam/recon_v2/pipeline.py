@@ -214,7 +214,7 @@ def run_domain_recon(ctx, reconv2, engagement, *, proxy_active: bool = False) ->
                     host = str(host).lower().rstrip(".")
                     if host and host != domain:
                         candidates.add(host)
-                        _record_subdomain(assets, store, root_id, host, "subfinder",
+                        _record_subdomain(assets, root_id, host, "subfinder",
                                           f"subfinder#{domain}")
             except Exception as exc:
                 summary["tools"][f"subfinder:{domain}"] = {
@@ -238,7 +238,7 @@ def run_domain_recon(ctx, reconv2, engagement, *, proxy_active: bool = False) ->
             dns_hits = dns_bruteforce(domain, DNS_WORDLIST, _resolve)
             for host, addresses in dns_hits.items():
                 candidates.add(host)
-                _record_subdomain(assets, store, root_id, host, "dns_wordlist",
+                _record_subdomain(assets, root_id, host, "dns_wordlist",
                                   f"dns#{host}")
                 ips = addresses if isinstance(addresses, list) else [addresses]
                 store.observe(KIND_DNS_RECORD, host, tool="dns_wordlist",
