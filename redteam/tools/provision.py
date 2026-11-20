@@ -33,9 +33,10 @@ class ToolProvisionTool:
                 "sandbox egress blocks runtime installs by design). Without a "
                 "sandbox: installs into the project venv (.tools/venv) via pip, "
                 "or apt when running as root. Catalog: nmap, arjun, ffuf, "
-                "gobuster, nuclei, whatweb, nikto, wafw00f, sqlmap. Provisioning "
-                "never runs the tool or touches the target — execution stays "
-                "with kali_exec/param_discovery/port_scan under RoE."
+                "gobuster, nuclei, whatweb, nikto, wafw00f, sqlmap, subfinder, "
+                "httpx, katana, dnsx, tlsx, naabu and amass. Provisioning never "
+                "runs the tool or touches the target — execution stays with the "
+                "existing RECON and assessment workflows under the engagement RoE."
             ),
             "input_schema": {
                 "type": "object",
