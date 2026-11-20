@@ -19,7 +19,7 @@ from ..osint import DNS_WORDLIST, crtsh_subdomains, dns_bruteforce, osint_fetch
 from ..tools.http import fetch_once
 from .capabilities import api_recon, js_recon, record_page_evidence
 from .observations import (
-    KIND_DOMAIN, KIND_DNS_RECORD, KIND_IP, KIND_SUBDOMAIN,
+    KIND_DOMAIN, KIND_DNS_RECORD, KIND_ENDPOINT, KIND_IP, KIND_SUBDOMAIN,
     PROVENANCE_PASSIVE, EvidenceRef,
 )
 
