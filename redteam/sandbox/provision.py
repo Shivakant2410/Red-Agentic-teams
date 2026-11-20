@@ -69,6 +69,23 @@ CATALOG: dict[str, ToolSpec] = {s.name: s for s in (
     ToolSpec("wafw00f", "wafw00f", "wafw00f", "wafw00f", ("-V",), "WAF fingerprinting"),
     ToolSpec("sqlmap", "sqlmap", "sqlmap", "sqlmap", ("--version",),
              "SQL injection exploration"),
+    # ProjectDiscovery RECON binaries. They are opt-in image-layer additions
+    # through engagement.sandbox.extra_tools; the built-in domain pipeline still
+    # performs its first-party crawl when an optional binary is absent.
+    ToolSpec("subfinder", "subfinder", "subfinder", "",
+             ("-version",), "passive subdomain discovery"),
+    ToolSpec("httpx", "httpx", "httpx-toolkit", "",
+             ("-version",), "HTTP service discovery and technology fingerprinting"),
+    ToolSpec("katana", "katana", "katana", "",
+             ("-version",), "JavaScript-aware web crawling"),
+    ToolSpec("dnsx", "dnsx", "dnsx", "",
+             ("-version",), "DNS record resolution and enrichment"),
+    ToolSpec("tlsx", "tlsx", "tlsx", "",
+             ("-version",), "TLS certificate and SAN discovery"),
+    ToolSpec("naabu", "naabu", "naabu", "",
+             ("-version",), "authorized port discovery"),
+    ToolSpec("amass", "amass", "amass", "",
+             ("version",), "external asset and subdomain intelligence"),
 )}
 
 
