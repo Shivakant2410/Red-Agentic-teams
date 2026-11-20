@@ -150,7 +150,7 @@ def _run_optional_tool(ctx, tool, **kwargs) -> dict:
         return {"ok": False, "error": str(exc)[:300]}
 
 
-def run_domain_recon(ctx, reconv2, engagement) -> dict:
+def run_domain_recon(ctx, reconv2, engagement, *, proxy_active: bool = False) -> dict:
     """Enumerate configured root domains, then map their authorized web surface."""
     store, assets = reconv2.store, reconv2.assets
     roots = _domain_roots(engagement.allowed_hosts)
@@ -253,9 +253,11 @@ def run_domain_recon(ctx, reconv2, engagement) -> dict:
                 continue
             summary["active_hosts"] += 1
 
-            # Run the installed ProjectDiscovery web fingerprint/crawler tools
-            # when present. Built-in bounded crawling below remains the fallback.
-            if _available(ctx, "httpx"):
+            # External crawlers can follow redirects and fan out to many
+            # discovered URLs. Run them only when this run has the shared
+            # evidence proxy in front of sandbox egress; the proxy enforces the
+            # existing scope and request budget on every wire request.
+            if proxy_active and ctx.sandbox is not None and _available(ctx, "httpx"):
                 result = _run_optional_tool(
                     ctx, HostProbeTool(), target=base,
                     reason="Baseline root-domain service and technology discovery")
@@ -268,7 +270,7 @@ def run_domain_recon(ctx, reconv2, engagement) -> dict:
                                       evidence=[EvidenceRef(kind="tool",
                                                             ref=f"httpx#{url}",
                                                             tool="httpx").to_json()])
-            if _available(ctx, "katana"):
+            if proxy_active and ctx.sandbox is not None and _available(ctx, "katana"):
                 result = _run_optional_tool(
                     ctx, CrawlTool(), target=base, depth=3, rate_limit=10,
                     concurrency=5,
