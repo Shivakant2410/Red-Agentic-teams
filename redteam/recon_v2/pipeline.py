@@ -95,12 +95,20 @@ def _resolve(host: str, timeout: float = 2.0):
 
 def _same_origin_urls(base_url: str, candidates: list[str]) -> list[str]:
     origin = urlsplit(base_url)
+    origin_port = origin.port or (443 if origin.scheme == "https" else 80)
     found = []
     seen = set()
     for candidate in candidates:
-        url = urljoin(base_url, str(candidate).strip())
-        parsed = urlsplit(url)
-        if parsed.scheme not in ("http", "https") or parsed.hostname != origin.hostname:
+        try:
+            url = urljoin(base_url, str(candidate).strip())
+            parsed = urlsplit(url)
+            parsed_port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        except ValueError:
+            continue
+        if (parsed.scheme not in ("http", "https")
+                or parsed.hostname != origin.hostname
+                or parsed_port != origin_port
+                or parsed.username is not None or parsed.password is not None):
             continue
         clean = urlunsplit((parsed.scheme, parsed.netloc, parsed.path or "/",
                             parsed.query, ""))
