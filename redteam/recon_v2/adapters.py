@@ -11,8 +11,8 @@ Observations with provenance and evidence refs.
 Discipline (directive §5):
   - ACTIVE adapters require explicit authorization (`authorized=True` — the
     caller passes the engagement's signed authorization; fail-closed default);
-  - every emitted subject is scope-checked BEFORE recording — out-of-scope
-    lines are dropped and audited, never stored;
+  - active subjects are scope-checked BEFORE recording; passive third-party
+    observations are retained with out_of_scope attribution, never permission;
   - bounded: `max_items`, per-item rate-limit acquisition on the run's shared
     limiter, subprocess timeout;
   - JSONL only: unparseable lines are skipped, not executed;
