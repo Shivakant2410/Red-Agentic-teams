@@ -527,6 +527,22 @@ def execute_run(opts: RunOptions) -> dict:
                           evidence_store=reconv2.store,
                           workspace=reconv2.workspace)
 
+        # Root-domain RECON runs before any LLM specialist. It composes the
+        # existing passive intelligence, HTTP evidence path, browser-independent
+        # crawl, API/JS extraction and optional ProjectDiscovery binaries.
+        # A missing optional binary degrades to the built-in path; it never turns
+        # a valid root-domain engagement into an empty discovery run.
+        domain_recon_summary = {}
+        try:
+            from .recon_v2.pipeline import run_domain_recon
+            domain_recon_summary = run_domain_recon(
+                ctx, reconv2, engagement, proxy_active=proxy is not None)
+            say(f"Root-domain RECON: {json.dumps(domain_recon_summary, default=str)}")
+        except Exception as exc:
+            domain_recon_summary = {"errors": [str(exc)[:240]]}
+            audit.record("recon.domain_pipeline.error", error=str(exc)[:240])
+            say(f"Root-domain RECON degraded: {str(exc)[:200]}")
+
         # Cross-engagement memory: a single global store the agent learns into over time,
         # bootstrapped with curated tradecraft (correct oracle recipes) on first use.
         # Semantic recall is additive and degrades gracefully: the local backend needs no
@@ -788,6 +804,7 @@ def execute_run(opts: RunOptions) -> dict:
         "audit_intact": audit.verify_chain(),
         "out_dir": str(out),
         "traffic_recorded": traffic.count,
+        "domain_recon": domain_recon_summary,
         "proxy": proxy.status() if proxy is not None else None,
         "surface_hosts": inventory.summary()["hosts"],
         "surface_services": inventory.summary()["services"],

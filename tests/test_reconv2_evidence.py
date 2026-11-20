@@ -158,7 +158,7 @@ def test_dedupe_merges_observations(tmp_path):
     assert bundle.store.dedupe_report()["stored"] == 1
 
 
-# -- adapters: authorization fail-closed, scope-enforced, bounded ---------------
+# -- adapters: authorization fail-closed, passive external intel, bounded --------
 
 class _FakeExec:
     """A stand-in for the sandbox exec that returns canned JSONL."""
@@ -203,10 +203,15 @@ def test_adapter_scope_enforced_and_bounded(tmp_path, monkeypatch):
                          authorized=True)
     subjects = {o.subject for o in bundle.store.query(kind="subdomain")}
     assert "api.example.com" in subjects
-    assert "evil.net" not in subjects and "cdn.example.net" not in subjects
-    assert result["skipped_out_of_scope"] >= 2
+    assert "evil.net" in subjects and "cdn.example.net" in subjects
+    external = [o for o in bundle.store.query(kind="subdomain")
+                if o.subject in {"evil.net", "cdn.example.net"}]
+    assert len(external) == 2
+    assert all(o.scope_status == "out_of_scope" for o in external)
+    assert result["skipped_out_of_scope"] == 0
     assert result["lines"] <= 5           # bounded
-    assert any(e["event"] == "reconv2.adapter.scope_denied" for e in audit.events)
+    assert sum(e["event"] == "reconv2.adapter.external_observation"
+               for e in audit.events) >= 2
 
 
 def test_adapter_missing_binary_is_an_honest_skip(tmp_path, monkeypatch):

@@ -11,8 +11,8 @@ Observations with provenance and evidence refs.
 Discipline (directive §5):
   - ACTIVE adapters require explicit authorization (`authorized=True` — the
     caller passes the engagement's signed authorization; fail-closed default);
-  - every emitted subject is scope-checked BEFORE recording — out-of-scope
-    lines are dropped and audited, never stored;
+  - active subjects are scope-checked BEFORE recording; passive third-party
+    observations are retained with out_of_scope attribution, never permission;
   - bounded: `max_items`, per-item rate-limit acquisition on the run's shared
     limiter, subprocess timeout;
   - JSONL only: unparseable lines are skipped, not executed;
@@ -22,6 +22,7 @@ Discipline (directive §5):
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import subprocess
 
@@ -43,7 +44,7 @@ FIELD_MAPS: dict[str, dict] = {
                         "content_length", "timestamp")},
     "naabu": {"kind": KIND_SERVICE, "provenance": PROVENANCE_ACTIVE,
               "subject": "host", "attrs": ("port", "ip", "timestamp")},
-    "dnsx": {"kind": KIND_DNS_RECORD, "provenance": PROVENANCE_ACTIVE,
+    "dnsx": {"kind": KIND_DNS_RECORD, "provenance": PROVENANCE_PASSIVE,
              "subject": "host", "attrs": ("a", "aaaa", "cname", "mx", "ns",
                                           "timestamp")},
     "tlsx": {"kind": KIND_CERTIFICATE, "provenance": PROVENANCE_ACTIVE,
@@ -60,7 +61,7 @@ FIELD_MAPS: dict[str, dict] = {
                          "timestamp")},
 }
 
-PASSIVE_TOOLS = frozenset({"subfinder", "asnmap"})
+PASSIVE_TOOLS = frozenset({"subfinder", "asnmap", "dnsx"})
 
 
 class AdapterError(RuntimeError):
@@ -86,17 +87,21 @@ class ProjectDiscoveryAdapter:
         """Is the tool actually installed (sandbox or host PATH)?"""
         if self._sandbox_exec is not None:
             try:
-                probe = self._sandbox_exec(["sh", "-lc",
-                                            f"command -v {binary} || true"])
-                return bool(str(probe).strip())
+                probe = self._sandbox_exec(f"command -v {shlex.quote(binary)} || true")
+                stdout = getattr(probe, "stdout", probe)
+                return bool(str(stdout or "").strip())
             except Exception:
                 return False
         return shutil.which(binary) is not None
 
     def run(self, binary: str, args: list[str], *, target: str,
             authorized: bool) -> dict:
-        """Run one adapter and normalize its JSONL. Returns a result summary;
-        every recorded subject is pre-checked against the signed scope."""
+        """Run one adapter and normalize its JSONL.
+
+        Active discoveries are rejected when their host is outside signed scope.
+        Passive observations are retained with conservative out_of_scope
+        attribution so third-party relationships are not lost.
+        """
         spec = FIELD_MAPS.get(binary)
         if spec is None:
             raise AdapterError(f"no field map for adapter {binary!r}")
@@ -115,18 +120,24 @@ class ProjectDiscoveryAdapter:
         argv = [binary, *args]
         try:
             if self._sandbox_exec is not None:
-                raw = self._sandbox_exec(argv)
+                proc = self._sandbox_exec(
+                    " ".join(shlex.quote(part) for part in argv),
+                    timeout=int(self._timeout))
+                raw = str(getattr(proc, "stdout", proc) or "")
+                exit_code = int(getattr(proc, "exit_code", 0) or 0)
+                stderr = str(getattr(proc, "stderr", "") or "")
             else:
                 proc = subprocess.run(argv, capture_output=True, text=True,
                                       timeout=self._timeout)
-                raw = proc.stdout
+                raw, exit_code, stderr = proc.stdout, proc.returncode, proc.stderr
         except (subprocess.TimeoutExpired, OSError) as exc:
             self._audit.record("reconv2.adapter.error", binary=binary,
                                target=target, error=str(exc)[:200])
             return {"recorded": 0, "skipped_out_of_scope": 0, "lines": 0,
-                    "error": str(exc)[:200]}
+                    "error": str(exc)[:200], "available": True}
 
         recorded = skipped = lines = 0
+        subjects: list[str] = []
         for line in raw.splitlines():
             if lines >= self._max_items:
                 break
@@ -145,17 +156,23 @@ class ProjectDiscoveryAdapter:
                 continue
             if binary == "naabu" and data.get("port"):
                 subject = f"{subject}:{data['port']}"
-            # Scope gate BEFORE storage: honest attribution, no out-of-scope
-            # asset ever enters the authorized evidence plane.
+            # Active subjects must be in scope before storage. Passive tools
+            # may preserve external context; EvidenceStore marks it out_of_scope.
             host = self._host_of(binary, data, subject)
             try:
                 if host:
                     if not self._scope.host_scope_status(host):
-                        skipped += 1
-                        self._audit.record("reconv2.adapter.scope_denied",
+                        if binary not in PASSIVE_TOOLS:
+                            skipped += 1
+                            self._audit.record("reconv2.adapter.scope_denied",
+                                               binary=binary, host=host)
+                            continue
+                        # Passive intelligence is retained as external context.
+                        # Its out_of_scope attribution is data, never permission
+                        # to contact or test that host.
+                        self._audit.record("reconv2.adapter.external_observation",
                                            binary=binary, host=host)
-                        continue
-                    if not PASSIVE_TOOLS.__contains__(binary):
+                    if binary not in PASSIVE_TOOLS:
                         self._limiter.acquire()
                 elif not PASSIVE_TOOLS.__contains__(binary):
                     self._limiter.acquire()
@@ -172,11 +189,14 @@ class ProjectDiscoveryAdapter:
             self._store.observe(spec["kind"], subject, tool=binary,
                                 provenance=spec["provenance"], attrs=attrs,
                                 origin="external", evidence=evidence)
+            subjects.append(subject)
             recorded += 1
         self._audit.record("reconv2.adapter.run", binary=binary, target=target,
-                           recorded=recorded, skipped=skipped, lines=lines)
+                           recorded=recorded, skipped=skipped, lines=lines,
+                           exit_code=exit_code, stderr_tail=stderr[-300:])
         return {"recorded": recorded, "skipped_out_of_scope": skipped,
-                "lines": lines}
+                "lines": lines, "subjects": subjects, "exit_code": exit_code,
+                "stderr_tail": stderr[-300:]}
 
     @staticmethod
     def _host_of(binary: str, data: dict, subject: str) -> str:
