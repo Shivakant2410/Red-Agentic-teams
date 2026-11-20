@@ -92,7 +92,7 @@ def test_subfinder_adapter_retains_external_passive_observations():
 
 
 def test_active_adapter_does_not_store_out_of_scope_hosts():
-    def sandbox_exec(command):
+    def sandbox_exec(command, timeout=None):
         if command.startswith("command -v"):
             return SimpleNamespace(stdout="/usr/bin/httpx\n", exit_code=0, stderr="")
         return SimpleNamespace(
