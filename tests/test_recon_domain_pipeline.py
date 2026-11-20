@@ -55,7 +55,7 @@ class _Audit:
 def test_subfinder_adapter_retains_external_passive_observations():
     commands = []
 
-    def sandbox_exec(command):
+    def sandbox_exec(command, timeout=None):
         commands.append(command)
         if command.startswith("command -v"):
             return SimpleNamespace(stdout="/usr/bin/subfinder\n", exit_code=0, stderr="")
