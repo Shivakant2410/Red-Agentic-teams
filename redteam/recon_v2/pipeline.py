@@ -217,6 +217,18 @@ def run_domain_recon(ctx, reconv2, engagement, *, proxy_active: bool = False) ->
                 summary["tools"][f"subfinder:{domain}"] = {
                     "available": False, "error": str(exc)[:160]}
 
+        # DNSX enriches the root domain with A/AAAA/CNAME records. This is
+        # resolver-side intelligence, so the adapter stores it as passive data.
+        if reconv2.adapter is not None:
+            try:
+                result = reconv2.adapter.run(
+                    "dnsx", ["-d", domain, "-a", "-aaaa", "-cname", "-json", "-silent"],
+                    target=domain, authorized=True)
+                summary["tools"][f"dnsx:{domain}"] = result
+            except Exception as exc:
+                summary["tools"][f"dnsx:{domain}"] = {
+                    "available": False, "error": str(exc)[:160]}
+
         # Small DNS wordlist adds common service names without sending HTTP to
         # them. DNS discoveries are retained independently of active scope.
         try:
