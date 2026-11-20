@@ -22,6 +22,7 @@ Discipline (directive §5):
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import subprocess
 
@@ -86,9 +87,9 @@ class ProjectDiscoveryAdapter:
         """Is the tool actually installed (sandbox or host PATH)?"""
         if self._sandbox_exec is not None:
             try:
-                probe = self._sandbox_exec(["sh", "-lc",
-                                            f"command -v {binary} || true"])
-                return bool(str(probe).strip())
+                probe = self._sandbox_exec(f"command -v {shlex.quote(binary)} || true")
+                stdout = getattr(probe, "stdout", probe)
+                return bool(str(stdout or "").strip())
             except Exception:
                 return False
         return shutil.which(binary) is not None
@@ -115,18 +116,22 @@ class ProjectDiscoveryAdapter:
         argv = [binary, *args]
         try:
             if self._sandbox_exec is not None:
-                raw = self._sandbox_exec(argv)
+                proc = self._sandbox_exec(" ".join(shlex.quote(part) for part in argv))
+                raw = str(getattr(proc, "stdout", proc) or "")
+                exit_code = int(getattr(proc, "exit_code", 0) or 0)
+                stderr = str(getattr(proc, "stderr", "") or "")
             else:
                 proc = subprocess.run(argv, capture_output=True, text=True,
                                       timeout=self._timeout)
-                raw = proc.stdout
+                raw, exit_code, stderr = proc.stdout, proc.returncode, proc.stderr
         except (subprocess.TimeoutExpired, OSError) as exc:
             self._audit.record("reconv2.adapter.error", binary=binary,
                                target=target, error=str(exc)[:200])
             return {"recorded": 0, "skipped_out_of_scope": 0, "lines": 0,
-                    "error": str(exc)[:200]}
+                    "error": str(exc)[:200], "available": True}
 
         recorded = skipped = lines = 0
+        subjects: list[str] = []
         for line in raw.splitlines():
             if lines >= self._max_items:
                 break
@@ -151,11 +156,17 @@ class ProjectDiscoveryAdapter:
             try:
                 if host:
                     if not self._scope.host_scope_status(host):
-                        skipped += 1
-                        self._audit.record("reconv2.adapter.scope_denied",
+                        if binary not in PASSIVE_TOOLS:
+                            skipped += 1
+                            self._audit.record("reconv2.adapter.scope_denied",
+                                               binary=binary, host=host)
+                            continue
+                        # Passive intelligence is retained as external context.
+                        # Its out_of_scope attribution is data, never permission
+                        # to contact or test that host.
+                        self._audit.record("reconv2.adapter.external_observation",
                                            binary=binary, host=host)
-                        continue
-                    if not PASSIVE_TOOLS.__contains__(binary):
+                    if binary not in PASSIVE_TOOLS:
                         self._limiter.acquire()
                 elif not PASSIVE_TOOLS.__contains__(binary):
                     self._limiter.acquire()
@@ -172,11 +183,14 @@ class ProjectDiscoveryAdapter:
             self._store.observe(spec["kind"], subject, tool=binary,
                                 provenance=spec["provenance"], attrs=attrs,
                                 origin="external", evidence=evidence)
+            subjects.append(subject)
             recorded += 1
         self._audit.record("reconv2.adapter.run", binary=binary, target=target,
-                           recorded=recorded, skipped=skipped, lines=lines)
+                           recorded=recorded, skipped=skipped, lines=lines,
+                           exit_code=exit_code, stderr_tail=stderr[-300:])
         return {"recorded": recorded, "skipped_out_of_scope": skipped,
-                "lines": lines}
+                "lines": lines, "subjects": subjects, "exit_code": exit_code,
+                "stderr_tail": stderr[-300:]}
 
     @staticmethod
     def _host_of(binary: str, data: dict, subject: str) -> str:
