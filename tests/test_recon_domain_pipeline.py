@@ -113,3 +113,79 @@ def test_active_adapter_does_not_store_out_of_scope_hosts():
     assert result["recorded"] == 0
     assert result["skipped_out_of_scope"] == 1
     assert store.query(subject_contains="vendor.example.net") == []
+
+
+
+def test_root_domain_pipeline_crawls_and_extracts_javascript_endpoints(monkeypatch):
+    from types import SimpleNamespace
+
+    import redteam.recon_v2.pipeline as pipeline
+    from redteam.recon_v2.assets import AssetIntelligence
+    from redteam.recon_v2.evidence_store import EvidenceStore
+
+    class Scope:
+        def host_scope_status(self, host):
+            return host == "example.com"
+
+        def check(self, url):
+            assert url.startswith("https://example.com")
+            return None
+
+    class Limiter:
+        def __init__(self):
+            self.used = 0
+
+        def acquire(self):
+            self.used += 1
+
+    class Audit:
+        def __init__(self):
+            self.events = []
+
+        def record(self, event, **fields):
+            self.events.append({"event": event, **fields})
+
+    scope = Scope()
+    limiter = Limiter()
+    audit = Audit()
+    store = EvidenceStore(scope=scope)
+    assets = AssetIntelligence(store, scope=scope)
+    bundle = SimpleNamespace(store=store, assets=assets, adapter=None)
+    responses = {
+        "https://example.com": (
+            200,
+            '<html><head><title>Example</title></head><body>'
+            '<a href="/users">Users</a><script src="/app.js"></script>'
+            '</body></html>',
+        ),
+        "https://example.com/users": (
+            200, '<html><head><title>Users</title></head><body>ok</body></html>',
+        ),
+        "https://example.com/app.js": (200, 'const api = "/api/orders";'),
+    }
+
+    monkeypatch.setattr(pipeline, "crtsh_subdomains", lambda domain, fetch: [])
+    monkeypatch.setattr(pipeline, "dns_bruteforce", lambda *args: {})
+    monkeypatch.setattr(
+        pipeline, "fetch_once",
+        lambda ctx, req, tool="": (
+            *responses.get(req["url"], (404, "")), 1.0, {},
+        ),
+    )
+    ctx = SimpleNamespace(
+        scope=scope, limiter=limiter, audit=audit, events=None, sandbox=None,
+    )
+    engagement = SimpleNamespace(
+        allowed_hosts=("example.com",),
+        allowed_schemes=("https",),
+        allowed_ports=(443,),
+    )
+
+    result = pipeline.run_domain_recon(ctx, bundle, engagement)
+
+    assert result["domains"] == ["example.com"]
+    assert result["active_hosts"] == 1
+    assert result["pages"] == 2
+    assert result["js_files"] == 1
+    assert store.query(kind="page")
+    assert store.query(kind="js_endpoint", subject_contains="/api/orders")
