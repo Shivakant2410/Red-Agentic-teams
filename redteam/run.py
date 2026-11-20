@@ -535,7 +535,8 @@ def execute_run(opts: RunOptions) -> dict:
         domain_recon_summary = {}
         try:
             from .recon_v2.pipeline import run_domain_recon
-            domain_recon_summary = run_domain_recon(ctx, reconv2, engagement)
+            domain_recon_summary = run_domain_recon(
+                ctx, reconv2, engagement, proxy_active=proxy is not None)
             say(f"Root-domain RECON: {json.dumps(domain_recon_summary, default=str)}")
         except Exception as exc:
             domain_recon_summary = {"errors": [str(exc)[:240]]}
