@@ -15,11 +15,11 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from ..events import safe_emit
-from ..knowledge import ENDPOINT
 from ..osint import DNS_WORDLIST, crtsh_subdomains, dns_bruteforce, osint_fetch
 from ..tools.http import fetch_once
+from .capabilities import api_recon, js_recon, record_page_evidence
 from .observations import (
-    KIND_DOMAIN, KIND_DNS_RECORD, KIND_IP, KIND_JS_ENDPOINT, KIND_SUBDOMAIN,
+    KIND_DOMAIN, KIND_DNS_RECORD, KIND_IP, KIND_SUBDOMAIN,
     PROVENANCE_PASSIVE, EvidenceRef,
 )
 
@@ -40,6 +40,9 @@ class _PageLinks(HTMLParser):
             self.scripts.append(attrs["src"])
         elif tag.lower() == "link" and attrs.get("href"):
             self.links.append(attrs["href"])
+        elif tag.lower() in ("form", "iframe") and attrs.get(
+                "action" if tag.lower() == "form" else "src"):
+            self.links.append(attrs.get("action" if tag.lower() == "form" else "src"))
         elif tag.lower() == "title":
             self._in_title = True
 
@@ -126,7 +129,7 @@ def _fetch(ctx, url: str, tool: str, *, acquire: bool = True):
     return status, body, headers
 
 
-def _record_subdomain(assets, store, root_id: str, host: str, source: str,
+def _record_subdomain(assets, root_id: str, host: str, source: str,
                       evidence_ref: str):
     obs_id = assets.record(
         KIND_SUBDOMAIN, host, tool=source, provenance=PROVENANCE_PASSIVE,
@@ -194,7 +197,7 @@ def run_domain_recon(ctx, reconv2, engagement, *, proxy_active: bool = False) ->
             ct_names = crtsh_subdomains(domain, osint_fetch)
             for host in ct_names:
                 candidates.add(host)
-                _record_subdomain(assets, store, root_id, host, "crt.sh",
+                _record_subdomain(assets, root_id, host, "crt.sh",
                                   f"crt.sh#{domain}")
         except Exception as exc:
             summary["errors"].append(f"{domain}: crt.sh: {str(exc)[:160]}")
@@ -356,17 +359,15 @@ def run_domain_recon(ctx, reconv2, engagement, *, proxy_active: bool = False) ->
                 return status, body
 
             try:
-                api_result = __import__(
-                    "redteam.recon_v2.capabilities", fromlist=["api_recon"]
-                ).api_recon(store, base, fetch=api_fetch, limiter=ctx.limiter,
-                            audit=ctx.audit)
+                api_result = api_recon(
+                    store, base, fetch=api_fetch, limiter=ctx.limiter,
+                    audit=ctx.audit)
                 summary["api_specs"] += api_result.get("specs", 0)
                 summary["endpoints"] += api_result.get("endpoints", 0)
             except Exception as exc:
                 summary["errors"].append(f"{host}: API recon: {str(exc)[:160]}")
 
             try:
-                from .capabilities import js_recon
                 js_result = js_recon(store, base, fetch=api_fetch,
                                      js_urls=sorted(js_urls), limiter=ctx.limiter,
                                      audit=ctx.audit)
