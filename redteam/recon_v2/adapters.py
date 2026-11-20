@@ -96,8 +96,12 @@ class ProjectDiscoveryAdapter:
 
     def run(self, binary: str, args: list[str], *, target: str,
             authorized: bool) -> dict:
-        """Run one adapter and normalize its JSONL. Returns a result summary;
-        every recorded subject is pre-checked against the signed scope."""
+        """Run one adapter and normalize its JSONL.
+
+        Active discoveries are rejected when their host is outside signed scope.
+        Passive observations are retained with conservative out_of_scope
+        attribution so third-party relationships are not lost.
+        """
         spec = FIELD_MAPS.get(binary)
         if spec is None:
             raise AdapterError(f"no field map for adapter {binary!r}")
@@ -116,7 +120,9 @@ class ProjectDiscoveryAdapter:
         argv = [binary, *args]
         try:
             if self._sandbox_exec is not None:
-                proc = self._sandbox_exec(" ".join(shlex.quote(part) for part in argv))
+                proc = self._sandbox_exec(
+                    " ".join(shlex.quote(part) for part in argv),
+                    timeout=int(self._timeout))
                 raw = str(getattr(proc, "stdout", proc) or "")
                 exit_code = int(getattr(proc, "exit_code", 0) or 0)
                 stderr = str(getattr(proc, "stderr", "") or "")
@@ -150,8 +156,8 @@ class ProjectDiscoveryAdapter:
                 continue
             if binary == "naabu" and data.get("port"):
                 subject = f"{subject}:{data['port']}"
-            # Scope gate BEFORE storage: honest attribution, no out-of-scope
-            # asset ever enters the authorized evidence plane.
+            # Active subjects must be in scope before storage. Passive tools
+            # may preserve external context; EvidenceStore marks it out_of_scope.
             host = self._host_of(binary, data, subject)
             try:
                 if host:
