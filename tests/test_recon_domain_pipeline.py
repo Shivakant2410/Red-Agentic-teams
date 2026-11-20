@@ -150,7 +150,17 @@ def test_root_domain_pipeline_crawls_and_extracts_javascript_endpoints(monkeypat
     audit = Audit()
     store = EvidenceStore(scope=scope)
     assets = AssetIntelligence(store, scope=scope)
-    bundle = SimpleNamespace(store=store, assets=assets, adapter=None)
+    class FakeAdapter:
+        _sandbox_exec = None
+
+        def run(self, binary, args, *, target, authorized):
+            if binary == "subfinder":
+                return {"subjects": ["api.example.com"], "recorded": 1}
+            if binary == "dnsx":
+                return {"subjects": [], "recorded": 0}
+            raise AssertionError(binary)
+
+    bundle = SimpleNamespace(store=store, assets=assets, adapter=FakeAdapter())
     responses = {
         "https://example.com": (
             200,
@@ -185,6 +195,8 @@ def test_root_domain_pipeline_crawls_and_extracts_javascript_endpoints(monkeypat
 
     assert result["domains"] == ["example.com"]
     assert result["active_hosts"] == 1
+    assert result["passive_subdomains"] == 1
+    assert store.query(kind="subdomain", subject_contains="api.example.com")
     assert result["pages"] == 2
     assert result["js_files"] == 1
     assert store.query(kind="page")
