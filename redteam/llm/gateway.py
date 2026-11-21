@@ -31,6 +31,14 @@ from .openrouter import ChatResult, NoModelsAvailable, OpenRouterClient
 from .providers import ROTATE_STATUSES, AnthropicProvider, OpenAICompatProvider, ProviderConfig, ProviderError
 
 
+def _is_local_backend(base_url: str) -> bool:
+    """A loopback/private-host endpoint (Ollama, LM Studio, a local vLLM) — it loads
+    the model on this machine, so a slow first byte is normal, not a dead endpoint."""
+    u = (base_url or "").lower()
+    return any(h in u for h in ("127.0.0.1", "localhost", "::1", "0.0.0.0")) \
+        or ":11434" in u            # Ollama's default port, even behind a hostname
+
+
 def resolve_api_key(pcfg: ProviderConfig,
                     credentials: Mapping[str, str] | None = None) -> str:
     """Resolve one provider's API key: run-scoped credential first, then the
@@ -99,7 +107,16 @@ class LLMGateway:
             if pcfg.kind == "anthropic":
                 self._providers.append(AnthropicProvider(pcfg, audit=audit, api_key=key))
             else:
-                kw = {"timeout": self._timeout} if self._timeout else {}
+                # A local Ollama backend has to LOAD the model (an 18GB MoE can take
+                # ~3 min from disk on a CPU-only box) and then REASON before the first
+                # byte comes back, so the 120s default read-timeout rotates away mid-
+                # load — producing transport:ReadTimeout on every call and never a
+                # single success. Give local backends a long floor (explicit
+                # REDTEAM_LLM_TIMEOUT still wins). Remote providers keep 120s.
+                timeout = self._timeout
+                if timeout is None and _is_local_backend(pcfg.base_url):
+                    timeout = 600
+                kw = {"timeout": timeout} if timeout else {}
                 self._providers.append(OpenAICompatProvider(pcfg, audit=audit,
                                                             api_key=key, **kw))
         if not self._providers:
