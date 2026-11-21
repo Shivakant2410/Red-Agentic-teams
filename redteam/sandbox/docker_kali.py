@@ -52,6 +52,16 @@ class ExecResult:
     timed_out: bool
 
 
+def _rewrite_proxy_host(proxy_url: str, new_host: str) -> str:
+    """Replace the host in a proxy URL, keeping scheme/port/path. Used to pin the
+    evidence-proxy URL to the numeric IPv4 gateway so the container never reaches it
+    over an IPv6 path the egress allow does not cover."""
+    from urllib.parse import urlsplit, urlunsplit
+    parts = urlsplit(proxy_url)
+    netloc = new_host if parts.port is None else f"{new_host}:{parts.port}"
+    return urlunsplit((parts.scheme or "http", netloc, parts.path, parts.query, parts.fragment))
+
+
 def _run(cmd: list[str], timeout: int | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
@@ -146,6 +156,24 @@ class KaliSandbox:
             pass
         return ""
 
+    def _resolve_host_gateway_ip(self) -> str:
+        """The IPv4 that host.docker.internal resolves to FROM INSIDE a container with
+        --add-host host.docker.internal:host-gateway. Linux: the bridge gateway. Docker
+        Desktop: a dedicated host IP (192.168.65.254). Returns "" if it can't be found,
+        and the caller falls back to the bridge gateway."""
+        probe = _run([
+            "docker", "run", "--rm",
+            "--add-host", "host.docker.internal:host-gateway",
+            "--entrypoint", "getent", self._image or self._cfg.image,
+            "ahostsv4", "host.docker.internal",
+        ], timeout=30)
+        for line in (probe.stdout or "").splitlines():
+            ip = line.split()[0] if line.split() else ""
+            if ip and ":" not in ip:
+                return ip
+        # Fall back to the bridge gateway (correct on native Linux).
+        return self._network_gateway()
+
     def start(self, proxy_url: str = "", ca_cert: Path | None = None) -> EgressPlan:
         self._require_docker()
         if not self._image_exists():
@@ -156,11 +184,20 @@ class KaliSandbox:
             # The evidence proxy runs host-side; the container reaches it through the
             # bridge gateway. Open exactly that /32 — the ONE deliberate exception to
             # the default-DROP egress, for the control path itself.
-            gw = self._network_gateway()
-            if gw:
-                gw_cidr = f"{gw}/32" if ":" not in gw else f"{gw}/128"
-                if gw_cidr not in self._plan.allowed_cidrs:
-                    self._plan.allowed_cidrs.append(gw_cidr)
+            # The host address the CONTAINER actually reaches the proxy on is whatever
+            # host.docker.internal resolves to from inside it — the bridge gateway on
+            # Linux (172.x), but a separate host IP on Docker Desktop (192.168.65.254
+            # on Windows/macOS). Allowing only the bridge gateway (self._network_gateway)
+            # opened the wrong IP there, so every proxied fetch hit the default DROP and
+            # timed out (HTTP 000). Resolve the name as the container sees it and allow
+            # THAT /32, then pin the proxy env to the same numeric IP (curl must not pick
+            # an IPv6 alias the v4 allow would not cover).
+            host_ip = self._resolve_host_gateway_ip()
+            if host_ip:
+                host_cidr = f"{host_ip}/32" if ":" not in host_ip else f"{host_ip}/128"
+                if host_cidr not in self._plan.allowed_cidrs:
+                    self._plan.allowed_cidrs.append(host_cidr)
+                proxy_url = _rewrite_proxy_host(proxy_url, host_ip)
             else:
                 self._log("sandbox.egress.warning",
                           message="proxy requested but bridge gateway unknown; "
