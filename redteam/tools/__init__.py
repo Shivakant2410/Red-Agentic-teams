@@ -62,6 +62,12 @@ class ToolContext:
     # read by the orchestrator's DriftPlusPenaltyScheduler to throttle the swarm.
     # None keeps the zero-overhead behavior (single-agent mode, legacy paths).
     detection: Optional[object] = None # BeliefFilter | None
+    # RECON evidence plane: provenance + validation lifecycle for every recon
+    # observation (mirrored into the graph). None = legacy paths (no log).
+    observations: Optional[object] = None  # ObservationLog | None
+    # Intercepting evidence proxy handle (EvidenceProxy | None): lets the
+    # RECON-facing proxy_* tools query listener state and captured history.
+    proxy: Optional[object] = None     # EvidenceProxy | None
 
 
 class Tool(Protocol):
@@ -75,8 +81,10 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     """Instantiate the tool set. Import here to avoid circular imports."""
     from .access_tools import ClaimObjectiveTool, RecordAccessTool
     from .authsession import AuthenticateTool, SetSessionTool
-    from .browser import (BrowserClickTool, BrowserContentTool, BrowserFillTool,
-                          BrowserNavigateTool, BrowserScreenshotTool)
+    from .browser import (BrowserClickTool, BrowserContentTool, BrowserConsoleTool,
+                          BrowserFillTool, BrowserInspectRequestTool,
+                          BrowserNavigateTool, BrowserRequestsTool,
+                          BrowserScreenshotTool)
     from .confirm import ConfirmFindingTool
     from .independent_verify import VerifyFindingIndependentlyTool
     from .jwt import JwtInspectTool
@@ -170,7 +178,20 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
         tools.append(KaliExecTool())
     if enable_browser:
         tools += [BrowserNavigateTool(), BrowserContentTool(), BrowserClickTool(),
-                  BrowserFillTool(), BrowserScreenshotTool()]
+                  BrowserFillTool(), BrowserScreenshotTool(),
+                  BrowserRequestsTool(), BrowserInspectRequestTool(),
+                  BrowserConsoleTool()]
+    # RECON evidence-plane readers: proxy history/status (queryable DURING the
+    # run) and the observation log (provenance + validation states). The proxy
+    # tools degrade honestly when no proxy runs in this run.
+    from .proxytools import (ProxyFilterTool, ProxyHistoryTool, ProxyInspectTool,
+                             ProxyReplayTool, ProxyStatusTool)
+    tools += [ProxyStatusTool(), ProxyHistoryTool(), ProxyInspectTool(),
+              ProxyFilterTool(), ProxyReplayTool()]
+    from .passive import PassiveReconTool
+    tools.append(PassiveReconTool())
+    from .obsquery import ObservationsTool
+    tools.append(ObservationsTool())
     tools += [RecordFindingTool(), RequestApprovalTool()]
     # Opt-in terminal plane for dockerless hosts (see tools/local_exec.py): NEVER
     # registered by default — the operator sets RED_LOCAL_EXEC=1 and accepts that

@@ -453,7 +453,11 @@ def execute_run(opts: RunOptions) -> dict:
         # becomes wire evidence instead of a blind spot behind the firewall. The
         # proxy shares the run's RateLimiter, so the RoE request budget is global
         # across the fetch path AND every proxied tool exchange.
-        if use_sandbox and not opts.no_evidence_proxy:
+        # Browser runs start it too: the Playwright browser routes through the
+        # same listener (RECON agent -> browser -> EvidenceProxy -> target), so
+        # browser-originated traffic gets the same scope checks, budget and
+        # wire evidence (RECON-first upgrade, 2026-11-18).
+        if (use_sandbox or use_browser) and not opts.no_evidence_proxy:
             try:
                 from .proxy import EvidenceProxy
                 proxy = EvidenceProxy(scope=scope, traffic=traffic, audit=audit,
@@ -500,8 +504,11 @@ def execute_run(opts: RunOptions) -> dict:
             from .tools.browser import BrowserController
             # Browser↔proxy integration (RECON V2): when the run's EvidenceProxy
             # is active the browser routes through it — same scope plane, same
-            # request budget, same traffic.jsonl evidence history. Without a
-            # proxy the controller records directly (source="browser").
+            # request budget, same traffic.jsonl evidence history (proxied rows
+            # land as source=proxy / proxy-mitm; the controller skips direct
+            # recording then, so no exchange is double-counted). Without a proxy
+            # the controller records directly (source="browser"). The live_dir
+            # feeds the any.run-style operator view (recon_live/latest.jpg).
             browser_proxy = ""
             if proxy is not None and opts.browser_through_proxy:
                 try:
@@ -511,12 +518,18 @@ def execute_run(opts: RunOptions) -> dict:
             browser = BrowserController(scope, limiter, audit, out / "screenshots",
                                         traffic=traffic, store=reconv2.store,
                                         assets=reconv2.assets,
-                                        proxy_url=browser_proxy)
+                                        proxy_url=browser_proxy,
+                                        live_dir=out / "recon_live")
 
         from .session import SessionStore
         from .skills import SkillLibrary
         # Proven proofs, cross-run: learned skills plus imported corpora (e.g. nuclei).
         skills = SkillLibrary(Path(opts.memory_dir) / "skills.json", max_skills=50000)
+        # RECON evidence plane: provenance + validation lifecycle for every
+        # discovery claim, mirrored into the shared graph (see observations.py).
+        from .observations import ObservationLog
+        observations = ObservationLog(out / "observations.jsonl", graph=graph,
+                                      audit=audit)
         ctx = ToolContext(scope=scope, limiter=limiter, audit=audit, findings=findings,
                           approve=approver,
                           sandbox=sandbox, browser=browser, graph=graph,
@@ -525,7 +538,8 @@ def execute_run(opts: RunOptions) -> dict:
                           killchain=killchain, events=bus,
                           traffic=traffic, inventory=inventory,
                           evidence_store=reconv2.store,
-                          workspace=reconv2.workspace)
+                          workspace=reconv2.workspace,
+                          observations=observations, proxy=proxy)
 
         # Root-domain RECON runs before any LLM specialist. It composes the
         # existing passive intelligence, HTTP evidence path, browser-independent

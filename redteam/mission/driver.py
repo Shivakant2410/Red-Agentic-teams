@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..states import (MISSION_FAILED, MISSION_HALTED, MISSION_SUCCEEDED,
-                      TASK_SUCCEEDED)
+                      TASK_FAILED, TASK_SUCCEEDED)
 from ..runtime import Halt
 from ..swarm.journal import EventJournal
 from .commander import Commander
@@ -51,18 +51,10 @@ PROVIDER_OUTAGE_MAX_STREAK = 6
 PROVIDER_OUTAGE_RETRY_PAUSE_S = 45.0   # tests patch this to 0
 DRIVER_ACTOR = "mission-driver"
 
-# RECON recovery (PR #25 live-fire): the mission's FIRST task is recon, and a
-# recon task that died used to stall the whole mission — the driver created it
-# exactly once, nothing else was dispatchable while `recon_done` stayed False,
-# and the loop spun to the round cap. An initial recon failure is an
-# infrastructure event until proven otherwise: recreate the bounded recon task
-# (pausing on provider-shaped errors) before giving up honestly.
-RECON_MAX_ATTEMPTS = 3
-# Terminal task statuses that are NOT success (everything dispatchable is
-# gone; nothing will ever complete the recon phase by itself).
-RECON_TERMINAL_FAILED = ("failed", "blocked_duplicate", "expired", "cancelled")
-# Error fingerprints that mean "the MODEL PROVIDER hiccuped", not "the target
-# answered". Matched case-insensitively against the task error string.
+# Provider-outage error classification (retained for recon diagnostics and the
+# reconv2 capability suite). The bounded retry now lives in the commander
+# (requeue_failed_task); this helper only *labels* an error string as a
+# model-provider hiccup vs a real target response.
 _PROVIDER_ERROR_MARKERS = (
     "no_models", "provider", "connection", "timeout", "timed out",
     "unreachable", "econnrefused", "502", "503", "529", "overloaded",
@@ -73,6 +65,7 @@ _PROVIDER_ERROR_MARKERS = (
 def _is_provider_error(error_text: str) -> bool:
     text = (error_text or "").lower()
     return any(marker in text for marker in _PROVIDER_ERROR_MARKERS)
+
 
 
 def _injectable_clock(clock=None):
@@ -153,6 +146,25 @@ def mission_outcome(tasks, *, objective_achieved=None,
             stop_reason or "not every task reached a successful terminal state")
 
 
+def _recon_blockage(commander) -> str:
+    """Honest stop reason when the loop cannot progress and the recon
+    prerequisite never succeeded.
+
+    The attack frontier is consulted ONLY after every recon task has
+    SUCCEEDED (the gate above), so a failed or stuck recon task must never be
+    reported as "frontier_exhausted" — that disguises an unmapped surface as
+    an empty one (live-fire 20261118: one failed initial recon pass produced
+    stop_reason "frontier_exhausted" and mission.json "failed" over a surface
+    the specialists had never even looked at). Returns "" when recon is not
+    the blocker, so every caller keeps its existing vocabulary otherwise."""
+    recon = [t for t in commander.tasks.values() if t.role == "recon"]
+    if not recon or all(t.status == TASK_SUCCEEDED for t in recon):
+        return ""
+    if any(t.status == TASK_FAILED for t in recon):
+        return "recon_failed"
+    return "recon_incomplete"
+
+
 def run_mission_driver(*, engagement, out_dir, objective: str,
                        attack_tree=None, bus=None, opts=None,
                        executor=None, hypotheses=None, clock=None,
@@ -224,7 +236,6 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
     verified_pending_ids: set[str] = set()
     unresolved_verification = False
     no_models_streak = 0
-    recon_attempts = 0
     failed_nodes: dict[str, tuple] = {}   # node_id -> (evidence fingerprint, failed task id)
     rearm_counts: dict[str, int] = {}     # bounded: ONE evidence-driven re-arm per node
     stop_reason = ""
@@ -266,10 +277,14 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
     if dynamic:
         # Deterministic recon has already run in execute_run(); this bounded
         # specialist pass enriches the live surface before we ask the canonical
-        # AttackTree for offensive work.
+        # AttackTree for offensive work. max_attempts=2: recon is the
+        # prerequisite for the whole frontier, so ONE failed pass must not
+        # orphan the mission (scheduler requeues recon on execution failure;
+        # exhausted retries surface as the honest "recon_failed" stop reason).
         recon_steps = min(int(getattr(opts, "max_steps", 22) or 22), 22)
         create_task({"title": "Map the discovered attack surface",
-                     "role": "recon", "max_steps": recon_steps})
+                     "role": "recon", "max_steps": recon_steps,
+                     "max_attempts": 2})
     else:
         # Explicit mission_plan.json remains a replay/operator override.
         for spec in plan:
@@ -310,33 +325,10 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
 
                 # Only ask the canonical selector for more exploit work after the
                 # recon task has completed and any newly-created VERIFY task has run.
-                recon_tasks = [t for t in commander.tasks.values()
-                               if t.role == "recon"]
-                has_recon = bool(recon_tasks)
+                has_recon = any(t.role == "recon" for t in commander.tasks.values())
                 recon_done = has_recon and all(
-                    t.status == TASK_SUCCEEDED for t in recon_tasks)
-                # RECON recovery: a recon phase whose task went terminal without
-                # success leaves the mission with NOTHING dispatchable. Recreate
-                # the bounded recon task — pausing on provider-shaped errors —
-                # until attempts run out, then stop honestly instead of stalling.
-                recon_terminal_failed = has_recon and not recon_done and all(
-                    t.status in RECON_TERMINAL_FAILED for t in recon_tasks)
-                if recon_terminal_failed:
-                    if recon_attempts >= RECON_MAX_ATTEMPTS:
-                        stop_reason = "recon_failed"
-                        break
-                    last_error = str(getattr(recon_tasks[-1], "error", "") or "")
-                    if _is_provider_error(last_error):
-                        _time.sleep(PROVIDER_OUTAGE_RETRY_PAUSE_S)
-                    recon_attempts += 1
-                    journal.append(new_mission_event(
-                        EVENT_TASK_REARMED, engagement_id=engagement.name,
-                        mission_id=mission.mission_id, actor=DRIVER_ACTOR,
-                        task_id=recon_tasks[-1].task_id,
-                        payload={"role": "recon", "attempt": recon_attempts,
-                                 "error": last_error[:200]}))
-                    create_task({"title": "Map the discovered attack surface",
-                                 "role": "recon", "max_steps": recon_steps})
+                    t.status == TASK_SUCCEEDED for t in commander.tasks.values()
+                    if t.role == "recon")
                 has_unverified = bool(unverified_ids) or active_verify
                 if recon_done and not has_unverified:
                     access_task_created = False
@@ -422,7 +414,11 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
                     # No progress possible (e.g. a permanently blocked duplicate):
                     # stop rather than spin or re-dispatch the same node in this round.
                     if rounds > 0:
-                        stop_reason = "frontier_exhausted" if dynamic else ""
+                        # If the recon prerequisite never succeeded, the
+                        # frontier was never evaluated — report that honestly
+                        # instead of pretending the frontier ran dry.
+                        stop_reason = _recon_blockage(commander) \
+                            or ("frontier_exhausted" if dynamic else "")
                         break
             for task in ready:
                 result = scheduler.dispatch(task.task_id)
@@ -537,7 +533,7 @@ def run_mission_driver(*, engagement, out_dir, objective: str,
             stop_reason = "round_limit"
             interrupted = "halted"
         else:
-            stop_reason = "frontier_exhausted"
+            stop_reason = _recon_blockage(commander) or "frontier_exhausted"
     # An executor that reports the budget gone (or a coordination round cap hit)
     # is an INCOMPLETE mission — never a quiet success (Builder 04 §8: task
     # execution success must not be conflated with objective achievement).

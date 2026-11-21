@@ -331,7 +331,10 @@ def test_hands_json_parses_and_carries_every_agent():
     assert data["policy"]
     assert set(data["agents"]) == set(HANDS)
     recon = data["agents"]["recon"]
-    assert recon["hands"][0]["tool"] == "surface_scan"
+    # Phased recon workflow (2026-11-18): Phase B starts PASSIVE (DNS/TLS/
+    # metadata via passive_recon); surface_scan opens Phase C active mapping.
+    assert recon["hands"][0]["tool"] == "passive_recon"
+    assert "surface_scan" in {h["tool"] for h in recon["hands"]}
     assert recon["skills"], "recon must carry declared skills in the manifest"
     for agent in data["agents"].values():
         for h in agent["hands"]:

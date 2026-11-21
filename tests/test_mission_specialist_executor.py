@@ -458,6 +458,9 @@ def test_scheduler_claims_once_executor_never_reclaims(tmp_path):
 
 
 def test_scheduler_failure_path_intact_when_specialist_raises(tmp_path):
+    """Specialist crash -> journaled TASK_FAILED carrying the error; the recon
+    role is then REQUEUED PENDING (bounded retry, attempts consumed) — the
+    failure is never swallowed. Non-retry roles stay terminal FAILED."""
     mission_dir, clock = H.make_mission_dir(tmp_path)
     commander = H.make_commander(mission_dir, clock)
     commander.start_mission("op")
@@ -470,7 +473,20 @@ def test_scheduler_failure_path_intact_when_specialist_raises(tmp_path):
                                  clock=clock)
     result = scheduler.dispatch(task.task_id)
     assert result["outcome"] == "failed"
-    done = commander.task(task.task_id)
+    assert "TASK_FAILED" in H.journal_types(mission_dir)
+    requeued = commander.task(task.task_id)
+    assert requeued.status == TASK_PENDING          # requeued, attempt consumed
+    assert requeued.attempts == 1
+    assert "specialist exploded" in requeued.error  # the failure survives
+
+    # Non-retry role: the same crash stays terminal (no unbounded offensive
+    # retry) — execution failure remains task-plane.
+    task2 = commander.create_task(title="exploit slice", role="exploit",
+                                  actor="op", technique="auth.test",
+                                  target="https://t.test/")
+    result2 = scheduler.dispatch(task2.task_id)
+    assert result2["outcome"] == "failed"
+    done = commander.task(task2.task_id)
     assert done.status == TASK_FAILED
     assert "specialist exploded" in done.error
 

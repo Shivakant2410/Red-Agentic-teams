@@ -31,7 +31,7 @@ from pathlib import Path
 import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -841,6 +841,24 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         # LIVE counters are on the run's summary; this file is the durable record.
         run_dir = require_run(run_id)
         return {"proxy": _read_json(run_dir / "proxy.json", None)}
+
+    # -- API: live recon view (any.run-style) -------------------------------------
+    # Read-only over run artifacts: the browser controller refreshes
+    # recon_live/latest.jpg + events.jsonl on every navigate/click/fill/
+    # screenshot; the snapshot merges those with the traffic tail and the
+    # observation log so an operator can watch RECON work in real time.
+
+    @app.get("/api/runs/{run_id}/recon/live")
+    def run_recon_live(run_id: str) -> dict:
+        from .livewatch import recon_live_snapshot
+        run_dir = require_run(run_id)
+        return recon_live_snapshot(run_dir)
+
+    @app.get("/live/{run_id}", response_class=HTMLResponse)
+    def live_recon_view(run_id: str) -> HTMLResponse:
+        from .livewatch import LIVE_VIEW_HTML
+        require_run(run_id)
+        return HTMLResponse(LIVE_VIEW_HTML.replace("__RUN_ID__", run_id))
 
     @app.get("/api/bench")
     def bench_board() -> dict:

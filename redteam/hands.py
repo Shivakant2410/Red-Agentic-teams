@@ -47,7 +47,12 @@ import sys
 OPTIONAL_TOOLS = frozenset({
     "kali_exec", "local_exec",
     "browser_navigate", "browser_content", "browser_click", "browser_fill",
-    "browser_screenshot",
+    "browser_screenshot", "browser_requests", "browser_inspect_request",
+    "browser_console",
+    # proxy_* tools degrade honestly without a running EvidenceProxy, but the
+    # RECON profile lists them, so a proxy-less registry must stay valid.
+    "proxy_status", "proxy_history", "proxy_inspect", "proxy_filter",
+    "proxy_replay",
 })
 
 # Trust classes — the SAME vocabulary the crosscheck layer enforces, so a hand's
@@ -179,6 +184,72 @@ _HAND: dict[str, Hand] = {
         purpose="capture the rendered page state",
         cost="step", trust="first-party-observation",
         obligation="observations only"),
+    # -- recon instrument read-back (2026-11-18 recon upgrade) ----------------
+    "browser_requests": Hand(
+        tool="browser_requests",
+        purpose="list what the browser ACTUALLY sent (XHR/fetch API calls, "
+                "blocked out-of-scope attempts) without re-navigating",
+        cost="step", trust="first-party-observation",
+        obligation="read the capture before repeating a navigation; blocked "
+                   "rows prove a denial, not a finding"),
+    "browser_inspect_request": Hand(
+        tool="browser_inspect_request",
+        purpose="read one captured exchange in full (sanitized headers, "
+                "safely-collectable body, redirect depth)",
+        cost="step", trust="first-party-observation",
+        obligation="secrets are withheld by the recorder; never copy "
+                   "credential-shaped values into notes or findings"),
+    "browser_console": Hand(
+        tool="browser_console",
+        purpose="collect console errors and uncaught page exceptions — "
+                "routes and stack paths the UI hides",
+        cost="step", trust="first-party-observation",
+        obligation="an error message is a LEAD, never evidence of impact"),
+    "proxy_status": Hand(
+        tool="proxy_status",
+        purpose="evidence-proxy listener state: TLS decrypted vs tunneled, "
+                "capture counters",
+        cost="step", trust="offline-parse",
+        obligation="quote the TLS honesty verdict, never claim decrypted "
+                   "content when the mode is passthrough"),
+    "proxy_history": Hand(
+        tool="proxy_history",
+        purpose="newest captured exchanges from the evidence plane",
+        cost="step", trust="offline-parse",
+        obligation="read history before re-issuing requests; a captured row "
+                   "is evidence of the wire, not of exploitability"),
+    "proxy_inspect": Hand(
+        tool="proxy_inspect",
+        purpose="one captured exchange in full detail (masked, bounded)",
+        cost="step", trust="offline-parse",
+        obligation="same secret-handling rule as browser_inspect_request"),
+    "proxy_filter": Hand(
+        tool="proxy_filter",
+        purpose="search captured exchanges by url/method/status/source",
+        cost="step", trust="offline-parse",
+        obligation="prefer a filtered query over re-driving the app"),
+    "proxy_replay": Hand(
+        tool="proxy_replay",
+        purpose="re-send ONE captured exchange under the same RoE "
+                "(scope-checked, budgeted, audited, recorded)",
+        cost="step", trust="first-party-observation",
+        obligation="replay repeats a recorded request exactly — no new "
+                   "targets; differential conclusions still need a proof tool"),
+    "passive_recon": Hand(
+        tool="passive_recon",
+        purpose="DNS records, TLS certificate metadata (SANs), robots.txt, "
+                "sitemap.xml, security headers, cookie flags, technology "
+                "fingerprints — with source+timestamp+mode on every record",
+        cost="step", trust="first-party-observation",
+        obligation="passive/light leads only; corroborate before trusting; "
+                   "external CT lookups stay opt-in (RED_CT_LOGS)"),
+    "observations": Hand(
+        tool="observations",
+        purpose="query the run's observation log: what is known, from which "
+                "source, validation state (corroborated/contradicted/…)",
+        cost="step", trust="offline-parse",
+        obligation="check BEFORE re-running any discovery tool — "
+                   "re-discovering recorded work wastes steps"),
     # -- session ------------------------------------------------------------
     "authenticate": Hand(
         tool="authenticate",
@@ -378,10 +449,15 @@ _HAND: dict[str, Hand] = {
 
 HANDS: dict[str, tuple[Hand, ...]] = {
     "recon": tuple(_HAND[t] for t in (
+        "passive_recon", "observations", "proxy_status", "proxy_history",
+        "proxy_inspect", "proxy_filter", "proxy_replay",
         "surface_scan", "host_probe", "port_scan", "content_discovery", "crawl",
         "param_discovery", "spa_recon", "crosscheck_lead", "http_probe",
-        "browser_navigate", "browser_content", "browser_click", "authenticate",
-        "set_session", "kali_exec", "search_peer_traces",
+        "jwt_inspect", "graphql_inspect",
+        "browser_navigate", "browser_content", "browser_click",
+        "browser_fill", "browser_screenshot", "browser_requests",
+        "browser_inspect_request", "browser_console",
+        "authenticate", "set_session", "kali_exec", "search_peer_traces",
         "evidence_search", "evidence_inspect", "proxy_history_query",
         "replay_request", "asset_read")),
     "exploit": tuple(_HAND[t] for t in (
