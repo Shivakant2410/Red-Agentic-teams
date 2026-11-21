@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import re
+import time
 from urllib.parse import urljoin, urlsplit
 from xml.etree import ElementTree
 
@@ -48,13 +49,13 @@ def _get(guard: ScopeGuard, url: str, limiter=None, traffic=None) -> tuple[int, 
     # (source="passive_recon") — recon is wire evidence too, not a blind spot.
     if limiter is not None:
         limiter.acquire()
-    started = _dt.time.monotonic() if traffic is not None else 0.0
+    started = time.monotonic() if traffic is not None else 0.0
     try:
         r = requests.get(url, timeout=_TIMEOUT, allow_redirects=True,
                          headers={"User-Agent": "redteam-agent-recon/1.0"})
         if traffic is not None:
             traffic.record_http(method="GET", url=url, status=r.status_code,
-                                elapsed_ms=round((_dt.time.monotonic() - started) * 1000),
+                                elapsed_ms=round((time.monotonic() - started) * 1000),
                                 tool="passive_recon", source="passive_recon",
                                 resp_headers=dict(r.headers),
                                 resp_body=r.text[:16384])
@@ -62,7 +63,7 @@ def _get(guard: ScopeGuard, url: str, limiter=None, traffic=None) -> tuple[int, 
     except requests.RequestException as exc:
         if traffic is not None:
             traffic.record_http(method="GET", url=url, status=0,
-                                elapsed_ms=round((_dt.time.monotonic() - started) * 1000),
+                                elapsed_ms=round((time.monotonic() - started) * 1000),
                                 tool="passive_recon", source="passive_recon",
                                 error=str(exc)[:160])
         return 0, ""

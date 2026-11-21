@@ -33,9 +33,13 @@ def _engagement(**overrides) -> Engagement:
 
 
 class _Resp:
-    def __init__(self, status_code=200, text=""):
+    def __init__(self, status_code=200, text="", headers=None):
         self.status_code = status_code
         self.text = text
+        # Real requests.Response carries headers; the traffic-recording path reads
+        # them, so the stub must too (otherwise the test fails on the fixture, not
+        # on product behavior).
+        self.headers = headers or {"Content-Type": "text/plain"}
 
 
 def _route(url_map: dict[str, _Resp]):
@@ -220,3 +224,28 @@ def test_malformed_schema_fields_fail_soft():
     assert summary["endpoints_discovered"] == 2
     node = next(n for n in graph.nodes(ENDPOINT) if n.key.endswith("/ok"))
     assert node.attrs["doc"] == "fine"
+
+
+class _TrafficSpy:
+    """Minimal TrafficRecorder stand-in: passive recon must record each fetch with a
+    real elapsed_ms. Regression guard for the live-fire crash where passive recon
+    called _dt.time.monotonic() (datetime.time has no .monotonic) — it only fired when
+    a traffic recorder was present, so every traffic=None test missed it."""
+    def __init__(self):
+        self.rows = []
+
+    def record_http(self, **kw):
+        self.rows.append(kw)
+
+
+def test_passive_recon_with_traffic_recorder_times_each_fetch():
+    eng = _engagement()
+    graph = KnowledgeGraph()
+    traffic = _TrafficSpy()
+    robots = "User-agent: *\nDisallow: /admin\n"
+    with patch("redteam.recon.passive.requests.get",
+              side_effect=_route({"https://example.com/robots.txt": _Resp(200, robots)})):
+        summary = run_passive_recon(eng, graph, traffic=traffic)
+    assert summary["endpoints_discovered"] == 1
+    assert traffic.rows, "passive recon must record fetches when a recorder is present"
+    assert all(isinstance(r.get("elapsed_ms"), (int, float)) for r in traffic.rows)
