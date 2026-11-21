@@ -774,3 +774,48 @@ def test_registry_error_finalizes_running_mission_snapshot(harness, monkeypatch)
             time.sleep(0.05)
     assert rec["status"] == "failed"
     assert "mission_aborted" in rec["halt_reason"]
+
+
+def test_delete_run_removes_a_finished_run(harness):
+    from redteam.runtime import RunManifest
+    client, runs_root, _ = harness
+    rid = "20200101-000000-done"
+    rd = runs_root / rid
+    rd.mkdir(parents=True)
+    RunManifest(objective="o", engagement="e").save(rd / "manifest.json")
+    # mark it finished
+    import json as _j
+    m = _j.loads((rd / "manifest.json").read_text(encoding="utf-8"))
+    m["status"] = "completed"
+    (rd / "manifest.json").write_text(_j.dumps(m), encoding="utf-8")
+
+    r = client.delete(f"/api/runs/{rid}")
+    assert r.status_code == 200 and r.json()["deleted"] == rid
+    assert not rd.exists()
+
+
+def test_delete_refuses_a_running_run(harness):
+    from redteam.runtime import RunManifest
+    client, runs_root, _ = harness
+    rid = "20200101-000000-live"
+    rd = runs_root / rid
+    rd.mkdir(parents=True)
+    man = RunManifest(objective="o", engagement="e")
+    man.status = "running"
+    man.save(rd / "manifest.json")
+
+    r = client.delete(f"/api/runs/{rid}")
+    assert r.status_code == 409
+    assert rd.exists()   # not deleted
+
+
+def test_delete_unknown_run_is_404(harness):
+    client, _, _ = harness
+    assert client.delete("/api/runs/nope-not-here").status_code == 404
+
+
+def test_delete_rejects_path_traversal(harness):
+    client, runs_root, _ = harness
+    # require_run rejects traversal characters before any filesystem touch
+    r = client.delete("/api/runs/..%2f..%2fetc")
+    assert r.status_code == 404

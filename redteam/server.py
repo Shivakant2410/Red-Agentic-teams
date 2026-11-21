@@ -947,6 +947,21 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
             json.dumps({"requested": _now()}), encoding="utf-8")
         return {"ok": True}
 
+    @app.delete("/api/runs/{run_id}")
+    def delete_run(run_id: str) -> dict:
+        """Remove a run's directory. Refuses a run that is still executing — stop it
+        first (a live run thread is writing into this folder). require_run already
+        rejects any run_id with path-traversal characters, so the rmtree is bounded to
+        a real child of runs_root."""
+        import shutil
+        run_dir = require_run(run_id)
+        status = manifest_of(run_dir).get("status", "")
+        if status == "running":
+            raise HTTPException(409, "run is still running — stop it before deleting")
+        registry.pop_bus(run_id)   # drop any in-process bookkeeping
+        shutil.rmtree(run_dir, ignore_errors=True)
+        return {"ok": True, "deleted": run_id}
+
     @app.get("/api/runs/{run_id}/report")
     def run_report(run_id: str) -> Response:
         run_dir = require_run(run_id)
