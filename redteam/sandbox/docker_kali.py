@@ -266,7 +266,13 @@ class KaliSandbox:
         return self._plan
 
     def _verify_egress_blocks_canary(self) -> None:
-        probe = (f"curl -s -m 3 -o /dev/null -w '%{{http_code}}' "
+        # --noproxy '*': the sandbox has HTTP_PROXY set to the evidence proxy, which
+        # REFUSES off-scope hosts with a 403. Without this flag the canary curl goes to
+        # the proxy, gets that 403 (exit 0), and the test reads it as "canary reached" —
+        # a FALSE egress failure that tears the sandbox down right after the self-test
+        # (every run then loses the whole Kali toolset and falls back to browser-only).
+        # The probe must hit the firewall directly, not the proxy.
+        probe = (f"curl -s -m 3 -o /dev/null -w '%{{http_code}}' --noproxy '*' "
                 f"--connect-timeout 2 http://{_EGRESS_CANARY}/ || echo BLOCKED")
         result = self.exec(probe, timeout=10)
         reached = not result.timed_out and "BLOCKED" not in result.stdout and result.exit_code == 0

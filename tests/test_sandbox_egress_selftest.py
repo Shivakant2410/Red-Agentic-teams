@@ -85,3 +85,26 @@ def test_egress_selftest_fails_closed_when_canary_is_reachable(monkeypatch):
     except SandboxError as exc:
         assert "EGRESS SELF-TEST FAILED" in str(exc)
     assert stopped["called"]       # must tear down rather than leave a falsely-trusted sandbox up
+
+
+def test_canary_probe_bypasses_the_evidence_proxy(monkeypatch):
+    """Live-fire regression: the sandbox runs with HTTP_PROXY set to the evidence proxy,
+    which answers off-scope hosts with 403. A canary curl WITHOUT --noproxy goes to the
+    proxy, reads that 403 as 'canary reached', and tears the sandbox down right after the
+    self-test — every run then loses the Kali toolset and falls back to browser-only.
+    The probe must hit the firewall directly."""
+    sb = KaliSandbox(_engagement(), audit=None)
+    seen = {}
+
+    real_exec = KaliSandbox.exec
+    def capture(self, command, timeout=None):
+        if dk._EGRESS_CANARY in command:
+            seen["cmd"] = command
+            return ExecResult(exit_code=0, stdout="BLOCKED", stderr="", timed_out=False)
+        return real_exec(self, command, timeout)
+    monkeypatch.setattr(KaliSandbox, "exec", capture)
+    monkeypatch.setattr(sb, "_started", True, raising=False)
+
+    sb._verify_egress_blocks_canary()
+    assert "--noproxy" in seen["cmd"], \
+        "canary probe must bypass the evidence proxy, or its 403 is misread as 'reached'"
