@@ -137,6 +137,12 @@ class ProviderConfig:
     prefer_free: bool | None = None
     require_tool_support: bool | None = None
     priority: int = 100                  # lower = tried first (role routing refines this)
+    # Output-token budget per call. Local reasoning models (Ollama QwenLong, etc.)
+    # spend 1000-2000 tokens inside a <think> block BEFORE emitting the tool call,
+    # so 4096 can truncate mid-think (done_reason="length") and return an empty
+    # message — which the degenerate-answer guard then rotates away from. 0 = use
+    # the kind default (8192 for ollama so thinking + the call both fit; 4096 else).
+    max_tokens: int = 0
 
     def resolved(self) -> "ProviderConfig":
         """Fill kind-specific defaults (idempotent). The SSRF guard runs HERE —
@@ -172,6 +178,8 @@ class ProviderConfig:
                                       if self.require_tool_support is not None
                                       else kind == "openrouter"),
                 priority=self.priority if self.priority != 100 else prio,
+                max_tokens=(self.max_tokens if self.max_tokens
+                            else (8192 if kind == "ollama" else 4096)),
             )
         return ProviderConfig(
             name=self.name or kind,
@@ -183,6 +191,7 @@ class ProviderConfig:
             prefer_free=bool(self.prefer_free),
             require_tool_support=bool(self.require_tool_support),
             priority=self.priority,
+            max_tokens=self.max_tokens or 4096,
         )
 
     def api_key(self) -> str:
@@ -292,7 +301,7 @@ class OpenAICompatProvider:
             "model": model,
             "messages": messages,
             "temperature": 0.2,
-            "max_tokens": 4096,
+            "max_tokens": self.cfg.max_tokens or 4096,
         }
         # OpenRouter: server-side guarantee we are never billed (client-side filtering
         # alone would silently route to a paid model on a stale entry / pricing change).
@@ -492,7 +501,7 @@ class AnthropicProvider:
         system, anthro_messages = self._to_anthropic_messages(messages)
         payload: dict = {
             "model": model,
-            "max_tokens": 4096,
+            "max_tokens": self.cfg.max_tokens or 4096,
             "temperature": 0.2,
             "messages": anthro_messages,
         }
