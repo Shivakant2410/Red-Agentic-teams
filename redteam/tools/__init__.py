@@ -83,8 +83,9 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     from .authsession import AuthenticateTool, SetSessionTool
     from .browser import (BrowserClickTool, BrowserContentTool, BrowserConsoleTool,
                           BrowserFillTool, BrowserInspectRequestTool,
-                          BrowserNavigateTool, BrowserRequestsTool,
-                          BrowserScreenshotTool)
+                          BrowserLoginTool, BrowserNavigateTool,
+                          BrowserRequestsTool, BrowserScreenshotTool,
+                          BrowserSessionStatusTool)
     from .confirm import ConfirmFindingTool
     from .independent_verify import VerifyFindingIndependentlyTool
     from .jwt import JwtInspectTool
@@ -177,8 +178,9 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     if enable_sandbox:
         tools.append(KaliExecTool())
     if enable_browser:
-        tools += [BrowserNavigateTool(), BrowserContentTool(), BrowserClickTool(),
-                  BrowserFillTool(), BrowserScreenshotTool(),
+        tools += [BrowserNavigateTool(), BrowserSessionStatusTool(),
+                  BrowserLoginTool(), BrowserContentTool(),
+                  BrowserClickTool(), BrowserFillTool(), BrowserScreenshotTool(),
                   BrowserRequestsTool(), BrowserInspectRequestTool(),
                   BrowserConsoleTool()]
     # RECON evidence-plane readers: proxy history/status (queryable DURING the

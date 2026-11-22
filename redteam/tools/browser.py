@@ -119,18 +119,82 @@ class BrowserController:
                 "`python -m playwright install chromium`."
             ) from exc
         self._pw = sync_playwright().start()
-        launch_kwargs: dict = {"headless": True}
-        if self._proxy_url:
-            launch_kwargs["proxy"] = {"server": self._proxy_url}
-        self._browser = self._pw.chromium.launch(**launch_kwargs)
-        # ignore_https_errors ONLY when we route through our own evidence
-        # proxy: the browser↔proxy leg presents the RUN CA (decrypted MITM).
-        # Upstream verification still happens — in the proxy itself, against
-        # the system trust store (proxy.upstream_context). Without a proxy the
-        # browser verifies certificates as usual.
-        context = self._browser.new_context(
-            ignore_https_errors=bool(self._proxy_url))
-        self._page = context.new_page()
+
+        # Cloudflare / WAF targets: vanilla headless Chromium is detected and
+        # served the "checking your browser" interstitial, so recon comes back
+        # empty. A real-Chrome persistent profile (channel="chrome", a user-data
+        # dir, non-headless) clears Cloudflare's PASSIVE fingerprinting (an
+        # interactive CAPTCHA still needs a human — see the handoff path). Opt in
+        # with RED_BROWSER_REAL_CHROME=1; defaults stay headless bundled Chromium
+        # so CI and non-WAF runs are unchanged.
+        import os
+        real_chrome = os.environ.get("RED_BROWSER_REAL_CHROME", "") in ("1", "true", "yes")
+        # Headful by default when real-Chrome is on (the whole point), but allow
+        # RED_BROWSER_HEADLESS=1 to force headless even then (e.g. headless shell).
+        headless = not real_chrome
+        if os.environ.get("RED_BROWSER_HEADLESS", "") in ("1", "true", "yes"):
+            headless = True
+
+        # A realistic, non-automation context: real UA, locale, viewport, and no
+        # navigator.webdriver tell. Passed to both launch paths below.
+        ua = os.environ.get(
+            "RED_BROWSER_UA",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        )
+        context_kwargs: dict = {
+            "ignore_https_errors": bool(self._proxy_url),
+            "user_agent": ua,
+            "locale": "en-US",
+            "timezone_id": "America/New_York",
+            "viewport": {"width": 1366, "height": 900},
+        }
+        proxy_cfg = {"server": self._proxy_url} if self._proxy_url else None
+
+        if real_chrome:
+            # Persistent context = a real user-data dir, which Cloudflare treats
+            # far more like a returning human than an ephemeral launch. channel
+            # "chrome" uses the installed Google Chrome, not bundled Chromium.
+            profile_dir = os.environ.get(
+                "RED_BROWSER_PROFILE",
+                str(self._screenshot_dir.parent / "chrome-profile"),
+            )
+            launch_kwargs: dict = {
+                "headless": headless,
+                "channel": os.environ.get("RED_BROWSER_CHANNEL", "chrome"),
+                "args": [
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                ],
+                **context_kwargs,
+            }
+            if proxy_cfg:
+                launch_kwargs["proxy"] = proxy_cfg
+            context = self._pw.chromium.launch_persistent_context(
+                profile_dir, **launch_kwargs)
+            self._browser = context.browser  # may be None for persistent ctx
+        else:
+            launch_kwargs = {"headless": headless}
+            if proxy_cfg:
+                launch_kwargs["proxy"] = proxy_cfg
+            self._browser = self._pw.chromium.launch(**launch_kwargs)
+            # ignore_https_errors ONLY when we route through our own evidence
+            # proxy: the browser↔proxy leg presents the RUN CA (decrypted MITM).
+            # Upstream verification still happens — in the proxy itself, against
+            # the system trust store (proxy.upstream_context). Without a proxy
+            # the browser verifies certificates as usual.
+            context = self._browser.new_context(**context_kwargs)
+
+        # Strip the navigator.webdriver flag before any page script runs.
+        try:
+            context.add_init_script(
+                "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+            )
+        except Exception:
+            pass
+
+        self._page = context.pages[0] if context.pages else context.new_page()
         self._page.route("**/*", self._route)
         self._page.on("request", self._on_request)
         self._page.on("response", self._on_response)
@@ -354,6 +418,166 @@ class BrowserController:
         self._live_frame("navigate", {"status": result["status"]})
         return result
 
+    def login(self, login_url: str, username: str, password_env: str,
+              user_selector: str = "", pass_selector: str = "",
+              submit_selector: str = "") -> dict:
+        """Authenticate end-to-end in the live browser session.
+
+        The PASSWORD is never passed as an argument or logged — it is read from
+        the named environment variable (default RED_VINTED_PASSWORD) at call
+        time and dropped immediately. The audit records the username and the
+        env-var NAME, never the secret. Selectors are optional: when omitted we
+        try a set of common email/password/submit selectors so the agent does
+        not have to know the page's DOM in advance.
+        """
+        import os
+        self._scope.check(login_url)
+        self._ensure()
+        env_name = password_env or "RED_VINTED_PASSWORD"
+        password = os.environ.get(env_name, "")
+        # Audit the ATTEMPT with the non-secret facts only.
+        self._audit.record("browser.login.attempt", url=login_url,
+                           username=username, password_env=env_name,
+                           have_password=bool(password))
+        if not password:
+            return {"ok": False,
+                    "error": f"no password in env ${env_name}; set it in your "
+                             "shell/.env (never passed as an argument)"}
+
+        self._page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+        self._dismiss_consent()
+
+        user_sels = [user_selector] if user_selector else [
+            "input[type='email']", "input[name='email']", "input[name='user']",
+            "input[name='username']", "input[autocomplete='username']",
+            "input[name='login']",
+        ]
+        pass_sels = [pass_selector] if pass_selector else [
+            "input[type='password']", "input[name='password']",
+            "input[autocomplete='current-password']",
+        ]
+        submit_sels = [submit_selector] if submit_selector else [
+            "button[type='submit']", "button[data-testid*='login']",
+            "button[data-testid*='submit']", "input[type='submit']",
+        ]
+
+        def _first(sels):
+            for s in sels:
+                try:
+                    el = self._page.query_selector(s)
+                    if el and el.is_visible():
+                        return s
+                except Exception:
+                    continue
+            return ""
+
+        us = _first(user_sels)
+        ps = _first(pass_sels)
+        if not us or not ps:
+            self._live_frame("login", {"stage": "form-not-found"})
+            return {"ok": False, "url": self._page.url,
+                    "error": "login form not found on page; pass explicit "
+                             "user_selector/pass_selector",
+                    "user_found": bool(us), "pass_found": bool(ps)}
+
+        # Type (not fill) so the value arrives like real keystrokes; password is
+        # typed from the local variable and never recorded.
+        self._page.fill(us, username, timeout=10000)
+        self._page.fill(ps, password, timeout=10000)
+        del password  # drop the secret ASAP
+
+        sub = _first(submit_sels)
+        if sub:
+            self._page.click(sub, timeout=10000)
+        else:
+            self._page.press(ps, "Enter")
+        try:
+            self._page.wait_for_load_state("networkidle", timeout=20000)
+        except Exception:
+            pass
+
+        # Success heuristic: we left the login URL and no password field remains.
+        left_login = login_url.rstrip("/") not in self._page.url.rstrip("/")
+        still_has_pass = bool(self._page.query_selector("input[type='password']"))
+        ok = left_login and not still_has_pass
+        self._audit.record("browser.login.result", url=self._page.url,
+                           username=username, ok=ok)
+        self._record_observation(self._page.url,
+                                 title=(self._page.title() or "")[:200])
+        self._live_frame("login", {"ok": ok})
+        result = {"ok": ok, "url": self._page.url,
+                  "title": self._page.title()}
+        if not ok:
+            result["hint"] = ("still on login or password field present — "
+                              "check creds, MFA, or a CAPTCHA (needs a human)")
+        if self.console_errors:
+            result["console_errors"] = self.console_errors[-5:]
+        return result
+
+    def session_status(self, check_url: str,
+                        logged_in_selector: str = "",
+                        logged_out_selector: str = "") -> dict:
+        """Report whether the current (human-warmed) browser session is already
+        authenticated, so the agent reuses it instead of trying to log in again.
+
+        The human-warms-session handoff: a human solves the Cloudflare/login
+        challenge once in the persistent profile, then the agent runs against
+        that same profile already authenticated. This tells the agent which
+        state it is in. Heuristic by default (presence of a logout/account
+        control vs a login link); pass explicit selectors to be certain.
+        """
+        self._scope.check(check_url)
+        self._ensure()
+        self._page.goto(check_url, wait_until="domcontentloaded", timeout=30000)
+        self._dismiss_consent()
+        title = (self._page.title() or "")
+        challenged = "just a moment" in title.lower() or bool(
+            self._page.query_selector("#challenge-platform, [class*='cf-challenge']"))
+
+        def _present(sel):
+            try:
+                el = self._page.query_selector(sel)
+                return bool(el and el.is_visible())
+            except Exception:
+                return False
+
+        if logged_in_selector:
+            authed = _present(logged_in_selector)
+        else:
+            # Common authenticated markers vs a visible login entry point.
+            authed = any(_present(s) for s in (
+                "[data-testid*='user-menu']", "[href*='logout']",
+                "[href*='/member/']", "[data-testid*='header--account']",
+            )) and not any(_present(s) for s in (
+                "[data-testid*='login']", "a[href*='/login']",
+            ))
+        if logged_out_selector and _present(logged_out_selector):
+            authed = False
+
+        self._audit.record("browser.session_status", url=self._page.url,
+                           authenticated=authed, challenged=challenged)
+        return {"url": self._page.url, "authenticated": authed,
+                "cloudflare_challenge": challenged, "title": title[:160]}
+
+    def _dismiss_consent(self) -> None:
+        """Best-effort dismissal of a cookie/consent banner that would sit over
+        the login form. Silent — never breaks the flow."""
+        for sel in (
+            "#onetrust-accept-btn-handler",
+            "button[data-testid='cookie-consent-banner--accept']",
+            "button:has-text('Accept all')",
+            "button:has-text('Accept')",
+            "button:has-text('I agree')",
+        ):
+            try:
+                el = self._page.query_selector(sel)
+                if el and el.is_visible():
+                    el.click(timeout=3000)
+                    self._page.wait_for_timeout(500)
+                    return
+            except Exception:
+                continue
+
     def content(self, max_chars: int = 8000) -> dict:
         self._ensure()
         text = self._page.inner_text("body")
@@ -449,6 +673,14 @@ class BrowserController:
 
     def close(self):
         try:
+            # Persistent-context (real-Chrome) launches have no top-level
+            # browser handle, so close the page's context directly; the plain
+            # launch path has self._browser. Either way, then stop playwright.
+            if self._page is not None:
+                try:
+                    self._page.context.close()
+                except Exception:
+                    pass
             if self._browser:
                 self._browser.close()
             if self._pw:
@@ -556,6 +788,86 @@ class BrowserNavigateTool(_BrowserTool):
                                     metadata={"title": str(nav.get("title", ""))[:200],
                                               "http_status": nav.get("status")})
             return json.dumps(nav)
+        return self._guarded(ctx, _do)
+
+
+class BrowserLoginTool(_BrowserTool):
+    name = "browser_login"
+
+    def schema(self) -> dict:
+        return {"name": self.name,
+                "description": (
+                    "Authenticate as a test account in the live browser so you "
+                    "can map and probe the AUTHENTICATED surface. The password "
+                    "is read from an environment variable (never passed here or "
+                    "logged); you supply the username and the env-var name. "
+                    "Selectors are optional — common login-form selectors are "
+                    "tried automatically. Returns ok + the landing URL. Only ever "
+                    "log in as a test account you fully own; never a real member."),
+                "input_schema": {"type": "object", "additionalProperties": False,
+                                 "properties": {
+                                     "login_url": {"type": "string",
+                                                   "description": "In-scope login page URL."},
+                                     "username": {"type": "string",
+                                                  "description": "Test-account username/email (e.g. your @bugcrowdninja.com)."},
+                                     "password_env": {"type": "string",
+                                                      "description": "Env var holding the password (default RED_VINTED_PASSWORD)."},
+                                     "user_selector": {"type": "string",
+                                                       "description": "Optional CSS selector for the username field."},
+                                     "pass_selector": {"type": "string",
+                                                       "description": "Optional CSS selector for the password field."},
+                                     "submit_selector": {"type": "string",
+                                                         "description": "Optional CSS selector for the submit button."},
+                                 },
+                                 "required": ["login_url", "username"]},
+                "strict": False}
+
+    def run(self, ctx, login_url: str, username: str, password_env: str = "",
+            user_selector: str = "", pass_selector: str = "",
+            submit_selector: str = "") -> str:
+        import json
+
+        def _do(b):
+            res = b.login(login_url, username, password_env,
+                          user_selector=user_selector,
+                          pass_selector=pass_selector,
+                          submit_selector=submit_selector)
+            return json.dumps(res)
+        return self._guarded(ctx, _do)
+
+
+class BrowserSessionStatusTool(_BrowserTool):
+    name = "browser_session_status"
+
+    def schema(self) -> dict:
+        return {"name": self.name,
+                "description": (
+                    "Check whether the browser session is already authenticated "
+                    "(the human-warmed handoff) and whether Cloudflare is "
+                    "challenging. Call this FIRST on a WAF-protected target: if "
+                    "authenticated, proceed straight to authenticated recon; if a "
+                    "Cloudflare challenge is shown, STOP and ask the human to warm "
+                    "the session — do not hammer it."),
+                "input_schema": {"type": "object", "additionalProperties": False,
+                                 "properties": {
+                                     "check_url": {"type": "string",
+                                                   "description": "In-scope URL to check session state on."},
+                                     "logged_in_selector": {"type": "string",
+                                                            "description": "Optional selector only present when logged in."},
+                                     "logged_out_selector": {"type": "string",
+                                                             "description": "Optional selector only present when logged out."},
+                                 },
+                                 "required": ["check_url"]},
+                "strict": False}
+
+    def run(self, ctx, check_url: str, logged_in_selector: str = "",
+            logged_out_selector: str = "") -> str:
+        import json
+
+        def _do(b):
+            return json.dumps(b.session_status(
+                check_url, logged_in_selector=logged_in_selector,
+                logged_out_selector=logged_out_selector))
         return self._guarded(ctx, _do)
 
 
