@@ -63,6 +63,7 @@ from .llm.openrouter import OpenRouterClient
 from .llm.routing import PARSE, PLAN
 from .reflection import coach_note, reflect
 from .strategy import EngagementStrategy, reset_tree_nudges
+from .thesis import generate_theses, theses_briefing, write_theses
 from .swarm import (AWAITING_VERIFICATION, CONFIRMED, REFUTED, EvidenceRef,
                     ResearchBundle, SwarmError, weakness_for_technique)
 from .tools import ToolContext, Tool
@@ -769,6 +770,9 @@ class Orchestrator:
         self._research_hyp_by_node: dict[str, str] = {}       # tree node id -> hypothesis id
         self._research_finding_hyp: dict[str, str] = {}       # finding id -> hypothesis id
         self._research_verdicts_seen: dict[str, str] = {}     # finding id -> last mirrored confidence
+        # Run directory for inspectable artifacts (thesis.jsonl). None keeps the
+        # thesis layer purely in-memory, same policy as the research bundle.
+        self._run_dir = Path(research_dir) if research_dir else None
 
     def with_runtime(self, budget=None, manifest=None, manifest_path=None,
                      terminal_manifest_writes: bool = True):
@@ -834,6 +838,85 @@ class Orchestrator:
             manifest = self._manifest[0] if self._manifest else None
             agent.with_runtime(budget=self._budget, manifest=manifest, manifest_path=mpath)
         return agent
+
+    def _evidence_digest(self) -> tuple[str, set[str]]:
+        """A compact, model-readable picture of what recon observed — the input
+        the thesis generator reasons over. Returns (digest_text, endpoint_keys)
+        where the keys ground the evidence-support score in thesis.py."""
+        if self._graph is None:
+            return "", set()
+        from .knowledge import ENDPOINT, PARAMETER, TECHNOLOGY, SERVICE, HOST
+        lines: list[str] = []
+        keys: set[str] = set()
+
+        def _sample(kind, label, cap=40):
+            rows = []
+            try:
+                for n in self._graph.nodes(kind):
+                    rows.append(n)
+                    if len(rows) >= cap:
+                        break
+            except Exception:
+                return
+            if rows:
+                lines.append(f"{label} ({len(rows)}{'+' if len(rows) >= cap else ''}):")
+                for n in rows:
+                    attrs = n.attrs or {}
+                    extra = ""
+                    method = str(attrs.get("method", "")).upper()
+                    if method:
+                        extra += f" [{method}]"
+                    if attrs.get("form_params"):
+                        extra += f" form_params={list(attrs['form_params'])[:8]}"
+                    if attrs.get("title"):
+                        extra += f" title={str(attrs['title'])[:60]!r}"
+                    lines.append(f"  - {n.key}{extra}")
+                    if kind == ENDPOINT:
+                        keys.add(n.key.lower())
+
+        _sample(HOST, "Hosts")
+        _sample(SERVICE, "Services")
+        _sample(TECHNOLOGY, "Technologies")
+        _sample(ENDPOINT, "Endpoints", cap=60)
+        _sample(PARAMETER, "Parameters", cap=40)
+        return "\n".join(lines), keys
+
+    def _generate_theses(self, lens: str, objective: str, on_text=None):
+        """Generate, log and brief ranked attack theses for a lens
+        ('exploit'|'logic'). Returns the briefing string ('' on any failure —
+        the run is lifted by theses, never dependent on them)."""
+        try:
+            digest, keys = self._evidence_digest()
+            if not digest:
+                return ""
+            theses = generate_theses(
+                self._client, lens=lens, evidence_digest=digest,
+                evidence_keys=keys, objective_text=objective,
+                log=self._ctx.audit.record)
+            if not theses:
+                return ""
+            # Persist the inspectable artifact next to the run's other evidence.
+            if self._run_dir:
+                write_theses(self._run_dir / "thesis.jsonl", theses)
+            # Seed the attack tree with the top theses that name a technique, so
+            # the existing claim/verify/bandit machinery executes the reasoning.
+            if self._attack_tree is not None:
+                for t in theses:
+                    if t.technique and t.target:
+                        try:
+                            self._attack_tree.seed_endpoint(t.target)
+                        except Exception:
+                            pass
+            if on_text and theses:
+                on_text(f"[thesis:{lens}] top bet ({theses[0].score:.2f}): "
+                        f"{theses[0].belief[:140]}")
+            return theses_briefing(theses)
+        except Exception as exc:
+            try:
+                self._ctx.audit.record("thesis.error", lens=lens, error=str(exc))
+            except Exception:
+                pass
+            return ""
 
     # -- Phase 3: mission task-level execution -----------------------------------
     # One task, one specialist, NO phase sequence. The mission scheduler owns
@@ -1497,6 +1580,14 @@ class Orchestrator:
         recon = self._make_specialist(RECON)
         recon.run(f"{objective}\n\nThis run: RECON only — map the attack surface.", on_text=on_text)
 
+        # Phase 1.5 — ATTACK THESES (strong model). Before any exploitation, reason
+        # about THIS target in writing: what is exploitable, why, which trusted
+        # invariant breaks, how a primitive chains to impact. The ranked theses
+        # (novelty x impact x evidence) brief the exploit swarm so it attacks
+        # target-specific reasoning, not a generic technique menu. Logged to
+        # thesis.jsonl as the run's inspectable "approach" record.
+        self._exploit_theses_brief = self._generate_theses("exploit", objective, on_text)
+
         # Phase 2 — exploit rounds (depth, strong model) while there is untested work + budget.
         # Each round is followed by a VERIFY round in a FRESH, separate context: the
         # exploit specialist's checks only ever reach pending_verification, and nothing
@@ -1524,8 +1615,12 @@ class Orchestrator:
             self._phase("exploit", round=rnd)
             # Coach's notes from the last reflection steer this round's specialists.
             round_objective = objective
+            # The attack theses brief every exploit round so the swarm pursues the
+            # ranked, target-specific reasoning rather than a generic class list.
+            if getattr(self, "_exploit_theses_brief", ""):
+                round_objective = round_objective + "\n\n" + self._exploit_theses_brief
             if self._reflection_notes:
-                round_objective = objective + "\n\n" + self._reflection_notes[-1]
+                round_objective = round_objective + "\n\n" + self._reflection_notes[-1]
             summary = self._run_exploit_swarm(round_objective, rnd, on_text) or summary
 
             # Learned-state broadcast (docs/multi-gambit.md §4.1): the store's
@@ -1586,7 +1681,12 @@ class Orchestrator:
                 budget_remains = False
         if budget_remains and _looks_workflow_shaped(self._graph):
             self._phase("logic")
-            logic = self._make_specialist(LOGIC)
+            # Logic-lens theses: model the app's actors/value-flows, name the
+            # trusted invariants, reason about chaining a primitive into financial
+            # or ATO impact — then the specialist proves that written reasoning.
+            logic_brief = self._generate_theses("logic", objective, on_text)
+            logic = self._make_specialist(LOGIC, addon_suffix=(
+                ("\n\n" + logic_brief) if logic_brief else ""))
             summary = logic.run(
                 f"{objective}\n\nThis run: LOGIC — find and prove business-logic bugs "
                 f"on the workflow-shaped endpoints already mapped.", on_text=on_text) or summary

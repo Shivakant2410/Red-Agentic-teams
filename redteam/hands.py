@@ -48,7 +48,7 @@ OPTIONAL_TOOLS = frozenset({
     "kali_exec", "local_exec",
     "browser_navigate", "browser_content", "browser_click", "browser_fill",
     "browser_screenshot", "browser_requests", "browser_inspect_request",
-    "browser_console",
+    "browser_console", "browser_login", "browser_session_status",
     # proxy_* tools degrade honestly without a running EvidenceProxy, but the
     # RECON profile lists them, so a proxy-less registry must stay valid.
     "proxy_status", "proxy_history", "proxy_inspect", "proxy_filter",
@@ -179,6 +179,19 @@ _HAND: dict[str, Hand] = {
         purpose="type into a form field (payloads included) — the stored-XSS submission path",
         cost="step", trust="first-party-observation",
         obligation="observations only; the rendering surface still needs proof"),
+    "browser_login": Hand(
+        tool="browser_login",
+        purpose="authenticate as a TEST account in the live browser (password from "
+                "an env var, never an argument) to reach the authenticated surface",
+        cost="step", trust="first-party-observation",
+        obligation="only log in as an account you fully own, never a real member; "
+                   "the session is an observation, findings still need proof"),
+    "browser_session_status": Hand(
+        tool="browser_session_status",
+        purpose="check whether the (human-warmed) session is authenticated and "
+                "whether Cloudflare is challenging — before probing a WAF target",
+        cost="step", trust="first-party-observation",
+        obligation="observation only; stop for a human on a challenge, do not hammer it"),
     "browser_screenshot": Hand(
         tool="browser_screenshot",
         purpose="capture the rendered page state",
@@ -470,8 +483,10 @@ HANDS: dict[str, tuple[Hand, ...]] = {
         "authenticate", "set_session", "http_probe", "kali_exec",
         "browser_navigate", "browser_content")),
     "logic": tuple(_HAND[t] for t in (
-        "verify_workflow_abuse", "authenticate", "browser_navigate",
-        "browser_content", "browser_fill", "browser_click")),
+        "verify_workflow_abuse", "authenticate", "set_session", "http_probe",
+        "browser_navigate", "browser_content", "browser_fill", "browser_click",
+        "browser_login", "browser_session_status", "browser_requests",
+        "browser_inspect_request", "find_techniques")),
     "verify": tuple(_HAND[t] for t in (
         "verify_finding_independently",)),
     "a01-access": tuple(_HAND[t] for t in (
