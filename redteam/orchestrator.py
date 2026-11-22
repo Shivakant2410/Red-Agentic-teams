@@ -178,16 +178,48 @@ _ACCESS_STAGES = {CREDENTIAL_ACCESS, PRIVILEGE_ESCALATION, LATERAL_MOVEMENT, DIS
 # thing business-logic bugs live in. Heuristic, not exhaustive: a miss here just means the
 # LOGIC round doesn't run (cheap to skip), a false match just means it runs and finds
 # nothing (cheap to waste a round on) — asymmetric cost, so a loose heuristic is fine.
+# A keyword whitelist (cart/checkout/coupon/...) only fires on apps whose
+# endpoints happen to be named like a textbook shop. Real targets name their
+# money/ownership flows anything — offers, bundles, balance, transactions,
+# payouts, shipping labels — so a keyword gate SILENTLY SKIPS the logic round on
+# exactly the high-value apps. These hints now only BOOST confidence; the gate
+# below runs logic on any app that is actually stateful (forms, writes, or a
+# session), because that is where every business-logic bug lives. Running and
+# finding nothing is cheap; skipping a real app is the expensive mistake.
 _WORKFLOW_HINTS = ("cart", "checkout", "coupon", "voucher", "discount", "order", "payment",
                    "pay", "redeem", "transfer", "withdraw", "booking", "reserve", "apply",
-                   "submit", "vote", "like", "quantity", "balance", "wallet")
+                   "submit", "vote", "like", "quantity", "balance", "wallet",
+                   "offer", "bundle", "bid", "refund", "payout", "escrow", "ship",
+                   "invoice", "subscription", "credit", "fee", "price", "listing")
 
 
 def _looks_workflow_shaped(graph) -> bool:
+    """Run the LOGIC round on any app that DOES something — not just ones whose
+    endpoints match a keyword list. Business-logic bugs live wherever state is
+    created or changed, regardless of what the endpoints are named."""
     if graph is None:
         return False
-    from .knowledge import ENDPOINT
-    return any(hint in ep.key.lower() for ep in graph.nodes(ENDPOINT) for hint in _WORKFLOW_HINTS)
+    from .knowledge import ENDPOINT, PARAMETER
+    # 1. Keyword hint on any endpoint, OR a state-mutating method (forms are
+    #    recorded as endpoints with a non-GET method / form_params metadata).
+    for ep in graph.nodes(ENDPOINT):
+        low = ep.key.lower()
+        if any(hint in low for hint in _WORKFLOW_HINTS):
+            return True
+        attrs = ep.attrs or {}
+        method = str(attrs.get("method", "")).upper()
+        if method and method not in ("GET", "HEAD", "OPTIONS"):
+            return True  # POST/PUT/PATCH/DELETE mutates state = a workflow
+        if attrs.get("form_params"):
+            return True  # a submittable form = user-driven state
+    # 2. Any discovered parameter = user-controllable input/state. Pure static
+    #    content sites have none, so this still cheaply skips them.
+    try:
+        if any(True for _ in graph.nodes(PARAMETER)):
+            return True
+    except Exception:
+        pass
+    return False
 
 
 @dataclass
@@ -321,26 +353,45 @@ ACCESS = SpecialistProfile(
 
 LOGIC = SpecialistProfile(
     name="logic",
-    addon=("You are the LOGIC specialist. Endpoints that look workflow-shaped (cart, "
-           "checkout, coupon, payment, voucher, order, transfer, booking, ...) are in the "
-           "knowledge graph. Reason about what the APP'S DOMAIN assumes should be true — a "
-           "coupon used once, a price computed server-side, a step that can't be skipped, "
-           "an action that can't be repeated — and try to break that assumption. Use "
-           "verify_workflow_abuse: give an ordered attack_steps sequence (e.g. redeem the "
-           "same coupon twice, or submit a negative quantity, or call the 'confirm order' "
-           "step without first calling 'add payment'), an ordered control_steps sequence "
-           "doing the SAME workflow honestly (ideally with a fresh identifier — a "
-           "different coupon/order), and the invariant that proves the attack sequence "
-           "broke something the control didn't. This is NOT re-run k-of-n like the other "
-           "proof tools — business logic is usually one-shot, so get the sequence right "
-           "the first time rather than spraying payloads. Authenticate first if the "
-           "workflow needs a session. Do NOT hunt injection/XSS/access-control here — "
-           "that's the exploit specialist's job; only pursue bugs where the vulnerability "
-           "IS the business rule being violated, not a technical injection flaw."),
-    tool_names=["verify_workflow_abuse", "authenticate", "browser_navigate", "browser_content",
-                "browser_fill", "browser_click"],
+    addon=("You are the LOGIC specialist — the team's deep-thinking attacker. This is the "
+           "class of bug a scanner CANNOT find and an AI that only knows the OWASP top-10 "
+           "WILL miss. Your edge is reasoning about THIS specific application, not running a "
+           "payload library. The program pays MORE for these than their raw CVSS suggests.\n"
+           "STEP 1 — understand the business. From the recon evidence (endpoints, params, "
+           "forms, flows, the pages you can read), infer what this application actually IS "
+           "and how it creates value: who are the actors (buyer/seller/admin/guest), what "
+           "objects do they own (listings, orders, offers, bundles, balances, payouts, "
+           "messages), and what are the MONEY and OWERSHIP and STATE-TRANSITION flows "
+           "between them? Write this model down first — do not skip to attacking.\n"
+           "STEP 2 — enumerate the invariants the app TRUSTS. For each flow, name what the "
+           "server assumes is always true: a price is computed server-side not sent by the "
+           "client; an item must be paid before it ships; escrow releases only after "
+           "delivery; a user can only act on objects they own; a discount/refund/credit "
+           "can't exceed what was paid; a state can't move backwards; an action can't be "
+           "repeated or raced. These are app-specific — derive them from THIS domain, not a "
+           "generic checklist.\n"
+           "STEP 3 — attack the invariant, and CHAIN. The highest-impact findings combine "
+           "a weak primitive with a flow: a guessable/mutable object reference + the refund "
+           "or payout flow = money extraction; a skippable step + a trust boundary = free "
+           "goods or seller fraud; a race on a balance/offer = double-spend. Reason about "
+           "how a small flaw becomes financial loss or account takeover when chained, and "
+           "test the CHAIN, not just the isolated primitive.\n"
+           "PROVE IT with verify_workflow_abuse: an ordered attack_steps sequence (the "
+           "abuse), an ordered control_steps sequence doing the SAME flow honestly (ideally "
+           "with a fresh identifier), and the INVARIANT whose violation proves impact. "
+           "Business logic is usually one-shot — reason the sequence out correctly rather "
+           "than spraying. Use http_probe and multiple sessions (authenticate / set_session) "
+           "to drive cross-account tests (act as A on B's object), but ONLY ever against "
+           "objects YOU own on both sides — never a real user's data. Authenticate first if "
+           "a flow needs a session. Do NOT hunt injection/XSS/access-control as technical "
+           "flaws — that's EXPLOIT's job; pursue bugs where the vulnerability IS the broken "
+           "business rule, especially ones with financial or trust impact."),
+    tool_names=["verify_workflow_abuse", "authenticate", "set_session", "http_probe",
+                "browser_navigate", "browser_content", "browser_fill", "browser_click",
+                "browser_login", "browser_session_status", "browser_requests",
+                "browser_inspect_request", "find_techniques"],
     role=PLAN,           # requires reasoning about the specific app's domain, not pattern-matching
-    max_steps=25,
+    max_steps=30,
 )
 
 VERIFY = SpecialistProfile(
