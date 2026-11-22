@@ -43,7 +43,16 @@ const MODEL_PRESETS: Record<string, string[]> = {
   openai: ["gpt-sol", "gpt-5.2", "gpt-5.1", "gpt-4o"],
   zai: ["glm-5.3", "glm-5.2", "glm-4.6", "glm-4.5-air"],
   gemini: ["gemini-argon", "gemini-hydrogen", "gemini-2.5-pro", "gemini-2.5-flash"],
-  openrouter: ["z-ai/glm-4.6", "openai/gpt-5.1", "anthropic/claude-sonnet-4.5"],
+  // Free + tool-capable models verified available on OpenRouter. The previous
+  // presets (z-ai/glm-4.6, paid gpt/claude) 404'd with "No endpoints found" or
+  // were paid — every launch then failed with agent.no_models. Keep this list
+  // to models that actually resolve for a free, tool-calling agent workload.
+  openrouter: [
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "google/gemma-4-31b-it:free",
+    "baidu/ernie-5.5-flash-preview:free",
+  ],
 };
 
 /** The two execution drivers, with the operator-facing difference spelled out. */
@@ -64,6 +73,70 @@ const INTENSITIES: { id: "low" | "standard" | "high"; hint: string }[] = [
   { id: "low", hint: "≤0.5 req/s, ≤200 requests total — gentle probing." },
   { id: "standard", hint: "≤3 req/s, ≤2000 requests total — recommended." },
   { id: "high", hint: "≤8 req/s, ≤5000 requests total — still bounded, never scanner-grade." },
+];
+
+/**
+ * Objective templates — the operator picks an engagement type instead of
+ * free-typing a vague "assess the app" (which produces generic scanner-style
+ * runs). Each objective names the methodology and the discipline we built the
+ * platform around: map surface → reason about logic → confirm with a second
+ * independent method before anything is called a finding. "Custom" clears the
+ * box for a hand-written objective.
+ */
+const OBJECTIVE_TEMPLATES: { id: string; label: string; objective: string }[] = [
+  {
+    id: "custom",
+    label: "Custom (write your own)",
+    objective: "",
+  },
+  {
+    id: "webapp",
+    label: "Web application penetration test",
+    objective:
+      "Perform an authorized web-application penetration test. Map the full " +
+      "attack surface (hosts, endpoints, parameters, auth flows, APIs), then " +
+      "reason about application logic — not signatures. Hunt for OWASP-class " +
+      "flaws with emphasis on logic: IDOR/BOLA and broken access control, " +
+      "authentication and session weaknesses, injection (SQLi/XSS/SSTI/command), " +
+      "SSRF, and business-logic abuse. Confirm every candidate with a second " +
+      "independent method and a concrete reproduction before reporting it as a " +
+      "finding. No generic scanner output — each finding must carry evidence, " +
+      "impact, and reproduction steps.",
+  },
+  {
+    id: "redteam",
+    label: "Red team — objective-driven intrusion",
+    objective:
+      "Conduct an authorized, objective-driven red-team assessment. Establish an " +
+      "initial foothold on the external surface, then chain weaknesses toward a " +
+      "concrete impact: authentication bypass, privilege escalation, or access to " +
+      "sensitive data. Prioritise realistic attack chains over breadth — depth of " +
+      "a proven kill chain beats a list of low-severity issues. Independently " +
+      "verify each step of the chain and document the full path from entry to " +
+      "impact with evidence.",
+  },
+  {
+    id: "authz",
+    label: "Access control & IDOR audit",
+    objective:
+      "Audit authorization and access control. Enumerate authenticated roles and " +
+      "the objects each should and should not reach, then systematically test for " +
+      "IDOR/BOLA, horizontal and vertical privilege escalation, forced browsing, " +
+      "and missing function-level access control. For each candidate, prove it " +
+      "cross-account (one principal reaching another's object) and confirm with a " +
+      "second request before reporting. Logic over signatures.",
+  },
+  {
+    id: "api",
+    label: "API security assessment",
+    objective:
+      "Assess the authorized API surface. Discover endpoints and specs " +
+      "(OpenAPI/Swagger), map authentication and per-object authorization, then " +
+      "test for OWASP API Top 10: broken object-level authorization (BOLA), broken " +
+      "authentication, excessive data exposure, mass assignment, and injection. " +
+      "Confirm each candidate with an independent reproduction and show the " +
+      "concrete data or action it exposes — no generic probing.",
+  },
 ];
 
 function todayIso(offsetDays = 0): string {
@@ -127,6 +200,7 @@ export function LaunchRunPanel({ className }: { className?: string }) {
   const [mode, setMode] = useState<"classic" | "mission">("classic");
   const [targetUrl, setTargetUrl] = useState("");
   const [objective, setObjective] = useState("");
+  const [objectiveTemplate, setObjectiveTemplate] = useState("custom");
   const [authorizedBy, setAuthorizedBy] = useState("");
   const [ticket, setTicket] = useState("");
   const [starts, setStarts] = useState(todayIso(-1));
@@ -414,13 +488,37 @@ export function LaunchRunPanel({ className }: { className?: string }) {
 
           <Field
             label="objective"
-            hint="What the assessment should accomplish. Scored continuously."
+            hint="Pick an engagement type for a methodology-driven brief, or Custom to write your own. Editable; scored continuously."
           >
+            <select
+              className={cx(inputCls, "mb-2")}
+              value={objectiveTemplate}
+              aria-label="engagement type"
+              onChange={(e) => {
+                const id = e.target.value;
+                setObjectiveTemplate(id);
+                const t = OBJECTIVE_TEMPLATES.find((x) => x.id === id);
+                // Fill the objective from the template. "Custom" clears it so the
+                // operator writes their own; any preset overwrites the box with
+                // its specific brief (the operator can still edit afterwards).
+                if (t) setObjective(t.objective);
+              }}
+            >
+              {OBJECTIVE_TEMPLATES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
             <textarea
-              className={cx(inputCls, "min-h-[64px] resize-y leading-relaxed")}
+              className={cx(inputCls, "min-h-[96px] resize-y leading-relaxed")}
               value={objective}
-              onChange={(e) => setObjective(e.target.value)}
-              placeholder="Assess the authorized web application for security weaknesses and provide independently verified findings."
+              onChange={(e) => {
+                setObjective(e.target.value);
+                // Hand-editing a preset means it is no longer that template verbatim.
+                if (objectiveTemplate !== "custom") setObjectiveTemplate("custom");
+              }}
+              placeholder="Choose an engagement type above, or describe a specific objective: what to map, which weakness classes to hunt, and that every finding must be independently confirmed."
               spellCheck={false}
               required
             />

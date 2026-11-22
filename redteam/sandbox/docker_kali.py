@@ -313,9 +313,16 @@ class KaliSandbox:
             raise SandboxError("sandbox not started")
         timeout = timeout or self._cfg.command_timeout
         # Run as the non-root operator user; bash -lc so pipes/globs work.
+        # Land in the operator-owned /work so tools that emit output files
+        # (nmap -oN, gobuster -o) can write without a permission error in the
+        # root-owned default dir. We `cd` inside the command rather than pass
+        # `docker exec --workdir /work`: on Docker Desktop/Windows that flag is
+        # mangled by path translation and fails with "Cwd must be an absolute
+        # path", which would break every exec. `cd` inside the container is
+        # immune to host-side path translation.
         docker_cmd = [
             "docker", "exec", "-u", "operator", self._cfg.container_name,
-            "bash", "-lc", command,
+            "bash", "-lc", f"cd /work 2>/dev/null; {command}",
         ]
         self._log("sandbox.exec", command=command)
         try:

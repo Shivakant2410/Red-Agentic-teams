@@ -50,7 +50,14 @@ class KaliExecTool:
                 "nikto, curl, gobuster, etc.). Network egress is restricted to in-scope "
                 "targets by the sandbox firewall — off-scope hosts are simply unreachable. "
                 "Commands that alter the sandbox firewall/network or escalate privileges "
-                "are refused. Destructive or denial-of-service commands require approval."
+                "are refused. Destructive or denial-of-service commands require approval.\n"
+                "All traffic goes through an intercepting proxy, so each connection is slow: "
+                "do NOT full-port scan (never `nmap -p-`) — scan the known web ports "
+                "(`nmap -p 80,443,8080 -T4 <host>`). For content discovery, use a small "
+                "wordlist and bounded concurrency (e.g. `gobuster dir -t 10 --timeout 5 "
+                "-w /usr/share/wordlists/dirb/common.txt ...` or ffuf with `-rate`). "
+                "The working directory is /work and is writable — write tool output there "
+                "(`-oN /work/scan.txt`), not to the current dir."
             ),
             "input_schema": {
                 "type": "object",
