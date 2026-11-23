@@ -131,7 +131,25 @@ class VerifyFindingIndependentlyTool:
             verdict = ("not_reproducible", f"BLOCKED (out of scope) during re-check: {exc}")
 
         status, detail = verdict
-        promoted = ctx.findings.promote(finding_id, status, detail=detail)
+        # ARTEX binding: attach the re-check's OWN wire evidence (traffic seq +
+        # verbatim decoded response quote) so the verdict cites the exchange it
+        # actually ran against — the re-check fetches are traffic-recorded.
+        recheck_refs: list = []
+        try:
+            from ..quotes import quote_evidence
+            traffic_path = ctx.traffic.summary().get("path", "") \
+                if ctx.traffic is not None else ""
+            recheck_spec = (f.check_spec.get("payload_request")
+                            or f.check_spec.get("request") or {})
+            recheck_url = recheck_spec.get("url", "")
+            recheck_method = recheck_spec.get("method", "")
+            if traffic_path and recheck_url:
+                recheck_refs, _ = quote_evidence(traffic_path, url=recheck_url,
+                                                 method=recheck_method)
+        except Exception:
+            recheck_refs = []
+        promoted = ctx.findings.promote(finding_id, status, detail=detail,
+                                        refs=recheck_refs)
         ctx.audit.record("independent_verify.result", finding_id=finding_id,
                          title=f.title, verdict=status, detail=detail)
         safe_emit(getattr(ctx, "events", None), "finding.confirmed" if status == "confirmed"

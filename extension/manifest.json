@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "ARTEX Session Bridge",
+  "version": "1.0.0",
+  "description": "Human-assisted capture for Red-Agentic-teams: complete 2FA/SSO/captcha in YOUR browser, then share the resulting session and observed traffic with the run's evidence plane (POST /api/traffic/ingest).",
+  "permissions": ["webRequest", "cookies", "storage", "tabs"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ARTEX Session Bridge"
+  }
+}

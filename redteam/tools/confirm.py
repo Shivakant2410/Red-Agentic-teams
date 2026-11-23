@@ -200,12 +200,32 @@ class ConfirmFindingTool:
             "body_regex": body_regex, "max_latency": max_latency,
             "min_latency_delta": min_latency_delta, "body_differs_regex": body_differs_regex,
         }
+        # ARTEX binding: attach the CA-traced wire evidence — the most recent
+        # traffic row for the payload request, with a VERBATIM DECODED response
+        # quote (best effort: no matching row -> no refs, never fabricated).
+        traffic_path = ""
+        try:
+            traffic_path = ctx.traffic.summary().get("path", "")
+        except Exception:
+            traffic_path = ""
+        quote_url = (payload_request or request or {}).get("url", target)
+        quote_method = (payload_request or request or {}).get("method", "")
+        try:
+            from ..quotes import quote_evidence
+            artex_refs, artex_line = quote_evidence(traffic_path, url=quote_url,
+                                                    method=quote_method)
+        except Exception:
+            artex_refs, artex_line = [], ""
+        evidence_text = "\n".join(result.details)
+        if artex_line:
+            evidence_text = evidence_text + "\n" + artex_line
         finding = ctx.findings.add(Finding(
             title=title, severity=severity, target=target, summary=summary,
-            evidence="\n".join(result.details), recommendation=recommendation, cwe=cwe,
+            evidence=evidence_text, recommendation=recommendation, cwe=cwe,
             confidence="pending_verification", verification_verdict=result.verdict,
             reproductions=result.reproductions, trials=result.trials, poc=poc,
             check_type=check_type, check_spec=check_spec,
+            evidence_refs=artex_refs,
         ))
         if ctx.graph is not None:
             ctx.graph.observe(ENDPOINT, target, attrs={"finding": title}, source="confirm_finding")

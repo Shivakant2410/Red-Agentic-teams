@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  body { font: 13px/1.45 system-ui, sans-serif; width: 340px; margin: 0;
+         background: #0d1117; color: #c9d1d9; }
+  header { padding: 10px 12px; border-bottom: 1px solid #21262d; }
+  h1 { font-size: 14px; margin: 0 0 2px; }
+  .sub { color: #8b949e; font-size: 11px; }
+  main { padding: 10px 12px; display: grid; gap: 8px; }
+  label { font-size: 11px; color: #8b949e; display: block; margin-bottom: 2px; }
+  input { width: 100%; box-sizing: border-box; background: #161b22; color: #c9d1d9;
+          border: 1px solid #30363d; border-radius: 6px; padding: 6px 8px;
+          font-size: 12px; }
+  button { width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px solid #30363d;
+           background: #21262d; color: #c9d1d9; font-size: 12px; cursor: pointer; }
+  button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  #status { font-size: 11px; color: #8b949e; min-height: 30px; word-break: break-all; }
+  .ok { color: #3fb950; } .bad { color: #f85149; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ARTEX Session Bridge</h1>
+  <div class="sub">human-assisted auth for the run — 2FA/SSO done by you</div>
+</header>
+<main>
+  <div>
+    <label for="server">Control-plane server</label>
+    <input id="server" placeholder="http://127.0.0.1:8000">
+  </div>
+  <div>
+    <label for="runid">Run id (from the dashboard)</label>
+    <input id="runid" placeholder="20260515-101503-my-objective">
+  </div>
+  <button class="primary" id="share">Share session for this site</button>
+  <button id="flush">Flush captured traffic</button>
+  <button id="clear">Clear buffer</button>
+  <div id="status"></div>
+</main>
+<script src="popup.js"></script>
+</body>
+</html>

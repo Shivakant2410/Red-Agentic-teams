@@ -59,12 +59,14 @@ FAILURE DISCIPLINE (same rules as the EventBus / TrafficRecorder)
 from __future__ import annotations
 
 import datetime as _dt
+import gzip
 import json
 import select
 import socket
 import socketserver
 import ssl
 import threading
+import zlib
 import time
 from http.client import HTTPConnection, HTTPSConnection
 from pathlib import Path
@@ -655,11 +657,19 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
 
             self.proxy.stats.bump("exchanges")
             self.proxy.stats.add_bytes(len(body), len(resp_body))
+            # Operator-facing evidence must be READABLE: decode gzip/deflate/
+            # br bodies for the RECORD only — the client still receives the
+            # original bytes above (the identity rewrite makes this rare; some
+            # servers compress anyway).
+            resp_text, decode_note = self._decoded_text(resp_body, out_headers)
+            recorded_headers = dict(out_headers)
+            if decode_note:
+                recorded_headers["X-Evidence-Decoded-From"] = decode_note
             self.proxy.traffic.record_http(
                 method=method, url=url, status=resp.status, elapsed_ms=elapsed_ms,
                 tool="sandbox", source="proxy-mitm" if tls_client else "proxy",
                 req_headers=headers, req_body=self._text(body),
-                resp_headers=dict(out_headers), resp_body=self._text(resp_body))
+                resp_headers=recorded_headers, resp_body=resp_text)
         except Exception as exc:
             self.proxy.stats.bump("errors")
             self.proxy.traffic.record_http(
@@ -681,6 +691,42 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
         if not raw:
             return ""
         return raw.decode("utf-8", errors="replace")
+
+    @staticmethod
+    def _decoded_text(raw: bytes | None, headers: dict) -> tuple[str, str]:
+        """Decode a recorded response body per its content-encoding so the
+        evidence log holds VERBATIM DECODED text even when a server compresses
+        despite the identity rewrite. Returns (text, decoded_from) —
+        decoded_from is "" when nothing needed decoding, else the encoding."""
+        text = raw.decode("utf-8", errors="replace") if raw else ""
+        enc = ""
+        for k, v in (headers or {}).items():
+            if k.lower() == "content-encoding":
+                enc = str(v).lower().strip()
+                break
+        if not raw or enc in ("", "identity"):
+            return text, ""
+        try:
+            if enc == "gzip":
+                text = gzip.decompress(raw).decode("utf-8", errors="replace")
+            elif enc == "deflate":
+                try:
+                    text = zlib.decompress(raw).decode("utf-8", errors="replace")
+                except zlib.error:
+                    # raw deflate stream (no zlib header)
+                    text = zlib.decompress(raw, -zlib.MAX_WBITS).decode(
+                        "utf-8", errors="replace")
+            elif enc == "br":
+                try:
+                    import brotli  # type: ignore
+                    text = brotli.decompress(raw).decode("utf-8", errors="replace")
+                except ImportError:
+                    return text, ""   # honest: keep raw, no fake decode
+            else:
+                return text, ""
+            return text, enc
+        except Exception:
+            return text, ""   # never fake a decode
 
     # -- head reading on an arbitrary socket (plain or TLS-wrapped) --------------
 
@@ -765,14 +811,19 @@ class EvidenceProxy:
 
     def __init__(self, scope, traffic, audit=None, out_dir: Path | None = None,
                  bind_host: str = "0.0.0.0", advertise_host: str = "127.0.0.1",
-                 port: int = 0, limiter=None, tls_intercept: bool = True,
+                 port: int = 8788, limiter=None, tls_intercept: bool = True,
                  upstream_context: ssl.SSLContext | None = None):
+        # Default listener :8788 (ARTEX): a STABLE port the operator's tooling
+        # (browser extension, curl demos, dashboard hints) can point at without
+        # reading the run log. Taken port -> start() falls back to an ephemeral
+        # one and says so (the bound port is always in proxy.status()/port).
         self._scope = scope
         self._traffic = traffic
         self._audit = audit
         self._bind_host = bind_host
         self._advertise_host = advertise_host
         self._port = port
+        self._fallback_note = ""   # set when the preferred port was taken
         self._limiter = limiter
         self._out_dir = Path(out_dir) if out_dir else None
         self.stats = _Stats()
@@ -793,7 +844,17 @@ class EvidenceProxy:
         if self._tls_requested and self._out_dir is not None:
             # Cryptography missing -> RunCA.create returns None -> passthrough mode.
             self._ca = RunCA.create(self._out_dir / "proxy-ca")
-        self._server = _ProxyServer((self._bind_host, self._port), _ProxyHandler)
+        try:
+            self._server = _ProxyServer((self._bind_host, self._port),
+                                        _ProxyHandler)
+        except OSError as exc:
+            # Preferred :8788 busy (another run, a stale socket) — fall back to
+            # an OS-assigned port rather than fail the run; say so honestly.
+            self._fallback_note = (f"preferred port {self._port} unavailable "
+                                   f"({exc}); bound ephemeral")
+            self._port = 0
+            self._server = _ProxyServer((self._bind_host, self._port),
+                                        _ProxyHandler)
         self._server.proxy = self  # the handler's single shared-state anchor
         self._thread = threading.Thread(target=self._server.serve_forever,
                                         kwargs={"poll_interval": 0.2},
@@ -802,7 +863,8 @@ class EvidenceProxy:
         if self._audit is not None:
             try:
                 self._audit.record("proxy.start", mode=self.mode, port=self.port,
-                                   ca_fingerprint=self._ca.fingerprint if self._ca else "")
+                                   ca_fingerprint=self._ca.fingerprint if self._ca else "",
+                                   fallback_note=self._fallback_note)
             except Exception:
                 pass
 
@@ -867,5 +929,6 @@ class EvidenceProxy:
         return {"mode": self.mode, "bind_host": self._bind_host, "port": self.port,
                 "advertise": self.url_for(self._advertise_host),
                 "ca_fingerprint": self._ca.fingerprint if self._ca else None,
+                "fallback_note": self._fallback_note,
                 "stats": self.stats.to_dict()}
 

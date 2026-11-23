@@ -259,10 +259,10 @@ RECON = SpecialistProfile(
                 "browser_navigate", "browser_content", "browser_click",
                 "browser_fill", "browser_screenshot", "browser_requests",
                 "browser_inspect_request", "browser_console",
-                "authenticate", "set_session", "kali_exec",
+                "authenticate", "set_session", "ingest_sessions", "kali_exec",
                 "search_peer_traces"],
     role=PARSE,          # breadth work -> cheaper model
-    max_steps=30,        # was 22: the phased recon workflow (A-G) needs room
+    max_steps=32,        # >= len(tool_names): the phased A-G workflow needs room
 )
 
 EXPLOIT = SpecialistProfile(
@@ -304,8 +304,8 @@ ACCESS = SpecialistProfile(
            "classes — that is the exploit specialist's job; if nothing presses further, "
            "say so and stop."),
     tool_names=["extract_secrets", "try_credential", "prove_privilege", "record_access",
-                "authenticate", "set_session", "http_probe", "kali_exec",
-                "browser_navigate", "browser_content"],
+                "authenticate", "set_session", "ingest_sessions", "http_probe",
+                "kali_exec", "browser_navigate", "browser_content"],
     role=PARSE,          # procedural/mechanical work once a path is already known -> cheaper model
     max_steps=20,
 )

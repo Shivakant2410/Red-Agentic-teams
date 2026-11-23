@@ -66,6 +66,11 @@ class Finding:
     # STILL reproduces across remediation cycles. Old findings.json rows without
     # this key load fine via the default.
     retest_history: list = field(default_factory=list)
+    # ARTEX binding: refs to the CA-traced wire evidence this finding rests on
+    # ({"kind": "traffic", "seq": N, "url": ..., "status": ..., "ts": ...}).
+    # Attached by the proving tools via redteam.quotes.quote_evidence() — the
+    # verbatim decoded response quote lives in the referenced traffic row.
+    evidence_refs: list = field(default_factory=list)
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     created: str = field(default_factory=lambda: _dt.datetime.now(_dt.timezone.utc).isoformat())
 
@@ -151,14 +156,21 @@ class FindingStore:
         with self._lock:
             return [f for f in self._findings if f.confidence == CONF_PENDING_VERIFICATION]
 
-    def promote(self, finding_id: str, verdict: str, detail: str = "") -> Finding | None:
+    def promote(self, finding_id: str, verdict: str, detail: str = "",
+                refs: list | None = None) -> Finding | None:
         """Apply an INDEPENDENT re-check's verdict. Only this path may set confidence to
-        'confirmed' — closing the self-grading loop (see tools/independent_verify.py)."""
+        'confirmed' — closing the self-grading loop (see tools/independent_verify.py).
+        refs: optional ARTEX evidence refs (traffic seq + quote provenance) from
+        the re-check's own wire exchanges."""
         with self._lock:
             f = next((x for x in self._findings if x.id == finding_id), None)
             if f is None:
                 return None
             f.independent_verdict = verdict
+            for ref in (refs or []):
+                if ref not in f.evidence_refs:
+                    f.evidence_refs.append(ref)
+            f.evidence_refs = f.evidence_refs[-32:]
             if verdict == CONF_CONFIRMED:
                 f.confidence = CONF_CONFIRMED
             elif verdict == CONF_FALSIFIED:

@@ -250,6 +250,14 @@ _HAND: dict[str, Hand] = {
         cost="step", trust="offline-parse",
         obligation="check BEFORE re-running any discovery tool — "
                    "re-discovering recorded work wastes steps"),
+    "ingest_sessions": Hand(
+        tool="ingest_sessions",
+        purpose="register sessions the OPERATOR captured in their real browser "
+                "(2FA/SSO/captcha done by the human) from the ARTEX extension "
+                "ingest log",
+        cost="step", trust="first-party-observation",
+        obligation="a human-shared session is bootstrap input, never a finding; "
+                   "source recorded extension_ingest; values never echoed"),
     # -- session ------------------------------------------------------------
     "authenticate": Hand(
         tool="authenticate",
@@ -425,7 +433,8 @@ HANDS: dict[str, tuple[Hand, ...]] = {
         "browser_navigate", "browser_content", "browser_click",
         "browser_fill", "browser_screenshot", "browser_requests",
         "browser_inspect_request", "browser_console",
-        "authenticate", "set_session", "kali_exec", "search_peer_traces")),
+        "authenticate", "set_session", "ingest_sessions", "kali_exec",
+        "search_peer_traces")),
     "exploit": tuple(_HAND[t] for t in (
         "find_techniques", "crosscheck_lead", "apply_skill", "http_probe",
         "authenticate", "set_session", "verify_vulnerability", "confirm_finding",
@@ -433,7 +442,7 @@ HANDS: dict[str, tuple[Hand, ...]] = {
         "search_peer_traces")),
     "access": tuple(_HAND[t] for t in (
         "extract_secrets", "try_credential", "prove_privilege", "record_access",
-        "authenticate", "set_session", "http_probe", "kali_exec",
+        "authenticate", "set_session", "ingest_sessions", "http_probe", "kali_exec",
         "browser_navigate", "browser_content")),
     "logic": tuple(_HAND[t] for t in (
         "verify_workflow_abuse", "authenticate", "browser_navigate",

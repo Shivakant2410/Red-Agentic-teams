@@ -278,11 +278,83 @@ class RetestBody(BaseModel):
     fresh_control_steps: list = []
 
 
+class IngestRow(BaseModel):
+    """One exchange the OPERATOR's browser saw (ARTEX extension capture).
+    Bodies when the capture path could read them; headers always."""
+    method: str = Field(default="GET", max_length=10)
+    url: str = Field(min_length=1, max_length=2000)
+    status: int = Field(default=0, ge=0, le=599)
+    req_headers: dict = Field(default_factory=dict)
+    req_body: str = Field(default="", max_length=16_000)
+    resp_headers: dict = Field(default_factory=dict)
+    resp_body: str = Field(default="", max_length=16_000)
+
+
+class IngestSession(BaseModel):
+    """A session the human established by completing 2FA/SSO/captcha in THEIR
+    browser — the extension forwards its cookies/auth headers for the agent."""
+    label: str = Field(min_length=1, max_length=64)
+    headers: dict = Field(default_factory=dict)
+    note: str = Field(default="", max_length=300)
+
+
+class IngestBody(BaseModel):
+    run_id: str = Field(min_length=1, max_length=80)
+    source: str = Field(default="extension", max_length=40)
+    rows: list[IngestRow] = Field(default_factory=list)
+    sessions: list[IngestSession] = Field(default_factory=list)
+
+
 def _read_json(path: Path, default):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return default
+
+
+def _ingest_scope_checker(run_dir: Path):
+    """A URL-in-scope predicate from the run's FROZEN scope.json (same keys
+    retest.py rebuilds the engagement from). None when the run has no frozen
+    scope — callers fail closed for credential-bearing ingest."""
+    raw = _read_json(run_dir / "scope.json", None)
+    if not isinstance(raw, dict) or not raw.get("allowed_hosts"):
+        return None
+    hosts = [str(h).lower().lstrip(".") for h in raw.get("allowed_hosts", ())]
+    ports = {int(p) for p in raw.get("allowed_ports", ()) if p}
+    schemes = {str(s).lower() for s in raw.get("allowed_schemes", ("http", "https"))}
+
+    def in_scope(url: str) -> bool:
+        from urllib.parse import urlsplit
+        try:
+            parts = urlsplit(str(url))
+            scheme = (parts.scheme or "").lower()
+            host = (parts.hostname or "").lower()
+            port = parts.port or (443 if scheme == "https" else 80)
+        except ValueError:
+            return False
+        if scheme not in schemes:
+            return False
+        if ports and port not in ports:
+            return False
+        for h in hosts:
+            if host == h or host.endswith("." + h):
+                return True
+        return False
+
+    return in_scope
+
+
+def _append_ingest_audit(run_dir: Path, entry: dict) -> None:
+    """The ingest trail lives IN the run dir (the operator and the agent read
+    the same file); failures never break the ingest response."""
+    try:
+        ingest_dir = run_dir / "ingest"
+        ingest_dir.mkdir(parents=True, exist_ok=True)
+        entry = {"ts": _dt.datetime.now(_dt.timezone.utc).isoformat(), **entry}
+        with open(ingest_dir / "audit.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, default=str) + "\n")
+    except Exception:  # noqa: BLE001 — audit sink must never 500 the ingest
+        pass
 
 
 class RunRegistry:
@@ -792,6 +864,97 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
     # -- API: ARTEX-port evidence (traffic + surface) ---------------------------
     # Both read the per-run JSONL/JSON artifacts the engine already writes, with the
     # same cursor contract as /events — the server stays decoupled from the engine.
+
+    @app.post("/api/traffic/ingest")
+    def traffic_ingest(body: IngestBody) -> dict:
+        """Human-assisted capture ingest (ARTEX): the operator's browser
+        extension posts what THEIR browser saw — request/response rows and the
+        session that survived the human-completed 2FA/SSO/captcha step.
+
+        Honesty rules:
+          - rows are EVIDENCE ONLY (written to the run's traffic.jsonl,
+            source=extension) — never forwarded to any target;
+          - the run's FROZEN scope.json decides labeling: in-scope rows are
+            extension traffic; out-of-scope rows (SSO IdP redirects etc.) are
+            recorded as DENIED so the chain stays visible without pretending
+            it was authorized testing traffic; no frozen scope -> rows recorded
+            as scope-unverified;
+          - sessions are fail-closed: refused entirely without a frozen scope,
+            auth-header-filtered, stored under <run>/ingest/sessions.jsonl for
+            the agent to pick up via the ingest_sessions tool (the operator
+            sharing their authenticated session IS the authorization).
+        """
+        run_dir = require_run(body.run_id)
+        from .traffic import TrafficRecorder
+        scope = _ingest_scope_checker(run_dir)
+        traffic = TrafficRecorder(run_dir / "traffic.jsonl")
+        accepted = denied = unverified = 0
+        for row in body.rows[:200]:
+            url = row.url[:2000]
+            method = (row.method or "GET").upper()[:10]
+            headers_in = {str(k)[:120]: str(v)[:4000]
+                          for k, v in (row.req_headers or {}).items()}
+            resp_in = {str(k)[:120]: str(v)[:4000]
+                       for k, v in (row.resp_headers or {}).items()}
+            in_scope = bool(scope and scope(url))
+            if scope is None:
+                error = "scope-unverified (run has no frozen scope.json)"
+                unverified += 1
+            elif in_scope:
+                error = ""
+                accepted += 1
+            else:
+                error = ("operator-captured; out of run scope "
+                         "(evidence only, NOT agent traffic)")
+                denied += 1
+            traffic.record_http(method=method, url=url, status=row.status,
+                                elapsed_ms=0, tool="extension", session="",
+                                req_headers=headers_in,
+                                req_body=row.req_body[:16_000] or None,
+                                resp_headers=resp_in,
+                                resp_body=row.resp_body[:16_000] or None,
+                                error=error, source="extension")
+        # Sessions: fail closed without a frozen scope; auth headers only.
+        stored = 0
+        if body.sessions and scope is not None:
+            from .tools.authsession import _looks_auth_header
+            import hashlib as _hashlib
+            ingest_dir = run_dir / "ingest"
+            ingest_dir.mkdir(parents=True, exist_ok=True)
+            with open(ingest_dir / "sessions.jsonl", "a", encoding="utf-8") as fh:
+                for sess in body.sessions[:10]:
+                    clean = {str(k): str(v) for k, v in (sess.headers or {}).items()
+                             if _looks_auth_header(str(k)) and str(v).strip()}
+                    if not clean:
+                        continue
+                    entry_id = _hashlib.sha1(
+                        f"{sess.label}|{clean}|{_dt.datetime.now(_dt.timezone.utc).isoformat()}"
+                        .encode()).hexdigest()[:12]
+                    fh.write(json.dumps({
+                        "id": entry_id, "ts": _dt.datetime.now(
+                            _dt.timezone.utc).isoformat(),
+                        "label": f"ext:{sess.label[:48]}",
+                        "headers": clean,
+                        "note": (sess.note or "human-assisted browser session "
+                                 "(2FA/SSO completed by the operator)")[:300],
+                    }, default=str) + "\n")
+                    stored += 1
+        elif body.sessions and scope is None:
+            # Sessions refused fail-closed: logged, never stored.
+            _append_ingest_audit(run_dir, {"event": "traffic.ingest.sessions_refused",
+                                           "reason": "no frozen scope.json",
+                                           "offered": len(body.sessions)})
+        _append_ingest_audit(run_dir, {"event": "traffic.ingest",
+                                       "source": body.source[:40],
+                                       "rows": len(body.rows), "accepted": accepted,
+                                       "denied": denied, "unverified": unverified,
+                                       "sessions_stored": stored})
+        return {"run_id": body.run_id, "rows_received": len(body.rows[:200]),
+                "accepted": accepted, "denied": denied, "unverified": unverified,
+                "sessions_stored": stored,
+                "sessions_refused": (0 if scope is not None
+                                     else len(body.sessions)),
+                "pickup": "agent calls ingest_sessions to register these"}
 
     @app.get("/api/runs/{run_id}/traffic")
     def run_traffic(run_id: str, after: int = 0, limit: int = 200) -> dict:

@@ -38,6 +38,11 @@ class RecordFindingTool:
                                                   "differential with negative control) may "
                                                   "confirm; specialists record tentative or "
                                                   "firm evidence."},
+                    "traffic_seq": {"type": "integer",
+                                    "description": "Optional: seq of the traffic.jsonl row "
+                                                   "holding this finding's wire evidence; a "
+                                                   "verbatim decoded response quote is bound "
+                                                   "to the finding (ARTEX)."},
                 },
                 "required": ["title", "severity", "target", "summary", "evidence"],
             },
@@ -46,7 +51,7 @@ class RecordFindingTool:
 
     def run(self, ctx: ToolContext, title: str, severity: str, target: str, summary: str,
             evidence: str, recommendation: str = "", cwe: str = "",
-            confidence: str = "tentative") -> str:
+            confidence: str = "tentative", traffic_seq: int | None = None) -> str:
         # FindingStore authority (live-fire 20261118): a specialist asserting
         # "confirmed" must never reach the store as confirmed — confirmation is
         # owned exclusively by the independent verifier (FindingStore.promote /
@@ -58,9 +63,23 @@ class RecordFindingTool:
             safe_emit(getattr(ctx, "events", None), "finding.self_confirm_downgraded",
                       requested=confidence, title=title, target=target)
             confidence = "firm"
+        # ARTEX binding: bind the cited (or URL-matched) traffic row's verbatim
+        # decoded response quote to the finding — report readers audit the wire.
+        artex_refs: list = []
+        try:
+            from ..quotes import quote_evidence
+            traffic_path = ctx.traffic.summary().get("path", "") \
+                if ctx.traffic is not None else ""
+            artex_refs, artex_line = quote_evidence(
+                traffic_path, url=target, seq=traffic_seq)
+            if artex_line:
+                evidence = evidence + "\n" + artex_line
+        except Exception:
+            artex_refs = []   # honest absence; never a fabricated quote
         finding = ctx.findings.add(Finding(
             title=title, severity=severity, target=target, summary=summary,
             evidence=evidence, recommendation=recommendation, cwe=cwe, confidence=confidence,
+            evidence_refs=artex_refs,
         ))
         ctx.audit.record("finding.recorded", id=finding.id, title=title, severity=severity,
                          target=target, confidence=confidence)

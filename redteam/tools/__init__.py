@@ -177,6 +177,8 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     tools.append(PassiveReconTool())
     from .obsquery import ObservationsTool
     tools.append(ObservationsTool())
+    from .ingest import IngestSessionsTool
+    tools.append(IngestSessionsTool())
     tools += [RecordFindingTool(), RequestApprovalTool()]
     # Opt-in terminal plane for dockerless hosts (see tools/local_exec.py): NEVER
     # registered by default — the operator sets RED_LOCAL_EXEC=1 and accepts that
