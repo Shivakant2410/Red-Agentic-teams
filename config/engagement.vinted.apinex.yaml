@@ -1,0 +1,57 @@
+# Vinted (Bugcrowd) — same scope/rules as engagement.vinted.yaml, but routed
+# through APInex (apinex.bond, OpenAI-compatible) using genuinely-free,
+# tool-calling-capable models. This unblocks the capable-model wall that the
+# local 7B (too weak) and the OpenRouter free tier (daily-capped) both hit.
+#
+# DATA-HANDLING CAUTION: apinex.bond is a third-party inference provider. Prompts
+# sent to it (recon output, objective, and potentially captured bodies) leave the
+# box. For this authorized Vinted engagement, that means: do NOT let the agent
+# pipe real authenticated member traffic through the model. Use this for recon +
+# reasoning on the PUBLIC surface and your own test-account flows only; keep any
+# genuinely sensitive captured data out of the prompt stream.
+
+name: "Vinted Bugcrowd — www.vinted.com (APInex models)"
+client: "Vinted (via Bugcrowd)"
+authorized_by: "Vinted Bugcrowd program (public scope + safe harbor)"
+ticket: "Bugcrowd: Vinted program / @bugcrowdninja.com researcher"
+
+starts: "2026-11-24"
+ends: "2026-12-24"
+
+scope:
+  allowed_hosts:
+    - "www.vinted.com"
+  excluded_hosts: []
+  allowed_ports: [443]
+  allowed_schemes: ["https"]
+  allow_private_ranges: false
+
+limits:
+  # Program forbids high-volume scanning / triggering automated defenses, and its
+  # robots.txt bars automated transactions. Human trickle only.
+  max_requests_per_second: 1
+  max_total_requests: 400
+
+require_approval_for:
+  - destructive_command
+  - auth_bypass_attempt
+
+llm:
+  providers:
+    # Depth (exploit/logic/thesis): a strong reasoning model, verified to do
+    # native tool-calling on this key.
+    - kind: openai_compat
+      name: apinex-deepseek-pro
+      base_url: "https://apinex.bond/v1"
+      api_key_env: "APINEX_API_KEY"
+      require_tool_support: true
+      models_allow: ["free/deepseek-v4-pro-0813"]
+      priority: 100
+    # Breadth/recon + fallback: a fast model, also tool-capable.
+    - kind: openai_compat
+      name: apinex-fast
+      base_url: "https://apinex.bond/v1"
+      api_key_env: "APINEX_API_KEY"
+      require_tool_support: true
+      models_allow: ["free/deepseek-v4.1-flash", "free/qwen-3.8-max", "free/gpt-6-luna"]
+      priority: 50
