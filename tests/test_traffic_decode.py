@@ -84,13 +84,13 @@ def test_traffic_recorder_redacts_otp_password_and_captcha_bodies(tmp_path):
         method="POST", url="https://example.test/login", status=200,
         elapsed_ms=8,
         req_headers={"Content-Type": "application/json"},
-        req_body='{"username":"alice","password":"p@ss","otp":"123456","cf-turnstile-response":"captcha-secret"}',
+        req_body='{"username":"alice","password":"p@ss","otp":"123456","code":"654321","cf-turnstile-response":"captcha-secret"}',
         resp_headers={"Content-Type": "application/x-www-form-urlencoded"},
-        resp_body="status=ok&verification_code=654321&access_token=access-secret",
+        resp_body="status=ok&verification_code=654321&pin=4321&access_token=access-secret",
     )
     row = read_traffic(path)[0]
     blob = json.dumps(row)
-    for secret in ("p@ss", "123456", "captcha-secret", "654321", "access-secret"):
+    for secret in ("p@ss", "123456", "captcha-secret", "654321", "4321", "access-secret"):
         assert secret not in blob
     assert "<redacted>" in row["req_body"]
 
