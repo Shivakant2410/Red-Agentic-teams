@@ -23,6 +23,12 @@ This Manifest V3 extension sends **metadata-only** authentication-flow events to
 
 The extension does not bypass, solve, or automate OTP/CAPTCHA challenges. A human completes those steps in the browser.
 
+Chrome/Edge request broad HTTP(S) host access plus the `webRequest` metadata
+permission so the extension can observe requests from tabs. Use a dedicated
+assessment browser profile. The local ingest API persists events only when the
+host, scheme and port match the active engagement scope; unrelated pages are
+rejected.
+
 ## Configure
 
 1. Start the control plane (default: `http://127.0.0.1:8000`).
