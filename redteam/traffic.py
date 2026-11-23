@@ -141,7 +141,7 @@ _SENSITIVE_FIELD = re.compile(
     r"(?i)(password|passwd|passphrase|otp|one[_-]?time[_-]?code|"
     r"verification[_-]?code|totp|mfa|captcha|recaptcha|hcaptcha|"
     r"turnstile|token|secret|api[_-]?key|access[_-]?key|session[_-]?id|"
-    r"authorization|cookie|state|nonce|code[_-]?verifier|signature|sig)"
+    r"authorization|cookie|state|nonce|code[_-]?verifier|jwt|refresh[_-]?token|signature|sig|^code$)"
 )
 
 
@@ -211,7 +211,7 @@ def _sanitize_body(body: str | None, headers: dict | None) -> str | None:
     patterns = (
         r"(?i)(authorization\s*:\s*(?:bearer|basic)\s+)[^\s,'\"}]+",
         r"(?i)([\"']?(?:password|passwd|otp|one[_-]?time[_-]?code|"
-        r"verification[_-]?code|totp|captcha|recaptcha|hcaptcha|"
+        r"verification[_-]?code|passcode|pin|code|jwt|totp|captcha|recaptcha|hcaptcha|"
         r"cf-turnstile-response|token|secret|api[_-]?key|session[_-]?id)"
         r"[\"']?\s*[:=]\s*[\"']?)[^&,\s'\"}]+",
     )
