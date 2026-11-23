@@ -74,7 +74,7 @@ A01 = ClassSpecialist(
         tool_names=["authenticate", "set_session", "http_probe", "verify_vulnerability",
                     "confirm_finding", "test_access_control", "test_idor",
                     "crosscheck_lead", "browser_navigate",
-                    "browser_content", "search_peer_traces"],
+                    "browser_content", "grade_evidence", "search_peer_traces"],
         role=PLAN, max_steps=24,
     ),
 )

@@ -333,6 +333,13 @@ _HAND: dict[str, Hand] = {
         cost="verification-trial", trust="proof-trial",
         obligation="only ever target an object you are authorized to prove with (your own "
                    "second account); lands pending_verification for independent re-check"),
+    "grade_evidence": Hand(
+        tool="grade_evidence",
+        purpose="bind a finding to its recorded traffic exchange + verbatim quotes and "
+                "grade proof-of-evidence (poe3..poe0) against the real wire body",
+        cost="step", trust="first-party-observation",
+        obligation="poe0/poe1 means the claim is NOT on the wire — fix the quote or drop "
+                   "the finding; grading never changes verification state"),
     "prove_privilege": Hand(
         tool="prove_privilege",
         purpose="differential privilege-boundary proof for a held session",
@@ -514,7 +521,7 @@ HANDS: dict[str, tuple[Hand, ...]] = {
         "authenticate", "set_session", "verify_vulnerability", "confirm_finding",
         "browser_navigate", "browser_content", "browser_fill", "kali_exec",
         "mint_canary", "poll_canary", "test_access_control", "test_idor",
-        "search_peer_traces")),
+        "grade_evidence", "search_peer_traces")),
     "access": tuple(_HAND[t] for t in (
         "extract_secrets", "try_credential", "prove_privilege", "record_access",
         "authenticate", "set_session", "http_probe", "kali_exec",
@@ -524,13 +531,13 @@ HANDS: dict[str, tuple[Hand, ...]] = {
         "set_session", "http_probe",
         "browser_navigate", "browser_content", "browser_fill", "browser_click",
         "browser_login", "browser_session_status", "browser_requests",
-        "browser_inspect_request", "find_techniques")),
+        "browser_inspect_request", "find_techniques", "grade_evidence")),
     "verify": tuple(_HAND[t] for t in (
         "verify_finding_independently",)),
     "a01-access": tuple(_HAND[t] for t in (
         "authenticate", "set_session", "http_probe", "verify_vulnerability",
         "confirm_finding", "test_access_control", "test_idor", "crosscheck_lead",
-        "browser_navigate", "browser_content", "search_peer_traces")),
+        "browser_navigate", "browser_content", "grade_evidence", "search_peer_traces")),
     "a03-injection": tuple(_HAND[t] for t in (
         "authenticate", "set_session", "http_probe", "verify_vulnerability",
         "confirm_finding", "xss_reflect_probe", "graphql_inspect", "crosscheck_lead",

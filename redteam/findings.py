@@ -60,6 +60,14 @@ class Finding:
     check_type: str = ""             # "http" | "differential" | "proof" | "privilege"
     check_spec: dict = field(default_factory=dict)   # requests/conditions/etc. to rebuild the check
     independent_verdict: str = ""    # confirmed | falsified | not_reproducible (set by the re-check)
+    # Proof-of-Evidence (POE, see poe.py): a mechanical bind to a recorded wire
+    # exchange + verbatim quotes that must literally appear in it. poe_level is
+    # poe3/poe2/poe1/poe0; orthogonal to confidence (that is the verification
+    # funnel, this is wire-evidence strength). Old rows load fine via defaults.
+    evidence_ref: int = 0            # traffic.jsonl seq the claim is bound to (0 = none)
+    quotes: list = field(default_factory=list)   # verbatim strings that must appear in it
+    poe_level: str = ""              # "" until graded, then poe3..poe0
+    poe_note: str = ""
     # Post-remediation retest timeline (see retest.py): entries {when, verdict,
     # reproductions, trials, detail}. Orthogonal to `confidence` — verification
     # state says whether the finding was real, retest history says whether it

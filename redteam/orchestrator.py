@@ -324,7 +324,7 @@ EXPLOIT = SpecialistProfile(
     tool_names=["find_techniques", "crosscheck_lead", "apply_skill", "confirm_finding",
                 "verify_vulnerability", "authenticate", "set_session",
                 "http_probe", "kali_exec", "mint_canary", "poll_canary",
-                "test_access_control", "test_idor", "search_peer_traces",
+                "test_access_control", "test_idor", "grade_evidence", "search_peer_traces",
                 "browser_navigate", "browser_content", "browser_fill"],
     role=PLAN,           # depth/reasoning work -> strongest model
     max_steps=40,
@@ -392,7 +392,7 @@ LOGIC = SpecialistProfile(
                 "set_session", "http_probe",
                 "browser_navigate", "browser_content", "browser_fill", "browser_click",
                 "browser_login", "browser_session_status", "browser_requests",
-                "browser_inspect_request", "find_techniques"],
+                "browser_inspect_request", "find_techniques", "grade_evidence"],
     role=PLAN,           # requires reasoning about the specific app's domain, not pattern-matching
     max_steps=30,
 )

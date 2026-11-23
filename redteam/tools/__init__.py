@@ -92,6 +92,7 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
                           BrowserSessionStatusTool)
     from .access import TestAccessControlTool, TestIdorTool
     from .confirm import ConfirmFindingTool
+    from .poe_tool import GradeEvidenceTool
     from .oob_tools import MintCanaryTool, PollCanaryTool
     from .independent_verify import VerifyFindingIndependentlyTool
     from .jwt import JwtInspectTool
@@ -118,6 +119,9 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # unauth-access check and a cross-principal IDOR/BOLA check. Both land
     # pending_verification (check_type=http) so the independent pass confirms.
     tools += [TestAccessControlTool(), TestIdorTool()]
+    # POE: bind a finding to its recorded exchange + verbatim quotes, graded
+    # against the real (gzip-decoded) wire body — catches hallucinated claims.
+    tools.append(GradeEvidenceTool())
     # authenticate to hold identities; set_session registers operator-handed static
     # tokens (assumed-breach material) as sessions; http_probe = cheap session-aware
     # LOOKING AROUND that never touches the finding pipeline;
