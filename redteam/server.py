@@ -24,12 +24,14 @@ import datetime as _dt
 import json
 import os
 import re
+import ipaddress
+import secrets
 import threading
 import time
 from pathlib import Path
 
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -161,6 +163,30 @@ def _pick_ollama_default(models: list[str]) -> str:
         if any(hint in low for hint in _OLLAMA_TOOL_HINTS):
             return model
     return models[0] if models else ""
+
+
+class TrafficIngestEvent(BaseModel):
+    event_type: str = Field(..., max_length=64)
+    url: str = Field(..., max_length=2048)
+    challenge_kind: str = Field(default="unknown", max_length=32)
+    field_count: int = Field(default=0, ge=0, le=20)
+    resource_type: str = Field(default="document", max_length=32)
+    tab_id: int | None = None
+    frame_id: int | None = None
+    method: str = Field(default="", max_length=16)
+    status_code: int | None = Field(default=None, ge=0, le=999)
+    request_id: str = Field(default="", max_length=128)
+
+    class Config:
+        extra = "forbid"
+
+
+class TrafficIngestPayload(BaseModel):
+    run_id: str = Field(..., min_length=1, max_length=128)
+    events: list[TrafficIngestEvent] = Field(..., min_items=1, max_items=50)
+
+    class Config:
+        extra = "forbid"
 
 
 class LlmOverride(BaseModel):
@@ -820,6 +846,84 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         records = read_traffic(run_dir / "traffic.jsonl", after=after, limit=limit)
         next_cursor = records[-1]["seq"] if records else after
         return {"traffic": records, "next_cursor": next_cursor}
+
+    @app.post("/api/traffic/ingest", status_code=202)
+    def ingest_browser_traffic(payload: TrafficIngestPayload, request: Request,
+                                x_red_run_token: str = Header(default="")) -> dict:
+        """Accept metadata-only browser auth-flow events from the local extension.
+
+        OTP values, passwords, cookies, captcha tokens, request bodies and response
+        bodies are deliberately not part of this endpoint's schema.
+        """
+        client_host = request.client.host if request.client else ""
+        try:
+            if client_host != "testclient" and not ipaddress.ip_address(client_host).is_loopback:
+                raise HTTPException(403, "traffic ingest is loopback-only")
+        except ValueError:
+            raise HTTPException(403, "traffic ingest is loopback-only")
+
+        run_dir = require_run(payload.run_id)
+        if manifest_of(run_dir).get("status") != "running":
+            raise HTTPException(409, "browser traffic ingest requires an active run")
+        token_path = run_dir / "traffic_ingest.token"
+        try:
+            expected = token_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            raise HTTPException(403, "traffic ingest is not enabled for this run")
+        if not expected or not secrets.compare_digest(expected, x_red_run_token):
+            raise HTTPException(403, "invalid run ingest token")
+
+        allowed_events = {
+            "otp_challenge_detected", "otp_challenge_submitted",
+            "captcha_challenge_detected", "captcha_challenge_submitted",
+            "auth_page_detected", "http_request_started",
+            "http_response_completed", "http_request_failed",
+        }
+        from urllib.parse import urlsplit, urlunsplit
+        from .traffic import recorder_for
+        recorder = recorder_for(run_dir / "traffic.jsonl")
+        accepted = 0
+        for event in payload.events:
+            if event.event_type not in allowed_events:
+                raise HTTPException(422, f"unsupported browser event: {event.event_type}")
+            try:
+                parsed = urlsplit(event.url)
+                hostname = (parsed.hostname or "").lower().rstrip(".")
+                port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            except ValueError:
+                raise HTTPException(422, "malformed browser event URL")
+            if (parsed.scheme not in ("http", "https") or not hostname
+                    or parsed.username is not None or parsed.password is not None):
+                raise HTTPException(422, "event URL must be an absolute HTTP(S) URL without userinfo")
+            if event.challenge_kind.lower() not in {"otp", "captcha", "unknown"}:
+                raise HTTPException(422, "unsupported challenge kind")
+            scope_data = _read_json(run_dir / "scope.json", {}) or {}
+            from .scope import _host_matches
+            allowed_hosts = scope_data.get("allowed_hosts", [])
+            excluded_hosts = scope_data.get("excluded_hosts", [])
+            allowed_schemes = scope_data.get("allowed_schemes", [])
+            allowed_ports = scope_data.get("allowed_ports", [])
+            if (any(_host_matches(hostname, item) for item in excluded_hosts)
+                    or not any(_host_matches(hostname, item) for item in allowed_hosts)
+                    or parsed.scheme not in allowed_schemes or port not in allowed_ports):
+                raise HTTPException(403, "browser event host/scheme/port is outside engagement scope")
+            # Query strings/fragments can carry reset links, state values or tokens.
+            safe_url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+            recorder.record_event(
+                event_type=event.event_type, source="browser-extension", url=safe_url,
+                metadata={
+                    "challenge_kind": event.challenge_kind.lower(),
+                    "field_count": event.field_count,
+                    "resource_type": event.resource_type,
+                    "tab_id": event.tab_id,
+                    "frame_id": event.frame_id,
+                    "method": event.method.upper(),
+                    "status_code": event.status_code,
+                    "request_id": event.request_id,
+                })
+            accepted += 1
+        return {"accepted": accepted, "source": "browser-extension",
+                "stored_payloads": False}
 
     @app.get("/api/runs/{run_id}/inventory")
     def run_inventory(run_id: str) -> dict:

@@ -69,7 +69,8 @@ def _sandbox_request(ctx: ToolContext, req: dict):
     url = req["url"]
     headers = req.get("headers") or {}
     body = req.get("body")
-    parts = ["curl", "-s", "-S", "-k", "-i", "-X", _shq(method)]
+    # curl decodes gzip/deflate before the proof engine sees the response body.
+    parts = ["curl", "-s", "-S", "-k", "-i", "--compressed", "-X", _shq(method)]
     for k, v in headers.items():
         parts += ["-H", _shq(f"{k}: {v}")]
     if body is not None:

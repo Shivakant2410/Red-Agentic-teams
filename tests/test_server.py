@@ -76,6 +76,84 @@ def test_health(harness):
     assert body["runs_root"] == str((runs_root).resolve())
 
 
+def test_browser_extension_ingest_is_authenticated_and_metadata_only(harness):
+    client, runs_root, engagement = harness
+    launched = client.post("/api/runs", json={
+        "engagement_path": str(engagement), "objective": "browser ingest test"})
+    assert launched.status_code == 202
+    run_id = launched.json()["run_id"]
+    run_dir = runs_root / run_id
+    token = "test-run-token-0123456789"
+    manifest = RunManifest.load(run_dir / "manifest.json")
+    manifest.status = "running"
+    manifest.save(run_dir / "manifest.json")
+    (run_dir / "traffic_ingest.token").write_text(token, encoding="utf-8")
+    (run_dir / "scope.json").write_text(json.dumps({
+        "allowed_hosts": ["example.com"], "excluded_hosts": [],
+        "allowed_schemes": ["https"], "allowed_ports": [443, 80],
+    }), encoding="utf-8")
+
+    denied = client.post("/api/traffic/ingest", json={
+        "run_id": run_id,
+        "events": [{"event_type": "otp_challenge_detected",
+                    "url": "https://example.com/login"}]})
+    assert denied.status_code == 403
+
+    accepted = client.post("/api/traffic/ingest",
+        headers={"X-Red-Run-Token": token},
+        json={"run_id": run_id, "events": [{
+            "event_type": "otp_challenge_detected",
+            "challenge_kind": "otp",
+            "field_count": 1,
+            "resource_type": "document",
+            "url": "https://example.com/login?state=do-not-store#fragment"
+        }]})
+    assert accepted.status_code == 202
+    assert accepted.json()["accepted"] == 1
+    traffic = json.loads((run_dir / "traffic.jsonl").read_text().splitlines()[0])
+    assert traffic["source"] == "browser-extension"
+    assert traffic["event_type"] == "otp_challenge_detected"
+    assert traffic["url"] == "https://example.com/login"
+    assert "do-not-store" not in json.dumps(traffic)
+    assert traffic["req_body"] == "" and traffic["resp_body"] == ""
+
+    network = client.post("/api/traffic/ingest",
+        headers={"X-Red-Run-Token": token},
+        json={"run_id": run_id, "events": [{
+            "event_type": "http_response_completed",
+            "url": "https://example.com/api/orders?access_token=never-store",
+            "method": "GET",
+            "status_code": 200,
+            "resource_type": "xmlhttprequest",
+            "request_id": "browser-request-1"
+        }]})
+    assert network.status_code == 202
+    rows = [json.loads(line) for line in (run_dir / "traffic.jsonl").read_text().splitlines()]
+    assert rows[1]["event_type"] == "http_response_completed"
+    assert rows[1]["metadata"]["method"] == "GET"
+    assert rows[1]["metadata"]["status_code"] == 200
+    assert rows[1]["url"] == "https://example.com/api/orders"
+
+    out_of_scope = client.post("/api/traffic/ingest",
+        headers={"X-Red-Run-Token": token},
+        json={"run_id": run_id, "events": [{
+            "event_type": "otp_challenge_detected",
+            "challenge_kind": "otp",
+            "url": "https://idp.other.test/login"
+        }]})
+    assert out_of_scope.status_code == 403
+
+    # Schema rejects secret-bearing fields instead of silently persisting them.
+    rejected = client.post("/api/traffic/ingest",
+        headers={"X-Red-Run-Token": token},
+        json={"run_id": run_id, "events": [{
+            "event_type": "otp_challenge_detected",
+            "url": "https://example.com/login",
+            "otp_value": "123456"
+        }]})
+    assert rejected.status_code == 422
+
+
 def test_launch_and_lifecycle(harness):
     client, runs_root, engagement = harness
     r = client.post("/api/runs", json={

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
 import threading
 import time
 import uuid
@@ -393,6 +394,16 @@ def execute_run(opts: RunOptions) -> dict:
     from .traffic import TrafficRecorder
     traffic = TrafficRecorder(out / "traffic.jsonl",
                               record_bodies=opts.record_traffic_bodies)
+    # One run-scoped bearer token authorizes the optional Chrome/Edge extension
+    # to append metadata-only auth-flow events. The token is never logged or
+    # included in the run manifest; operators configure it from this local file.
+    ingest_token = uuid.uuid4().hex + uuid.uuid4().hex
+    ingest_token_path = out / "traffic_ingest.token"
+    ingest_token_path.write_text(ingest_token, encoding="utf-8")
+    try:
+        ingest_token_path.chmod(0o600)
+    except OSError:
+        pass
     inventory = AssetInventory(out / "inventory.json")
 
     # RECON V2: the run-scoped evidence workspace (observations + assets +
@@ -460,9 +471,19 @@ def execute_run(opts: RunOptions) -> dict:
         if (use_sandbox or use_browser) and not opts.no_evidence_proxy:
             try:
                 from .proxy import EvidenceProxy
+                requested_proxy_port = int(os.environ.get("RED_EVIDENCE_PROXY_PORT", "8788"))
                 proxy = EvidenceProxy(scope=scope, traffic=traffic, audit=audit,
-                                      out_dir=out, limiter=limiter)
-                proxy.start()
+                                      out_dir=out, limiter=limiter,
+                                      port=requested_proxy_port)
+                try:
+                    proxy.start()
+                except OSError:
+                    if requested_proxy_port == 0:
+                        raise
+                    say(f"Evidence proxy port {requested_proxy_port} is busy; falling back to an ephemeral port.")
+                    proxy = EvidenceProxy(scope=scope, traffic=traffic, audit=audit,
+                                          out_dir=out, limiter=limiter, port=0)
+                    proxy.start()
                 st = proxy.status()
                 say(f"Evidence proxy: {st['mode']} mode on :{st['port']}"
                     + (f", CA {st['ca_fingerprint']}" if st["ca_fingerprint"]
@@ -478,7 +499,7 @@ def execute_run(opts: RunOptions) -> dict:
 
         if use_sandbox:
             from .sandbox.docker_kali import KaliSandbox, SandboxError
-            sandbox = KaliSandbox(engagement, audit=audit)
+            sandbox = KaliSandbox(engagement, audit=audit, traffic=traffic)
             try:
                 # requirement-driven tool layer BEFORE start: the container's
                 # egress is default-DROP, so packages must arrive via the
