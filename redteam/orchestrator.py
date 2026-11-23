@@ -388,7 +388,8 @@ LOGIC = SpecialistProfile(
            "a flow needs a session. Do NOT hunt injection/XSS/access-control as technical "
            "flaws — that's EXPLOIT's job; pursue bugs where the vulnerability IS the broken "
            "business rule, especially ones with financial or trust impact."),
-    tool_names=["verify_workflow_abuse", "authenticate", "set_session", "http_probe",
+    tool_names=["verify_workflow_abuse", "verify_race_condition", "authenticate",
+                "set_session", "http_probe",
                 "browser_navigate", "browser_content", "browser_fill", "browser_click",
                 "browser_login", "browser_session_status", "browser_requests",
                 "browser_inspect_request", "find_techniques"],

@@ -312,6 +312,13 @@ _HAND: dict[str, Hand] = {
         cost="verification-trial", trust="proof-trial",
         obligation="one-shot: business logic cannot be re-run k-of-n — sequence it "
                    "right the first time"),
+    "verify_race_condition": Hand(
+        tool="verify_race_condition",
+        purpose="fire a synchronized concurrent BURST of a once-only action to prove a "
+                "race/TOCTOU (double-spend, limit bypass) — CWE-362",
+        cost="verification-trial", trust="proof-trial",
+        obligation="only race an action on an object YOU own, never a real user's; a "
+                   "race_window > max_success is the bug, lands pending_verification"),
     "prove_privilege": Hand(
         tool="prove_privilege",
         purpose="differential privilege-boundary proof for a held session",
@@ -498,7 +505,8 @@ HANDS: dict[str, tuple[Hand, ...]] = {
         "authenticate", "set_session", "http_probe", "kali_exec",
         "browser_navigate", "browser_content")),
     "logic": tuple(_HAND[t] for t in (
-        "verify_workflow_abuse", "authenticate", "set_session", "http_probe",
+        "verify_workflow_abuse", "verify_race_condition", "authenticate",
+        "set_session", "http_probe",
         "browser_navigate", "browser_content", "browser_fill", "browser_click",
         "browser_login", "browser_session_status", "browser_requests",
         "browser_inspect_request", "find_techniques")),

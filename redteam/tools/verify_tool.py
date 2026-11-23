@@ -33,7 +33,7 @@ def _session_headers(ctx: ToolContext, label, base):
 # Condition types eval_condition() actually implements (redteam/proof.py).
 _CONDITION_TYPES = frozenset({
     "status", "body_regex", "header_regex", "latency_delta",
-    "json_differs", "reflected_unescaped", "oob_callback",
+    "json_differs", "reflected_unescaped", "oob_callback", "race_window",
 })
 
 

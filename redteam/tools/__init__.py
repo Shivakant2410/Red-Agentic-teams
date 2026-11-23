@@ -95,7 +95,7 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     from .independent_verify import VerifyFindingIndependentlyTool
     from .jwt import JwtInspectTool
     from .kali import KaliExecTool
-    from .logic import VerifyWorkflowAbuseTool
+    from .logic import VerifyWorkflowAbuseTool, VerifyRaceConditionTool
     from .nuclei import NucleiScanTool
     from .peer_traces import SearchPeerTracesTool
     from .probe import HttpProbeTool
@@ -125,6 +125,7 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # "confirmed" — meant to be called from a separate context (see orchestrator.VERIFY).
     tools += [AuthenticateTool(), SetSessionTool(), HttpProbeTool(),
               VerifyVulnerabilityTool(), VerifyWorkflowAbuseTool(),
+              VerifyRaceConditionTool(),
               VerifyFindingIndependentlyTool(), ApplySkillTool(), FindAttackTemplatesTool(),
               ApplyTemplateTool()]
     # Signature reconnaissance: jwt_inspect is deterministic offline analysis; nuclei_scan
