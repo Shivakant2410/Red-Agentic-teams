@@ -1,0 +1,45 @@
+# Rules of Engagement — Vinted (Bugcrowd), www.vinted.com primary target.
+#
+# Scope + constraints transcribed from the published Vinted Bugcrowd program.
+# Browser-only, human-warmed-session, low-rate: the program PROHIBITS high-volume
+# scanning and automated-scanner output, so this run uses the real-Chrome browser
+# (which a human warmed past Cloudflare) and reasoned probing — NOT the Kali
+# scanner toolset. Account testing uses the tester's own @bugcrowdninja.com
+# accounts only; never a real member's data (GDPR / program rule).
+
+name: "Vinted Bugcrowd — www.vinted.com web app"
+client: "Vinted (via Bugcrowd)"
+authorized_by: "Vinted Bugcrowd program (public scope + safe harbor)"
+ticket: "Bugcrowd: Vinted program / @bugcrowdninja.com researcher"
+
+starts: "2026-11-23"
+ends: "2026-12-23"
+
+scope:
+  # ONLY the in-scope primary web target. Everything else Vinted operates is out
+  # of scope per the program ("any domain not listed ... is out of scope").
+  allowed_hosts:
+    - "www.vinted.com"
+  excluded_hosts: []
+  allowed_ports: [443]
+  allowed_schemes: ["https"]
+  allow_private_ranges: false
+
+limits:
+  # The program forbids excessive request rates / high-volume scanning / triggering
+  # automated defenses. Keep it to a human trickle — reasoned requests, not sweeps.
+  max_requests_per_second: 1
+  max_total_requests: 400
+
+# Everything meaningful requires a human "yes": this is production, with real
+# members and GDPR. The agent must not autonomously take state-changing or
+# access-bypass actions without approval.
+require_approval_for:
+  - destructive_command
+  - auth_bypass_attempt
+
+llm:
+  base_url: "https://openrouter.ai/api/v1"
+  api_key_env: "OPENROUTER_API_KEY"
+  prefer_free: true
+  require_tool_support: true
