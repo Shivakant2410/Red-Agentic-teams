@@ -17,9 +17,17 @@ SAFETY / PRIVACY: a public collaborator (oast.pro) means canary subdomains and
 any data the target leaks INTO the callback transit a third party. That breaks
 strict data-handling (e.g. a GDPR engagement). So the transport is PLUGGABLE:
   RED_OOB_SERVER=<host>   point at a self-hosted Interactsh (keeps data yours)
+  RED_OOB_TOKEN=<token>   the server's -token / -auth value, if set
   RED_OOB_ENABLE_PUBLIC=1 opt IN to the public default (off unless set)
 With neither set, minting refuses rather than silently shipping data off-box.
 The agent must only ever place canaries against IN-SCOPE targets.
+
+TRANSPORT: there is no maintained pip-installable Python Interactsh client, so
+InteractshBridge implements the protocol natively (register/poll/decrypt) with
+only `cryptography` + `requests` — no third-party dependency in a security tool.
+For Vinted and any GDPR engagement, self-host the ProjectDiscovery interactsh
+server (`go install .../interactsh-server@latest`) and set RED_OOB_SERVER to it,
+so callback data never transits a third party.
 """
 from __future__ import annotations
 
@@ -153,70 +161,150 @@ class OOBBridge:
 
 
 class InteractshBridge(OOBBridge):
-    """Interactsh client (public oast.pro by default, or a self-hosted server).
+    """Native Interactsh client — implements the register/poll/decrypt protocol
+    directly against a (preferably self-hosted) ProjectDiscovery interactsh
+    server, with NO third-party Python dependency (there is no maintained one on
+    PyPI). Uses only `cryptography` + `requests`.
 
-    Interactsh registers an RSA public key with the server and receives
-    AES-encrypted interaction blobs it decrypts locally. To avoid a hard crypto
-    dependency when the `interactsh-client` library isn't installed, this bridge
-    prefers the installed python client if present and otherwise degrades to a
-    minimal correlation-id mode against the server's poll endpoint.
+    Protocol (from pkg/client/client.go):
+      register: POST /register {public-key (b64 of PEM "RSA PUBLIC KEY" of PKIX
+        DER), secret-key (uuid4), correlation-id (20-char)}; Authorization: token.
+      poll:     GET /poll?id=<cid>&secret=<secret> -> {data[], aes_key, extra[],
+        tlddata[]}. aes_key is RSA-OAEP(SHA-256) wrapped; each data entry is
+        base64( iv[16] || AES-CTR ciphertext ).
+      canary:   <correlation-id><zbase32 nonce>.<server host>
     """
 
     def __init__(self, server: str, token: str = ""):
         self.name = f"interactsh:{server}"
-        self._server = server
+        self._server_host = server
+        self._base = server if server.startswith("http") else f"https://{server}"
         self._token = token
-        self._client = None
-        self._correlation = secrets.token_hex(10)  # 20-char like interactsh
+        self._cid = _new_correlation_id()
+        self._secret = _uuid4()
+        self._priv = None
+        self._registered = False
         self.ready = False
-        self._init_client()
+        self._register()
 
-    def _init_client(self) -> None:
-        # Prefer the real client when available (full crypto + DNS/HTTP).
-        try:
-            from interactsh import Interactsh  # type: ignore
-            self._client = Interactsh(server=self._server, token=self._token or None)
-            self.ready = True
-            self.name = f"interactsh-lib:{self._server}"
+    # -- crypto + registration ----------------------------------------------
+
+    def _register(self) -> None:
+        if requests is None:
             return
+        try:
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric import rsa
+        except ImportError:
+            return
+        try:
+            self._priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            der = self._priv.public_key().public_bytes(
+                serialization.Encoding.DER,
+                serialization.PublicFormat.SubjectPublicKeyInfo)
+            b64der = base64.b64encode(der).decode()
+            pem = ("-----BEGIN RSA PUBLIC KEY-----\n"
+                   + "\n".join(b64der[i:i + 64] for i in range(0, len(b64der), 64))
+                   + "\n-----END RSA PUBLIC KEY-----\n")
+            pub_field = base64.b64encode(pem.encode()).decode()
+            headers = {"Authorization": self._token} if self._token else {}
+            r = requests.post(f"{self._base}/register", json={
+                "public-key": pub_field, "secret-key": self._secret,
+                "correlation-id": self._cid}, headers=headers, timeout=10)
+            self._registered = (r.status_code == 200)
+            self.ready = self._registered
         except Exception:
-            self._client = None
-        # Degraded mode still needs requests to talk to the server.
-        self.ready = requests is not None
+            self.ready = False
 
     def new_canary(self) -> str:
-        if self._client is not None:
-            try:
-                return self._client.get_interactsh_url()  # type: ignore[attr-defined]
-            except Exception:
-                pass
-        # Degraded: a correlation subdomain on the server. (DNS/HTTP hits to it
-        # still register server-side; full decryption needs the lib, so degraded
-        # mode is best-effort and documented as such.)
-        rand = secrets.token_hex(4)
-        return f"{self._correlation}{rand}.{self._server}"
+        # <cid(20)><nonce(13)>.<host>. The nonce only needs to be a lowercase
+        # alphanumeric string of the right length; the server keys on the first
+        # 20 chars (the correlation id), which is how our interactions match.
+        nonce = _zbase32_like(13)
+        host = self._server_host.split("//")[-1]  # strip scheme if present
+        return f"{self._cid}{nonce}.{host}"
 
     def poll(self) -> list[Interaction]:
-        if self._client is not None:
-            out: list[Interaction] = []
+        if not self._registered or requests is None or self._priv is None:
+            return []
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import padding
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        headers = {"Authorization": self._token} if self._token else {}
+        r = requests.get(f"{self._base}/poll", params={"id": self._cid, "secret": self._secret},
+                         headers=headers, timeout=10)
+        if r.status_code != 200:
+            return []
+        body = r.json()
+        out: list[Interaction] = []
+        # Encrypted interactions.
+        data = body.get("data") or []
+        aes_key_b64 = body.get("aes_key") or ""
+        if data and aes_key_b64:
             try:
-                for ev in (self._client.poll() or []):  # type: ignore[attr-defined]
-                    out.append(Interaction(
-                        canary=str(ev.get("full-id") or ev.get("unique-id") or ""),
-                        protocol=str(ev.get("protocol") or "").lower(),
-                        remote_addr=str(ev.get("remote-address") or ""),
-                        raw=str(ev.get("raw-request") or "")[:2000]))
-            except Exception:
-                return []
-            return out
-        return []   # degraded mode cannot decrypt server blobs without the lib
-
-    def close(self) -> None:
-        if self._client is not None:
-            try:
-                self._client.deregister()  # type: ignore[attr-defined]
+                key = self._priv.decrypt(
+                    base64.b64decode(aes_key_b64),
+                    padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),
+                                 algorithm=hashes.SHA256(), label=None))
+                for item in data:
+                    raw = base64.b64decode(item)
+                    if len(raw) < 16:
+                        continue
+                    iv, ct = raw[:16], raw[16:]
+                    dec = Cipher(algorithms.AES(key), modes.CTR(iv)).decryptor()
+                    plain = (dec.update(ct) + dec.finalize()).rstrip(b" \t\r\n")
+                    out.append(self._to_interaction(plain))
             except Exception:
                 pass
+        # Plaintext interactions (auth-token / root-TLD modes).
+        for s in (body.get("extra") or []) + (body.get("tlddata") or []):
+            try:
+                out.append(self._to_interaction(s.encode() if isinstance(s, str) else s))
+            except Exception:
+                continue
+        return out
+
+    @staticmethod
+    def _to_interaction(plain: bytes) -> Interaction:
+        import json as _json
+        d = _json.loads(plain)
+        return Interaction(
+            canary=str(d.get("full-id") or d.get("unique-id") or d.get("fullId")
+                       or d.get("uniqueId") or ""),
+            protocol=str(d.get("protocol") or "").lower(),
+            remote_addr=str(d.get("remote-address") or d.get("remoteAddress") or ""),
+            raw=str(d.get("raw-request") or d.get("rawRequest") or "")[:2000])
+
+    def close(self) -> None:
+        if not self._registered or requests is None:
+            return
+        try:
+            headers = {"Authorization": self._token} if self._token else {}
+            requests.post(f"{self._base}/deregister",
+                          json={"correlation-id": self._cid, "secret-key": self._secret},
+                          headers=headers, timeout=10)
+        except Exception:
+            pass
+
+
+# xid uses the alphabet [0-9a-v]; the server only needs a 20-char lowercase id.
+_XID_ALPHABET = "0123456789abcdefghijklmnopqrstuv"
+
+
+def _new_correlation_id(length: int = 20) -> str:
+    return "".join(secrets.choice(_XID_ALPHABET) for _ in range(length))
+
+
+def _zbase32_like(length: int) -> str:
+    # zbase32 alphabet; any lowercase alphanumeric of the right length works for
+    # matching (the server keys on the correlation-id prefix, not the nonce).
+    alpha = "ybndrfg8ejkmcpqxot1uwisza345h769"
+    return "".join(secrets.choice(alpha) for _ in range(length))
+
+
+def _uuid4() -> str:
+    import uuid
+    return str(uuid.uuid4())
 
 
 def _bridge_from_env() -> OOBBridge | None:
