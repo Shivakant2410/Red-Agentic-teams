@@ -140,9 +140,10 @@ class ProxyHistoryTool:
         return {
             "name": self.name,
             "description": (
-                "Newest rows from the intercepting proxy / browser evidence "
-                "history (most recent first). Compact rows: seq, method, url, "
-                "status, source. Use proxy_inspect(seq) for one row's full "
+                "Newest rows from the proxy, sandbox Bash and Chrome/Edge evidence "
+                "timeline (most recent first). Rows include HTTP exchanges plus "
+                "metadata-only command/auth-flow events. Use proxy_inspect(seq) "
+                "for one row's full "
                 "detail; use proxy_filter to search by condition."),
             "input_schema": {
                 "type": "object",
@@ -186,8 +187,8 @@ class ProxyFilterTool:
                     "method": {"type": "string"},
                     "status": {"type": "integer"},
                     "source": {"type": "string",
-                               "description": "proxy | proxy-mitm | "
-                                              "proxy-tunnel | browser | replay"},
+                               "description": "proxy | proxy-mitm | proxy-tunnel | browser | "
+                                              "browser-extension | bash | replay"},
                     "limit": {"type": "integer"},
                 },
             },
