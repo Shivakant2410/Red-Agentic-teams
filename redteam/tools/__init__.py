@@ -90,6 +90,7 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
                           BrowserLoginTool, BrowserNavigateTool,
                           BrowserRequestsTool, BrowserScreenshotTool,
                           BrowserSessionStatusTool)
+    from .access import TestAccessControlTool, TestIdorTool
     from .confirm import ConfirmFindingTool
     from .oob_tools import MintCanaryTool, PollCanaryTool
     from .independent_verify import VerifyFindingIndependentlyTool
@@ -113,6 +114,10 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # DNS-exfil/async RCE) via proof.py's oob_callback predicate. Degrade
     # honestly when no OOB transport is configured (tools return a clear error).
     tools += [MintCanaryTool(), PollCanaryTool()]
+    # Access-control proofs (was dead code — built, never registered): a direct
+    # unauth-access check and a cross-principal IDOR/BOLA check. Both land
+    # pending_verification (check_type=http) so the independent pass confirms.
+    tools += [TestAccessControlTool(), TestIdorTool()]
     # authenticate to hold identities; set_session registers operator-handed static
     # tokens (assumed-breach material) as sessions; http_probe = cheap session-aware
     # LOOKING AROUND that never touches the finding pipeline;

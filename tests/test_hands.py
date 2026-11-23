@@ -133,8 +133,9 @@ def test_exempt_hands_match_the_crosscheck_exempt_set():
 
 def test_proof_trial_hands_are_the_proof_pipeline():
     proof_tools = {"verify_vulnerability", "confirm_finding", "verify_workflow_abuse",
-                   "verify_race_condition", "prove_privilege",
-                   "verify_finding_independently", "apply_skill", "claim_objective"}
+                   "verify_race_condition", "test_access_control", "test_idor",
+                   "prove_privilege", "verify_finding_independently", "apply_skill",
+                   "claim_objective"}
     for name, hands in HANDS.items():
         for h in hands:
             if h.trust == "proof-trial":

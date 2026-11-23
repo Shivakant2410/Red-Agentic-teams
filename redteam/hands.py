@@ -319,6 +319,20 @@ _HAND: dict[str, Hand] = {
         cost="verification-trial", trust="proof-trial",
         obligation="only race an action on an object YOU own, never a real user's; a "
                    "race_window > max_success is the bug, lands pending_verification"),
+    "test_access_control": Hand(
+        tool="test_access_control",
+        purpose="prove broken access control — a protected resource answers an "
+                "UNAUTHENTICATED request (CWE-284)",
+        cost="verification-trial", trust="proof-trial",
+        obligation="lands pending_verification; the independent pass replays the exact "
+                   "unauth request before it counts"),
+    "test_idor": Hand(
+        tool="test_idor",
+        purpose="prove IDOR/BOLA — as one principal, read another principal's object "
+                "(CWE-639). Cross-role differential access.",
+        cost="verification-trial", trust="proof-trial",
+        obligation="only ever target an object you are authorized to prove with (your own "
+                   "second account); lands pending_verification for independent re-check"),
     "prove_privilege": Hand(
         tool="prove_privilege",
         purpose="differential privilege-boundary proof for a held session",
@@ -499,7 +513,8 @@ HANDS: dict[str, tuple[Hand, ...]] = {
         "find_techniques", "crosscheck_lead", "apply_skill", "http_probe",
         "authenticate", "set_session", "verify_vulnerability", "confirm_finding",
         "browser_navigate", "browser_content", "browser_fill", "kali_exec",
-        "mint_canary", "poll_canary", "search_peer_traces")),
+        "mint_canary", "poll_canary", "test_access_control", "test_idor",
+        "search_peer_traces")),
     "access": tuple(_HAND[t] for t in (
         "extract_secrets", "try_credential", "prove_privilege", "record_access",
         "authenticate", "set_session", "http_probe", "kali_exec",
@@ -514,8 +529,8 @@ HANDS: dict[str, tuple[Hand, ...]] = {
         "verify_finding_independently",)),
     "a01-access": tuple(_HAND[t] for t in (
         "authenticate", "set_session", "http_probe", "verify_vulnerability",
-        "confirm_finding", "crosscheck_lead", "browser_navigate", "browser_content",
-        "search_peer_traces")),
+        "confirm_finding", "test_access_control", "test_idor", "crosscheck_lead",
+        "browser_navigate", "browser_content", "search_peer_traces")),
     "a03-injection": tuple(_HAND[t] for t in (
         "authenticate", "set_session", "http_probe", "verify_vulnerability",
         "confirm_finding", "xss_reflect_probe", "graphql_inspect", "crosscheck_lead",

@@ -72,7 +72,8 @@ A01 = ClassSpecialist(
             "name WHAT you reached. Your checks only reach pending_verification; an "
             "independent pass confirms — keep proving, don't self-promote."),
         tool_names=["authenticate", "set_session", "http_probe", "verify_vulnerability",
-                    "confirm_finding", "crosscheck_lead", "browser_navigate",
+                    "confirm_finding", "test_access_control", "test_idor",
+                    "crosscheck_lead", "browser_navigate",
                     "browser_content", "search_peer_traces"],
         role=PLAN, max_steps=24,
     ),

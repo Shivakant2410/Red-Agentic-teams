@@ -98,7 +98,7 @@ def test_authenticate_single_step_unaffected_when_no_second_url(tmp_path, monkey
     assert ctx.sessions.get("userB").headers["Cookie"] == "session=X"
 
 
-def test_access_control_broken_is_confirmed(tmp_path, monkeypatch):
+def test_access_control_broken_is_pending_not_self_confirmed(tmp_path, monkeypatch):
     ctx = _ctx(tmp_path)
     # unauthenticated request returns protected content every time -> broken access control
     monkeypatch.setattr(access_mod, "make_fetch",
@@ -107,7 +107,11 @@ def test_access_control_broken_is_confirmed(tmp_path, monkeypatch):
                                       protected_marker="admin dashboard", trials=4, need=3)
     assert '"recorded": true' in out.lower()
     f = ctx.findings.all()[0]
-    assert f.cwe == "CWE-284" and f.confidence == "confirmed"
+    # Discipline: a proof tool NEVER self-confirms — it lands pending_verification
+    # and stores a replayable http check_spec for the independent pass to confirm.
+    assert f.cwe == "CWE-284" and f.confidence == "pending_verification"
+    assert f.check_type == "http"
+    assert f.check_spec.get("body_regex") == "admin dashboard"
 
 
 def test_access_control_enforced_not_recorded(tmp_path, monkeypatch):
@@ -129,7 +133,9 @@ def test_idor_confirmed(tmp_path, monkeypatch):
                              session_label="userA", victim_marker="victimB@example.com",
                              trials=4, need=3)
     assert '"recorded": true' in out.lower()
-    assert ctx.findings.all()[0].cwe == "CWE-639"
+    f = ctx.findings.all()[0]
+    assert f.cwe == "CWE-639" and f.confidence == "pending_verification"
+    assert f.check_type == "http"   # replayable by the independent pass
 
 
 def test_idor_requires_session(tmp_path):
