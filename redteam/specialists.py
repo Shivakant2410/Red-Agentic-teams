@@ -115,7 +115,8 @@ A03 = ClassSpecialist(
         tool_names=["authenticate", "set_session", "http_probe", "verify_vulnerability",
                     "confirm_finding", "xss_reflect_probe", "graphql_inspect",
                     "crosscheck_lead", "browser_navigate", "browser_content",
-                    "browser_fill", "browser_click", "search_peer_traces"],
+                    "browser_fill", "browser_click", "mint_canary", "poll_canary",
+                    "search_peer_traces"],
         role=PLAN, max_steps=28,
     ),
 )
@@ -220,6 +221,7 @@ A10 = ClassSpecialist(
             "server-side; a DNS name that resolves publicly is not an internal hit. Your "
             "checks only reach pending_verification; an independent pass confirms."),
         tool_names=["surface_scan", "http_probe", "verify_vulnerability", "confirm_finding",
+                    "mint_canary", "poll_canary",
                     "browser_navigate", "browser_content", "search_peer_traces"],
         role=PLAN, max_steps=22,
     ),

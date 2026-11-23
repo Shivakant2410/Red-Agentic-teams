@@ -68,6 +68,10 @@ class ToolContext:
     # Intercepting evidence proxy handle (EvidenceProxy | None): lets the
     # RECON-facing proxy_* tools query listener state and captured history.
     proxy: Optional[object] = None     # EvidenceProxy | None
+    # Out-of-band interaction oracle (OOBOracle | None): the callback listener
+    # that lets mint_canary/poll_canary and proof.py's oob_callback predicate
+    # PROVE blind vulns (SSRF/XXE/DNS-exfil/async RCE). None when unconfigured.
+    oob: Optional[object] = None       # OOBOracle | None
 
 
 class Tool(Protocol):
@@ -87,6 +91,7 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
                           BrowserRequestsTool, BrowserScreenshotTool,
                           BrowserSessionStatusTool)
     from .confirm import ConfirmFindingTool
+    from .oob_tools import MintCanaryTool, PollCanaryTool
     from .independent_verify import VerifyFindingIndependentlyTool
     from .jwt import JwtInspectTool
     from .kali import KaliExecTool
@@ -104,6 +109,10 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
 
     tools: list[Tool] = []
     tools.append(ConfirmFindingTool())       # simple single/differential HTTP proofs
+    # Out-of-band oracle: mint/poll canaries to PROVE blind vulns (SSRF/XXE/
+    # DNS-exfil/async RCE) via proof.py's oob_callback predicate. Degrade
+    # honestly when no OOB transport is configured (tools return a clear error).
+    tools += [MintCanaryTool(), PollCanaryTool()]
     # authenticate to hold identities; set_session registers operator-handed static
     # tokens (assumed-breach material) as sessions; http_probe = cheap session-aware
     # LOOKING AROUND that never touches the finding pipeline;

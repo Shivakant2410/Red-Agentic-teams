@@ -323,7 +323,8 @@ EXPLOIT = SpecialistProfile(
            "anything counts. That is by design; keep proving, don't try to self-promote."),
     tool_names=["find_techniques", "crosscheck_lead", "apply_skill", "confirm_finding",
                 "verify_vulnerability", "authenticate", "set_session",
-                "http_probe", "kali_exec", "search_peer_traces",
+                "http_probe", "kali_exec", "mint_canary", "poll_canary",
+                "search_peer_traces",
                 "browser_navigate", "browser_content", "browser_fill"],
     role=PLAN,           # depth/reasoning work -> strongest model
     max_steps=40,

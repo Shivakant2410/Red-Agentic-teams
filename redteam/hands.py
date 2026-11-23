@@ -158,6 +158,21 @@ _HAND: dict[str, Hand] = {
         cost="step", trust="first-party-observation",
         obligation="an observation aims the next step; it NEVER records a finding — "
                    "proving is verify_vulnerability/confirm_finding's job"),
+    "mint_canary": Hand(
+        tool="mint_canary",
+        purpose="mint an out-of-band canary domain to embed in a blind-vuln payload "
+                "(blind SSRF/XXE, DNS exfil, blind XSS, async RCE)",
+        cost="step", trust="first-party-observation",
+        obligation="only place canaries in payloads aimed at IN-SCOPE targets; a "
+                   "mint is setup, the PROOF is the callback (poll_canary / "
+                   "confirm_finding oob_callback)"),
+    "poll_canary": Hand(
+        tool="poll_canary",
+        purpose="check whether the target called back to a canary — the deterministic "
+                "oracle for a BLIND vulnerability",
+        cost="step", trust="first-party-observation",
+        obligation="a callback is strong evidence; still record it via confirm_finding "
+                   "with an oob_callback condition so it goes through independent verify"),
     "browser_navigate": Hand(
         tool="browser_navigate",
         purpose="drive the real browser to a URL — JS-rendered surfaces the probe cannot see",
@@ -477,7 +492,7 @@ HANDS: dict[str, tuple[Hand, ...]] = {
         "find_techniques", "crosscheck_lead", "apply_skill", "http_probe",
         "authenticate", "set_session", "verify_vulnerability", "confirm_finding",
         "browser_navigate", "browser_content", "browser_fill", "kali_exec",
-        "search_peer_traces")),
+        "mint_canary", "poll_canary", "search_peer_traces")),
     "access": tuple(_HAND[t] for t in (
         "extract_secrets", "try_credential", "prove_privilege", "record_access",
         "authenticate", "set_session", "http_probe", "kali_exec",
@@ -497,7 +512,7 @@ HANDS: dict[str, tuple[Hand, ...]] = {
         "authenticate", "set_session", "http_probe", "verify_vulnerability",
         "confirm_finding", "xss_reflect_probe", "graphql_inspect", "crosscheck_lead",
         "browser_navigate", "browser_content", "browser_fill", "browser_click",
-        "search_peer_traces")),
+        "mint_canary", "poll_canary", "search_peer_traces")),
     "a05-misconfig": tuple(_HAND[t] for t in (
         "surface_scan", "content_discovery", "nuclei_scan", "crosscheck_lead",
         "http_probe", "verify_vulnerability", "confirm_finding", "extract_secrets",
@@ -509,6 +524,7 @@ HANDS: dict[str, tuple[Hand, ...]] = {
         "browser_content", "search_peer_traces")),
     "a10-ssrf": tuple(_HAND[t] for t in (
         "surface_scan", "http_probe", "verify_vulnerability", "confirm_finding",
+        "mint_canary", "poll_canary",
         "browser_navigate", "browser_content", "search_peer_traces")),
     "llm01-prompt-injection": tuple(_HAND[t] for t in (
         "record_finding", "confirm_finding", "verify_finding_independently")),

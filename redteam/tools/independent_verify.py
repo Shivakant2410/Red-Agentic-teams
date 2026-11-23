@@ -227,7 +227,7 @@ class VerifyFindingIndependentlyTool:
                                            "headers": r.get("headers") or {}, "body": r.get("body"),
                                            "session_label": r.get("session_label") or ""})
                    for name, r in requests_.items()}
-        result = verify(ProofCheck(fetchers, conditions), trials=4, need=3)
+        result = verify(ProofCheck(fetchers, conditions, oob=getattr(ctx, "oob", None)), trials=4, need=3)
         if result.verdict != "confirmed":
             return "not_reproducible", f"independent re-run did not reproduce: {result.details[-1] if result.details else ''}"
 
@@ -269,7 +269,7 @@ class VerifyFindingIndependentlyTool:
                                          "headers": low.apply({}) if low else {}})
         conditions = [{"type": "status", "request": "payload", "equals": spec.get("expect_status", 200)},
                       {"type": "body_regex", "request": "payload", "pattern": spec.get("privileged_marker", "")}]
-        result = verify(ProofCheck(fetchers, conditions), trials=4, need=3)
+        result = verify(ProofCheck(fetchers, conditions, oob=getattr(ctx, "oob", None)), trials=4, need=3)
         if result.verdict != "confirmed":
             return "not_reproducible", f"independent re-run did not reproduce: {result.details[-1] if result.details else ''}"
         fal = run_negative_control(fetchers, conditions, control_fetch, "payload")

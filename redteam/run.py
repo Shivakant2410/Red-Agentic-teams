@@ -530,6 +530,14 @@ def execute_run(opts: RunOptions) -> dict:
         from .observations import ObservationLog
         observations = ObservationLog(out / "observations.jsonl", graph=graph,
                                       audit=audit)
+        # Out-of-band oracle for blind-vuln proofs. Fails closed (None transport)
+        # unless RED_OOB_SERVER / RED_OOB_ENABLE_PUBLIC is set, so no callback
+        # data leaves the box by default (see tools/oob_oracle.py).
+        from .tools.oob_oracle import OOBOracle
+        oob = OOBOracle(audit=audit)
+        if oob.available:
+            audit.record("oob.ready", transport=getattr(oob._bridge, "name", "?"))
+
         ctx = ToolContext(scope=scope, limiter=limiter, audit=audit, findings=findings,
                           approve=approver,
                           sandbox=sandbox, browser=browser, graph=graph,
@@ -539,7 +547,7 @@ def execute_run(opts: RunOptions) -> dict:
                           traffic=traffic, inventory=inventory,
                           evidence_store=reconv2.store,
                           workspace=reconv2.workspace,
-                          observations=observations, proxy=proxy)
+                          observations=observations, proxy=proxy, oob=oob)
 
         # Root-domain RECON runs before any LLM specialist. It composes the
         # existing passive intelligence, HTTP evidence path, browser-independent
