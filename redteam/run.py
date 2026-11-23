@@ -684,11 +684,17 @@ def execute_run(opts: RunOptions) -> dict:
         else:
             if opts.multi_agent:
                 from .orchestrator import Orchestrator
+                # RED_SWARM_WORKERS caps exploit-swarm concurrency. Free/rate-
+                # limited model gateways thrash when 3 workers burst calls at
+                # once; set it to 1 to serialise and keep the tier alive.
+                import os as _os
+                _sw = _os.environ.get("RED_SWARM_WORKERS", "")
+                _sw_kw = {"max_swarm_workers": max(1, int(_sw))} if _sw.isdigit() else {}
                 driver = Orchestrator(engagement, tools, ctx, client, graph=graph,
                                       attack_tree=attack_tree, memory=memory,
                                       noise_budget=opts.round_noise_budget,
                                       noise_mu=opts.noise_mu, noise_V=opts.noise_V,
-                                      research_dir=out)   # Phase C1: persist the research journal
+                                      research_dir=out, **_sw_kw)   # Phase C1: persist the research journal
             else:
                 driver = RedTeamAgent(engagement, tools, ctx, client, max_steps=opts.max_steps,
                                       graph=graph, attack_tree=attack_tree, memory=memory,
