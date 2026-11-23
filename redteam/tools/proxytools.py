@@ -29,7 +29,7 @@ from ..traffic import read_traffic
 
 # Sources whose rows ARE the proxy/browser evidence plane (kept in one place
 # so history/filter/replay agree on what "proxy traffic" means).
-EVIDENCE_SOURCES = ("proxy", "proxy-mitm", "proxy-tunnel", "browser", "replay")
+EVIDENCE_SOURCES = ("proxy", "proxy-mitm", "proxy-tunnel", "browser", "browser-extension", "bash", "replay")
 _HISTORY_LIMIT = 80
 _MAX_ROWS = 400
 
@@ -49,6 +49,8 @@ def _compact(row: dict) -> dict:
         "seq": row.get("seq"),
         "ts": row.get("ts", "")[:19],
         "source": row.get("source", ""),
+        "event_type": row.get("event_type", ""),
+        "metadata": row.get("metadata", {}),
         "tool": row.get("tool", ""),
         "method": row.get("method", ""),
         "url": row.get("url", ""),

@@ -32,7 +32,7 @@ def _session_headers(ctx: ToolContext, label, base):
 
 # Condition types eval_condition() actually implements (redteam/proof.py).
 _CONDITION_TYPES = frozenset({
-    "status", "body_regex", "header_regex", "latency_delta",
+    "status", "body_regex", "body_quote", "header_regex", "latency_delta",
     "json_differs", "reflected_unescaped", "oob_callback", "race_window",
 })
 
@@ -68,6 +68,7 @@ class VerifyVulnerabilityTool:
                 "conditions that must all hold to demonstrate the bug. Conditions:\n"
                 "  status         {request, equals}\n"
                 "  body_regex     {request, pattern, present}\n"
+                "  body_quote     {request, quote, present?, normalize_whitespace?} (exact quote in decoded response)\n"
                 "  latency_delta  {request_a, request_b, min_delta}   (blind/time-based)\n"
                 "  json_differs   {request_a, request_b, json_path}   (IDOR: reached a different valid object)\n"
                 "  reflected_unescaped {request, token}               (reflected XSS: token echoed un-escaped)\n"

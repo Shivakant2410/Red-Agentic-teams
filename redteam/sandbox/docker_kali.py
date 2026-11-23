@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -67,10 +68,11 @@ def _run(cmd: list[str], timeout: int | None = None) -> subprocess.CompletedProc
 
 
 class KaliSandbox:
-    def __init__(self, engagement: Engagement, audit=None):
+    def __init__(self, engagement: Engagement, audit=None, traffic=None):
         self._eng = engagement
         self._cfg = engagement.sandbox
         self._audit = audit
+        self._traffic = traffic
         self._plan: EgressPlan | None = None
         self._started = False
         # requirement-driven tool layer: set by ensure_tools() before start()
@@ -324,14 +326,42 @@ class KaliSandbox:
             "docker", "exec", "-u", "operator", self._cfg.container_name,
             "bash", "-lc", f"cd /work 2>/dev/null; {command}",
         ]
-        self._log("sandbox.exec", command=command)
+        from ..traffic import redact_command
+        safe_command = redact_command(command)
+        self._log("sandbox.exec", command=safe_command)
+        started = time.monotonic()
+        if self._traffic is not None:
+            self._traffic.record_event(
+                event_type="bash_command_started", source="bash",
+                metadata={"command": safe_command})
         try:
             proc = _run(docker_cmd, timeout=timeout)
         except subprocess.TimeoutExpired:
-            self._log("sandbox.exec.timeout", command=command, timeout=timeout)
+            duration_ms = int((time.monotonic() - started) * 1000)
+            self._log("sandbox.exec.timeout", command=safe_command, timeout=timeout)
+            if self._traffic is not None:
+                self._traffic.record_event(
+                    event_type="bash_command_timeout", source="bash",
+                    metadata={"command": safe_command, "exit_code": 124,
+                              "timed_out": True, "duration_ms": duration_ms})
             return ExecResult(exit_code=124, stdout="", stderr=f"timed out after {timeout}s", timed_out=True)
-        self._log("sandbox.exec.done", command=command, exit_code=proc.returncode,
+        except OSError as exc:
+            duration_ms = int((time.monotonic() - started) * 1000)
+            self._log("sandbox.exec.error", command=safe_command, error=str(exc)[:240])
+            if self._traffic is not None:
+                self._traffic.record_event(
+                    event_type="bash_command_error", source="bash",
+                    metadata={"command": safe_command, "exit_code": 127,
+                              "timed_out": False, "duration_ms": duration_ms})
+            raise
+        duration_ms = int((time.monotonic() - started) * 1000)
+        self._log("sandbox.exec.done", command=safe_command, exit_code=proc.returncode,
                   stdout_len=len(proc.stdout), stderr_len=len(proc.stderr))
+        if self._traffic is not None:
+            self._traffic.record_event(
+                event_type="bash_command_completed", source="bash",
+                metadata={"command": safe_command, "exit_code": proc.returncode,
+                          "timed_out": False, "duration_ms": duration_ms})
         return ExecResult(exit_code=proc.returncode, stdout=proc.stdout,
                           stderr=proc.stderr, timed_out=False)
 

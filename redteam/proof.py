@@ -120,6 +120,24 @@ def eval_condition(cond: dict, responses: dict, oob=None) -> tuple[bool, str]:
         ok = present == want
         return ok, f"body[{cond['request']}] {'has' if present else 'lacks'} /{cond['pattern']}/ (want present={want})"
 
+    if t == "body_quote":
+        # Exact, human-readable proof quote. Fetchers must supply decoded text;
+        # the EvidenceProxy decodes gzip/deflate for its evidence copy and curl
+        # uses --compressed on the sandbox path.
+        body = _resp(responses, cond["request"])[1] or ""
+        quote = str(cond.get("quote") or "")
+        if not quote or len(quote) > 2000:
+            return False, "body_quote: quote missing or exceeds 2000 characters"
+        normalize = bool(cond.get("normalize_whitespace", True))
+        haystack = re.sub(r"\s+", " ", body) if normalize else body
+        needle = re.sub(r"\s+", " ", quote) if normalize else quote
+        present = needle in haystack
+        want = cond.get("present", True)
+        ok = present == want
+        return ok, (f"body_quote[{cond['request']}] "
+                    f"{'matched' if present else 'did not match'} "
+                    f"the supplied quote (want present={want})")
+
     if t == "header_regex":
         headers = _resp(responses, cond["request"])[3] or {}
         blob = "\n".join(f"{k}: {v}" for k, v in headers.items())

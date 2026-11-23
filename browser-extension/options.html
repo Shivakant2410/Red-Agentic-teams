@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Auth Flow Telemetry Settings</title>
+  <style>
+    body { font: 14px system-ui, sans-serif; max-width: 620px; margin: 36px auto; padding: 0 18px; }
+    label { display: block; margin: 16px 0 6px; font-weight: 600; }
+    input { box-sizing: border-box; width: 100%; padding: 9px; }
+    button { margin-top: 18px; padding: 9px 16px; }
+    #status { margin-top: 12px; }
+    .note { color: #555; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <h1>Auth Flow Telemetry</h1>
+  <p class="note">Connect this extension to one local assessment run. It records challenge state only; it does not collect OTP digits, passwords, cookies, CAPTCHA tokens, or page bodies.</p>
+  <label for="serverUrl">Control-plane URL</label>
+  <input id="serverUrl" value="http://127.0.0.1:8000">
+  <label for="runId">Run ID</label>
+  <input id="runId" autocomplete="off">
+  <label for="runToken">Run ingest token</label>
+  <input id="runToken" type="password" autocomplete="off">
+  <button id="save">Save settings</button>
+  <span id="status" role="status"></span>
+  <script src="options.js"></script>
+</body>
+</html>

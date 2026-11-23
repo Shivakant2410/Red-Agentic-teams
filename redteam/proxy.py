@@ -655,11 +655,21 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
 
             self.proxy.stats.bump("exchanges")
             self.proxy.stats.add_bytes(len(body), len(resp_body))
+            # Decode only the evidence copy. The exact wire bytes and original
+            # Content-Encoding/Length are still delivered unchanged to the client.
+            from .traffic import decode_content_body
+            content_encoding = next(
+                (value for key, value in out_headers.items()
+                 if key.lower() == "content-encoding"), "")
+            evidence_body, decode_status = decode_content_body(
+                resp_body, content_encoding)
+            evidence_headers = dict(out_headers)
+            evidence_headers["X-Evidence-Decode-Status"] = decode_status
             self.proxy.traffic.record_http(
                 method=method, url=url, status=resp.status, elapsed_ms=elapsed_ms,
                 tool="sandbox", source="proxy-mitm" if tls_client else "proxy",
                 req_headers=headers, req_body=self._text(body),
-                resp_headers=dict(out_headers), resp_body=self._text(resp_body))
+                resp_headers=evidence_headers, resp_body=self._text(evidence_body))
         except Exception as exc:
             self.proxy.stats.bump("errors")
             self.proxy.traffic.record_http(
