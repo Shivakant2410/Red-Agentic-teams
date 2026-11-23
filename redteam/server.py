@@ -29,7 +29,7 @@ import time
 from pathlib import Path
 
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -261,6 +261,24 @@ class UrlLaunchBody(BaseModel):
     asset_feed: str = Field(default="", max_length=2_000_000)
     plan: list = []                   # mission driver only (deliberate static plan)
     llm: LlmOverride | None = None
+
+
+class IngestEntry(BaseModel):
+    """One HTTP exchange captured by the browser extension."""
+    method: str = Field(default="GET", max_length=16)
+    url: str = Field(default="", max_length=8000)
+    status: int = Field(default=0, ge=0, le=599)
+    elapsed_ms: int = Field(default=0, ge=0)
+    req_headers: dict = Field(default_factory=dict)
+    req_body: str = Field(default="", max_length=262_144)   # 256 KiB cap (matches extension)
+    resp_headers: dict = Field(default_factory=dict)
+    resp_body: str = Field(default="", max_length=262_144)
+
+
+class IngestBody(BaseModel):
+    """A batch of extension-captured exchanges to fold into a run's traffic store."""
+    run_id: str = Field(max_length=200)
+    entries: list[IngestEntry] = Field(default_factory=list)
 
 
 class ApprovalBody(BaseModel):
@@ -841,6 +859,44 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         # LIVE counters are on the run's summary; this file is the durable record.
         run_dir = require_run(run_id)
         return {"proxy": _read_json(run_dir / "proxy.json", None)}
+
+    # -- API: browser-extension traffic ingest ----------------------------------
+    # The hardest auth flows (2FA, OTP, CAPTCHA, SSO) can't be driven headlessly.
+    # Instead a human logs in and browses normally in their OWN browser while the
+    # extension streams the resulting HTTP exchanges here; they land in the SAME
+    # traffic.jsonl the proxy/fetch write, so the planner and workers see the real
+    # authenticated endpoints, headers, tokens and API shapes. Authenticated with
+    # a shared token (RED_INGEST_TOKEN); the server is localhost-bound besides.
+    @app.post("/api/traffic/ingest")
+    def ingest_traffic(body: "IngestBody",
+                       authorization: str = Header(default="")) -> dict:
+        import os as _os
+        expected = _os.environ.get("RED_INGEST_TOKEN", "")
+        if not expected:
+            raise HTTPException(503, "ingest disabled: set RED_INGEST_TOKEN on the server")
+        supplied = authorization[7:] if authorization.lower().startswith("bearer ") else authorization
+        if supplied != expected:
+            raise HTTPException(401, "invalid ingest token")
+        run_dir = require_run(body.run_id)
+        from .traffic import TrafficRecorder
+        rec = TrafficRecorder(run_dir / "traffic.jsonl")
+        written, skipped = 0, 0
+        for e in body.entries[:200]:          # bound a single batch
+            url = (e.url or "").strip()
+            if not url.lower().startswith(("http://", "https://")):
+                skipped += 1
+                continue
+            try:
+                rec.record_http(
+                    method=(e.method or "GET"), url=url, status=int(e.status or 0),
+                    elapsed_ms=int(e.elapsed_ms or 0), tool="browser-extension",
+                    source="extension",
+                    req_headers=e.req_headers or {}, req_body=e.req_body or "",
+                    resp_headers=e.resp_headers or {}, resp_body=e.resp_body or "")
+                written += 1
+            except Exception:
+                skipped += 1
+        return {"ok": True, "written": written, "skipped": skipped}
 
     # -- API: live recon view (any.run-style) -------------------------------------
     # Read-only over run artifacts: the browser controller refreshes

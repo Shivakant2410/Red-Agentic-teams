@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    :root { color-scheme: dark; }
+    body { width: 300px; margin: 0; padding: 12px; font: 12px system-ui, sans-serif;
+           background: #0e1116; color: #d7dbe0; }
+    h1 { font-size: 13px; margin: 0 0 10px; letter-spacing: .04em; }
+    label { display: block; margin: 8px 0 3px; font-size: 10px; letter-spacing: .08em;
+            text-transform: uppercase; color: #8b93a1; }
+    input { width: 100%; box-sizing: border-box; padding: 6px 8px; font: 12px monospace;
+            background: #161b22; color: #d7dbe0; border: 1px solid #2a313c; border-radius: 5px; }
+    .row { display: flex; gap: 8px; margin-top: 12px; }
+    button { flex: 1; padding: 8px; font-size: 12px; font-weight: 600; cursor: pointer;
+             border: 0; border-radius: 5px; }
+    #start { background: #1f6feb; color: #fff; }
+    #stop { background: #30363d; color: #d7dbe0; }
+    button:disabled { opacity: .4; cursor: default; }
+    .stat { margin-top: 12px; padding: 8px; background: #161b22; border-radius: 5px;
+            font-size: 11px; }
+    .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+           background: #555; margin-right: 6px; vertical-align: middle; }
+    .live .dot { background: #2ea043; }
+    .err { color: #f85149; margin-top: 8px; font-size: 11px; min-height: 14px; }
+  </style>
+</head>
+<body>
+  <h1>RED-AGENTIC · TRAFFIC CAPTURE</h1>
+  <label for="server">Server URL</label>
+  <input id="server" placeholder="http://127.0.0.1:8000" autocomplete="off" />
+  <label for="token">Ingest token</label>
+  <input id="token" type="password" placeholder="RED_INGEST_TOKEN" autocomplete="off" />
+  <label for="runId">Run id</label>
+  <input id="runId" placeholder="20261123-…-vinted-warmed" autocomplete="off" />
+  <div class="row">
+    <button id="start">Start capture</button>
+    <button id="stop" disabled>Stop</button>
+  </div>
+  <div class="stat" id="stat"><span class="dot"></span><span id="state">idle</span></div>
+  <div class="err" id="err"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
