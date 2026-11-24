@@ -20,10 +20,10 @@ def client(monkeypatch):
 
 def _batch(run_id):
     return {"run_id": run_id, "entries": [
-        {"method": "GET", "url": "https://www.vinted.com/api/v2/user", "status": 200,
+        {"method": "GET", "url": "https://shop.example/api/v2/user", "status": 200,
          "resp_headers": {"content-type": "application/json"},
          "resp_body": '{"id":42,"login":"me"}'},
-        {"method": "POST", "url": "https://www.vinted.com/api/v2/offers", "status": 201,
+        {"method": "POST", "url": "https://shop.example/api/v2/offers", "status": 201,
          "resp_body": '{"ok":true}'},
     ]}
 
@@ -50,7 +50,7 @@ def test_ingest_writes_to_run_traffic(client):
     rows = [json.loads(l) for l in (root / rid / "traffic.jsonl").read_text().splitlines()]
     assert len(rows) == 2
     assert all(row["source"] == "extension" for row in rows)
-    assert rows[0]["url"] == "https://www.vinted.com/api/v2/user"
+    assert rows[0]["url"] == "https://shop.example/api/v2/user"
 
 
 def test_skips_non_http_urls(client):
@@ -58,7 +58,7 @@ def test_skips_non_http_urls(client):
     batch = {"run_id": rid, "entries": [
         {"method": "GET", "url": "data:image/png;base64,xxx", "status": 200},
         {"method": "GET", "url": "chrome://version", "status": 200},
-        {"method": "GET", "url": "https://www.vinted.com/ok", "status": 200},
+        {"method": "GET", "url": "https://shop.example/ok", "status": 200},
     ]}
     r = c.post("/api/traffic/ingest", json=batch,
                headers={"Authorization": "Bearer tok-abc"})

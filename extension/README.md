@@ -31,7 +31,7 @@ Keep that token value — you paste it into the extension popup.
 ## Capture a session
 
 1. Launch (or already have) a run; note its **run id** (e.g.
-   `20261123-…-vinted-warmed`).
+   `20261123-…-engagement`).
 2. Open the target site in a tab and log in / solve any challenge **as a human**.
 3. Click the extension icon → fill **Server URL** (`http://127.0.0.1:8000`),
    **Ingest token** (`RED_INGEST_TOKEN`), **Run id** → **Start capture**.

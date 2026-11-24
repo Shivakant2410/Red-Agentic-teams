@@ -25,7 +25,7 @@ The agent must only ever place canaries against IN-SCOPE targets.
 TRANSPORT: there is no maintained pip-installable Python Interactsh client, so
 InteractshBridge implements the protocol natively (register/poll/decrypt) with
 only `cryptography` + `requests` — no third-party dependency in a security tool.
-For Vinted and any GDPR engagement, self-host the ProjectDiscovery interactsh
+For any GDPR/strict-data engagement, self-host the ProjectDiscovery interactsh
 server (`go install .../interactsh-server@latest`) and set RED_OOB_SERVER to it,
 so callback data never transits a third party.
 """

@@ -424,7 +424,7 @@ class BrowserController:
         """Authenticate end-to-end in the live browser session.
 
         The PASSWORD is never passed as an argument or logged — it is read from
-        the named environment variable (default RED_VINTED_PASSWORD) at call
+        the named environment variable (default RED_LOGIN_PASSWORD) at call
         time and dropped immediately. The audit records the username and the
         env-var NAME, never the secret. Selectors are optional: when omitted we
         try a set of common email/password/submit selectors so the agent does
@@ -433,7 +433,7 @@ class BrowserController:
         import os
         self._scope.check(login_url)
         self._ensure()
-        env_name = password_env or "RED_VINTED_PASSWORD"
+        env_name = password_env or "RED_LOGIN_PASSWORD"
         password = os.environ.get(env_name, "")
         # Audit the ATTEMPT with the non-secret facts only.
         self._audit.record("browser.login.attempt", url=login_url,
@@ -811,7 +811,7 @@ class BrowserLoginTool(_BrowserTool):
                                      "username": {"type": "string",
                                                   "description": "Test-account username/email (e.g. your @bugcrowdninja.com)."},
                                      "password_env": {"type": "string",
-                                                      "description": "Env var holding the password (default RED_VINTED_PASSWORD)."},
+                                                      "description": "Env var holding the password (default RED_LOGIN_PASSWORD)."},
                                      "user_selector": {"type": "string",
                                                        "description": "Optional CSS selector for the username field."},
                                      "pass_selector": {"type": "string",

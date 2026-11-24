@@ -1,6 +1,6 @@
 """The evidence proxy must DECODE Content-Encoding bodies before storing them,
 so a verbatim-quote / body_regex proof matches the real plaintext — not the
-compressed bytes a modern server (Vinted, most sites) actually returns.
+compressed bytes a modern server (many modern sites) actually returns.
 Regression guard for the gzip-blind evidence bug."""
 import gzip
 import zlib

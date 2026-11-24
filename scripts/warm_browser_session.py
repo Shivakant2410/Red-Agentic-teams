@@ -10,8 +10,8 @@ against that warmed session, never having to beat Cloudflare itself.
 Usage (you, the authorized researcher, run this):
 
     # point the agent and this script at the SAME profile dir
-    export RED_BROWSER_PROFILE="$HOME/.red-agentic/vinted-profile"
-    python scripts/warm_browser_session.py https://www.vinted.com/
+    export RED_BROWSER_PROFILE="$HOME/.red-agentic/target-profile"
+    python scripts/warm_browser_session.py https://target.example/
 
 A real Chrome window opens. Solve any Cloudflare challenge, accept cookies, and
 log in with your test account (e.g. your @bugcrowdninja.com). When the page
@@ -30,7 +30,7 @@ import tempfile
 
 
 def main() -> int:
-    start_url = sys.argv[1] if len(sys.argv) > 1 else "https://www.vinted.com/"
+    start_url = sys.argv[1] if len(sys.argv) > 1 else "https://target.example/"
     profile = os.environ.get("RED_BROWSER_PROFILE")
     if not profile:
         profile = os.path.join(tempfile.gettempdir(), "red-agentic-browser-profile")
