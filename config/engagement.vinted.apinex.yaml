@@ -42,7 +42,7 @@ llm:
     # native tool-calling on this key.
     - kind: openai_compat
       name: apinex-deepseek-pro
-      base_url: "https://apinex.bond/v1"
+      base_url: "https://api.apinex.bond/v1"
       api_key_env: "APINEX_API_KEY"
       require_tool_support: true
       models_allow: ["free/deepseek-v4-pro-0813"]
@@ -50,7 +50,7 @@ llm:
     # Breadth/recon + fallback: a fast model, also tool-capable.
     - kind: openai_compat
       name: apinex-fast
-      base_url: "https://apinex.bond/v1"
+      base_url: "https://api.apinex.bond/v1"
       api_key_env: "APINEX_API_KEY"
       require_tool_support: true
       models_allow: ["free/deepseek-v4.1-flash", "free/qwen-3.8-max", "free/gpt-6-luna"]

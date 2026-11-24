@@ -30,7 +30,7 @@ const PROVIDERS: { kind: string; label: string; keyHint: string }[] = [
   { kind: "", label: "engine default (engagement yaml)", keyHint: "" },
   { kind: "openai", label: "OpenAI", keyHint: "OPENAI_API_KEY" },
   // Any OpenAI-compatible gateway: enter the base URL + model + key below.
-  // Covers APInex (https://apinex.bond/v1), vLLM, LM Studio, a private proxy, …
+  // Covers APInex (https://api.apinex.bond/v1), vLLM, LM Studio, a private proxy, …
   { kind: "openai_compat", label: "OpenAI-compatible (custom base URL)", keyHint: "" },
   { kind: "zai", label: "Z.ai (GLM)", keyHint: "ZAI_API_KEY" },
   { kind: "gemini", label: "Gemini", keyHint: "GEMINI_API_KEY" },
@@ -369,7 +369,7 @@ export function LaunchRunPanel({ className }: { className?: string }) {
     // cryptic "no candidate models for role 'parse'". Catch it here.
     if (llmProvider === "openai_compat") {
       if (!ollamaBaseUrl.trim())
-        errs.push("base URL is required for an OpenAI-compatible provider (e.g. https://apinex.bond/v1)");
+        errs.push("base URL is required for an OpenAI-compatible provider (e.g. https://api.apinex.bond/v1)");
       if (!llmModel.trim())
         errs.push("model is required for a custom gateway (e.g. free/deepseek-v4-pro-0813) — pick one from the list");
     }
@@ -863,13 +863,13 @@ export function LaunchRunPanel({ className }: { className?: string }) {
               {llmProvider === "openai_compat" && (
                 <Field
                   label="base url"
-                  hint="The gateway's OpenAI-compatible base, e.g. https://apinex.bond/v1"
+                  hint="The gateway's OpenAI-compatible base, e.g. https://api.apinex.bond/v1"
                 >
                   <input
                     className={inputCls}
                     value={ollamaBaseUrl}
                     onChange={(e) => setOllamaBaseUrl(e.target.value)}
-                    placeholder="https://apinex.bond/v1"
+                    placeholder="https://api.apinex.bond/v1"
                     spellCheck={false}
                     autoComplete="off"
                   />
