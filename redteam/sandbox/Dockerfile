@@ -34,11 +34,28 @@ RUN if [ -n "$EXTRA_TOOLS" ]; then \
         && rm -rf /var/lib/apt/lists/*; \
     fi
 
-# Non-root user for running tools; firewall setup still needs root via the entrypoint.
-RUN useradd -m -s /bin/bash operator || true
-
+# Non-root user for running tools; firewall setup still needs root via the
+# entrypoint. Idempotent: create operator only if absent, and ensure a home dir
+# exists either way. Then make /work operator-owned so docker-exec'd tools can
+# write output files (nmap -oN, gobuster -o) without hitting a root-owned dir.
+# Kali's base image already ships an `operator` *group* (a standard Debian
+# system group), so a bare `useradd operator` fails on the group-name clash and
+# the user is never created. Reuse that group with -g, and only create the user
+# if it is genuinely absent. chown by numeric uid:gid so it works regardless.
+RUN id -u operator >/dev/null 2>&1 || useradd -m -s /bin/bash -g operator operator; \
+    mkdir -p /home/operator /work; \
+    chown -R operator:operator /home/operator /work
 WORKDIR /work
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# Strip CR: on a Windows checkout git may give entrypoint.sh CRLF endings, which
+# turn the shebang into `/usr/bin/env bash\r` — the container then dies with
+# "env: bash\r: No such file or directory" (exit 127), never prints "ready", and
+# the host tears the sandbox down. Normalise to LF, then ASSERT no CR remains so
+# a stale/mis-cached layer can never ship a broken entrypoint silently.
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/bin/entrypoint.sh \
+    && if grep -q $'\r' /usr/local/bin/entrypoint.sh; then \
+         echo 'FATAL: entrypoint still has CR after strip' >&2; exit 1; fi \
+    && head -1 /usr/local/bin/entrypoint.sh | od -c | head -1
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

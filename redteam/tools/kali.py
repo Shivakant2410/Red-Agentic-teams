@@ -50,7 +50,14 @@ class KaliExecTool:
                 "nikto, curl, gobuster, etc.). Network egress is restricted to in-scope "
                 "targets by the sandbox firewall — off-scope hosts are simply unreachable. "
                 "Commands that alter the sandbox firewall/network or escalate privileges "
-                "are refused. Destructive or denial-of-service commands require approval."
+                "are refused. Destructive or denial-of-service commands require approval.\n"
+                "All traffic goes through an intercepting proxy, so each connection is slow: "
+                "do NOT full-port scan (never `nmap -p-`) — scan the known web ports "
+                "(`nmap -p 80,443,8080 -T4 <host>`). For content discovery, use a small "
+                "wordlist and bounded concurrency (e.g. `gobuster dir -t 10 --timeout 5 "
+                "-w /usr/share/wordlists/dirb/common.txt ...` or ffuf with `-rate`). "
+                "The working directory is /work and is writable — write tool output there "
+                "(`-oN /work/scan.txt`), not to the current dir."
             ),
             "input_schema": {
                 "type": "object",
@@ -91,6 +98,18 @@ class KaliExecTool:
             "stderr": result.stderr[-2000:],
             "stdout_truncated": len(result.stdout) > 8000,
         }
+
+        # WAF / Cloudflare detection: if the target answered with a challenge/
+        # block, tell the agent to SWITCH to the browser instead of retrying the
+        # same curl/httpx — the behavioral fix for "model gets stuck at
+        # Cloudflare and scans in a loop". Audited so a stuck run is visible.
+        from ..waf import detect_waf_block
+        waf_note = detect_waf_block(result.stdout)
+        if waf_note:
+            out["waf_block"] = True
+            out["guidance"] = waf_note
+            ctx.audit.record("waf.block_detected", tool="kali_exec",
+                            command=command[:120])
 
         # Fold structured observations into the knowledge graph so the model reasons over
         # state, not raw text. The delta is surfaced back so the model sees what was learned.

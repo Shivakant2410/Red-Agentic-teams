@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Red-Agentic Traffic Capture",
+  "version": "1.0.0",
+  "description": "Stream the traffic of a human-driven session (login, 2FA, CAPTCHA, SSO) into a Red-Agentic run's evidence store, so the agent sees real authenticated endpoints without automating auth.",
+  "permissions": ["debugger", "storage", "activeTab", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_title": "Red-Agentic Traffic Capture",
+    "default_popup": "popup.html"
+  }
+}

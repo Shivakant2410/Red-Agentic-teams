@@ -8,8 +8,13 @@ decides *how to prove* any vuln class while the proof itself stays a hard, repro
 check (no LLM opinion, no hallucinated findings).
 
 The condition set is a fixed, safe DSL (no eval): status, body_regex, latency_delta,
-json_differs, and reflected_unescaped. That covers injection, IDOR, access control,
-XSS, timing/blind, and more, composed by the agent per finding.
+json_differs, reflected_unescaped, and oob_callback. That covers injection, IDOR,
+access control, XSS, timing/blind, blind/out-of-band (SSRF/XXE/DNS-exfil/async RCE),
+and more, composed by the agent per finding.
+
+oob_callback is special: it does not read an HTTP response, it asks the run's OOB
+oracle (tools/oob_oracle.py) whether the TARGET called back to a canary we minted —
+the only way to PROVE a blind vulnerability deterministically.
 """
 
 from __future__ import annotations
@@ -43,9 +48,65 @@ def _resp(responses, name):
     return responses[name]  # (status, body, elapsed, headers)
 
 
-def eval_condition(cond: dict, responses: dict) -> tuple[bool, str]:
-    """Evaluate one condition against the fetched responses. Returns (passed, detail)."""
+def eval_condition(cond: dict, responses: dict, oob=None) -> tuple[bool, str]:
+    """Evaluate one condition against the fetched responses. Returns (passed, detail).
+
+    `oob` is the run's OOBOracle (or None); only the oob_callback predicate uses
+    it — every other predicate is a pure function of `responses`.
+    """
     t = cond.get("type")
+
+    if t == "race_window":
+        # TOCTOU / race oracle. A burst fetcher stored its per-request results
+        # under one name as a list of (status, body, elapsed, headers). The
+        # invariant an app TRUSTS is "this action succeeds at most once" (redeem
+        # a balance, accept an offer, apply a coupon). If, fired concurrently,
+        # MORE THAN `max_success` of the burst met the success shape, the check-
+        # to-use window was racable. success is {status?: int, body_regex?: str}.
+        name = cond["request"]
+        if name not in responses:
+            raise KeyError(f"race_window references unknown burst {name!r}")
+        burst = responses[name]
+        # A burst result is a list of response tuples; a single tuple means the
+        # fetcher wasn't a burst (misuse) — treat as one response.
+        if burst and isinstance(burst[0], (list, tuple)) and len(burst) and not isinstance(burst[0], str):
+            results = burst if isinstance(burst, list) and burst and isinstance(burst[0], (list, tuple)) else [burst]
+        else:
+            results = [burst]
+        succ = cond.get("success", {"status": 200})
+        want_status = succ.get("status")
+        want_re = succ.get("body_regex")
+
+        def _is_success(resp):
+            st, body = resp[0], resp[1]
+            if want_status is not None and st != want_status:
+                return False
+            if want_re and not re.search(want_re, body or ""):
+                return False
+            return True
+
+        n_success = sum(1 for r in results if _is_success(r))
+        max_success = int(cond.get("max_success", 1))
+        ok = n_success > max_success
+        return ok, (f"race_window[{name}]: {n_success}/{len(results)} succeeded "
+                    f"(racable if > {max_success})")
+
+    if t == "oob_callback":
+        # BLIND proof: did the target call back to the canary we minted? This is
+        # the deterministic oracle for SSRF/XXE/DNS-exfil/async-RCE — no response
+        # body involved. protocol (dns|http) optional; min_count defaults to 1.
+        canary = cond.get("canary", "")
+        if not canary:
+            return False, "oob_callback: no canary specified"
+        if oob is None:
+            return False, "oob_callback: OOB oracle not available this run"
+        protocol = cond.get("protocol", "")
+        hits = oob.interactions_for(canary, protocol=protocol)
+        need = int(cond.get("min_count", 1))
+        ok = len(hits) >= need
+        proto_note = f" [{protocol}]" if protocol else ""
+        return ok, (f"oob_callback{proto_note}[{canary}]: {len(hits)} interaction(s) "
+                    f"(need >= {need})")
 
     if t == "status":
         status = _resp(responses, cond["request"])[0]
@@ -103,15 +164,17 @@ def eval_condition(cond: dict, responses: dict) -> tuple[bool, str]:
 class ProofCheck:
     """A Check (for verify.verify) built from agent-designed fetchers + conditions."""
 
-    def __init__(self, fetchers: dict[str, Callable[[], tuple]], conditions: list[dict]):
+    def __init__(self, fetchers: dict[str, Callable[[], tuple]], conditions: list[dict],
+                 oob=None):
         self._fetchers = fetchers
         self._conditions = conditions
+        self._oob = oob   # OOBOracle | None — only oob_callback conditions use it
 
     def run(self) -> CheckOutcome:
         responses = {name: fn() for name, fn in self._fetchers.items()}
         details, ok = [], True
         for c in self._conditions:
-            passed, detail = eval_condition(c, responses)
+            passed, detail = eval_condition(c, responses, oob=self._oob)
             ok = ok and passed
             details.append(("PASS " if passed else "fail ") + detail)
         return CheckOutcome(passed=ok, detail=" | ".join(details))

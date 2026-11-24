@@ -358,7 +358,8 @@ llm: {{}}
     # the live tree, then discover the chained follow-ups only after VERIFY.
     from redteam import recon as recon_module
 
-    def seeded_recon(engagement, graph, attack_tree, audit=None, source_dir=None):
+    def seeded_recon(engagement, graph, attack_tree, audit=None, source_dir=None,
+                     **kwargs):   # RECON V2 adds store/limiter/traffic kwargs
         attack_tree.seed_endpoint(f"http://127.0.0.1:{lab_server}/api/orders")
         return {"endpoints_discovered": 1, "static_routes_found": 0}
 

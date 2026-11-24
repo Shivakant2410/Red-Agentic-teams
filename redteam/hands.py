@@ -47,7 +47,12 @@ import sys
 OPTIONAL_TOOLS = frozenset({
     "kali_exec", "local_exec",
     "browser_navigate", "browser_content", "browser_click", "browser_fill",
-    "browser_screenshot",
+    "browser_screenshot", "browser_requests", "browser_inspect_request",
+    "browser_console", "browser_login", "browser_session_status",
+    # proxy_* tools degrade honestly without a running EvidenceProxy, but the
+    # RECON profile lists them, so a proxy-less registry must stay valid.
+    "proxy_status", "proxy_history", "proxy_inspect", "proxy_filter",
+    "proxy_replay",
 })
 
 # Trust classes — the SAME vocabulary the crosscheck layer enforces, so a hand's
@@ -153,6 +158,21 @@ _HAND: dict[str, Hand] = {
         cost="step", trust="first-party-observation",
         obligation="an observation aims the next step; it NEVER records a finding — "
                    "proving is verify_vulnerability/confirm_finding's job"),
+    "mint_canary": Hand(
+        tool="mint_canary",
+        purpose="mint an out-of-band canary domain to embed in a blind-vuln payload "
+                "(blind SSRF/XXE, DNS exfil, blind XSS, async RCE)",
+        cost="step", trust="first-party-observation",
+        obligation="only place canaries in payloads aimed at IN-SCOPE targets; a "
+                   "mint is setup, the PROOF is the callback (poll_canary / "
+                   "confirm_finding oob_callback)"),
+    "poll_canary": Hand(
+        tool="poll_canary",
+        purpose="check whether the target called back to a canary — the deterministic "
+                "oracle for a BLIND vulnerability",
+        cost="step", trust="first-party-observation",
+        obligation="a callback is strong evidence; still record it via confirm_finding "
+                   "with an oob_callback condition so it goes through independent verify"),
     "browser_navigate": Hand(
         tool="browser_navigate",
         purpose="drive the real browser to a URL — JS-rendered surfaces the probe cannot see",
@@ -174,11 +194,90 @@ _HAND: dict[str, Hand] = {
         purpose="type into a form field (payloads included) — the stored-XSS submission path",
         cost="step", trust="first-party-observation",
         obligation="observations only; the rendering surface still needs proof"),
+    "browser_login": Hand(
+        tool="browser_login",
+        purpose="authenticate as a TEST account in the live browser (password from "
+                "an env var, never an argument) to reach the authenticated surface",
+        cost="step", trust="first-party-observation",
+        obligation="only log in as an account you fully own, never a real member; "
+                   "the session is an observation, findings still need proof"),
+    "browser_session_status": Hand(
+        tool="browser_session_status",
+        purpose="check whether the (human-warmed) session is authenticated and "
+                "whether Cloudflare is challenging — before probing a WAF target",
+        cost="step", trust="first-party-observation",
+        obligation="observation only; stop for a human on a challenge, do not hammer it"),
     "browser_screenshot": Hand(
         tool="browser_screenshot",
         purpose="capture the rendered page state",
         cost="step", trust="first-party-observation",
         obligation="observations only"),
+    # -- recon instrument read-back (2026-11-18 recon upgrade) ----------------
+    "browser_requests": Hand(
+        tool="browser_requests",
+        purpose="list what the browser ACTUALLY sent (XHR/fetch API calls, "
+                "blocked out-of-scope attempts) without re-navigating",
+        cost="step", trust="first-party-observation",
+        obligation="read the capture before repeating a navigation; blocked "
+                   "rows prove a denial, not a finding"),
+    "browser_inspect_request": Hand(
+        tool="browser_inspect_request",
+        purpose="read one captured exchange in full (sanitized headers, "
+                "safely-collectable body, redirect depth)",
+        cost="step", trust="first-party-observation",
+        obligation="secrets are withheld by the recorder; never copy "
+                   "credential-shaped values into notes or findings"),
+    "browser_console": Hand(
+        tool="browser_console",
+        purpose="collect console errors and uncaught page exceptions — "
+                "routes and stack paths the UI hides",
+        cost="step", trust="first-party-observation",
+        obligation="an error message is a LEAD, never evidence of impact"),
+    "proxy_status": Hand(
+        tool="proxy_status",
+        purpose="evidence-proxy listener state: TLS decrypted vs tunneled, "
+                "capture counters",
+        cost="step", trust="offline-parse",
+        obligation="quote the TLS honesty verdict, never claim decrypted "
+                   "content when the mode is passthrough"),
+    "proxy_history": Hand(
+        tool="proxy_history",
+        purpose="newest captured exchanges from the evidence plane",
+        cost="step", trust="offline-parse",
+        obligation="read history before re-issuing requests; a captured row "
+                   "is evidence of the wire, not of exploitability"),
+    "proxy_inspect": Hand(
+        tool="proxy_inspect",
+        purpose="one captured exchange in full detail (masked, bounded)",
+        cost="step", trust="offline-parse",
+        obligation="same secret-handling rule as browser_inspect_request"),
+    "proxy_filter": Hand(
+        tool="proxy_filter",
+        purpose="search captured exchanges by url/method/status/source",
+        cost="step", trust="offline-parse",
+        obligation="prefer a filtered query over re-driving the app"),
+    "proxy_replay": Hand(
+        tool="proxy_replay",
+        purpose="re-send ONE captured exchange under the same RoE "
+                "(scope-checked, budgeted, audited, recorded)",
+        cost="step", trust="first-party-observation",
+        obligation="replay repeats a recorded request exactly — no new "
+                   "targets; differential conclusions still need a proof tool"),
+    "passive_recon": Hand(
+        tool="passive_recon",
+        purpose="DNS records, TLS certificate metadata (SANs), robots.txt, "
+                "sitemap.xml, security headers, cookie flags, technology "
+                "fingerprints — with source+timestamp+mode on every record",
+        cost="step", trust="first-party-observation",
+        obligation="passive/light leads only; corroborate before trusting; "
+                   "external CT lookups stay opt-in (RED_CT_LOGS)"),
+    "observations": Hand(
+        tool="observations",
+        purpose="query the run's observation log: what is known, from which "
+                "source, validation state (corroborated/contradicted/…)",
+        cost="step", trust="offline-parse",
+        obligation="check BEFORE re-running any discovery tool — "
+                   "re-discovering recorded work wastes steps"),
     # -- session ------------------------------------------------------------
     "authenticate": Hand(
         tool="authenticate",
@@ -213,6 +312,34 @@ _HAND: dict[str, Hand] = {
         cost="verification-trial", trust="proof-trial",
         obligation="one-shot: business logic cannot be re-run k-of-n — sequence it "
                    "right the first time"),
+    "verify_race_condition": Hand(
+        tool="verify_race_condition",
+        purpose="fire a synchronized concurrent BURST of a once-only action to prove a "
+                "race/TOCTOU (double-spend, limit bypass) — CWE-362",
+        cost="verification-trial", trust="proof-trial",
+        obligation="only race an action on an object YOU own, never a real user's; a "
+                   "race_window > max_success is the bug, lands pending_verification"),
+    "test_access_control": Hand(
+        tool="test_access_control",
+        purpose="prove broken access control — a protected resource answers an "
+                "UNAUTHENTICATED request (CWE-284)",
+        cost="verification-trial", trust="proof-trial",
+        obligation="lands pending_verification; the independent pass replays the exact "
+                   "unauth request before it counts"),
+    "test_idor": Hand(
+        tool="test_idor",
+        purpose="prove IDOR/BOLA — as one principal, read another principal's object "
+                "(CWE-639). Cross-role differential access.",
+        cost="verification-trial", trust="proof-trial",
+        obligation="only ever target an object you are authorized to prove with (your own "
+                   "second account); lands pending_verification for independent re-check"),
+    "grade_evidence": Hand(
+        tool="grade_evidence",
+        purpose="bind a finding to its recorded traffic exchange + verbatim quotes and "
+                "grade proof-of-evidence (poe3..poe0) against the real wire body",
+        cost="step", trust="first-party-observation",
+        obligation="poe0/poe1 means the claim is NOT on the wire — fix the quote or drop "
+                   "the finding; grading never changes verification state"),
     "prove_privilege": Hand(
         tool="prove_privilege",
         purpose="differential privilege-boundary proof for a held session",
@@ -289,6 +416,15 @@ _HAND: dict[str, Hand] = {
         cost="step", trust="lead-crosschecked",
         obligation="READY means the check_spec is proven-shaped — still fire it through "
                    "verify_vulnerability; escaped reflections produce NO idea"),
+    "injection_probe": Hand(
+        tool="injection_probe",
+        purpose="decide if a param is injectable BEFORE proving — safe boolean/arith/"
+                "error diagnostics return reactive|not_reactive|inconclusive + a READY "
+                "check_spec for the live ones",
+        cost="step", trust="first-party-observation",
+        obligation="a diagnostic, not a proof: send NO SQLi payloads at not_reactive "
+                   "params, and the reactive check_spec still goes through "
+                   "verify_vulnerability (error text alone never earns a proof trial)"),
     "graphql_inspect": Hand(
         tool="graphql_inspect",
         purpose="4-request deterministic checklist over a GraphQL endpoint (introspection, "
@@ -336,6 +472,38 @@ _HAND: dict[str, Hand] = {
         purpose="run a local assessment step (lab mode)",
         cost="step", trust="first-party-observation",
         obligation="observations only"),
+    # -- RECON V2 evidence workspace (read our own evidence, no new claim) ------
+    "evidence_search": Hand(
+        tool="evidence_search",
+        purpose="search the run's accumulated evidence observations (each carries "
+                "provenance, validation and scope status)",
+        cost="step", trust="first-party-observation",
+        obligation="search BEFORE re-scanning: an already-recorded observation needs "
+                   "no second probe; entries are evidence, not findings"),
+    "evidence_inspect": Hand(
+        tool="evidence_inspect",
+        purpose="read ONE observation's full record (attrs, evidence refs, scope)",
+        cost="step", trust="first-party-observation",
+        obligation="cite the evidence refs when acting on what it shows"),
+    "proxy_history_query": Hand(
+        tool="proxy_history_query",
+        purpose="query the wire history (browser + proxy + tool exchanges in "
+                "traffic.jsonl) — what actually went over the wire",
+        cost="step", trust="first-party-observation",
+        obligation="the wire log is the truth of what was SENT, not what succeeded; "
+                   "status codes and errors are part of the record"),
+    "replay_request": Hand(
+        tool="replay_request",
+        purpose="re-issue ONE recorded request through the shared scope/budget/"
+                "approval controls",
+        cost="step", trust="first-party-observation",
+        obligation="approval-gated; replay an authorized request only, and treat "
+                   "the fresh exchange (source=replay) as new evidence"),
+    "asset_read": Hand(
+        tool="asset_read",
+        purpose="read the asset inventory surface_scan and the fetch path filled",
+        cost="step", trust="ground-truth",
+        obligation="a host it did not record is not alive to this run"),
 }
 
 # ---------------------------------------------------------------------------
@@ -346,33 +514,44 @@ _HAND: dict[str, Hand] = {
 
 HANDS: dict[str, tuple[Hand, ...]] = {
     "recon": tuple(_HAND[t] for t in (
+        "passive_recon", "observations", "proxy_status", "proxy_history",
+        "proxy_inspect", "proxy_filter", "proxy_replay",
         "surface_scan", "host_probe", "port_scan", "content_discovery", "crawl",
         "param_discovery", "spa_recon", "crosscheck_lead", "http_probe",
-        "browser_navigate", "browser_content", "browser_click", "authenticate",
-        "set_session", "kali_exec", "search_peer_traces")),
+        "jwt_inspect", "graphql_inspect",
+        "browser_navigate", "browser_content", "browser_click",
+        "browser_fill", "browser_screenshot", "browser_requests",
+        "browser_inspect_request", "browser_console",
+        "authenticate", "set_session", "kali_exec", "search_peer_traces",
+        "evidence_search", "evidence_inspect", "proxy_history_query",
+        "replay_request", "asset_read")),
     "exploit": tuple(_HAND[t] for t in (
         "find_techniques", "crosscheck_lead", "apply_skill", "http_probe",
         "authenticate", "set_session", "verify_vulnerability", "confirm_finding",
         "browser_navigate", "browser_content", "browser_fill", "kali_exec",
-        "search_peer_traces")),
+        "mint_canary", "poll_canary", "test_access_control", "test_idor",
+        "grade_evidence", "search_peer_traces")),
     "access": tuple(_HAND[t] for t in (
         "extract_secrets", "try_credential", "prove_privilege", "record_access",
         "authenticate", "set_session", "http_probe", "kali_exec",
         "browser_navigate", "browser_content")),
     "logic": tuple(_HAND[t] for t in (
-        "verify_workflow_abuse", "authenticate", "browser_navigate",
-        "browser_content", "browser_fill", "browser_click")),
+        "verify_workflow_abuse", "verify_race_condition", "authenticate",
+        "set_session", "http_probe",
+        "browser_navigate", "browser_content", "browser_fill", "browser_click",
+        "browser_login", "browser_session_status", "browser_requests",
+        "browser_inspect_request", "find_techniques", "grade_evidence")),
     "verify": tuple(_HAND[t] for t in (
         "verify_finding_independently",)),
     "a01-access": tuple(_HAND[t] for t in (
         "authenticate", "set_session", "http_probe", "verify_vulnerability",
-        "confirm_finding", "crosscheck_lead", "browser_navigate", "browser_content",
-        "search_peer_traces")),
+        "confirm_finding", "test_access_control", "test_idor", "crosscheck_lead",
+        "browser_navigate", "browser_content", "grade_evidence", "search_peer_traces")),
     "a03-injection": tuple(_HAND[t] for t in (
         "authenticate", "set_session", "http_probe", "verify_vulnerability",
-        "confirm_finding", "xss_reflect_probe", "graphql_inspect", "crosscheck_lead",
-        "browser_navigate", "browser_content", "browser_fill", "browser_click",
-        "search_peer_traces")),
+        "confirm_finding", "xss_reflect_probe", "injection_probe", "graphql_inspect",
+        "crosscheck_lead", "browser_navigate", "browser_content", "browser_fill",
+        "browser_click", "mint_canary", "poll_canary", "search_peer_traces")),
     "a05-misconfig": tuple(_HAND[t] for t in (
         "surface_scan", "content_discovery", "nuclei_scan", "crosscheck_lead",
         "http_probe", "verify_vulnerability", "confirm_finding", "extract_secrets",
@@ -384,6 +563,7 @@ HANDS: dict[str, tuple[Hand, ...]] = {
         "browser_content", "search_peer_traces")),
     "a10-ssrf": tuple(_HAND[t] for t in (
         "surface_scan", "http_probe", "verify_vulnerability", "confirm_finding",
+        "mint_canary", "poll_canary",
         "browser_navigate", "browser_content", "search_peer_traces")),
     "llm01-prompt-injection": tuple(_HAND[t] for t in (
         "record_finding", "confirm_finding", "verify_finding_independently")),

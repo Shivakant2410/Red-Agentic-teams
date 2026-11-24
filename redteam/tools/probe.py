@@ -152,4 +152,12 @@ class HttpProbeTool:
         if status == 0:
             result["error"] = ("request did not complete (connection refused/unreachable "
                                "or blocked) — check the URL/port and scope")
+        # WAF / Cloudflare block: tell the agent to switch to the browser rather
+        # than retrying this probe in a loop (the "stuck at Cloudflare" fix).
+        from ..waf import detect_waf_block
+        waf_note = detect_waf_block(resp_body, status)
+        if waf_note:
+            result["waf_block"] = True
+            result["guidance"] = waf_note
+            ctx.audit.record("waf.block_detected", tool="http_probe", url=url, status=status)
         return json.dumps(result, ensure_ascii=False)

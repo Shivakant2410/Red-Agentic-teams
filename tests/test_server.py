@@ -774,3 +774,79 @@ def test_registry_error_finalizes_running_mission_snapshot(harness, monkeypatch)
             time.sleep(0.05)
     assert rec["status"] == "failed"
     assert "mission_aborted" in rec["halt_reason"]
+
+
+def test_delete_run_removes_a_finished_run(harness):
+    from redteam.runtime import RunManifest
+    client, runs_root, _ = harness
+    rid = "20200101-000000-done"
+    rd = runs_root / rid
+    rd.mkdir(parents=True)
+    RunManifest(objective="o", engagement="e").save(rd / "manifest.json")
+    # mark it finished
+    import json as _j
+    m = _j.loads((rd / "manifest.json").read_text(encoding="utf-8"))
+    m["status"] = "completed"
+    (rd / "manifest.json").write_text(_j.dumps(m), encoding="utf-8")
+
+    r = client.delete(f"/api/runs/{rid}")
+    assert r.status_code == 200 and r.json()["deleted"] == rid
+    assert not rd.exists()
+
+
+def test_delete_refuses_a_running_run(harness):
+    from redteam.runtime import RunManifest
+    client, runs_root, _ = harness
+    rid = "20200101-000000-live"
+    rd = runs_root / rid
+    rd.mkdir(parents=True)
+    man = RunManifest(objective="o", engagement="e")
+    man.status = "running"
+    man.save(rd / "manifest.json")
+
+    r = client.delete(f"/api/runs/{rid}")
+    assert r.status_code == 409
+    assert rd.exists()   # not deleted
+
+
+def test_delete_unknown_run_is_404(harness):
+    client, _, _ = harness
+    assert client.delete("/api/runs/nope-not-here").status_code == 404
+
+
+def test_delete_rejects_path_traversal(harness):
+    client, runs_root, _ = harness
+    # require_run rejects traversal characters before any filesystem touch
+    r = client.delete("/api/runs/..%2f..%2fetc")
+    assert r.status_code == 404
+
+
+def test_custom_gateway_key_is_carried_not_dropped(tmp_path):
+    """A pasted key for a custom openai_compat gateway must reach the provider.
+    Regression: the launch path keyed credentials by the provider's fixed env
+    var, which is empty for a custom kind, so the key was silently dropped and
+    the run went out unauthenticated (HTTP 403)."""
+    from redteam.server import LlmOverride, _prepare_llm
+    from redteam.llm.gateway import resolve_api_key
+    from redteam.llm.providers import ProviderConfig
+    import yaml
+
+    src = tmp_path / "src.yaml"
+    src.write_text(
+        "name: t\nscope:\n  allowed_hosts: [x.test]\n  allowed_ports: [443]\n"
+        "  allowed_schemes: [https]\nstarts: \"2026-01-01\"\nends: \"2026-12-31\"\n",
+        encoding="utf-8")
+    ov = LlmOverride(provider="openai_compat", model="free/deepseek-v4-pro-0813",
+                     base_url="https://api.apinex.bond/v1", api_key="sk-SECRET")
+    path, creds = _prepare_llm(ov, str(src), tmp_path)
+
+    # key carried in run-scoped credentials, NOT written to the engagement yaml
+    assert "sk-SECRET" in creds.values()
+    path_text = open(path, encoding="utf-8").read()
+    assert "sk-SECRET" not in path_text
+    prov = yaml.safe_load(path_text)["llm"]["providers"][0]
+    assert prov["api_key_env"]  # a var name was synthesized
+    # and it resolves back to the real key
+    pcfg = ProviderConfig(kind="openai_compat", base_url=prov["base_url"],
+                          api_key_env=prov["api_key_env"]).resolved()
+    assert resolve_api_key(pcfg, creds) == "sk-SECRET"

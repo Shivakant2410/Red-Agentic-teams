@@ -232,6 +232,11 @@ class RunOptions:
     #   log entirely (headers are still recorded, credential values always masked).
     asset_feed: str = ""
     record_traffic_bodies: bool = True
+    # RECON V2: route the Playwright browser through the run's EvidenceProxy when
+    # one is active, so browser traffic lands in the SAME evidence history and
+    # request budget as every proxied tool exchange. Without a proxy the browser
+    # records directly into the same traffic log (source="browser").
+    browser_through_proxy: bool = True
     # Per-round OPSEC budget (noise credits) for the exploit swarm's cost-aware
     # selection (docs/multi-gambit.md §3.4): techniques carry an OPSEC price
     # (attack_tree.TECHNIQUE_COST) and each round the swarm may only spend this
@@ -390,6 +395,13 @@ def execute_run(opts: RunOptions) -> dict:
                               record_bodies=opts.record_traffic_bodies)
     inventory = AssetInventory(out / "inventory.json")
 
+    # RECON V2: the run-scoped evidence workspace (observations + assets +
+    # agent-readable search) every recon capability shares. Built before
+    # deterministic recon so passive fetches land in it too.
+    from .recon_v2 import build_recon_v2
+    reconv2 = build_recon_v2(out, scope=scope, limiter=limiter, audit=audit,
+                             traffic=traffic)
+
     # Operator-supplied asset feed (ScopeSentry-style): intersected with the RoE
     # BEFORE anything else touches the network. Dropped records are counted, never
     # widened into scope — the importer is an intersection, not a merge.
@@ -425,7 +437,9 @@ def execute_run(opts: RunOptions) -> dict:
 
     from .recon import run_deterministic_recon
     recon_summary = run_deterministic_recon(engagement, graph, attack_tree, audit=audit,
-                                            source_dir=opts.source_dir)
+                                            source_dir=opts.source_dir,
+                                            store=reconv2.store,
+                                            limiter=limiter, traffic=traffic)
     if recon_summary.get("endpoints_discovered") or recon_summary.get("static_routes_found"):
         say(f"Deterministic recon (no LLM calls): {recon_summary}")
 
@@ -439,7 +453,11 @@ def execute_run(opts: RunOptions) -> dict:
         # becomes wire evidence instead of a blind spot behind the firewall. The
         # proxy shares the run's RateLimiter, so the RoE request budget is global
         # across the fetch path AND every proxied tool exchange.
-        if use_sandbox and not opts.no_evidence_proxy:
+        # Browser runs start it too: the Playwright browser routes through the
+        # same listener (RECON agent -> browser -> EvidenceProxy -> target), so
+        # browser-originated traffic gets the same scope checks, budget and
+        # wire evidence (RECON-first upgrade, 2026-11-18).
+        if (use_sandbox or use_browser) and not opts.no_evidence_proxy:
             try:
                 from .proxy import EvidenceProxy
                 proxy = EvidenceProxy(scope=scope, traffic=traffic, audit=audit,
@@ -484,19 +502,68 @@ def execute_run(opts: RunOptions) -> dict:
 
         if use_browser:
             from .tools.browser import BrowserController
-            browser = BrowserController(scope, limiter, audit, out / "screenshots")
+            # Browser↔proxy integration (RECON V2): when the run's EvidenceProxy
+            # is active the browser routes through it — same scope plane, same
+            # request budget, same traffic.jsonl evidence history (proxied rows
+            # land as source=proxy / proxy-mitm; the controller skips direct
+            # recording then, so no exchange is double-counted). Without a proxy
+            # the controller records directly (source="browser"). The live_dir
+            # feeds the any.run-style operator view (recon_live/latest.jpg).
+            browser_proxy = ""
+            if proxy is not None and opts.browser_through_proxy:
+                try:
+                    browser_proxy = f"http://127.0.0.1:{proxy.status()['port']}"
+                except Exception:
+                    browser_proxy = ""
+            browser = BrowserController(scope, limiter, audit, out / "screenshots",
+                                        traffic=traffic, store=reconv2.store,
+                                        assets=reconv2.assets,
+                                        proxy_url=browser_proxy,
+                                        live_dir=out / "recon_live")
 
         from .session import SessionStore
         from .skills import SkillLibrary
         # Proven proofs, cross-run: learned skills plus imported corpora (e.g. nuclei).
         skills = SkillLibrary(Path(opts.memory_dir) / "skills.json", max_skills=50000)
+        # RECON evidence plane: provenance + validation lifecycle for every
+        # discovery claim, mirrored into the shared graph (see observations.py).
+        from .observations import ObservationLog
+        observations = ObservationLog(out / "observations.jsonl", graph=graph,
+                                      audit=audit)
+        # Out-of-band oracle for blind-vuln proofs. Fails closed (None transport)
+        # unless RED_OOB_SERVER / RED_OOB_ENABLE_PUBLIC is set, so no callback
+        # data leaves the box by default (see tools/oob_oracle.py).
+        from .tools.oob_oracle import OOBOracle
+        oob = OOBOracle(audit=audit)
+        if oob.available:
+            audit.record("oob.ready", transport=getattr(oob._bridge, "name", "?"))
+
         ctx = ToolContext(scope=scope, limiter=limiter, audit=audit, findings=findings,
                           approve=approver,
                           sandbox=sandbox, browser=browser, graph=graph,
                           sessions=SessionStore(), skills=skills,
                           access=access, objective=engagement.objective,
                           killchain=killchain, events=bus,
-                          traffic=traffic, inventory=inventory)
+                          traffic=traffic, inventory=inventory,
+                          evidence_store=reconv2.store,
+                          workspace=reconv2.workspace,
+                          observations=observations, proxy=proxy, oob=oob)
+
+        # Root-domain RECON runs before any LLM specialist. It composes the
+        # existing passive intelligence, HTTP evidence path, browser-independent
+        # crawl, API/JS extraction and optional ProjectDiscovery binaries.
+        # A missing optional binary degrades to the built-in path; it never turns
+        # a valid root-domain engagement into an empty discovery run.
+        domain_recon_summary = {}
+        try:
+            from .recon_v2.pipeline import run_domain_recon
+            domain_recon_summary = run_domain_recon(
+                ctx, reconv2, engagement, proxy_active=proxy is not None)
+            say(f"Root-domain RECON: {json.dumps(domain_recon_summary, default=str)}")
+        except Exception as exc:
+            domain_recon_summary = {"errors": [str(exc)[:240]]}
+            audit.record("recon.domain_pipeline.error", error=str(exc)[:240])
+            say(f"Root-domain RECON degraded: {str(exc)[:200]}")
 
         # Cross-engagement memory: a single global store the agent learns into over time,
         # bootstrapped with curated tradecraft (correct oracle recipes) on first use.
@@ -617,11 +684,17 @@ def execute_run(opts: RunOptions) -> dict:
         else:
             if opts.multi_agent:
                 from .orchestrator import Orchestrator
+                # RED_SWARM_WORKERS caps exploit-swarm concurrency. Free/rate-
+                # limited model gateways thrash when 3 workers burst calls at
+                # once; set it to 1 to serialise and keep the tier alive.
+                import os as _os
+                _sw = _os.environ.get("RED_SWARM_WORKERS", "")
+                _sw_kw = {"max_swarm_workers": max(1, int(_sw))} if _sw.isdigit() else {}
                 driver = Orchestrator(engagement, tools, ctx, client, graph=graph,
                                       attack_tree=attack_tree, memory=memory,
                                       noise_budget=opts.round_noise_budget,
                                       noise_mu=opts.noise_mu, noise_V=opts.noise_V,
-                                      research_dir=out)   # Phase C1: persist the research journal
+                                      research_dir=out, **_sw_kw)   # Phase C1: persist the research journal
             else:
                 driver = RedTeamAgent(engagement, tools, ctx, client, max_steps=opts.max_steps,
                                       graph=graph, attack_tree=attack_tree, memory=memory,
@@ -724,6 +797,25 @@ def execute_run(opts: RunOptions) -> dict:
     safe_emit(bus, "run.finish", status=status, findings=len(findings.all()),
               tokens=tokens, halt_reason=halt_reason)
 
+    # RECON V2 final pass: corroboration + scope re-attribution over everything
+    # the run observed, then the structured handoff artifact downstream
+    # specialists (and the operator) consume. Telemetry discipline: a store
+    # failure must never break a finished run's summary.
+    recon_evidence_stats = {}
+    try:
+        from .recon_v2.capabilities import validate_and_attribute
+        validate_and_attribute(reconv2.store, reconv2.assets, scope, audit=audit)
+        handoff = reconv2.handoff()
+        (out / "recon_v2_handoff.json").write_text(
+            json.dumps(handoff, indent=2, default=str), encoding="utf-8")
+        recon_evidence_stats = {
+            "evidence_observations": handoff.get("stats", {}).get("observations", 0),
+            "evidence_corroborated": handoff.get("stats", {}).get("corroborated", 0),
+            "handoff_path": str(out / "recon_v2_handoff.json"),
+        }
+    except Exception:
+        recon_evidence_stats = {}
+
     summary = {
         "status": status,
         "halt_reason": halt_reason,
@@ -740,9 +832,11 @@ def execute_run(opts: RunOptions) -> dict:
         "audit_intact": audit.verify_chain(),
         "out_dir": str(out),
         "traffic_recorded": traffic.count,
+        "domain_recon": domain_recon_summary,
         "proxy": proxy.status() if proxy is not None else None,
         "surface_hosts": inventory.summary()["hosts"],
         "surface_services": inventory.summary()["services"],
+        **recon_evidence_stats,
     }
     if mission_summary is not None:
         summary.update({

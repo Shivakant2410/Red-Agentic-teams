@@ -19,6 +19,8 @@ promote it to confirmed.
 from __future__ import annotations
 
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from ..findings import Finding
 from ..proof import eval_condition
@@ -48,6 +50,35 @@ def run_ordered_steps(ctx: ToolContext, steps: list[dict]) -> dict:
         status, body, elapsed, resp_headers = fetch_once(ctx, req)
         responses[name] = (status, body, elapsed, resp_headers)
     return responses
+
+
+def run_burst(ctx: ToolContext, spec: dict, count: int) -> list[tuple]:
+    """Fire the SAME request `count` times as close to simultaneously as possible
+    — the TOCTOU / race primitive. All threads block on a barrier and release
+    together so the requests hit the server inside the same check-to-use window;
+    whichever sequential single-shot predicate would see "one success" then sees
+    several if the window is racable. Returns a list of response tuples.
+
+    Scope is enforced per request by fetch_once (same path as every other
+    fetch), so a burst cannot reach anything a single request could not.
+    """
+    count = max(2, min(int(count), 30))   # at least 2 to race; capped (OPSEC)
+    headers = _session_headers(ctx, spec.get("session_label"), spec.get("headers"))
+    req = {"method": spec.get("method", "GET"), "url": spec["url"],
+           "headers": headers, "body": spec.get("body")}
+    barrier = threading.Barrier(count)
+    results: list[tuple] = [None] * count  # type: ignore[list-item]
+
+    def _one(i: int):
+        try:
+            barrier.wait(timeout=20)       # release all threads together
+        except threading.BrokenBarrierError:
+            pass
+        results[i] = fetch_once(ctx, req)
+
+    with ThreadPoolExecutor(max_workers=count) as pool:
+        list(pool.map(_one, range(count)))
+    return [r for r in results if r is not None]
 
 
 class VerifyWorkflowAbuseTool:
@@ -191,4 +222,113 @@ class VerifyWorkflowAbuseTool:
             "note": "Attack sequence violated the invariant and the control did not — but "
                     "this does not count yet. An independent re-check must reproduce it "
                     "(with fresh steps/identifiers you provide) before it is CONFIRMED.",
+        })
+
+
+class VerifyRaceConditionTool:
+    name = "verify_race_condition"
+
+    def schema(self) -> dict:
+        return {
+            "name": self.name,
+            "description": (
+                "Prove a RACE CONDITION / TOCTOU — an action the app assumes can "
+                "happen at most once (redeem a balance, accept an offer, apply a "
+                "voucher, withdraw funds) that a concurrent BURST lets happen "
+                "several times. Give the `request` to fire and a `count` (2-30): "
+                "all copies are released simultaneously via a barrier so they hit "
+                "the same check-to-use window. The proof is a race_window invariant "
+                "— more than `max_success` of the burst met the success shape. A "
+                "single honest `control` request must succeed exactly once (so the "
+                "action itself is legitimate and the extra successes are the bug). "
+                "Only ever race an action on an object YOU own; never a real user's. "
+                "Lands pending_verification — an independent re-check confirms it."),
+            "input_schema": {
+                "type": "object", "additionalProperties": False,
+                "properties": {
+                    "title": {"type": "string"}, "severity": {"type": "string"},
+                    "target": {"type": "string"}, "summary": {"type": "string"},
+                    "request": {"type": "object",
+                                "description": "The request to burst: {method,url,headers,body,session_label}."},
+                    "count": {"type": "integer", "description": "Concurrent copies to fire (2-30)."},
+                    "success": {"type": "object",
+                                "description": "Success shape: {status?:int, body_regex?:str}. Default {status:200}."},
+                    "max_success": {"type": "integer",
+                                    "description": "How many successes are legitimate (default 1). Racable if more."},
+                    "control": {"type": "object",
+                                "description": "Optional single honest request that should succeed exactly once."},
+                    "cwe": {"type": "string"}, "recommendation": {"type": "string"},
+                },
+                "required": ["title", "severity", "target", "summary", "request"],
+            },
+            "strict": False,
+        }
+
+    def run(self, ctx: ToolContext, title: str, severity: str, target: str, summary: str,
+            request: dict, count: int = 10, success: dict | None = None,
+            max_success: int = 1, control: dict | None = None,
+            cwe: str = "", recommendation: str = "") -> str:
+        if not request or not request.get("url"):
+            return "ERROR: provide a request with a url to burst."
+        succ = success or {"status": 200}
+        try:
+            burst = run_burst(ctx, request, count)
+        except ScopeViolation as exc:
+            return f"BLOCKED (out of scope): {exc}"
+        except KeyError as exc:
+            return f"ERROR: request missing {exc}."
+
+        responses = {"burst": burst}
+        cond = {"type": "race_window", "request": "burst",
+                "success": succ, "max_success": max_success}
+        passed, detail = eval_condition(cond, responses)
+        details = [("PASS " if passed else "fail ") + detail]
+        if not passed:
+            ctx.audit.record("race.result", title=title, verdict="not_reproducible",
+                             fired=len(burst))
+            return json.dumps({
+                "verdict": "not_reproducible", "recorded": False, "details": details,
+                "note": "The burst did not produce more successes than allowed — no race "
+                        "observed. Try a higher count, a tighter success shape, or a "
+                        "different action.",
+            })
+
+        # Optional control: one honest request should succeed exactly once — this
+        # confirms the action is legitimate, so the EXTRA burst successes are the bug.
+        if control and control.get("url"):
+            try:
+                c = fetch_once(ctx, {"method": control.get("method", "GET"),
+                                     "url": control["url"],
+                                     "headers": _session_headers(ctx, control.get("session_label"),
+                                                                 control.get("headers")),
+                                     "body": control.get("body")})
+            except ScopeViolation as exc:
+                return f"BLOCKED (out of scope) in control: {exc}"
+            c_ok, c_detail = eval_condition(
+                {"type": "status", "request": "c", "equals": succ.get("status", 200)},
+                {"c": c})
+            details.append(("PASS " if c_ok else "fail ") + "control single-shot: " + c_detail)
+
+        n_success = sum(1 for r in burst
+                        if r[0] == succ.get("status", 200)
+                        and (not succ.get("body_regex")
+                             or __import__("re").search(succ["body_regex"], r[1] or "")))
+        ctx.audit.record("race.result", title=title, verdict="pending_verification",
+                         fired=len(burst), successes=n_success)
+        check_spec = {"request": request, "count": count, "success": succ,
+                      "max_success": max_success, "control": control,
+                      "race_successes": n_success, "race_fired": len(burst)}
+        f = ctx.findings.add(Finding(
+            title=title, severity=severity, target=target, summary=summary,
+            evidence="\n".join(details), recommendation=recommendation,
+            cwe=cwe or "CWE-362", confidence="pending_verification",
+            verification_verdict="confirmed", reproductions=1, trials=1,
+            poc=f"burst x{len(burst)} of {request.get('method','GET')} {request.get('url','')} "
+                f"-> {n_success} succeeded (max legit {max_success})",
+            check_type="race", check_spec=check_spec))
+        return json.dumps({
+            "verdict": "pending_verification", "recorded": True, "finding_id": f.id,
+            "race_successes": n_success, "fired": len(burst), "details": details,
+            "note": "A concurrent burst beat the once-only guard (CWE-362 TOCTOU). Pending "
+                    "an independent re-check before it counts.",
         })

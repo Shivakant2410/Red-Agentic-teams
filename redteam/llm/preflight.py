@@ -32,7 +32,7 @@ from .providers import AnthropicProvider, OpenAICompatProvider, ProviderConfig
 # Connect/read timeout for each preflight HTTP call: a dead endpoint must fail
 # in seconds, not hang the launch form.
 CONNECT_TIMEOUT = 5.0
-CALL_TIMEOUT = 30.0
+CALL_TIMEOUT = 300.0
 
 # The harmless synthetic tool: report a confirmation string. Nothing else.
 _SYNTHETIC_TOOL = {

@@ -29,9 +29,9 @@ import time
 from pathlib import Path
 
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -261,6 +261,31 @@ class UrlLaunchBody(BaseModel):
     asset_feed: str = Field(default="", max_length=2_000_000)
     plan: list = []                   # mission driver only (deliberate static plan)
     llm: LlmOverride | None = None
+    # Browser-direct mode for WAF/Cloudflare targets: the evidence proxy's TLS
+    # interception makes Cloudflare block the browser's requests (seen as
+    # hundreds of browser.request.blocked), so recon never finishes. Turning the
+    # proxy off (and the Kali sandbox, which a browser-only web test doesn't use)
+    # lets the browser reach the target directly. Default keeps both on.
+    no_evidence_proxy: bool = False
+    no_sandbox: bool = False
+
+
+class IngestEntry(BaseModel):
+    """One HTTP exchange captured by the browser extension."""
+    method: str = Field(default="GET", max_length=16)
+    url: str = Field(default="", max_length=8000)
+    status: int = Field(default=0, ge=0, le=599)
+    elapsed_ms: int = Field(default=0, ge=0)
+    req_headers: dict = Field(default_factory=dict)
+    req_body: str = Field(default="", max_length=262_144)   # 256 KiB cap (matches extension)
+    resp_headers: dict = Field(default_factory=dict)
+    resp_body: str = Field(default="", max_length=262_144)
+
+
+class IngestBody(BaseModel):
+    """A batch of extension-captured exchanges to fold into a run's traffic store."""
+    run_id: str = Field(max_length=200)
+    entries: list[IngestEntry] = Field(default_factory=list)
 
 
 class ApprovalBody(BaseModel):
@@ -352,17 +377,24 @@ class RunRegistry:
         t.start()
 
 
-def _write_effective_engagement(src_path: str, out_dir: Path, llm: LlmOverride) -> str:
+def _write_effective_engagement(src_path: str, out_dir: Path, llm: LlmOverride,
+                                api_key_env: str = "") -> str:
     """Copy the engagement YAML into the run dir with the llm block replaced by
     the operator's selection. The run then launches against that copy, so every
     artifact the run produces records the exact model config it ran with —
-    and the original engagement file is never modified in place."""
+    and the original engagement file is never modified in place.
+
+    api_key_env names the env var the provider should read the key from (the key
+    VALUE never lands in the YAML — only the var name). Needed for a custom
+    gateway whose kind has no built-in env-var mapping."""
     data = yaml.safe_load(Path(src_path).read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise HTTPException(400, "engagement is not a YAML mapping")
     entry: dict = {"kind": llm.provider.strip().lower()}
     if llm.base_url:
         entry["base_url"] = llm.base_url
+    if api_key_env:
+        entry["api_key_env"] = api_key_env
     if llm.model:
         entry["models_allow"] = [llm.model]
     data["llm"] = {"providers": [entry]}
@@ -395,10 +427,18 @@ def _prepare_llm(llm: LlmOverride | None, src_path: str,
             f"unknown llm provider '{kind}' — choose one of "
             f"{sorted(LLM_PROVIDER_SHORTCUTS)} or pass base_url")
     key_env = LLM_PROVIDER_SHORTCUTS.get(kind, "")
+    # A custom gateway (openai_compat / any off-table kind) has no fixed env var,
+    # so a pasted key had nowhere to land and was silently dropped — the run then
+    # went out unauthenticated and the gateway answered HTTP 403. Synthesize a
+    # run-scoped env-var name and record it on the effective engagement so the
+    # provider reads the key from the run's in-memory credentials.
+    if not key_env and llm.api_key:
+        key_env = "RED_CUSTOM_LLM_KEY"
     credentials = {}
     if llm.api_key and key_env:
         credentials[key_env] = llm.api_key
-    launch_path = _write_effective_engagement(src_path, out_dir, llm)
+    launch_path = _write_effective_engagement(src_path, out_dir, llm,
+                                              api_key_env=key_env if llm.api_key else "")
     return launch_path, credentials
 
 
@@ -548,21 +588,40 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         configured Ollama endpoint — a configured URL alone never counts as
         connected. Model discovery lists the INSTALLED models (native /api/tags,
         the canonical Ollama listing); discovery does NOT prove tool-calling
-        capability — that is what /api/llm/preflight verifies on demand."""
-        from .llm.providers import ProviderConfig
-        cfg = ProviderConfig(kind="ollama", base_url=(base_url or "").strip()).resolved()
-        root = cfg.base_url[:-3] if cfg.base_url.endswith("/v1") else cfg.base_url
+        capability — that is what /api/llm/preflight verifies on demand.
+
+        SSRF controls (PR #25 review fix): the client-supplied base_url goes
+        through the provider endpoint guard (ProviderConfig.resolved fails
+        closed on non-http(s) schemes, embedded credentials, and
+        link-local/metadata addresses — RFC1918/loopback stay allowed because
+        local Ollama IS the point); the probe itself never follows redirects
+        (a redirect cannot smuggle the request past the guard) and reads a
+        bounded body."""
+        from .llm.providers import ProviderConfig, ProviderEndpointError
         import requests as _rq
         try:
-            resp = _rq.get(f"{root}/api/tags", timeout=4)
+            cfg = ProviderConfig(kind="ollama",
+                                 base_url=(base_url or "").strip()).resolved()
+        except ProviderEndpointError as exc:
+            return {"provider": "ollama", "base_url": base_url,
+                    "connected": False, "state": "endpoint_rejected",
+                    "version": "", "models": [], "default_model": "",
+                    "message": "Provider endpoint rejected by the SSRF guard.",
+                    "detail": str(exc)[:300]}
+        root = cfg.base_url[:-3] if cfg.base_url.endswith("/v1") else cfg.base_url
+        try:
+            resp = _rq.get(f"{root}/api/tags", timeout=4, allow_redirects=False)
             resp.raise_for_status()
+            if len(getattr(resp, "content", b"")) > 1_000_000:
+                raise _rq.RequestException("model listing too large")
             payload = resp.json()
             models = sorted({str((m.get("name") or m.get("model") or "")).strip()
                              for m in (payload.get("models") or [])
                              if isinstance(m, dict) and (m.get("name") or m.get("model"))})
             version = ""
             try:
-                version = str(_rq.get(f"{root}/api/version", timeout=2).json().get("version", ""))
+                version = str(_rq.get(f"{root}/api/version", timeout=2,
+                                      allow_redirects=False).json().get("version", ""))
             except (_rq.RequestException, ValueError):
                 pass
             if not models:
@@ -661,6 +720,15 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         opts.out_dir = out_dir
         opts.events = bus
         opts.approve = HeadlessApprover(out_dir, bus, kill_file=out_dir / "STOP")
+        # Browser-direct mode for WAF targets: no evidence proxy (its TLS
+        # interception makes Cloudflare block the browser) and the browser goes
+        # straight to the target; optionally skip the Kali sandbox for a
+        # browser-only web test. Scope enforcement (ScopeGuard) is unaffected.
+        if body.no_evidence_proxy:
+            opts.no_evidence_proxy = True
+            opts.browser_through_proxy = False
+        if body.no_sandbox:
+            opts.no_sandbox = True
         if mode == "mission":
             opts.driver = "mission"
             if body.plan:
@@ -823,6 +891,62 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         run_dir = require_run(run_id)
         return {"proxy": _read_json(run_dir / "proxy.json", None)}
 
+    # -- API: browser-extension traffic ingest ----------------------------------
+    # The hardest auth flows (2FA, OTP, CAPTCHA, SSO) can't be driven headlessly.
+    # Instead a human logs in and browses normally in their OWN browser while the
+    # extension streams the resulting HTTP exchanges here; they land in the SAME
+    # traffic.jsonl the proxy/fetch write, so the planner and workers see the real
+    # authenticated endpoints, headers, tokens and API shapes. Authenticated with
+    # a shared token (RED_INGEST_TOKEN); the server is localhost-bound besides.
+    @app.post("/api/traffic/ingest")
+    def ingest_traffic(body: "IngestBody",
+                       authorization: str = Header(default="")) -> dict:
+        import os as _os
+        expected = _os.environ.get("RED_INGEST_TOKEN", "")
+        if not expected:
+            raise HTTPException(503, "ingest disabled: set RED_INGEST_TOKEN on the server")
+        supplied = authorization[7:] if authorization.lower().startswith("bearer ") else authorization
+        if supplied != expected:
+            raise HTTPException(401, "invalid ingest token")
+        run_dir = require_run(body.run_id)
+        from .traffic import TrafficRecorder
+        rec = TrafficRecorder(run_dir / "traffic.jsonl")
+        written, skipped = 0, 0
+        for e in body.entries[:200]:          # bound a single batch
+            url = (e.url or "").strip()
+            if not url.lower().startswith(("http://", "https://")):
+                skipped += 1
+                continue
+            try:
+                rec.record_http(
+                    method=(e.method or "GET"), url=url, status=int(e.status or 0),
+                    elapsed_ms=int(e.elapsed_ms or 0), tool="browser-extension",
+                    source="extension",
+                    req_headers=e.req_headers or {}, req_body=e.req_body or "",
+                    resp_headers=e.resp_headers or {}, resp_body=e.resp_body or "")
+                written += 1
+            except Exception:
+                skipped += 1
+        return {"ok": True, "written": written, "skipped": skipped}
+
+    # -- API: live recon view (any.run-style) -------------------------------------
+    # Read-only over run artifacts: the browser controller refreshes
+    # recon_live/latest.jpg + events.jsonl on every navigate/click/fill/
+    # screenshot; the snapshot merges those with the traffic tail and the
+    # observation log so an operator can watch RECON work in real time.
+
+    @app.get("/api/runs/{run_id}/recon/live")
+    def run_recon_live(run_id: str) -> dict:
+        from .livewatch import recon_live_snapshot
+        run_dir = require_run(run_id)
+        return recon_live_snapshot(run_dir)
+
+    @app.get("/live/{run_id}", response_class=HTMLResponse)
+    def live_recon_view(run_id: str) -> HTMLResponse:
+        from .livewatch import LIVE_VIEW_HTML
+        require_run(run_id)
+        return HTMLResponse(LIVE_VIEW_HTML.replace("__RUN_ID__", run_id))
+
     @app.get("/api/bench")
     def bench_board() -> dict:
         """Benchmark board feed: the bench harness exports one structured card per
@@ -909,6 +1033,21 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         (run_dir / "STOP").write_text(
             json.dumps({"requested": _now()}), encoding="utf-8")
         return {"ok": True}
+
+    @app.delete("/api/runs/{run_id}")
+    def delete_run(run_id: str) -> dict:
+        """Remove a run's directory. Refuses a run that is still executing — stop it
+        first (a live run thread is writing into this folder). require_run already
+        rejects any run_id with path-traversal characters, so the rmtree is bounded to
+        a real child of runs_root."""
+        import shutil
+        run_dir = require_run(run_id)
+        status = manifest_of(run_dir).get("status", "")
+        if status == "running":
+            raise HTTPException(409, "run is still running — stop it before deleting")
+        registry.pop_bus(run_id)   # drop any in-process bookkeeping
+        shutil.rmtree(run_dir, ignore_errors=True)
+        return {"ok": True, "deleted": run_id}
 
     @app.get("/api/runs/{run_id}/report")
     def run_report(run_id: str) -> Response:

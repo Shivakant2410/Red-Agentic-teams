@@ -33,7 +33,7 @@ def _session_headers(ctx: ToolContext, label, base):
 # Condition types eval_condition() actually implements (redteam/proof.py).
 _CONDITION_TYPES = frozenset({
     "status", "body_regex", "header_regex", "latency_delta",
-    "json_differs", "reflected_unescaped",
+    "json_differs", "reflected_unescaped", "oob_callback", "race_window",
 })
 
 
@@ -71,9 +71,12 @@ class VerifyVulnerabilityTool:
                 "  latency_delta  {request_a, request_b, min_delta}   (blind/time-based)\n"
                 "  json_differs   {request_a, request_b, json_path}   (IDOR: reached a different valid object)\n"
                 "  reflected_unescaped {request, token}               (reflected XSS: token echoed un-escaped)\n"
+                "  oob_callback   {canary, protocol?, min_count?}     (BLIND: target called back to a canary)\n"
                 "Examples: IDOR = fetch your own object and another id, assert payload status 200 "
                 "and json_differs on the id/owner. XSS = request with a unique token like <rtx931> "
-                "in a param, assert reflected_unescaped. Only reproduced proofs are recorded."
+                "in a param, assert reflected_unescaped. BLIND SSRF/XXE/DNS-exfil = mint_canary, embed "
+                "it in the payload request, fire it, then assert oob_callback {canary:'<canary>'} — the "
+                "target reaching your canary IS the proof. Only reproduced proofs are recorded."
             ),
             "input_schema": {
                 "type": "object",
@@ -135,7 +138,10 @@ class VerifyVulnerabilityTool:
             return f"BLOCKED (out of scope): {exc}"
 
         try:
-            result = verify(ProofCheck(fetchers, conditions), trials=trials, need=need)
+            # oob=ctx.oob so an oob_callback condition can read the OOB oracle —
+            # the only way a BLIND finding (SSRF/XXE/DNS-exfil/async RCE) proves.
+            result = verify(ProofCheck(fetchers, conditions, oob=getattr(ctx, "oob", None)),
+                            trials=trials, need=need)
         except KeyError as exc:
             return f"ERROR in proof design: {exc}"
         except Exception as exc:

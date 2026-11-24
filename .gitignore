@@ -35,3 +35,7 @@ data/*
 
 # Rust kernel build artifacts
 kernel/target/
+
+# Local Ollama model files (never commit — multi-GB)
+*.gguf
+Modelfile

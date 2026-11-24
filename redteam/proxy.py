@@ -655,11 +655,21 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
 
             self.proxy.stats.bump("exchanges")
             self.proxy.stats.add_bytes(len(body), len(resp_body))
+            # Evidence copy: decode Content-Encoding so the stored body is the
+            # real plaintext a verbatim-quote / body_regex proof can match. The
+            # relayed copy above stays byte-exact; here we also drop the now-stale
+            # content-encoding/length on the EVIDENCE headers so downstream reads
+            # the body as plaintext, not as still-compressed.
+            evidence_body = self._decode_body(resp_body, out_headers)
+            evidence_headers = {k: v for k, v in out_headers.items()
+                                if k.lower() not in ("content-encoding", "content-length")}
+            if evidence_body is not resp_body and len(evidence_body) != len(resp_body):
+                evidence_headers["X-Evidence-Decoded"] = "1"
             self.proxy.traffic.record_http(
                 method=method, url=url, status=resp.status, elapsed_ms=elapsed_ms,
                 tool="sandbox", source="proxy-mitm" if tls_client else "proxy",
                 req_headers=headers, req_body=self._text(body),
-                resp_headers=dict(out_headers), resp_body=self._text(resp_body))
+                resp_headers=evidence_headers, resp_body=self._text(evidence_body))
         except Exception as exc:
             self.proxy.stats.bump("errors")
             self.proxy.traffic.record_http(
@@ -681,6 +691,49 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
         if not raw:
             return ""
         return raw.decode("utf-8", errors="replace")
+
+    @staticmethod
+    def _decode_body(raw: bytes | None, headers: dict | None) -> bytes:
+        """Decompress a Content-Encoding body (gzip/deflate/br) so the RECORDED
+        evidence is the real plaintext the server sent — not compressed bytes a
+        verbatim-quote / body_regex check can never match. The relayed upstream
+        copy stays byte-exact (the client does its own decoding); this is only
+        for the evidence store. Best-effort: on any failure, return raw unchanged
+        so recording never breaks on an odd encoding."""
+        if not raw or not headers:
+            return raw or b""
+        enc = ""
+        for k, v in headers.items():
+            if k.lower() == "content-encoding":
+                enc = str(v).lower().strip()
+                break
+        if not enc or enc == "identity":
+            return raw
+        try:
+            if "gzip" in enc:
+                import gzip
+                return gzip.decompress(raw)
+            if "deflate" in enc:
+                import zlib
+                try:
+                    return zlib.decompress(raw)
+                except zlib.error:
+                    return zlib.decompress(raw, -zlib.MAX_WBITS)  # raw deflate
+            if "br" in enc:
+                try:
+                    import brotli  # optional
+                    return brotli.decompress(raw)
+                except Exception:
+                    return raw
+            if "zstd" in enc:
+                try:
+                    import zstandard  # optional
+                    return zstandard.ZstdDecompressor().decompress(raw)
+                except Exception:
+                    return raw
+        except Exception:
+            return raw
+        return raw
 
     # -- head reading on an arbitrary socket (plain or TLS-wrapped) --------------
 

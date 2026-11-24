@@ -133,6 +133,7 @@ def test_exempt_hands_match_the_crosscheck_exempt_set():
 
 def test_proof_trial_hands_are_the_proof_pipeline():
     proof_tools = {"verify_vulnerability", "confirm_finding", "verify_workflow_abuse",
+                   "verify_race_condition", "test_access_control", "test_idor",
                    "prove_privilege", "verify_finding_independently", "apply_skill",
                    "claim_objective"}
     for name, hands in HANDS.items():
@@ -331,7 +332,10 @@ def test_hands_json_parses_and_carries_every_agent():
     assert data["policy"]
     assert set(data["agents"]) == set(HANDS)
     recon = data["agents"]["recon"]
-    assert recon["hands"][0]["tool"] == "surface_scan"
+    # Phased recon workflow (2026-11-18): Phase B starts PASSIVE (DNS/TLS/
+    # metadata via passive_recon); surface_scan opens Phase C active mapping.
+    assert recon["hands"][0]["tool"] == "passive_recon"
+    assert "surface_scan" in {h["tool"] for h in recon["hands"]}
     assert recon["skills"], "recon must carry declared skills in the manifest"
     for agent in data["agents"].values():
         for h in agent["hands"]:

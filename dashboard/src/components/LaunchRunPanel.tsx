@@ -29,6 +29,9 @@ const PROVIDERS: { kind: string; label: string; keyHint: string }[] = [
   { kind: "ollama", label: "Ollama (local, no key)", keyHint: "" },
   { kind: "", label: "engine default (engagement yaml)", keyHint: "" },
   { kind: "openai", label: "OpenAI", keyHint: "OPENAI_API_KEY" },
+  // Any OpenAI-compatible gateway: enter the base URL + model + key below.
+  // Covers APInex (https://api.apinex.bond/v1), vLLM, LM Studio, a private proxy, …
+  { kind: "openai_compat", label: "OpenAI-compatible (custom base URL)", keyHint: "" },
   { kind: "zai", label: "Z.ai (GLM)", keyHint: "ZAI_API_KEY" },
   { kind: "gemini", label: "Gemini", keyHint: "GEMINI_API_KEY" },
   { kind: "openrouter", label: "OpenRouter", keyHint: "OPENROUTER_API_KEY" },
@@ -43,7 +46,25 @@ const MODEL_PRESETS: Record<string, string[]> = {
   openai: ["gpt-sol", "gpt-5.2", "gpt-5.1", "gpt-4o"],
   zai: ["glm-5.3", "glm-5.2", "glm-4.6", "glm-4.5-air"],
   gemini: ["gemini-argon", "gemini-hydrogen", "gemini-2.5-pro", "gemini-2.5-flash"],
-  openrouter: ["z-ai/glm-4.6", "openai/gpt-5.1", "anthropic/claude-sonnet-4.5"],
+  // Free + tool-capable models verified available on OpenRouter. The previous
+  // presets (z-ai/glm-4.6, paid gpt/claude) 404'd with "No endpoints found" or
+  // were paid — every launch then failed with agent.no_models. Keep this list
+  // to models that actually resolve for a free, tool-calling agent workload.
+  openrouter: [
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "google/gemma-4-31b-it:free",
+    "baidu/ernie-5.5-flash-preview:free",
+  ],
+  // APInex (apinex.bond/v1). Only the genuinely-free, tool-calling models are
+  // listed — free/claude* and free/glm* are subscription-gated despite the
+  // prefix (verified 2026-11-24). deepseek-v4-pro is the strongest for depth.
+  openai_compat: [
+    "free/deepseek-v4-pro-0813",
+    "free/deepseek-v4.1-flash",
+    "free/qwen-3.8-max",
+    "free/gpt-6-luna",
+  ],
 };
 
 /** The two execution drivers, with the operator-facing difference spelled out. */
@@ -64,6 +85,70 @@ const INTENSITIES: { id: "low" | "standard" | "high"; hint: string }[] = [
   { id: "low", hint: "≤0.5 req/s, ≤200 requests total — gentle probing." },
   { id: "standard", hint: "≤3 req/s, ≤2000 requests total — recommended." },
   { id: "high", hint: "≤8 req/s, ≤5000 requests total — still bounded, never scanner-grade." },
+];
+
+/**
+ * Objective templates — the operator picks an engagement type instead of
+ * free-typing a vague "assess the app" (which produces generic scanner-style
+ * runs). Each objective names the methodology and the discipline we built the
+ * platform around: map surface → reason about logic → confirm with a second
+ * independent method before anything is called a finding. "Custom" clears the
+ * box for a hand-written objective.
+ */
+const OBJECTIVE_TEMPLATES: { id: string; label: string; objective: string }[] = [
+  {
+    id: "custom",
+    label: "Custom (write your own)",
+    objective: "",
+  },
+  {
+    id: "webapp",
+    label: "Web application penetration test",
+    objective:
+      "Perform an authorized web-application penetration test. Map the full " +
+      "attack surface (hosts, endpoints, parameters, auth flows, APIs), then " +
+      "reason about application logic — not signatures. Hunt for OWASP-class " +
+      "flaws with emphasis on logic: IDOR/BOLA and broken access control, " +
+      "authentication and session weaknesses, injection (SQLi/XSS/SSTI/command), " +
+      "SSRF, and business-logic abuse. Confirm every candidate with a second " +
+      "independent method and a concrete reproduction before reporting it as a " +
+      "finding. No generic scanner output — each finding must carry evidence, " +
+      "impact, and reproduction steps.",
+  },
+  {
+    id: "redteam",
+    label: "Red team — objective-driven intrusion",
+    objective:
+      "Conduct an authorized, objective-driven red-team assessment. Establish an " +
+      "initial foothold on the external surface, then chain weaknesses toward a " +
+      "concrete impact: authentication bypass, privilege escalation, or access to " +
+      "sensitive data. Prioritise realistic attack chains over breadth — depth of " +
+      "a proven kill chain beats a list of low-severity issues. Independently " +
+      "verify each step of the chain and document the full path from entry to " +
+      "impact with evidence.",
+  },
+  {
+    id: "authz",
+    label: "Access control & IDOR audit",
+    objective:
+      "Audit authorization and access control. Enumerate authenticated roles and " +
+      "the objects each should and should not reach, then systematically test for " +
+      "IDOR/BOLA, horizontal and vertical privilege escalation, forced browsing, " +
+      "and missing function-level access control. For each candidate, prove it " +
+      "cross-account (one principal reaching another's object) and confirm with a " +
+      "second request before reporting. Logic over signatures.",
+  },
+  {
+    id: "api",
+    label: "API security assessment",
+    objective:
+      "Assess the authorized API surface. Discover endpoints and specs " +
+      "(OpenAPI/Swagger), map authentication and per-object authorization, then " +
+      "test for OWASP API Top 10: broken object-level authorization (BOLA), broken " +
+      "authentication, excessive data exposure, mass assignment, and injection. " +
+      "Confirm each candidate with an independent reproduction and show the " +
+      "concrete data or action it exposes — no generic probing.",
+  },
 ];
 
 function todayIso(offsetDays = 0): string {
@@ -127,6 +212,7 @@ export function LaunchRunPanel({ className }: { className?: string }) {
   const [mode, setMode] = useState<"classic" | "mission">("classic");
   const [targetUrl, setTargetUrl] = useState("");
   const [objective, setObjective] = useState("");
+  const [objectiveTemplate, setObjectiveTemplate] = useState("custom");
   const [authorizedBy, setAuthorizedBy] = useState("");
   const [ticket, setTicket] = useState("");
   const [starts, setStarts] = useState(todayIso(-1));
@@ -141,6 +227,10 @@ export function LaunchRunPanel({ className }: { className?: string }) {
   const [sourceDir, setSourceDir] = useState("");
   const [multiAgent, setMultiAgent] = useState(true);
   const [yesToAll, setYesToAll] = useState(false);
+  // Browser-direct mode: for WAF/Cloudflare targets, skip the evidence proxy
+  // (its TLS interception makes Cloudflare block the browser → recon never
+  // finishes) and the Kali sandbox (a browser-only web test doesn't use it).
+  const [browserDirect, setBrowserDirect] = useState(false);
   const [assetFeed, setAssetFeed] = useState("");
   const [planText, setPlanText] = useState("");
   const [planOpen, setPlanOpen] = useState(false);
@@ -215,7 +305,7 @@ export function LaunchRunPanel({ className }: { className?: string }) {
         provider: llmProvider,
         ...(modelOverride ?? llmModel.trim() ? { model: (modelOverride ?? llmModel.trim()) } : {}),
         ...(llmApiKey ? { api_key: llmApiKey } : {}),
-        ...(llmProvider === "ollama" && ollamaBaseUrl.trim()
+        ...((llmProvider === "ollama" || llmProvider === "openai_compat") && ollamaBaseUrl.trim()
           ? { base_url: ollamaBaseUrl.trim() }
           : {}),
       })
@@ -278,6 +368,20 @@ export function LaunchRunPanel({ className }: { className?: string }) {
     if (!Number.isInteger(steps) || steps < 1 || steps > 1000) {
       errs.push("max_steps must be an integer between 1 and 1000");
     }
+    // A custom OpenAI-compatible gateway has no built-in model pool, so a blank
+    // model leaves the provider with zero candidates — the run then dies with a
+    // cryptic "no candidate models for role 'parse'". Catch it here.
+    if (llmProvider === "openai_compat") {
+      if (!ollamaBaseUrl.trim())
+        errs.push("base URL is required for an OpenAI-compatible provider (e.g. https://api.apinex.bond/v1)");
+      if (!llmModel.trim())
+        errs.push("model is required for a custom gateway (e.g. free/deepseek-v4-pro-0813) — pick one from the list");
+      // A custom gateway has no fixed api_key_env the engine can resolve, so the
+      // key MUST be pasted here (it won't be read from the server env). A blank
+      // key is exactly what makes the request go out unauthenticated -> HTTP 403.
+      if (!llmApiKey.trim())
+        errs.push("api key is required for a custom gateway — paste it here (it is not read from the server env for openai_compat)");
+    }
     // An explicit mission plan is strictly opt-in AND must parse as a JSON
     // array of tasks — a typo must fail HERE, not become a malformed plan file.
     let plan: MissionPlanTask[] | undefined;
@@ -309,7 +413,7 @@ export function LaunchRunPanel({ className }: { className?: string }) {
           provider: llmProvider,
           ...(llmModel.trim() ? { model: llmModel.trim() } : {}),
           ...(llmApiKey ? { api_key: llmApiKey } : {}),
-          ...(llmProvider === "ollama" && ollamaBaseUrl.trim()
+          ...((llmProvider === "ollama" || llmProvider === "openai_compat") && ollamaBaseUrl.trim()
             ? { base_url: ollamaBaseUrl.trim() }
             : {}),
         }
@@ -328,6 +432,7 @@ export function LaunchRunPanel({ className }: { className?: string }) {
         ...(Number(maxLlmTokens) > 0 ? { max_llm_tokens: Number(maxLlmTokens) } : {}),
         multi_agent: multiAgent,
         yes_to_all: yesToAll,
+        ...(browserDirect ? { no_evidence_proxy: true, no_sandbox: true } : {}),
         ...(mode === "classic" && sourceDir.trim() ? { source_dir: sourceDir.trim() } : {}),
         ...(mode === "mission" && assetFeed.trim() ? { asset_feed: assetFeed.trim() } : {}),
         ...(plan ? { plan } : {}),
@@ -414,13 +519,37 @@ export function LaunchRunPanel({ className }: { className?: string }) {
 
           <Field
             label="objective"
-            hint="What the assessment should accomplish. Scored continuously."
+            hint="Pick an engagement type for a methodology-driven brief, or Custom to write your own. Editable; scored continuously."
           >
+            <select
+              className={cx(inputCls, "mb-2")}
+              value={objectiveTemplate}
+              aria-label="engagement type"
+              onChange={(e) => {
+                const id = e.target.value;
+                setObjectiveTemplate(id);
+                const t = OBJECTIVE_TEMPLATES.find((x) => x.id === id);
+                // Fill the objective from the template. "Custom" clears it so the
+                // operator writes their own; any preset overwrites the box with
+                // its specific brief (the operator can still edit afterwards).
+                if (t) setObjective(t.objective);
+              }}
+            >
+              {OBJECTIVE_TEMPLATES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
             <textarea
-              className={cx(inputCls, "min-h-[64px] resize-y leading-relaxed")}
+              className={cx(inputCls, "min-h-[96px] resize-y leading-relaxed")}
               value={objective}
-              onChange={(e) => setObjective(e.target.value)}
-              placeholder="Assess the authorized web application for security weaknesses and provide independently verified findings."
+              onChange={(e) => {
+                setObjective(e.target.value);
+                // Hand-editing a preset means it is no longer that template verbatim.
+                if (objectiveTemplate !== "custom") setObjectiveTemplate("custom");
+              }}
+              placeholder="Choose an engagement type above, or describe a specific objective: what to map, which weakness classes to hunt, and that every finding must be independently confirmed."
               spellCheck={false}
               required
             />
@@ -577,7 +706,15 @@ export function LaunchRunPanel({ className }: { className?: string }) {
               <Toggle checked={multiAgent} onChange={setMultiAgent} label="multi_agent" />
             )}
             <Toggle checked={yesToAll} onChange={setYesToAll} label="yes_to_all" />
+            <Toggle checked={browserDirect} onChange={setBrowserDirect} label="browser_direct (WAF/Cloudflare)" />
           </div>
+          {browserDirect && (
+            <p className="font-mono text-[10px] leading-snug text-muted/70">
+              Browser hits the target directly — no evidence proxy (whose TLS
+              interception makes Cloudflare block requests) and no Kali sandbox.
+              Use for WAF-fronted sites like Cloudflare. Scope enforcement still applies.
+            </p>
+          )}
 
           {mode === "classic" && (
             <Field label="source_dir (optional)" hint="Local source code for static recon.">
@@ -741,6 +878,21 @@ export function LaunchRunPanel({ className }: { className?: string }) {
                   ))}
                 </select>
               </Field>
+              {llmProvider === "openai_compat" && (
+                <Field
+                  label="base url"
+                  hint="The gateway's OpenAI-compatible base, e.g. https://api.apinex.bond/v1"
+                >
+                  <input
+                    className={inputCls}
+                    value={ollamaBaseUrl}
+                    onChange={(e) => setOllamaBaseUrl(e.target.value)}
+                    placeholder="https://api.apinex.bond/v1"
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                </Field>
+              )}
               <Field
                 label="model"
                 hint={
@@ -803,10 +955,17 @@ export function LaunchRunPanel({ className }: { className?: string }) {
               </ul>
             )}
 
-            {providerMeta?.keyHint ? (
+            {/* Key field: any keyed provider, OR an OpenAI-compatible gateway
+                (its keyHint is "" because the env var isn't fixed, but it still
+                needs a key — a hidden field here is what 403'd the APInex run). */}
+            {(providerMeta?.keyHint || llmProvider === "openai_compat") ? (
               <Field
                 label="api key"
-                hint={`Run-scoped credential for this run (${providerMeta.keyHint} channel) — held in memory server-side, never written to disk or the process env.`}
+                hint={
+                  llmProvider === "openai_compat"
+                    ? "Run-scoped key for the custom gateway (e.g. your APInex key) — held in memory server-side, never written to disk. Leave blank only if the server already has the key in its env."
+                    : `Run-scoped credential for this run (${providerMeta?.keyHint} channel) — held in memory server-side, never written to disk or the process env.`
+                }
               >
                 <input
                   className={inputCls}

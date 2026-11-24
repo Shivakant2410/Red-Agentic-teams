@@ -262,6 +262,19 @@ class AttackTree:
             for tid in ENTRY_TECHNIQUES:
                 self._add(tid, target, bucket=bucket)
 
+    def seed_technique(self, technique: str, target: str, bucket: str = "") -> AttackNode:
+        """Seed ONE arbitrary (technique, target) pair — the escape hatch from the
+        fixed ENTRY_TECHNIQUES menu. The attack-thesis engine uses this to put the
+        agent's TARGET-SPECIFIC reasoning (including vuln classes not in the static
+        TECHNIQUES catalog) onto the frontier, where the generic EXPLOIT profile
+        works it. _add accepts any technique id; technique_cost falls back to a
+        default for unknown ids, so a novel class is a first-class frontier item,
+        not a menu lookup."""
+        technique = (technique or "").strip()
+        if not technique or not target:
+            return None  # nothing to seed
+        return self._add(technique, target, bucket=bucket)
+
     def sync(self, graph=None, findings: list | None = None) -> None:
         """Grow the tree from current knowledge: seed new endpoints, and mark techniques
         confirmed by findings (which unlocks their chained follow-ups).

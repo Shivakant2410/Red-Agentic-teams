@@ -52,11 +52,26 @@ class ToolContext:
     # the Gen-1 zero-overhead behavior; run.py wires both for every new run.
     traffic: Optional[object] = None   # TrafficRecorder | None
     inventory: Optional[object] = None # AssetInventory | None
+    # RECON V2: the run's shared evidence workspace (observation store +
+    # traffic query/annotate layer). None keeps legacy behavior (tools that
+    # need it degrade to an honest "not available" message).
+    evidence_store: Optional[object] = None   # EvidenceStore | None
+    workspace: Optional[object] = None        # EvidenceWorkspace | None
     # Phase B3: the run's detection BeliefFilter (sandbox/detection_belief.py) —
     # fed by tools/http.py's observation hook at every response return point and
     # read by the orchestrator's DriftPlusPenaltyScheduler to throttle the swarm.
     # None keeps the zero-overhead behavior (single-agent mode, legacy paths).
     detection: Optional[object] = None # BeliefFilter | None
+    # RECON evidence plane: provenance + validation lifecycle for every recon
+    # observation (mirrored into the graph). None = legacy paths (no log).
+    observations: Optional[object] = None  # ObservationLog | None
+    # Intercepting evidence proxy handle (EvidenceProxy | None): lets the
+    # RECON-facing proxy_* tools query listener state and captured history.
+    proxy: Optional[object] = None     # EvidenceProxy | None
+    # Out-of-band interaction oracle (OOBOracle | None): the callback listener
+    # that lets mint_canary/poll_canary and proof.py's oob_callback predicate
+    # PROVE blind vulns (SSRF/XXE/DNS-exfil/async RCE). None when unconfigured.
+    oob: Optional[object] = None       # OOBOracle | None
 
 
 class Tool(Protocol):
@@ -70,13 +85,20 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     """Instantiate the tool set. Import here to avoid circular imports."""
     from .access_tools import ClaimObjectiveTool, RecordAccessTool
     from .authsession import AuthenticateTool, SetSessionTool
-    from .browser import (BrowserClickTool, BrowserContentTool, BrowserFillTool,
-                          BrowserNavigateTool, BrowserScreenshotTool)
+    from .browser import (BrowserClickTool, BrowserContentTool, BrowserConsoleTool,
+                          BrowserFillTool, BrowserInspectRequestTool,
+                          BrowserLoginTool, BrowserNavigateTool,
+                          BrowserRequestsTool, BrowserScreenshotTool,
+                          BrowserSessionStatusTool)
+    from .access import TestAccessControlTool, TestIdorTool
     from .confirm import ConfirmFindingTool
+    from .injprobe import InjectionProbeTool
+    from .poe_tool import GradeEvidenceTool
+    from .oob_tools import MintCanaryTool, PollCanaryTool
     from .independent_verify import VerifyFindingIndependentlyTool
     from .jwt import JwtInspectTool
     from .kali import KaliExecTool
-    from .logic import VerifyWorkflowAbuseTool
+    from .logic import VerifyWorkflowAbuseTool, VerifyRaceConditionTool
     from .nuclei import NucleiScanTool
     from .peer_traces import SearchPeerTracesTool
     from .probe import HttpProbeTool
@@ -90,6 +112,17 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
 
     tools: list[Tool] = []
     tools.append(ConfirmFindingTool())       # simple single/differential HTTP proofs
+    # Out-of-band oracle: mint/poll canaries to PROVE blind vulns (SSRF/XXE/
+    # DNS-exfil/async RCE) via proof.py's oob_callback predicate. Degrade
+    # honestly when no OOB transport is configured (tools return a clear error).
+    tools += [MintCanaryTool(), PollCanaryTool()]
+    # Access-control proofs (was dead code — built, never registered): a direct
+    # unauth-access check and a cross-principal IDOR/BOLA check. Both land
+    # pending_verification (check_type=http) so the independent pass confirms.
+    tools += [TestAccessControlTool(), TestIdorTool()]
+    # POE: bind a finding to its recorded exchange + verbatim quotes, graded
+    # against the real (gzip-decoded) wire body — catches hallucinated claims.
+    tools.append(GradeEvidenceTool())
     # authenticate to hold identities; set_session registers operator-handed static
     # tokens (assumed-breach material) as sessions; http_probe = cheap session-aware
     # LOOKING AROUND that never touches the finding pipeline;
@@ -102,6 +135,7 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # "confirmed" — meant to be called from a separate context (see orchestrator.VERIFY).
     tools += [AuthenticateTool(), SetSessionTool(), HttpProbeTool(),
               VerifyVulnerabilityTool(), VerifyWorkflowAbuseTool(),
+              VerifyRaceConditionTool(),
               VerifyFindingIndependentlyTool(), ApplySkillTool(), FindAttackTemplatesTool(),
               ApplyTemplateTool()]
     # Signature reconnaissance: jwt_inspect is deterministic offline analysis; nuclei_scan
@@ -130,7 +164,7 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # graphql_inspect runs the deterministic 4-request checklist. Leads, never
     # findings; markers are benign (mapping, not payload blasting).
     from .webinspect import GraphqlInspectTool, XssReflectProbeTool
-    tools += [XssReflectProbeTool(), GraphqlInspectTool()]
+    tools += [XssReflectProbeTool(), GraphqlInspectTool(), InjectionProbeTool()]
     # crosscheck_lead — the "never believe a tool's direct output" rule made
     # operational: every lead class carries a SECOND-METHOD entry (first-party HTTP /
     # raw socket vs a sandbox binary; fresh markers vs the inspector's own), verdicts
@@ -146,6 +180,16 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # keyword-search sibling specialists' raw process traces for observations that
     # never became findings. Read-only over this run's event log, costs no budget.
     tools.append(SearchPeerTracesTool())
+    # RECON V2 evidence workspace (redteam/recon_v2/): the specialist's read
+    # side over its OWN accumulated evidence — observations (provenance,
+    # validation, scope) and the wire history (browser + proxy + tools land in
+    # the same traffic.jsonl). replay_request re-issues a recorded request
+    # THROUGH the shared scope/budget/traffic plane (approval-gated).
+    from .recon_workspace import (AssetReadTool, EvidenceInspectTool,
+                                  EvidenceSearchTool, ProxyHistoryQueryTool,
+                                  ReplayRequestTool)
+    tools += [EvidenceSearchTool(), EvidenceInspectTool(),
+              ProxyHistoryQueryTool(), ReplayRequestTool(), AssetReadTool()]
     # Operator tools: track what we hold and what it unlocks; claim the objective.
     tools += [RecordAccessTool(), ClaimObjectiveTool()]
     # Post-exploitation: harvest -> use -> prove the privilege boundary moved.
@@ -154,8 +198,22 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     if enable_sandbox:
         tools.append(KaliExecTool())
     if enable_browser:
-        tools += [BrowserNavigateTool(), BrowserContentTool(), BrowserClickTool(),
-                  BrowserFillTool(), BrowserScreenshotTool()]
+        tools += [BrowserNavigateTool(), BrowserSessionStatusTool(),
+                  BrowserLoginTool(), BrowserContentTool(),
+                  BrowserClickTool(), BrowserFillTool(), BrowserScreenshotTool(),
+                  BrowserRequestsTool(), BrowserInspectRequestTool(),
+                  BrowserConsoleTool()]
+    # RECON evidence-plane readers: proxy history/status (queryable DURING the
+    # run) and the observation log (provenance + validation states). The proxy
+    # tools degrade honestly when no proxy runs in this run.
+    from .proxytools import (ProxyFilterTool, ProxyHistoryTool, ProxyInspectTool,
+                             ProxyReplayTool, ProxyStatusTool)
+    tools += [ProxyStatusTool(), ProxyHistoryTool(), ProxyInspectTool(),
+              ProxyFilterTool(), ProxyReplayTool()]
+    from .passive import PassiveReconTool
+    tools.append(PassiveReconTool())
+    from .obsquery import ObservationsTool
+    tools.append(ObservationsTool())
     tools += [RecordFindingTool(), RequestApprovalTool()]
     # Opt-in terminal plane for dockerless hosts (see tools/local_exec.py): NEVER
     # registered by default — the operator sets RED_LOCAL_EXEC=1 and accepts that

@@ -63,6 +63,7 @@ from .llm.openrouter import OpenRouterClient
 from .llm.routing import PARSE, PLAN
 from .reflection import coach_note, reflect
 from .strategy import EngagementStrategy, reset_tree_nudges
+from .thesis import generate_theses, theses_briefing, write_theses
 from .swarm import (AWAITING_VERIFICATION, CONFIRMED, REFUTED, EvidenceRef,
                     ResearchBundle, SwarmError, weakness_for_technique)
 from .tools import ToolContext, Tool
@@ -178,16 +179,48 @@ _ACCESS_STAGES = {CREDENTIAL_ACCESS, PRIVILEGE_ESCALATION, LATERAL_MOVEMENT, DIS
 # thing business-logic bugs live in. Heuristic, not exhaustive: a miss here just means the
 # LOGIC round doesn't run (cheap to skip), a false match just means it runs and finds
 # nothing (cheap to waste a round on) — asymmetric cost, so a loose heuristic is fine.
+# A keyword whitelist (cart/checkout/coupon/...) only fires on apps whose
+# endpoints happen to be named like a textbook shop. Real targets name their
+# money/ownership flows anything — offers, bundles, balance, transactions,
+# payouts, shipping labels — so a keyword gate SILENTLY SKIPS the logic round on
+# exactly the high-value apps. These hints now only BOOST confidence; the gate
+# below runs logic on any app that is actually stateful (forms, writes, or a
+# session), because that is where every business-logic bug lives. Running and
+# finding nothing is cheap; skipping a real app is the expensive mistake.
 _WORKFLOW_HINTS = ("cart", "checkout", "coupon", "voucher", "discount", "order", "payment",
                    "pay", "redeem", "transfer", "withdraw", "booking", "reserve", "apply",
-                   "submit", "vote", "like", "quantity", "balance", "wallet")
+                   "submit", "vote", "like", "quantity", "balance", "wallet",
+                   "offer", "bundle", "bid", "refund", "payout", "escrow", "ship",
+                   "invoice", "subscription", "credit", "fee", "price", "listing")
 
 
 def _looks_workflow_shaped(graph) -> bool:
+    """Run the LOGIC round on any app that DOES something — not just ones whose
+    endpoints match a keyword list. Business-logic bugs live wherever state is
+    created or changed, regardless of what the endpoints are named."""
     if graph is None:
         return False
-    from .knowledge import ENDPOINT
-    return any(hint in ep.key.lower() for ep in graph.nodes(ENDPOINT) for hint in _WORKFLOW_HINTS)
+    from .knowledge import ENDPOINT, PARAMETER
+    # 1. Keyword hint on any endpoint, OR a state-mutating method (forms are
+    #    recorded as endpoints with a non-GET method / form_params metadata).
+    for ep in graph.nodes(ENDPOINT):
+        low = ep.key.lower()
+        if any(hint in low for hint in _WORKFLOW_HINTS):
+            return True
+        attrs = ep.attrs or {}
+        method = str(attrs.get("method", "")).upper()
+        if method and method not in ("GET", "HEAD", "OPTIONS"):
+            return True  # POST/PUT/PATCH/DELETE mutates state = a workflow
+        if attrs.get("form_params"):
+            return True  # a submittable form = user-driven state
+    # 2. Any discovered parameter = user-controllable input/state. Pure static
+    #    content sites have none, so this still cheaply skips them.
+    try:
+        if any(True for _ in graph.nodes(PARAMETER)):
+            return True
+    except Exception:
+        pass
+    return False
 
 
 @dataclass
@@ -201,33 +234,86 @@ class SpecialistProfile:
 
 RECON = SpecialistProfile(
     name="recon",
-    addon=("You are the RECON specialist. Map the attack surface only: browse the app, "
-           "discover endpoints, parameters, and technologies, and let them register in the "
-           "knowledge graph. Do NOT try to exploit or confirm vulnerabilities — that is the "
-           "exploit specialist's job. You MAY authenticate (log in as a basic/seeded user) "
-           "purely to get past a login wall and see what's behind it — logging in is "
-           "mapping, not exploiting. If the app has a multi-step login (e.g. submit a "
-           "username, then a password at a second URL), use authenticate's "
-           "second_url_template rather than guessing follow-up URLs by hand. If the "
-           "engagement brief hands you a ready-made token/cookie, register it with "
-           "set_session instead of inventing a login. START with surface_scan (one call, "
-           "no arguments): it knocks on every host/port the RoE allows and fills the asset "
-           "inventory, so you know which in-scope services are actually alive before you "
-           "spend a single step on a dead one. Then BROADEN with the discovery stack — "
-           "content_discovery (path wordlists), crawl (link/JS walk), spa_recon (SPA API "
-           "routes), param_discovery (hidden params), host_probe/port_scan (fingerprint, "
-           "ports) — and DISCIPLINE it with crosscheck_lead: every discovery lead is a "
-           "claim from a binary/crawler until a first-party method corroborates it; "
-           "corroborated leads go in the graph, contradicted ones are dropped. Use "
-           "http_probe for raw API surfaces the browser cannot reach (JSON endpoints, API "
-           "roots, robots.txt, versioned APIs) and for anything behind a session — it is a "
-           "cheap fetch, not a proof. Be broad and fast."),
-    tool_names=["surface_scan", "host_probe", "port_scan", "content_discovery", "crawl",
-                "param_discovery", "spa_recon", "crosscheck_lead", "http_probe",
+    addon=(
+        "You are the RECON specialist: the team's autonomous reconnaissance "
+        "workstation. Your job is to MAP the authorized attack surface "
+        "thoroughly and honestly — never to exploit or confirm "
+        "vulnerabilities (EXPLOIT/VERIFY own that). You MAY authenticate (log "
+        "in as a basic/seeded user) purely to get past a login wall and map "
+        "what is behind it; if the engagement brief hands you a ready-made "
+        "token/cookie, register it with set_session instead of inventing a "
+        "login. Multi-step logins: use authenticate's second_url_template.\n"
+        "Work in phases, and CHECK what is already known before you repeat it "
+        "(evidence_search / observations list every recorded claim with its "
+        "source and validation state — re-discovering recorded work wastes "
+        "steps):\n"
+        "Phase A (understand): read the objective and the RoE scope in your "
+        "brief; note supplied credentials/sessions; probe proxy_status to "
+        "learn whether TLS is decrypted or tunneled and where captured "
+        "history lives.\n"
+        "Phase B (passive): passive_recon first — DNS, TLS certificate "
+        "metadata (SAN domains!), robots.txt, sitemap.xml, security headers, "
+        "cookie flags, technology fingerprints — all recorded with source and "
+        "mode.\n"
+        "Phase C (initial active mapping): surface_scan (one call, no "
+        "arguments) knocks on every host/port the RoE allows and fills the "
+        "asset inventory (asset_read shows what it filled); then host_probe/"
+        "port_scan for fingerprinting and ports on LIVE hosts only.\n"
+        "WAF RULE (critical — do NOT scan into a wall): if a curl/httpx/"
+        "http_probe response is a Cloudflare or WAF challenge (a 'waf_block' "
+        "flag, 'Just a moment', a 403/503 challenge page), the host is bot-"
+        "protected. Retrying raw HTTP the same way will ALWAYS be blocked — stop "
+        "doing it. Switch immediately to browser_navigate (a real browser passes "
+        "the passive challenge) and browser_session_status to check whether the "
+        "session is already warmed. If the BROWSER also hits an interactive "
+        "CAPTCHA/Turnstile, report that a human must warm the session and move "
+        "on — never loop on a wall.\n"
+        "Phase D (browser): browse like a person — browser_navigate the entry "
+        "points, browser_click/browser_fill through flows, browser_screenshot "
+        "key states, and READ browser_requests (every XHR/fetch the frontend "
+        "fired = real API surface) + browser_inspect_request for the "
+        "interesting ones + browser_console for errors that leak routes. "
+        "spa_recon walks SPA shells for API routes without credentials.\n"
+        "Phase E (API + content): content_discovery (path wordlists), crawl "
+        "(link/JS walk), param_discovery (hidden params), http_probe for raw "
+        "API surfaces (JSON endpoints, versioned APIs, OpenAPI docs), "
+        "graphql_inspect when a GraphQL endpoint answers, jwt_inspect on "
+        "tokens you legitimately hold. Your EVIDENCE WORKSPACE is inspectable: "
+        "proxy_history/proxy_filter and proxy_history_query re-read what the "
+        "browser, proxy and tools already captured (all in one traffic log); "
+        "proxy_replay / replay_request re-send a captured request under the "
+        "same scope/budget/approval controls (approval-gated, no new "
+        "targets).\n"
+        "Phase F (corroborate): every lead from a crawler/binary is a CLAIM "
+        "until a first-party method agrees — crosscheck_lead it (verdicts "
+        "corroborated/contradicted/unverifiable land in the observation log); "
+        "drop contradicted leads, keep unverifiable ones marked as such.\n"
+        "Phase G (handoff): end with a compact structured summary — live "
+        "hosts/services, entry points, technologies, endpoints with methods/"
+        "params, API surfaces, auth boundaries, security-header notes, "
+        "unverified leads, coverage gaps (what you could NOT test and why). "
+        "The graph/observations carry your evidence to EXPLOIT/LOGIC/VERIFY.\n"
+        "Discipline: use tools deliberately (never re-run the same discovery "
+        "on the same target in one run), search your evidence (evidence_search "
+        "/ evidence_inspect) before re-scanning, respect the RoE budget, and "
+        "report honestly — partial coverage is reported as partial, never as "
+        "complete."),
+    tool_names=["passive_recon", "observations", "proxy_status", "proxy_history",
+                "proxy_inspect", "proxy_filter", "proxy_replay",
+                "surface_scan", "host_probe", "port_scan", "content_discovery",
+                "crawl", "param_discovery", "spa_recon", "crosscheck_lead",
+                "http_probe", "jwt_inspect", "graphql_inspect",
                 "browser_navigate", "browser_content", "browser_click",
-                "authenticate", "set_session", "kali_exec", "search_peer_traces"],
+                "browser_fill", "browser_screenshot", "browser_requests",
+                "browser_inspect_request", "browser_console",
+                "authenticate", "set_session", "kali_exec",
+                "search_peer_traces",
+                "evidence_search", "evidence_inspect", "proxy_history_query",
+                "replay_request", "asset_read"],
     role=PARSE,          # breadth work -> cheaper model
-    max_steps=22,        # was 15: the discovery stack is the mapping job now, not an extra
+    max_steps=40,        # the phased recon workflow (A-G) over the full unified
+                         # discovery+evidence-workspace stack (35 hands) needs
+                         # more than one step per tool (test_hands enforces this)
 )
 
 EXPLOIT = SpecialistProfile(
@@ -246,7 +332,8 @@ EXPLOIT = SpecialistProfile(
            "anything counts. That is by design; keep proving, don't try to self-promote."),
     tool_names=["find_techniques", "crosscheck_lead", "apply_skill", "confirm_finding",
                 "verify_vulnerability", "authenticate", "set_session",
-                "http_probe", "kali_exec", "search_peer_traces",
+                "http_probe", "kali_exec", "mint_canary", "poll_canary",
+                "test_access_control", "test_idor", "grade_evidence", "search_peer_traces",
                 "browser_navigate", "browser_content", "browser_fill"],
     role=PLAN,           # depth/reasoning work -> strongest model
     max_steps=40,
@@ -277,26 +364,46 @@ ACCESS = SpecialistProfile(
 
 LOGIC = SpecialistProfile(
     name="logic",
-    addon=("You are the LOGIC specialist. Endpoints that look workflow-shaped (cart, "
-           "checkout, coupon, payment, voucher, order, transfer, booking, ...) are in the "
-           "knowledge graph. Reason about what the APP'S DOMAIN assumes should be true — a "
-           "coupon used once, a price computed server-side, a step that can't be skipped, "
-           "an action that can't be repeated — and try to break that assumption. Use "
-           "verify_workflow_abuse: give an ordered attack_steps sequence (e.g. redeem the "
-           "same coupon twice, or submit a negative quantity, or call the 'confirm order' "
-           "step without first calling 'add payment'), an ordered control_steps sequence "
-           "doing the SAME workflow honestly (ideally with a fresh identifier — a "
-           "different coupon/order), and the invariant that proves the attack sequence "
-           "broke something the control didn't. This is NOT re-run k-of-n like the other "
-           "proof tools — business logic is usually one-shot, so get the sequence right "
-           "the first time rather than spraying payloads. Authenticate first if the "
-           "workflow needs a session. Do NOT hunt injection/XSS/access-control here — "
-           "that's the exploit specialist's job; only pursue bugs where the vulnerability "
-           "IS the business rule being violated, not a technical injection flaw."),
-    tool_names=["verify_workflow_abuse", "authenticate", "browser_navigate", "browser_content",
-                "browser_fill", "browser_click"],
+    addon=("You are the LOGIC specialist — the team's deep-thinking attacker. This is the "
+           "class of bug a scanner CANNOT find and an AI that only knows the OWASP top-10 "
+           "WILL miss. Your edge is reasoning about THIS specific application, not running a "
+           "payload library. The program pays MORE for these than their raw CVSS suggests.\n"
+           "STEP 1 — understand the business. From the recon evidence (endpoints, params, "
+           "forms, flows, the pages you can read), infer what this application actually IS "
+           "and how it creates value: who are the actors (buyer/seller/admin/guest), what "
+           "objects do they own (listings, orders, offers, bundles, balances, payouts, "
+           "messages), and what are the MONEY and OWERSHIP and STATE-TRANSITION flows "
+           "between them? Write this model down first — do not skip to attacking.\n"
+           "STEP 2 — enumerate the invariants the app TRUSTS. For each flow, name what the "
+           "server assumes is always true: a price is computed server-side not sent by the "
+           "client; an item must be paid before it ships; escrow releases only after "
+           "delivery; a user can only act on objects they own; a discount/refund/credit "
+           "can't exceed what was paid; a state can't move backwards; an action can't be "
+           "repeated or raced. These are app-specific — derive them from THIS domain, not a "
+           "generic checklist.\n"
+           "STEP 3 — attack the invariant, and CHAIN. The highest-impact findings combine "
+           "a weak primitive with a flow: a guessable/mutable object reference + the refund "
+           "or payout flow = money extraction; a skippable step + a trust boundary = free "
+           "goods or seller fraud; a race on a balance/offer = double-spend. Reason about "
+           "how a small flaw becomes financial loss or account takeover when chained, and "
+           "test the CHAIN, not just the isolated primitive.\n"
+           "PROVE IT with verify_workflow_abuse: an ordered attack_steps sequence (the "
+           "abuse), an ordered control_steps sequence doing the SAME flow honestly (ideally "
+           "with a fresh identifier), and the INVARIANT whose violation proves impact. "
+           "Business logic is usually one-shot — reason the sequence out correctly rather "
+           "than spraying. Use http_probe and multiple sessions (authenticate / set_session) "
+           "to drive cross-account tests (act as A on B's object), but ONLY ever against "
+           "objects YOU own on both sides — never a real user's data. Authenticate first if "
+           "a flow needs a session. Do NOT hunt injection/XSS/access-control as technical "
+           "flaws — that's EXPLOIT's job; pursue bugs where the vulnerability IS the broken "
+           "business rule, especially ones with financial or trust impact."),
+    tool_names=["verify_workflow_abuse", "verify_race_condition", "authenticate",
+                "set_session", "http_probe",
+                "browser_navigate", "browser_content", "browser_fill", "browser_click",
+                "browser_login", "browser_session_status", "browser_requests",
+                "browser_inspect_request", "find_techniques", "grade_evidence"],
     role=PLAN,           # requires reasoning about the specific app's domain, not pattern-matching
-    max_steps=25,
+    max_steps=30,
 )
 
 VERIFY = SpecialistProfile(
@@ -674,6 +781,9 @@ class Orchestrator:
         self._research_hyp_by_node: dict[str, str] = {}       # tree node id -> hypothesis id
         self._research_finding_hyp: dict[str, str] = {}       # finding id -> hypothesis id
         self._research_verdicts_seen: dict[str, str] = {}     # finding id -> last mirrored confidence
+        # Run directory for inspectable artifacts (thesis.jsonl). None keeps the
+        # thesis layer purely in-memory, same policy as the research bundle.
+        self._run_dir = Path(research_dir) if research_dir else None
 
     def with_runtime(self, budget=None, manifest=None, manifest_path=None,
                      terminal_manifest_writes: bool = True):
@@ -739,6 +849,96 @@ class Orchestrator:
             manifest = self._manifest[0] if self._manifest else None
             agent.with_runtime(budget=self._budget, manifest=manifest, manifest_path=mpath)
         return agent
+
+    def _evidence_digest(self) -> tuple[str, set[str]]:
+        """A compact, model-readable picture of what recon observed — the input
+        the thesis generator reasons over. Returns (digest_text, endpoint_keys)
+        where the keys ground the evidence-support score in thesis.py."""
+        if self._graph is None:
+            return "", set()
+        from .knowledge import ENDPOINT, PARAMETER, TECHNOLOGY, SERVICE, HOST
+        lines: list[str] = []
+        keys: set[str] = set()
+
+        def _sample(kind, label, cap=40):
+            rows = []
+            try:
+                for n in self._graph.nodes(kind):
+                    rows.append(n)
+                    if len(rows) >= cap:
+                        break
+            except Exception:
+                return
+            if rows:
+                lines.append(f"{label} ({len(rows)}{'+' if len(rows) >= cap else ''}):")
+                for n in rows:
+                    attrs = n.attrs or {}
+                    extra = ""
+                    method = str(attrs.get("method", "")).upper()
+                    if method:
+                        extra += f" [{method}]"
+                    if attrs.get("form_params"):
+                        extra += f" form_params={list(attrs['form_params'])[:8]}"
+                    if attrs.get("title"):
+                        extra += f" title={str(attrs['title'])[:60]!r}"
+                    lines.append(f"  - {n.key}{extra}")
+                    if kind == ENDPOINT:
+                        keys.add(n.key.lower())
+
+        _sample(HOST, "Hosts")
+        _sample(SERVICE, "Services")
+        _sample(TECHNOLOGY, "Technologies")
+        _sample(ENDPOINT, "Endpoints", cap=60)
+        _sample(PARAMETER, "Parameters", cap=40)
+        return "\n".join(lines), keys
+
+    def _generate_theses(self, lens: str, objective: str, on_text=None):
+        """Generate, log and brief ranked attack theses for a lens
+        ('exploit'|'logic'). Returns the briefing string ('' on any failure —
+        the run is lifted by theses, never dependent on them)."""
+        try:
+            digest, keys = self._evidence_digest()
+            if not digest:
+                return ""
+            theses = generate_theses(
+                self._client, lens=lens, evidence_digest=digest,
+                evidence_keys=keys, objective_text=objective,
+                log=self._ctx.audit.record)
+            if not theses:
+                return ""
+            # Persist the inspectable artifact next to the run's other evidence.
+            if self._run_dir:
+                write_theses(self._run_dir / "thesis.jsonl", theses)
+            # Seed the attack tree from the THESIS's own technique — including
+            # classes NOT in the static catalog. This is how the agent's
+            # target-specific reasoning, not a predefined menu, decides what gets
+            # tested: a novel technique id becomes a first-class frontier item the
+            # generic EXPLOIT profile works (profile_for falls back to EXPLOIT for
+            # unknown ids). The thesis score boosts its priority so a strong,
+            # target-specific bet outranks the generic entry techniques.
+            if self._attack_tree is not None:
+                for t in theses:
+                    if not (t.technique and t.target):
+                        continue
+                    try:
+                        self._attack_tree.seed_technique(t.technique, t.target)
+                        # Lift this node on the frontier by its thesis score (the
+                        # strategist-boost channel only reorders in-scope work).
+                        boost = getattr(self._attack_tree, "_strategy_boost", None)
+                        if boost is not None:
+                            boost[f"{t.technique}@{t.target}"] = 50.0 + 50.0 * float(t.score)
+                    except Exception:
+                        pass
+            if on_text and theses:
+                on_text(f"[thesis:{lens}] top bet ({theses[0].score:.2f}): "
+                        f"{theses[0].belief[:140]}")
+            return theses_briefing(theses)
+        except Exception as exc:
+            try:
+                self._ctx.audit.record("thesis.error", lens=lens, error=str(exc))
+            except Exception:
+                pass
+            return ""
 
     # -- Phase 3: mission task-level execution -----------------------------------
     # One task, one specialist, NO phase sequence. The mission scheduler owns
@@ -1402,6 +1602,14 @@ class Orchestrator:
         recon = self._make_specialist(RECON)
         recon.run(f"{objective}\n\nThis run: RECON only — map the attack surface.", on_text=on_text)
 
+        # Phase 1.5 — ATTACK THESES (strong model). Before any exploitation, reason
+        # about THIS target in writing: what is exploitable, why, which trusted
+        # invariant breaks, how a primitive chains to impact. The ranked theses
+        # (novelty x impact x evidence) brief the exploit swarm so it attacks
+        # target-specific reasoning, not a generic technique menu. Logged to
+        # thesis.jsonl as the run's inspectable "approach" record.
+        self._exploit_theses_brief = self._generate_theses("exploit", objective, on_text)
+
         # Phase 2 — exploit rounds (depth, strong model) while there is untested work + budget.
         # Each round is followed by a VERIFY round in a FRESH, separate context: the
         # exploit specialist's checks only ever reach pending_verification, and nothing
@@ -1429,8 +1637,12 @@ class Orchestrator:
             self._phase("exploit", round=rnd)
             # Coach's notes from the last reflection steer this round's specialists.
             round_objective = objective
+            # The attack theses brief every exploit round so the swarm pursues the
+            # ranked, target-specific reasoning rather than a generic class list.
+            if getattr(self, "_exploit_theses_brief", ""):
+                round_objective = round_objective + "\n\n" + self._exploit_theses_brief
             if self._reflection_notes:
-                round_objective = objective + "\n\n" + self._reflection_notes[-1]
+                round_objective = round_objective + "\n\n" + self._reflection_notes[-1]
             summary = self._run_exploit_swarm(round_objective, rnd, on_text) or summary
 
             # Learned-state broadcast (docs/multi-gambit.md §4.1): the store's
@@ -1491,7 +1703,12 @@ class Orchestrator:
                 budget_remains = False
         if budget_remains and _looks_workflow_shaped(self._graph):
             self._phase("logic")
-            logic = self._make_specialist(LOGIC)
+            # Logic-lens theses: model the app's actors/value-flows, name the
+            # trusted invariants, reason about chaining a primitive into financial
+            # or ATO impact — then the specialist proves that written reasoning.
+            logic_brief = self._generate_theses("logic", objective, on_text)
+            logic = self._make_specialist(LOGIC, addon_suffix=(
+                ("\n\n" + logic_brief) if logic_brief else ""))
             summary = logic.run(
                 f"{objective}\n\nThis run: LOGIC — find and prove business-logic bugs "
                 f"on the workflow-shaped endpoints already mapped.", on_text=on_text) or summary

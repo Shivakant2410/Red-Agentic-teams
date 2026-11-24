@@ -82,14 +82,22 @@ class TestAccessControlTool:
         if result.verdict != "confirmed":
             return json.dumps({"verdict": result.verdict, "recorded": False,
                                "note": "unauthenticated access did not reproduce; likely enforced."})
+        # Self-administered proof lands PENDING — like every other proof tool,
+        # only verify_finding_independently (fresh context) may confirm. The
+        # stored http check_spec lets that replay re-run this exact check.
+        check_spec = {"request": req, "expect_status": 200, "body_regex": protected_marker}
         f = Finding(title=f"Broken access control at {url}", severity="high", target=url,
                     summary="Protected resource is reachable without authentication.",
-                    evidence="\n".join(result.details), cwe="CWE-284", confidence="confirmed",
-                    verification_verdict=result.verdict, reproductions=result.reproductions,
-                    trials=result.trials, poc=f"Unauthenticated {method} {url} returns protected content.",
-                    recommendation="Enforce authentication/authorization server-side on this resource.")
+                    evidence="\n".join(result.details), cwe="CWE-284",
+                    confidence="pending_verification", verification_verdict=result.verdict,
+                    reproductions=result.reproductions, trials=result.trials,
+                    poc=f"Unauthenticated {method} {url} returns protected content.",
+                    recommendation="Enforce authentication/authorization server-side on this resource.",
+                    check_type="http", check_spec=check_spec)
         _record(ctx, f)
-        return json.dumps({"verdict": "confirmed", "recorded": True, "finding_id": f.id})
+        return json.dumps({"verdict": "pending_verification", "recorded": True,
+                           "finding_id": f.id,
+                           "note": "reproduced here; an independent re-check must confirm it."})
 
 
 class TestIdorTool:
@@ -138,12 +146,18 @@ class TestIdorTool:
         if result.verdict != "confirmed":
             return json.dumps({"verdict": result.verdict, "recorded": False,
                                "note": "could not reproduce access to the other principal's data."})
+        # Store the session-bearing request so the independent re-check replays
+        # the SAME cross-principal access. Lands pending — not self-confirmed.
+        check_spec = {"request": req, "expect_status": 200, "body_regex": victim_marker}
         f = Finding(title=f"IDOR at {url}", severity="high", target=url,
                     summary=f"Principal '{session_label}' can access another principal's object.",
-                    evidence="\n".join(result.details), cwe="CWE-639", confidence="confirmed",
-                    verification_verdict=result.verdict, reproductions=result.reproductions,
-                    trials=result.trials,
+                    evidence="\n".join(result.details), cwe="CWE-639",
+                    confidence="pending_verification", verification_verdict=result.verdict,
+                    reproductions=result.reproductions, trials=result.trials,
                     poc=f"As {session_label}: {method} {url} returns another principal's data.",
-                    recommendation="Enforce per-object authorization checks tied to the caller's identity.")
+                    recommendation="Enforce per-object authorization checks tied to the caller's identity.",
+                    check_type="http", check_spec=check_spec)
         _record(ctx, f)
-        return json.dumps({"verdict": "confirmed", "recorded": True, "finding_id": f.id})
+        return json.dumps({"verdict": "pending_verification", "recorded": True,
+                           "finding_id": f.id,
+                           "note": "reproduced here; an independent re-check must confirm it."})

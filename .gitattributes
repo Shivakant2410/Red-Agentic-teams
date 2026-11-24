@@ -1,0 +1,6 @@
+# Shell scripts and sandbox entrypoints MUST stay LF — a CRLF shebang makes the
+# Linux kernel look for an interpreter literally named `bash\r`, so the Kali
+# sandbox container dies at startup (exit 127) and never locks down egress.
+*.sh            text eol=lf
+entrypoint.sh   text eol=lf
+Dockerfile      text eol=lf

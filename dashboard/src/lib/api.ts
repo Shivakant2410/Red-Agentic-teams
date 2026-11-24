@@ -140,6 +140,12 @@ export const api = {
       (baseUrl ? `&base_url=${encodeURIComponent(baseUrl)}` : ""),
     ),
 
+  deleteRun: (runId: string) =>
+    request<{ ok: boolean; deleted: string }>(
+      `/api/runs/${encodeURIComponent(runId)}`,
+      { method: "DELETE" },
+    ),
+
   stopRun: (runId: string) =>
     request<{ ok: boolean }>(`/api/runs/${encodeURIComponent(runId)}/stop`, {
       method: "POST",

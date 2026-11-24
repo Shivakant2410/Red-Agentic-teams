@@ -127,7 +127,7 @@ export default function RunsOverviewPage() {
                 </span>
               </div>
             )}
-            <RunsTable runs={runs} />
+            <RunsTable runs={runs} onChanged={refreshRuns} />
           </div>
           <LaunchRunPanel className="xl:sticky xl:top-4" />
         </section>

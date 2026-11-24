@@ -1,11 +1,13 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { cx, Panel, PanelHead } from "./Bits";
+import { cx, IconX, inputCls, Panel, PanelHead } from "./Bits";
 import { StatusBadge } from "./StatusBadge";
 import { fmtInt, formatTokens, truncate } from "@/lib/format";
 import { useNow } from "@/lib/useNow";
 import { formatDuration, parseTs } from "@/lib/format";
+import { api, errMessage } from "@/lib/api";
 import type { RunSummary } from "@/lib/types";
 
 function StartedCell({ ts }: { ts?: string }) {
@@ -15,28 +17,101 @@ function StartedCell({ ts }: { ts?: string }) {
   return <span title={new Date(t).toLocaleString()}>{formatDuration(Math.max(0, now - t))} ago</span>;
 }
 
-/** Runs overview table — click a row to open mission control for that run. */
-export function RunsTable({ runs }: { runs: RunSummary[] }) {
+/** Runs overview table — click a row to open mission control, filter by text, delete runs. */
+export function RunsTable({
+  runs,
+  onChanged,
+}: {
+  runs: RunSummary[];
+  onChanged?: () => void;
+}) {
   const router = useRouter();
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState<string>("");
+  const [err, setErr] = useState<string>("");
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return runs;
+    return runs.filter((r) =>
+      [r.run_id, r.name, r.objective, r.status]
+        .filter(Boolean)
+        .some((f) => String(f).toLowerCase().includes(q)),
+    );
+  }, [runs, query]);
+
+  const del = async (e: React.MouseEvent, r: RunSummary) => {
+    e.stopPropagation(); // don't open the run
+    if (r.status === "running") {
+      setErr(`"${r.run_id}" is still running — stop it first.`);
+      return;
+    }
+    if (!window.confirm(`Delete run ${r.run_id}? This removes its folder and cannot be undone.`))
+      return;
+    setBusy(r.run_id);
+    setErr("");
+    try {
+      await api.deleteRun(r.run_id);
+      onChanged?.();
+    } catch (e2) {
+      setErr(errMessage(e2));
+    } finally {
+      setBusy("");
+    }
+  };
 
   return (
     <Panel>
       <PanelHead
         label="RUNS"
         right={
-          <span className="font-mono text-[10px] tabular-nums text-muted">
-            {runs.length}
-          </span>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="filter runs…"
+                spellCheck={false}
+                autoComplete="off"
+                aria-label="filter runs"
+                className={cx(inputCls, "h-7 w-40 py-1 pr-6 text-[11px] sm:w-56")}
+              />
+              {query && (
+                <button
+                  type="button"
+                  aria-label="clear filter"
+                  onClick={() => setQuery("")}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
+                >
+                  <IconX className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+            <span className="font-mono text-[10px] tabular-nums text-muted">
+              {query ? `${filtered.length}/${runs.length}` : runs.length}
+            </span>
+          </div>
         }
       />
+
+      {err && (
+        <p className="border-b border-accent/30 bg-accent/10 px-3 py-1.5 font-mono text-[11px] text-accent">
+          {err}
+        </p>
+      )}
+
       {runs.length === 0 ? (
         <p className="px-3 py-6 text-center font-mono text-[11px] text-muted/70">
           No runs yet — launch one from the panel.
           <span className="blink text-info">_</span>
         </p>
+      ) : filtered.length === 0 ? (
+        <p className="px-3 py-6 text-center font-mono text-[11px] text-muted/70">
+          No runs match “{query}”.
+        </p>
       ) : (
         <div className="scroll-slim overflow-x-auto">
-          <table className="w-full min-w-[760px] border-collapse text-left">
+          <table className="w-full min-w-[820px] border-collapse text-left">
             <thead>
               <tr className="border-b border-edge text-[9px] uppercase tracking-[0.18em] text-muted/70">
                 <th className="px-3 py-2 font-medium">RUN ID</th>
@@ -47,10 +122,13 @@ export function RunsTable({ runs }: { runs: RunSummary[] }) {
                 <th className="px-3 py-2 text-right font-medium">FINDINGS</th>
                 <th className="px-3 py-2 text-right font-medium">TOKENS</th>
                 <th className="px-3 py-2 text-right font-medium">STARTED</th>
+                <th className="px-3 py-2 text-right font-medium">
+                  <span className="sr-only">actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {runs.map((r) => (
+              {filtered.map((r) => (
                 <tr
                   key={r.run_id}
                   tabIndex={0}
@@ -66,7 +144,7 @@ export function RunsTable({ runs }: { runs: RunSummary[] }) {
                     }
                   }}
                   className={cx(
-                    "cursor-pointer border-b border-edge/40 transition-colors last:border-0",
+                    "group cursor-pointer border-b border-edge/40 transition-colors last:border-0",
                     "hover:bg-panel2/60 focus-visible:bg-panel2/60 focus-visible:outline focus-visible:outline-1 focus-visible:outline-info/60",
                   )}
                 >
@@ -93,6 +171,28 @@ export function RunsTable({ runs }: { runs: RunSummary[] }) {
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-[10.5px] text-muted">
                     <StartedCell ts={r.started} />
+                  </td>
+                  <td className="px-2 py-2 text-right">
+                    <button
+                      type="button"
+                      aria-label={`delete run ${r.run_id}`}
+                      title={r.status === "running" ? "stop the run before deleting" : "delete run"}
+                      disabled={busy === r.run_id || r.status === "running"}
+                      onClick={(e) => del(e, r)}
+                      className={cx(
+                        "rounded p-1 text-muted/60 transition-colors",
+                        "hover:bg-accent/15 hover:text-accent",
+                        "focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent/60",
+                        "disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted/60",
+                        "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+                      )}
+                    >
+                      {busy === r.run_id ? (
+                        <span className="font-mono text-[10px]">…</span>
+                      ) : (
+                        <IconX className="h-3.5 w-3.5" />
+                      )}
+                    </button>
                   </td>
                 </tr>
               ))}
