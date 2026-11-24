@@ -261,6 +261,13 @@ class UrlLaunchBody(BaseModel):
     asset_feed: str = Field(default="", max_length=2_000_000)
     plan: list = []                   # mission driver only (deliberate static plan)
     llm: LlmOverride | None = None
+    # Browser-direct mode for WAF/Cloudflare targets: the evidence proxy's TLS
+    # interception makes Cloudflare block the browser's requests (seen as
+    # hundreds of browser.request.blocked), so recon never finishes. Turning the
+    # proxy off (and the Kali sandbox, which a browser-only web test doesn't use)
+    # lets the browser reach the target directly. Default keeps both on.
+    no_evidence_proxy: bool = False
+    no_sandbox: bool = False
 
 
 class IngestEntry(BaseModel):
@@ -713,6 +720,15 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         opts.out_dir = out_dir
         opts.events = bus
         opts.approve = HeadlessApprover(out_dir, bus, kill_file=out_dir / "STOP")
+        # Browser-direct mode for WAF targets: no evidence proxy (its TLS
+        # interception makes Cloudflare block the browser) and the browser goes
+        # straight to the target; optionally skip the Kali sandbox for a
+        # browser-only web test. Scope enforcement (ScopeGuard) is unaffected.
+        if body.no_evidence_proxy:
+            opts.no_evidence_proxy = True
+            opts.browser_through_proxy = False
+        if body.no_sandbox:
+            opts.no_sandbox = True
         if mode == "mission":
             opts.driver = "mission"
             if body.plan:

@@ -296,6 +296,11 @@ export interface UrlLaunchRequest {
   asset_feed?: string;
   plan?: MissionPlanTask[];
   llm?: LlmOverride;
+  /** Browser-direct mode for WAF/Cloudflare targets — skip the evidence proxy
+   *  (whose TLS interception makes Cloudflare block the browser) and optionally
+   *  the Kali sandbox for a browser-only web test. */
+  no_evidence_proxy?: boolean;
+  no_sandbox?: boolean;
 }
 
 export interface UrlLaunchResponse {

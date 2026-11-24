@@ -227,6 +227,10 @@ export function LaunchRunPanel({ className }: { className?: string }) {
   const [sourceDir, setSourceDir] = useState("");
   const [multiAgent, setMultiAgent] = useState(true);
   const [yesToAll, setYesToAll] = useState(false);
+  // Browser-direct mode: for WAF/Cloudflare targets, skip the evidence proxy
+  // (its TLS interception makes Cloudflare block the browser → recon never
+  // finishes) and the Kali sandbox (a browser-only web test doesn't use it).
+  const [browserDirect, setBrowserDirect] = useState(false);
   const [assetFeed, setAssetFeed] = useState("");
   const [planText, setPlanText] = useState("");
   const [planOpen, setPlanOpen] = useState(false);
@@ -428,6 +432,7 @@ export function LaunchRunPanel({ className }: { className?: string }) {
         ...(Number(maxLlmTokens) > 0 ? { max_llm_tokens: Number(maxLlmTokens) } : {}),
         multi_agent: multiAgent,
         yes_to_all: yesToAll,
+        ...(browserDirect ? { no_evidence_proxy: true, no_sandbox: true } : {}),
         ...(mode === "classic" && sourceDir.trim() ? { source_dir: sourceDir.trim() } : {}),
         ...(mode === "mission" && assetFeed.trim() ? { asset_feed: assetFeed.trim() } : {}),
         ...(plan ? { plan } : {}),
@@ -701,7 +706,15 @@ export function LaunchRunPanel({ className }: { className?: string }) {
               <Toggle checked={multiAgent} onChange={setMultiAgent} label="multi_agent" />
             )}
             <Toggle checked={yesToAll} onChange={setYesToAll} label="yes_to_all" />
+            <Toggle checked={browserDirect} onChange={setBrowserDirect} label="browser_direct (WAF/Cloudflare)" />
           </div>
+          {browserDirect && (
+            <p className="font-mono text-[10px] leading-snug text-muted/70">
+              Browser hits the target directly — no evidence proxy (whose TLS
+              interception makes Cloudflare block requests) and no Kali sandbox.
+              Use for WAF-fronted sites like Cloudflare. Scope enforcement still applies.
+            </p>
+          )}
 
           {mode === "classic" && (
             <Field label="source_dir (optional)" hint="Local source code for static recon.">
