@@ -928,10 +928,17 @@ export function LaunchRunPanel({ className }: { className?: string }) {
               </ul>
             )}
 
-            {providerMeta?.keyHint ? (
+            {/* Key field: any keyed provider, OR an OpenAI-compatible gateway
+                (its keyHint is "" because the env var isn't fixed, but it still
+                needs a key — a hidden field here is what 403'd the APInex run). */}
+            {(providerMeta?.keyHint || llmProvider === "openai_compat") ? (
               <Field
                 label="api key"
-                hint={`Run-scoped credential for this run (${providerMeta.keyHint} channel) — held in memory server-side, never written to disk or the process env.`}
+                hint={
+                  llmProvider === "openai_compat"
+                    ? "Run-scoped key for the custom gateway (e.g. your APInex key) — held in memory server-side, never written to disk. Leave blank only if the server already has the key in its env."
+                    : `Run-scoped credential for this run (${providerMeta?.keyHint} channel) — held in memory server-side, never written to disk or the process env.`
+                }
               >
                 <input
                   className={inputCls}
