@@ -370,17 +370,24 @@ class RunRegistry:
         t.start()
 
 
-def _write_effective_engagement(src_path: str, out_dir: Path, llm: LlmOverride) -> str:
+def _write_effective_engagement(src_path: str, out_dir: Path, llm: LlmOverride,
+                                api_key_env: str = "") -> str:
     """Copy the engagement YAML into the run dir with the llm block replaced by
     the operator's selection. The run then launches against that copy, so every
     artifact the run produces records the exact model config it ran with —
-    and the original engagement file is never modified in place."""
+    and the original engagement file is never modified in place.
+
+    api_key_env names the env var the provider should read the key from (the key
+    VALUE never lands in the YAML — only the var name). Needed for a custom
+    gateway whose kind has no built-in env-var mapping."""
     data = yaml.safe_load(Path(src_path).read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise HTTPException(400, "engagement is not a YAML mapping")
     entry: dict = {"kind": llm.provider.strip().lower()}
     if llm.base_url:
         entry["base_url"] = llm.base_url
+    if api_key_env:
+        entry["api_key_env"] = api_key_env
     if llm.model:
         entry["models_allow"] = [llm.model]
     data["llm"] = {"providers": [entry]}
@@ -413,10 +420,18 @@ def _prepare_llm(llm: LlmOverride | None, src_path: str,
             f"unknown llm provider '{kind}' — choose one of "
             f"{sorted(LLM_PROVIDER_SHORTCUTS)} or pass base_url")
     key_env = LLM_PROVIDER_SHORTCUTS.get(kind, "")
+    # A custom gateway (openai_compat / any off-table kind) has no fixed env var,
+    # so a pasted key had nowhere to land and was silently dropped — the run then
+    # went out unauthenticated and the gateway answered HTTP 403. Synthesize a
+    # run-scoped env-var name and record it on the effective engagement so the
+    # provider reads the key from the run's in-memory credentials.
+    if not key_env and llm.api_key:
+        key_env = "RED_CUSTOM_LLM_KEY"
     credentials = {}
     if llm.api_key and key_env:
         credentials[key_env] = llm.api_key
-    launch_path = _write_effective_engagement(src_path, out_dir, llm)
+    launch_path = _write_effective_engagement(src_path, out_dir, llm,
+                                              api_key_env=key_env if llm.api_key else "")
     return launch_path, credentials
 
 

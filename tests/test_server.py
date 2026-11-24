@@ -819,3 +819,34 @@ def test_delete_rejects_path_traversal(harness):
     # require_run rejects traversal characters before any filesystem touch
     r = client.delete("/api/runs/..%2f..%2fetc")
     assert r.status_code == 404
+
+
+def test_custom_gateway_key_is_carried_not_dropped(tmp_path):
+    """A pasted key for a custom openai_compat gateway must reach the provider.
+    Regression: the launch path keyed credentials by the provider's fixed env
+    var, which is empty for a custom kind, so the key was silently dropped and
+    the run went out unauthenticated (HTTP 403)."""
+    from redteam.server import LlmOverride, _prepare_llm
+    from redteam.llm.gateway import resolve_api_key
+    from redteam.llm.providers import ProviderConfig
+    import yaml
+
+    src = tmp_path / "src.yaml"
+    src.write_text(
+        "name: t\nscope:\n  allowed_hosts: [x.test]\n  allowed_ports: [443]\n"
+        "  allowed_schemes: [https]\nstarts: \"2026-01-01\"\nends: \"2026-12-31\"\n",
+        encoding="utf-8")
+    ov = LlmOverride(provider="openai_compat", model="free/deepseek-v4-pro-0813",
+                     base_url="https://api.apinex.bond/v1", api_key="sk-SECRET")
+    path, creds = _prepare_llm(ov, str(src), tmp_path)
+
+    # key carried in run-scoped credentials, NOT written to the engagement yaml
+    assert "sk-SECRET" in creds.values()
+    path_text = open(path, encoding="utf-8").read()
+    assert "sk-SECRET" not in path_text
+    prov = yaml.safe_load(path_text)["llm"]["providers"][0]
+    assert prov["api_key_env"]  # a var name was synthesized
+    # and it resolves back to the real key
+    pcfg = ProviderConfig(kind="openai_compat", base_url=prov["base_url"],
+                          api_key_env=prov["api_key_env"]).resolved()
+    assert resolve_api_key(pcfg, creds) == "sk-SECRET"
