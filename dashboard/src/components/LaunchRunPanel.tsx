@@ -372,6 +372,11 @@ export function LaunchRunPanel({ className }: { className?: string }) {
         errs.push("base URL is required for an OpenAI-compatible provider (e.g. https://api.apinex.bond/v1)");
       if (!llmModel.trim())
         errs.push("model is required for a custom gateway (e.g. free/deepseek-v4-pro-0813) — pick one from the list");
+      // A custom gateway has no fixed api_key_env the engine can resolve, so the
+      // key MUST be pasted here (it won't be read from the server env). A blank
+      // key is exactly what makes the request go out unauthenticated -> HTTP 403.
+      if (!llmApiKey.trim())
+        errs.push("api key is required for a custom gateway — paste it here (it is not read from the server env for openai_compat)");
     }
     // An explicit mission plan is strictly opt-in AND must parse as a JSON
     // array of tasks — a typo must fail HERE, not become a malformed plan file.
