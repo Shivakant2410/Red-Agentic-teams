@@ -99,6 +99,18 @@ class KaliExecTool:
             "stdout_truncated": len(result.stdout) > 8000,
         }
 
+        # WAF / Cloudflare detection: if the target answered with a challenge/
+        # block, tell the agent to SWITCH to the browser instead of retrying the
+        # same curl/httpx — the behavioral fix for "model gets stuck at
+        # Cloudflare and scans in a loop". Audited so a stuck run is visible.
+        from ..waf import detect_waf_block
+        waf_note = detect_waf_block(result.stdout)
+        if waf_note:
+            out["waf_block"] = True
+            out["guidance"] = waf_note
+            ctx.audit.record("waf.block_detected", tool="kali_exec",
+                            command=command[:120])
+
         # Fold structured observations into the knowledge graph so the model reasons over
         # state, not raw text. The delta is surfaced back so the model sees what was learned.
         if ctx.graph is not None and result.stdout:
