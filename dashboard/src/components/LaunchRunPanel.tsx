@@ -364,6 +364,15 @@ export function LaunchRunPanel({ className }: { className?: string }) {
     if (!Number.isInteger(steps) || steps < 1 || steps > 1000) {
       errs.push("max_steps must be an integer between 1 and 1000");
     }
+    // A custom OpenAI-compatible gateway has no built-in model pool, so a blank
+    // model leaves the provider with zero candidates — the run then dies with a
+    // cryptic "no candidate models for role 'parse'". Catch it here.
+    if (llmProvider === "openai_compat") {
+      if (!ollamaBaseUrl.trim())
+        errs.push("base URL is required for an OpenAI-compatible provider (e.g. https://apinex.bond/v1)");
+      if (!llmModel.trim())
+        errs.push("model is required for a custom gateway (e.g. free/deepseek-v4-pro-0813) — pick one from the list");
+    }
     // An explicit mission plan is strictly opt-in AND must parse as a JSON
     // array of tasks — a typo must fail HERE, not become a malformed plan file.
     let plan: MissionPlanTask[] | undefined;
