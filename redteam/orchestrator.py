@@ -909,15 +909,26 @@ class Orchestrator:
             # Persist the inspectable artifact next to the run's other evidence.
             if self._run_dir:
                 write_theses(self._run_dir / "thesis.jsonl", theses)
-            # Seed the attack tree with the top theses that name a technique, so
-            # the existing claim/verify/bandit machinery executes the reasoning.
+            # Seed the attack tree from the THESIS's own technique — including
+            # classes NOT in the static catalog. This is how the agent's
+            # target-specific reasoning, not a predefined menu, decides what gets
+            # tested: a novel technique id becomes a first-class frontier item the
+            # generic EXPLOIT profile works (profile_for falls back to EXPLOIT for
+            # unknown ids). The thesis score boosts its priority so a strong,
+            # target-specific bet outranks the generic entry techniques.
             if self._attack_tree is not None:
                 for t in theses:
-                    if t.technique and t.target:
-                        try:
-                            self._attack_tree.seed_endpoint(t.target)
-                        except Exception:
-                            pass
+                    if not (t.technique and t.target):
+                        continue
+                    try:
+                        self._attack_tree.seed_technique(t.technique, t.target)
+                        # Lift this node on the frontier by its thesis score (the
+                        # strategist-boost channel only reorders in-scope work).
+                        boost = getattr(self._attack_tree, "_strategy_boost", None)
+                        if boost is not None:
+                            boost[f"{t.technique}@{t.target}"] = 50.0 + 50.0 * float(t.score)
+                    except Exception:
+                        pass
             if on_text and theses:
                 on_text(f"[thesis:{lens}] top bet ({theses[0].score:.2f}): "
                         f"{theses[0].belief[:140]}")
