@@ -92,6 +92,7 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
                           BrowserSessionStatusTool)
     from .access import TestAccessControlTool, TestIdorTool
     from .confirm import ConfirmFindingTool
+    from .injprobe import InjectionProbeTool
     from .poe_tool import GradeEvidenceTool
     from .oob_tools import MintCanaryTool, PollCanaryTool
     from .independent_verify import VerifyFindingIndependentlyTool
@@ -163,7 +164,7 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # graphql_inspect runs the deterministic 4-request checklist. Leads, never
     # findings; markers are benign (mapping, not payload blasting).
     from .webinspect import GraphqlInspectTool, XssReflectProbeTool
-    tools += [XssReflectProbeTool(), GraphqlInspectTool()]
+    tools += [XssReflectProbeTool(), GraphqlInspectTool(), InjectionProbeTool()]
     # crosscheck_lead — the "never believe a tool's direct output" rule made
     # operational: every lead class carries a SECOND-METHOD entry (first-party HTTP /
     # raw socket vs a sandbox binary; fresh markers vs the inspector's own), verdicts

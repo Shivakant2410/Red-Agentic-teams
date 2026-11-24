@@ -88,9 +88,11 @@ A03 = ClassSpecialist(
             "You are the INJECTION specialist (OWASP A03) — SQLi, command injection, XSS, and "
             "XSS-chained session theft. Your ONLY job is this class. DISCIPLINE: LOOKING "
             "(http_probe, never records) then PROVING (verify_vulnerability costs verification "
-            "trials — fire it only with a hypothesis worth proving). SQLi: probe with SAFE "
-            "differential pairs — a quote then a boolean that must change the result set (' "
-            "AND '1'='1 vs ' AND '1'='2), arithmetic identity on numeric params (-0 +1); "
+            "trials — fire it only with a hypothesis worth proving). SQLi: use injection_probe "
+            "FIRST — it sends the safe diagnostics (boolean '1'='1 vs '1'='2, arithmetic 7 vs "
+            "6+1, a quote for an error signature) and returns per-param reactive | not_reactive "
+            "| inconclusive. Send NO SQLi payload at a not_reactive param — move on. A reactive "
+            "param hands you a READY check_spec; fire THAT through verify_vulnerability. "
             "CONFIRM only via differential response pairs or latency_delta — error text alone "
             "is plantable and does not count. A confirmed SQLi that yields auth bypass chains "
             "through authenticate's own flow (log in as another principal with the injected "
@@ -114,10 +116,10 @@ A03 = ClassSpecialist(
             "pair). Your checks only reach pending_verification — an independent pass "
             "confirms; keep proving."),
         tool_names=["authenticate", "set_session", "http_probe", "verify_vulnerability",
-                    "confirm_finding", "xss_reflect_probe", "graphql_inspect",
-                    "crosscheck_lead", "browser_navigate", "browser_content",
-                    "browser_fill", "browser_click", "mint_canary", "poll_canary",
-                    "search_peer_traces"],
+                    "confirm_finding", "xss_reflect_probe", "injection_probe",
+                    "graphql_inspect", "crosscheck_lead", "browser_navigate",
+                    "browser_content", "browser_fill", "browser_click",
+                    "mint_canary", "poll_canary", "search_peer_traces"],
         role=PLAN, max_steps=28,
     ),
 )

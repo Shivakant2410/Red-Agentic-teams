@@ -416,6 +416,15 @@ _HAND: dict[str, Hand] = {
         cost="step", trust="lead-crosschecked",
         obligation="READY means the check_spec is proven-shaped — still fire it through "
                    "verify_vulnerability; escaped reflections produce NO idea"),
+    "injection_probe": Hand(
+        tool="injection_probe",
+        purpose="decide if a param is injectable BEFORE proving — safe boolean/arith/"
+                "error diagnostics return reactive|not_reactive|inconclusive + a READY "
+                "check_spec for the live ones",
+        cost="step", trust="first-party-observation",
+        obligation="a diagnostic, not a proof: send NO SQLi payloads at not_reactive "
+                   "params, and the reactive check_spec still goes through "
+                   "verify_vulnerability (error text alone never earns a proof trial)"),
     "graphql_inspect": Hand(
         tool="graphql_inspect",
         purpose="4-request deterministic checklist over a GraphQL endpoint (introspection, "
@@ -540,9 +549,9 @@ HANDS: dict[str, tuple[Hand, ...]] = {
         "browser_navigate", "browser_content", "grade_evidence", "search_peer_traces")),
     "a03-injection": tuple(_HAND[t] for t in (
         "authenticate", "set_session", "http_probe", "verify_vulnerability",
-        "confirm_finding", "xss_reflect_probe", "graphql_inspect", "crosscheck_lead",
-        "browser_navigate", "browser_content", "browser_fill", "browser_click",
-        "mint_canary", "poll_canary", "search_peer_traces")),
+        "confirm_finding", "xss_reflect_probe", "injection_probe", "graphql_inspect",
+        "crosscheck_lead", "browser_navigate", "browser_content", "browser_fill",
+        "browser_click", "mint_canary", "poll_canary", "search_peer_traces")),
     "a05-misconfig": tuple(_HAND[t] for t in (
         "surface_scan", "content_discovery", "nuclei_scan", "crosscheck_lead",
         "http_probe", "verify_vulnerability", "confirm_finding", "extract_secrets",
