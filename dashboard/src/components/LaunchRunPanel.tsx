@@ -29,6 +29,9 @@ const PROVIDERS: { kind: string; label: string; keyHint: string }[] = [
   { kind: "ollama", label: "Ollama (local, no key)", keyHint: "" },
   { kind: "", label: "engine default (engagement yaml)", keyHint: "" },
   { kind: "openai", label: "OpenAI", keyHint: "OPENAI_API_KEY" },
+  // Any OpenAI-compatible gateway: enter the base URL + model + key below.
+  // Covers APInex (https://apinex.bond/v1), vLLM, LM Studio, a private proxy, …
+  { kind: "openai_compat", label: "OpenAI-compatible (custom base URL)", keyHint: "" },
   { kind: "zai", label: "Z.ai (GLM)", keyHint: "ZAI_API_KEY" },
   { kind: "gemini", label: "Gemini", keyHint: "GEMINI_API_KEY" },
   { kind: "openrouter", label: "OpenRouter", keyHint: "OPENROUTER_API_KEY" },
@@ -52,6 +55,15 @@ const MODEL_PRESETS: Record<string, string[]> = {
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "google/gemma-4-31b-it:free",
     "baidu/ernie-5.5-flash-preview:free",
+  ],
+  // APInex (apinex.bond/v1). Only the genuinely-free, tool-calling models are
+  // listed — free/claude* and free/glm* are subscription-gated despite the
+  // prefix (verified 2026-11-24). deepseek-v4-pro is the strongest for depth.
+  openai_compat: [
+    "free/deepseek-v4-pro-0813",
+    "free/deepseek-v4.1-flash",
+    "free/qwen-3.8-max",
+    "free/gpt-6-luna",
   ],
 };
 
@@ -289,7 +301,7 @@ export function LaunchRunPanel({ className }: { className?: string }) {
         provider: llmProvider,
         ...(modelOverride ?? llmModel.trim() ? { model: (modelOverride ?? llmModel.trim()) } : {}),
         ...(llmApiKey ? { api_key: llmApiKey } : {}),
-        ...(llmProvider === "ollama" && ollamaBaseUrl.trim()
+        ...((llmProvider === "ollama" || llmProvider === "openai_compat") && ollamaBaseUrl.trim()
           ? { base_url: ollamaBaseUrl.trim() }
           : {}),
       })
@@ -383,7 +395,7 @@ export function LaunchRunPanel({ className }: { className?: string }) {
           provider: llmProvider,
           ...(llmModel.trim() ? { model: llmModel.trim() } : {}),
           ...(llmApiKey ? { api_key: llmApiKey } : {}),
-          ...(llmProvider === "ollama" && ollamaBaseUrl.trim()
+          ...((llmProvider === "ollama" || llmProvider === "openai_compat") && ollamaBaseUrl.trim()
             ? { base_url: ollamaBaseUrl.trim() }
             : {}),
         }
@@ -839,6 +851,21 @@ export function LaunchRunPanel({ className }: { className?: string }) {
                   ))}
                 </select>
               </Field>
+              {llmProvider === "openai_compat" && (
+                <Field
+                  label="base url"
+                  hint="The gateway's OpenAI-compatible base, e.g. https://apinex.bond/v1"
+                >
+                  <input
+                    className={inputCls}
+                    value={ollamaBaseUrl}
+                    onChange={(e) => setOllamaBaseUrl(e.target.value)}
+                    placeholder="https://apinex.bond/v1"
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                </Field>
+              )}
               <Field
                 label="model"
                 hint={
