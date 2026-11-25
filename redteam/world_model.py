@@ -212,6 +212,33 @@ class WorldModel:
             relation="has_observed_transition",
         )
 
+    def record_workflow_state(
+        self, entity_ref: str, state: str, *, evidence_refs: list[dict],
+        source: str, epistemic_state: str = "observed",
+    ) -> dict:
+        entity_ref = _text(entity_ref, "entity_ref", _MAX_KEY)
+        state = _text(state, "state", 120)
+        key = f"{entity_ref}#{state}"
+        return self._record(
+            WORKFLOW_STATE, key,
+            {"entity_ref": entity_ref, "state": state},
+            source=source, evidence_refs=evidence_refs,
+            epistemic_state=epistemic_state,
+            relate_to=f"{BUSINESS_ENTITY}:{entity_ref}",
+            relation="has_observed_state",
+        )
+
+    def record_architecture_layer(
+        self, layer_ref: str, *, name: str, evidence_refs: list[dict],
+        source: str, epistemic_state: str = "inferred",
+    ) -> dict:
+        return self._record(
+            ARCHITECTURE_LAYER, layer_ref,
+            {"name": _text(name, "name", 120)},
+            source=source, evidence_refs=evidence_refs,
+            epistemic_state=epistemic_state,
+        )
+
     def record_component(
         self, component_ref: str, *, component_type: str, layer: str,
         evidence_refs: list[dict], source: str,
