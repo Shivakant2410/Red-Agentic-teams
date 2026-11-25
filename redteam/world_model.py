@@ -54,6 +54,21 @@ def _text(value: Any, field: str, limit: int = _MAX_TEXT) -> str:
     return value
 
 
+def _opaque_ref(value: str, field: str) -> str:
+    """Accept a named handle, not token-shaped session material."""
+    value = _text(value, field, _MAX_KEY)
+    low = value.lower()
+    token_shaped = (
+        low.startswith(("bearer ", "basic "))
+        or value.count(".") == 2 and len(value) > 40
+        or "=" in value
+        or len(value) > 96
+    )
+    if token_shaped:
+        raise WorldModelError(f"{field} must be an opaque session-store reference, not credential material")
+    return value
+
+
 def _safe_value(value: Any, depth: int = 0) -> Any:
     """Bound metadata to JSON-safe scalars/containers; never retain secrets by value."""
     if depth > 3:
@@ -128,6 +143,8 @@ class WorldModel:
         source = _text(source, "source", 120)
         if epistemic_state not in EPISTEMIC_STATES:
             raise WorldModelError(f"invalid epistemic_state: {epistemic_state}")
+        if re.search(r"(llm|model|reason|thesis)", source, re.IGNORECASE) and epistemic_state == "observed":
+            epistemic_state = "inferred"
         refs = _evidence_refs(evidence_refs)
         safe_attrs = _safe_value(attrs)
         safe_attrs.update({
@@ -161,7 +178,7 @@ class WorldModel:
         """Record an opaque test principal; session_ref must not be a credential."""
         attrs = {"role": _text(role, "role", 120)}
         if session_ref:
-            attrs["session_ref"] = _text(session_ref, "session_ref", _MAX_KEY)
+            attrs["session_ref"] = _opaque_ref(session_ref, "session_ref")
         if tenant_ref:
             attrs["tenant_ref"] = _text(tenant_ref, "tenant_ref", _MAX_KEY)
         return self._record(
