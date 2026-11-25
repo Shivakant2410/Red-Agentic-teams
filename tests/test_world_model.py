@@ -179,3 +179,26 @@ def test_workflow_states_and_architecture_layers_are_first_class_facts():
     assert graph.rows[("workflow_state", "invoice-fixture-17#pending_approval")]
     assert layer["kind"] == "architecture_layer"
     assert graph.rows[("architecture_layer", "api-gateway")].attrs["name"] == "API gateway"
+
+
+def test_model_generated_claim_is_downgraded_to_inferred():
+    graph = _Graph()
+    model = WorldModel(graph)
+    row = model.record_trust_boundary(
+        "model-boundary", source_layer="edge", destination_layer="service",
+        control="possible normalization boundary",
+        evidence_refs=_refs("model-output-ref"), source="llm_thesis",
+        epistemic_state="observed",
+    )
+    node = graph.rows[(TRUST_BOUNDARY, "model-boundary")]
+    assert row["epistemic_state"] == "inferred"
+    assert node.attrs["epistemic_state"] == "inferred"
+
+
+def test_principal_rejects_token_shaped_session_material():
+    model = WorldModel(_Graph())
+    with pytest.raises(WorldModelError, match="opaque session-store reference"):
+        model.record_principal(
+            "test-user-a", role="member", session_ref="Bearer " + "x" * 80,
+            evidence_refs=_refs("obs-credential"), source="browser",
+        )
