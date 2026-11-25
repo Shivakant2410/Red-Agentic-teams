@@ -196,3 +196,48 @@ Ship as small, testable vertical slices. Do not attempt the whole architecture i
 ## First implementation PR
 
 The first code PR should implement **Phase 0 only**: schema-versioned typed World Model records that live in the existing KnowledgeGraph, with secret-safe serialization and tests proving old graph compatibility. This creates the stable contract that browser, thesis, twin-context, and PI work can share without prematurely coupling their execution paths.
+
+
+## Operational integrity workstream (added from the repository audit)
+
+The context-native engine depends on reliable concurrent execution and visible evidence. Treat these as platform prerequisites, not later cleanup. The following items are prioritized by failure impact.
+
+### O0 — isolate each run's execution resources
+
+- **Docker identity:** `SandboxConfig.container_name` currently defaults to the shared name `redteam-kali-run`; `execute_run()` constructs `KaliSandbox(engagement, audit=audit)` without a run-specific name; sandbox startup force-removes any existing container with that configured name before starting. Concurrent run launches can therefore interfere with one another. Derive the container name from a validated run ID (or inject a run-scoped sandbox config), enforce Docker's name-length/character constraints, and test two overlapping runs plus cleanup isolation.
+- **Shared learning stores:** audit all run-scoped paths for bandit, skill, and experience stores. Per-instance Python locks do not coordinate separate run instances or processes. Use a common persistence primitive with an inter-process lock, atomic same-filesystem temp write + replace, and a defined read/modify/write transaction boundary. Atomic replacement prevents torn reads; it does not by itself prevent lost updates. Preserve HMAC verification semantics and test concurrent writers, crash-before-replace, and reload integrity.
+- **Resource lifecycle:** every run must own and clean up only its own container, browser contexts, proxy, and temporary artifacts. A run's stop/failure path must not tear down another run's resources.
+
+### O1 — make installation and CI reflect the shipped product
+
+- Replace manually maintained package lists with package discovery that includes intended `redteam.*` packages while explicitly excluding tests, fixtures, and non-package directories. Preserve the intentional `src/agentic_setup` mapping only if that legacy package remains a supported distribution surface.
+- Add a wheel-install smoke test in a clean environment (build wheel, install wheel, import supported entrypoints and subpackages). Editable-install tests alone do not validate wheel contents.
+- Extend CI with dashboard dependency install + lint/typecheck/test/build, Rust formatting/check/test where the kernel is supported, and a Dockerfile build/lint smoke test where runner capabilities permit. Keep deterministic Python tests as a separate required job.
+
+### O2 — expose existing product capabilities
+
+Inventory backend routes against typed dashboard API methods and actual UI consumers. The audit identifies candidate gaps: deterministic retest, attack graph, traffic, proxy, coverage, inventory, and live recon. Confirm each route's current contract and authorization before adding typed client methods and run-detail panels. A route is not product functionality until the UI can discover, invoke, and render its result with honest loading/error/empty states.
+
+### O3 — make failures observable
+
+Replace silent exception swallowing in critical browser, proxy, orchestration, recon, and persistence paths with structured, redacted error events. Each event should include a stable error code, subsystem, operation, recoverability, run ID, and correlation/evidence reference; never include credentials, raw request bodies, or sensitive exception payloads. Expected best-effort failures may remain non-fatal, but must be counted and visible. Add tests that assert both the safe fallback and the emitted diagnostic.
+
+### O4 — verify reachability before pruning or promoting subsystems
+
+The audit's module reachability totals, orphan classifications, and swallowed-exception counts are useful hypotheses, not yet architecture facts. Recompute them with:
+- explicit supported entrypoints (CLI, server, dashboard-triggered routes, worker processes, plugin/optional paths);
+- static imports plus dynamic import/string-based registration and packaging metadata;
+- a distinction between runtime unreachable, optional/lab-only, test/benchmark-only, and intentionally library-exported code;
+- an AST rule definition that distinguishes `except: pass`, `except Exception: continue`, logging-only handlers, and deliberate best-effort cleanup.
+
+Do not delete or archive code from a static import graph alone. Record ownership, intended support level, tests, and a migration/deprecation decision for each subsystem.
+
+### Sequencing and gates
+
+1. Fix run isolation and persistence correctness before enabling more concurrent or twin-context execution.
+2. Prove wheel contents and clean-install imports before treating packaging as production-ready.
+3. Surface existing API capabilities with contract tests before adding new engines.
+4. Add structured error telemetry before broad refactors, so regressions remain diagnosable.
+5. Use measured reachability and product usage to decide which subsystems to integrate, support as optional, or retire.
+
+These work items do not weaken ScopeGuard, engagement budgets, approval gates, or independent verification. They are reliability requirements for those controls to remain trustworthy under concurrency and failure.
