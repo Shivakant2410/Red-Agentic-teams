@@ -161,3 +161,21 @@ def test_snapshot_is_sorted_and_schema_versioned():
     snapshot = model.snapshot()
     assert snapshot["schema_version"] == 1
     assert [row["key"] for row in snapshot["facts"]] == ["a-entity", "z-boundary"]
+
+
+def test_workflow_states_and_architecture_layers_are_first_class_facts():
+    graph = _Graph()
+    model = WorldModel(graph)
+    state = model.record_workflow_state(
+        "invoice-fixture-17", "pending_approval",
+        evidence_refs=_refs("ui-state-1"), source="browser_accessibility",
+    )
+    layer = model.record_architecture_layer(
+        "api-gateway", name="API gateway",
+        evidence_refs=_refs("response-fingerprint-1"), source="recon",
+    )
+
+    assert state["kind"] == "workflow_state"
+    assert graph.rows[("workflow_state", "invoice-fixture-17#pending_approval")]
+    assert layer["kind"] == "architecture_layer"
+    assert graph.rows[("architecture_layer", "api-gateway")].attrs["name"] == "API gateway"
