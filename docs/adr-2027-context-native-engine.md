@@ -241,3 +241,80 @@ Do not delete or archive code from a static import graph alone. Record ownership
 5. Use measured reachability and product usage to decide which subsystems to integrate, support as optional, or retire.
 
 These work items do not weaken ScopeGuard, engagement budgets, approval gates, or independent verification. They are reliability requirements for those controls to remain trustworthy under concurrency and failure.
+
+
+## Module disposition register — AST inventory supplied 2026-11-25
+
+The detailed AST inventory is the working disposition baseline for the pivot. Its totals reconcile as follows: 67 unreachable files under `redteam/` (65 substantive modules plus two package-marker stubs), 13 legacy files under `src/agentic_setup/`, and 21,301 LOC combined. The two package markers `redteam/importers/__init__.py` and `redteam/memory_backend/__init__.py` remain package markers; their direct-submodule import pattern is not a deletion signal.
+
+These are static-reachability classifications from the stated roots (`server.py`, `cli.py`, `run.py`), not proof that code is never executed through scripts, optional entrypoints, dynamic imports, or direct library use. Treat the inventory as an explicit product decision register and verify each disposition with tests before changing packaging or deleting code.
+
+### A. Integrate as product capabilities — 53 modules, approximately 13,600 LOC
+
+| Capability | Inventory | Intended integration |
+|---|---:|---|
+| Campaign Brain (`redteam/brain/`) | 7 files / 1,315 LOC | Introduce an `ai_campaign` run driver backed by `FamilyOrchestrator`; persist its `TargetProfile` per approved target fingerprint and expose campaign state/results through run events and APIs. |
+| Core LLM red-team (`redteam/llmred/`) | 11 / 2,974 LOC | Make objective × strategy campaigns, multi-seed pass^k, and version-aware regression selectable capabilities under the campaign driver. |
+| OWASP LLM01 Prompt Injection (`redteam/pi/`) | 8 / 2,252 LOC | Register as the PI family lane, retaining earned-resistance oracles, multi-turn techniques, independent evidence, and bounded budgets. |
+| OWASP LLM03 Supply Chain / MCP (`redteam/sc/`) | 9 / 2,484 LOC | Register as the supply-chain lane; MCP tool-poisoning and rug-pull checks run only against explicitly configured local/test or authorized tenant fixtures. |
+| OWASP LLM02 Sensitive Information Disclosure (`redteam/sid/`) | 8 / 1,799 LOC | Register as the disclosure lane with canary-based, non-exfiltrating controls and deterministic oracles. |
+| OWASP LLM06 Excessive Agency (`redteam/ea/`) | 4 / 987 LOC | Register as the agency-boundary lane; tool effects stay synthetic or explicitly approval-gated. |
+| OWASP LLM05 Output Handling (`redteam/oh/`) | 4 / 903 LOC | Register as the output-handling lane; validate downstream consumers in local/test fixtures, not arbitrary third-party services. |
+| Agent hardening + network recon (`redteam/capabilities.py`, `redteam/portscan.py`) | 2 / 279 LOC | Apply taint/capability checks to the agent's own tool boundary; expose TCP discovery only through the existing ScopeGuard, rate limiter, request budget, and engagement port allowlist. |
+
+**Driver/API shape:** add `ai_campaign` as a first-class, explicitly selected run mode rather than silently running all AI lanes on every ordinary web assessment. The launch contract should select permitted lanes, target adapter, model/provider profile, per-lane and total budgets, and fixture/tenant identity. `FamilyOrchestrator` owns deterministic lane sequencing and shared campaign budget; the server owns authorization, run lifecycle, persistence, and event streaming; the dashboard owns launch configuration and honest lane-level progress/results. Keep the ordinary `execute_run` path stable and compose the new driver through the existing run registry and stop/approval controls.
+
+### B. Keep standalone as developer/evaluation tooling — 9 modules, 2,641 LOC
+
+| Module | LOC | Disposition |
+|---|---:|---|
+| `redteam/bench/__init__.py` | 7 | Keep benchmark package entrypoint. |
+| `redteam/bench/ladder.py` | 420 | Keep model/frontier qualification matrix. |
+| `redteam/bench/objective_scoring.py` | 112 | Keep objective-level evaluation scoreboard. |
+| `redteam/bench/raw_baseline.py` | 476 | Keep raw-model baseline comparison. |
+| `redteam/bench/runner.py` | 318 | Keep local harness; add tests and safe-fixture negative controls. |
+| `redteam/bench/scoring.py` | 103 | Keep ground-truth scorer for CI/release gates. |
+| `redteam/bench/targets.py` | 471 | Keep local vulnerable-lab target registry. |
+| `redteam/opsec_sim.py` | 512 | Move under `redteam/bench/` (or scripts) as an offline deterministic simulator. |
+| `redteam/toolfuzz.py` | 222 | Keep as a CI harness that fuzzes the project's own tool registry only. |
+
+These modules should not be imported into the production server startup path. Expose explicit CLI commands and CI jobs instead.
+
+### C. Archive after migration — 16 modules, 5,576 LOC
+
+**Superseded deterministic pipeline (3 files, 2,787 LOC):**
+
+- `redteam/offensive.py` (1,877 LOC): archive with a migration note; retain only if a separately supported zero-LLM fast-scan mode is deliberately productized.
+- `redteam/hypothesize.py` (766 LOC): archive with the old pipeline; thesis generation and `swarm/hypotheses.py` are the supported reasoning path.
+- `redteam/llm/planner.py` (144 LOC): archive with the old pipeline; do not remove until references in scripts/tests/docs are migrated.
+
+**Legacy `src/agentic_setup/` package (13 files, 2,789 LOC):**
+
+| Module | LOC | Disposition |
+|---|---:|---|
+| `usage.py` | 214 | Salvage persistent per-call USD cost accounting into `redteam/llm/gateway.py`, then remove legacy module. |
+| `qualification.py` | 79 | Salvage phase-specific model qualification records into `redteam/llm/preflight.py`, then remove legacy module. |
+| `__init__.py` | 3 | Remove after supported imports and package metadata no longer reference `agentic_setup`. |
+| `authorization.py` | 152 | Retire in favor of `redteam/scope.py` and `redteam/launch.py`. |
+| `benchmark.py` | 227 | Retire in favor of `redteam/bench/`. |
+| `cli.py` | 386 | Retire in favor of `redteam/cli.py`. |
+| `config.py` | 11 | Retire in favor of `redteam/config.py`. |
+| `lab_runner.py` | 190 | Retire in favor of `lab/` and `redteam/bench/targets.py`. |
+| `local_assessment.py` | 530 | Retire after confirming no supported loopback-assessment workflow still depends on it. |
+| `models.py` | 126 | Retire in favor of `redteam/llm/providers.py`. |
+| `openrouter.py` | 135 | Retire in favor of `redteam/llm/openrouter.py`. |
+| `router.py` | 150 | Retire in favor of `redteam/llm/routing.py`. |
+| `tool_broker.py` | 586 | Retire in favor of `redteam/tools/` and `redteam/hands.py`. |
+
+The repository's 2026-09-30 architecture-pivot note records `src/agentic_setup/` as superseded. Before removal, migrate the two identified reusable features (cost accounting and phase qualification), update `scripts/proof_doc_leak_recon.py`, remove the legacy package mapping from `pyproject.toml`, and add a clean-wheel import test proving supported `redteam.*` packages remain available.
+
+### Integration and retirement gates
+
+1. Each integrated lane must have a typed launch schema, explicit target adapter, per-lane/total budgets, run events, result serialization, and dashboard status/error states.
+2. Each lane must preserve its own positive, benign, and negative controls; inconclusive, skipped, and transport-error results must never be reported as resistance or success.
+3. All target-facing traffic must pass the existing authorization, ScopeGuard, rate/budget, and approval boundaries. Local fixtures are the default CI target; live tenant use requires explicit engagement authorization.
+4. The campaign driver must not promote its own findings. Existing independent verification remains authoritative.
+5. Before archiving/deleting any module, search imports, scripts, tests, docs, packaging metadata, and dynamic entrypoint registration; move or update all supported callers and retain a deprecation note where needed.
+6. Package discovery must include supported subpackages while excluding tests/fixtures and must be verified from a built wheel, not only an editable install.
+
+**Expected portfolio result:** retain the 9 developer/eval modules outside production startup; integrate the 53 capability modules behind an explicit AI campaign driver; archive the 3 superseded offensive-pipeline modules and 13 legacy-package modules only after the stated migrations. This is a staged disposition plan, not an instruction to delete 5,576 LOC in one change.
