@@ -121,6 +121,55 @@ class TrafficRecorder:
         except Exception:
             pass
 
+    def record_extension_session(self, *, url: str, title: str = "",
+                                 otp_observed: bool = False,
+                                 captcha_observed: bool = False,
+                                 field_names: list | None = None,
+                                 notes: str = "", source: str = "extension") -> int | None:
+        """Record one human-assisted capture from the browser extension.
+
+        The operator walked a 2FA/OTP/captcha step in their OWN browser; the
+        extension reports the page SHAPE, never input VALUES — an OTP the user
+        typed stays on their machine (the same masking discipline as
+        MASKED_HEADERS, applied at the source). Field NAMES and the observed
+        booleans are what the report needs: evidence that the authenticated
+        step happened, bound to the run like any other traffic row."""
+        rec = {
+            "seq": None,
+            "ts": _now(),
+            "kind": "extension_session",
+            "source": str(source or "extension"),
+            "tool": "extension",
+            "method": "",
+            "url": str(url or ""),
+            "status": 0,
+            "elapsed_ms": 0,
+            "session": "",
+            "error": "",
+            "title": str(title or ""),
+            "otp_observed": bool(otp_observed),
+            "captcha_observed": bool(captcha_observed),
+            "field_names": [str(n) for n in (field_names or [])][:50],
+            "notes": _clip(notes, self._max_body, self._bodies),
+            "req_headers": {}, "req_body": "",
+            "resp_headers": {}, "resp_body": "",
+        }
+        try:
+            with self._lock:
+                self._seq += 1
+                rec["seq"] = self._seq
+                with self._path.open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+                self.count += 1
+            return rec["seq"]
+        except Exception:
+            return None
+
+    def read_all(self) -> list[dict]:
+        """Replay every record this recorder wrote (see read_traffic). Used by
+        POE grading after a verify pass, against the recorder's own path."""
+        return read_traffic(self._path)
+
     def summary(self) -> dict:
         return {"recorded": self.count, "path": str(self._path)}
 

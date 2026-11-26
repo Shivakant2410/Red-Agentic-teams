@@ -141,6 +141,13 @@ auto-denies pending approvals (fail closed) and halts the run. File writes are a
   event file and closes itself once the manifest leaves `running` and the file is
   drained.
 - Static dashboard export is mounted at `/`; CORS is open for local development.
+- `POST /api/traffic/ingest` binds a human-assisted capture (extension/) to the
+  run's traffic log: the URL is scope-checked against the run's own
+  engagement.yaml (out-of-scope → 400); the record carries the page SHAPE
+  only — field NAMES and otp/captcha booleans, never input values.
+- `GET /api/runs/{id}/poe` serves the POE grades (poe.py) — a read-only
+  report of how strongly each finding is bound to CA-traced traffic
+  (POE-0 claim … POE-3 quote-bound to decoded proxy bodies).
 - A crashed run is finalized: the thread wrapper rewrites the manifest as `error` with
   the reason and emits `run.finish` — no client ever watches a zombie run.
 

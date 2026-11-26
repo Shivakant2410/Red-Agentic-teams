@@ -66,6 +66,13 @@ class Finding:
     # STILL reproduces across remediation cycles. Old findings.json rows without
     # this key load fine via the default.
     retest_history: list = field(default_factory=list)
+    # POE — Proof-of-Exploitation grade (see poe.py): an OPERATOR-facing axis
+    # ("how strong is the proof binding", POE-0 claim … POE-3 quote-bound to
+    # CA-traced proxy traffic) that is deliberately SEPARATE from confidence
+    # ("is it real"). Graded read-only by poe.annotate / poe.grade_run; the
+    # fields are annotations, never inputs to scoring or promotion.
+    poe_level: str = ""
+    poe_detail: dict = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     created: str = field(default_factory=lambda: _dt.datetime.now(_dt.timezone.utc).isoformat())
 
@@ -179,6 +186,19 @@ class FindingStore:
             if f is None:
                 return None
             f.retest_history.append(entry)
+            self._flush()
+            return f
+
+    def annotate_poe(self, finding_id: str, level: str, detail: dict) -> Finding | None:
+        """Persist a POE grade (see poe.py) onto the finding. Like append_retest,
+        this NEVER touches `confidence` or independent_verdict: POE is the
+        proof-BINDING axis, orthogonal to whether the behavior is real."""
+        with self._lock:
+            f = next((x for x in self._findings if x.id == finding_id), None)
+            if f is None:
+                return None
+            f.poe_level = level
+            f.poe_detail = detail
             self._flush()
             return f
 

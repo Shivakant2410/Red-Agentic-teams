@@ -151,6 +151,13 @@ def build_registry(enable_sandbox: bool = True, enable_browser: bool = True) -> 
     # Post-exploitation: harvest -> use -> prove the privilege boundary moved.
     from .postex import ExtractSecretsTool, ProvePrivilegeTool, TryCredentialTool
     tools += [ExtractSecretsTool(), TryCredentialTool(), ProvePrivilegeTool()]
+    # Internal-network postex + non-HTTP protocol fuzzing: the lateral-movement
+    # primitives (internal_sweep / kerberoast / bloodhound_collect — each triple-
+    # gated: RoE scope, explicit authorized_internal, adapter availability) and
+    # the bounded TCP/UDP/gRPC mutation battery for non-web surfaces.
+    from .postex import BloodHoundTool, InternalSweepTool, KerberoastTool
+    from .proto_fuzz import ProtoFuzzTool
+    tools += [InternalSweepTool(), KerberoastTool(), BloodHoundTool(), ProtoFuzzTool()]
     if enable_sandbox:
         tools.append(KaliExecTool())
     if enable_browser:

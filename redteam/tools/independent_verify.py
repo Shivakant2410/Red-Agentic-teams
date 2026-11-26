@@ -134,6 +134,24 @@ class VerifyFindingIndependentlyTool:
         promoted = ctx.findings.promote(finding_id, status, detail=detail)
         ctx.audit.record("independent_verify.result", finding_id=finding_id,
                          title=f.title, verdict=status, detail=detail)
+
+        # POE annotation (see poe.py): the moment a finding is confirmed, grade
+        # its proof binding against the run's CA-traced traffic log — verbatim
+        # evidence quotes must appear in DECODED response bodies for POE-3.
+        # Read-only grading; never changes the verdict itself.
+        poe_report_row = None
+        if status == "confirmed" and ctx.traffic is not None:
+            try:
+                from ..poe import grade_finding, decode_body  # noqa: F401 (decode via grade)
+                row = grade_finding(promoted, ctx.traffic.read_all())
+                ctx.findings.annotate_poe(finding_id, row["poe"], {
+                    "quotes_total": row["quotes_total"],
+                    "quotes_matched": row["quotes_matched"],
+                    "quote_checks": row["quote_checks"],
+                })
+                poe_report_row = row
+            except Exception:
+                pass  # grading must never break the verify path
         safe_emit(getattr(ctx, "events", None), "finding.confirmed" if status == "confirmed"
                   else "finding.verdict", id=finding_id, title=f.title, severity=f.severity,
                   verdict=status)
@@ -143,6 +161,7 @@ class VerifyFindingIndependentlyTool:
 
         return json.dumps({
             "finding_id": finding_id, "verdict": status, "detail": detail,
+            "poe": (poe_report_row or {}).get("poe", ""),
             "note": {
                 "confirmed": "Independently reproduced; a benign control did not. This now "
                              "counts toward the objective and access graph.",

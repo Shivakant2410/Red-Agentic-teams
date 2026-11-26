@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font: 13px system-ui, sans-serif; width: 260px; margin: 0; padding: 10px; }
+      label { display: block; margin-top: 8px; color: #444; }
+      input { width: 100%; box-sizing: border-box; margin-top: 2px; }
+      button { margin-top: 10px; width: 100%; padding: 6px; }
+      #status { margin-top: 8px; min-height: 32px; white-space: pre-wrap; }
+      .hint { color: #777; font-size: 11px; margin-top: 6px; }
+    </style>
+  </head>
+  <body>
+    <label>Control plane</label>
+    <input id="endpoint" placeholder="http://127.0.0.1:8000" />
+    <label>Run id</label>
+    <input id="runId" placeholder="run-2026…" />
+    <button id="capture">Capture this page's shape</button>
+    <div id="status"></div>
+    <div class="hint">Records field NAMES and OTP/captcha booleans only —
+      input values are never read.</div>
+    <script src="popup.js"></script>
+  </body>
+</html>

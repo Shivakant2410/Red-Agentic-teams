@@ -241,13 +241,24 @@ curl -s "localhost:8000/api/llm/models?provider=ollama" | jq '.models[:5]'
 curl -s localhost:8000/api/runs/<id>/events | jq '.events[-1]'
 curl -s localhost:8000/api/runs/<id>/traffic  | jq '.traffic[-1]'   # wire evidence
 curl -s localhost:8000/api/runs/<id>/inventory | jq '.summary'      # attack surface
+
+# human-assisted capture (browser extension): bind an operator-walked 2FA step
+curl -X POST localhost:8000/api/traffic/ingest -H 'content-type: application/json' -d '{
+  "run_id": "<id>", "url": "http://target/portal/login",
+  "title": "verify step", "otp_observed": true,
+  "field_names": ["username", "otp_code"], "notes": "operator walked 2FA"
+}'
+
+# proof-of-exploitation grades for the run's findings (see below)
+curl -s localhost:8000/api/runs/<id>/poe | jq '.summary'
 ```
 
 Full lifecycle: `POST /api/runs`, `GET /api/runs`, `GET /api/runs/{id}` (includes
 `driver`), `GET /api/runs/{id}/events`, `GET /api/runs/{id}/stream` (SSE), `GET
 /api/runs/{id}/approvals`, `POST /api/approvals/{id}`, `POST /api/runs/{id}/stop`,
 `GET /api/runs/{id}/report`, `GET /api/runs/{id}/traffic`, `GET
-/api/runs/{id}/inventory`, `POST /api/missions`, `GET /api/missions`,
+/api/runs/{id}/inventory`, `POST /api/traffic/ingest`, `GET
+/api/runs/{id}/poe`, `POST /api/missions`, `GET /api/missions`,
 `GET /api/missions/{mission_id}`, `GET /api/llm/providers`,
 `POST /api/llm/preflight`, `GET /api/llm/models`, `GET /api/health`.
 The dashboard's run-detail route is `/runs?id={run_id}`.
@@ -259,6 +270,23 @@ server restart reconciles artifacts left dangling "running" by the dead process
 at the next startup. A specialist task succeeding is never reported as the
 mission succeeding; findings are only `confirmed` through the independent
 verification pipeline.
+
+**ARTEX loop — human-assisted captures and POE grading.** Some evidence only
+exists after a human solves a 2FA/OTP/captcha step in their own browser; the MV3
+extension in `extension/` captures that step's SHAPE (URL, title, field NAMES,
+otp/captcha booleans — input values are never read) and POSTs it to
+`POST /api/traffic/ingest`, which scope-checks the capture against the run's own
+`engagement.yaml` (out-of-scope → 400: an out-of-scope capture is a leak, not
+evidence) and binds it to `traffic.jsonl`. Findings then carry an independent
+POE grade (`poe.py`): POE-0 claim → POE-1 self-graded → POE-2 independently
+confirmed → POE-3 quote-bound, where every verbatim quote in the evidence must
+appear in a CA-traced proxy response body DECODED from gzip/deflate — served
+read-only at `GET /api/runs/{id}/poe`. Two network-layer primitives complete
+the offensive surface: `proto_fuzz` (bounded, deterministic TCP/UDP/gRPC
+mutation battery — a service that dies on malformed input becomes a tentative
+finding) and the internal postex trio (`internal_sweep`, `kerberoast`,
+`bloodhound_collect` — triple-gated: RoE scope, explicit `authorized_internal`,
+adapter availability; credential material is always masked to previews).
 
 ## Safety model: how "give it all of Kali" stays scoped
 

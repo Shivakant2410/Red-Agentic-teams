@@ -823,6 +823,54 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         run_dir = require_run(run_id)
         return {"proxy": _read_json(run_dir / "proxy.json", None)}
 
+    @app.post("/api/traffic/ingest")
+    def traffic_ingest(payload: dict) -> dict:
+        # Human-assisted capture (browser extension, see extension/): the
+        # operator walked a 2FA/OTP/captcha step in their OWN browser; the
+        # extension posts the page SHAPE — url, title, field NAMES, booleans —
+        # never input values, so the OTP stays on the operator's machine.
+        # Scope is validated against the RUN's own engagement.yaml: an
+        # out-of-scope capture is a 400, not a record (it would be a leak,
+        # not evidence).
+        from .config import load_engagement
+        from .scope import ScopeGuard, ScopeViolation
+        from .traffic import TrafficRecorder
+        run_id = str(payload.get("run_id") or "")
+        url = str(payload.get("url") or "").strip()
+        if not run_id or not url:
+            raise HTTPException(400, "run_id and url are required")
+        run_dir = require_run(run_id)
+        engagement_file = run_dir / "engagement.yaml"
+        if not engagement_file.exists():
+            raise HTTPException(400, "run has no engagement.yaml to validate scope against")
+        try:
+            engagement = load_engagement(str(engagement_file))
+        except Exception as exc:
+            raise HTTPException(400, f"run engagement is not loadable: {exc}")
+        try:
+            ScopeGuard(engagement).check(url)
+        except ScopeViolation as exc:
+            raise HTTPException(400, f"capture url is out of scope for this run: {exc}")
+        recorder = TrafficRecorder(run_dir / "traffic.jsonl")
+        seq = recorder.record_extension_session(
+            url=url,
+            title=str(payload.get("title") or ""),
+            otp_observed=bool(payload.get("otp_observed")),
+            captcha_observed=bool(payload.get("captcha_observed")),
+            field_names=payload.get("field_names") or [],
+            notes=str(payload.get("notes") or ""))
+        if seq is None:
+            raise HTTPException(500, "traffic sink refused the record")
+        return {"ok": True, "run_id": run_id, "seq": seq}
+
+    @app.get("/api/runs/{run_id}/poe")
+    def run_poe(run_id: str) -> dict:
+        # POE — proof-of-exploitation grades for the run's findings, validated
+        # against the run's CA-traced traffic log (see poe.py). Read-only.
+        from .poe import grade_run
+        run_dir = require_run(run_id)
+        return grade_run(run_dir)
+
     @app.get("/api/bench")
     def bench_board() -> dict:
         """Benchmark board feed: the bench harness exports one structured card per

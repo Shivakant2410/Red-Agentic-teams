@@ -114,6 +114,10 @@ traffic.py             TrafficRecorder: per-run wire evidence (traffic.jsonl) re
                        at the tools/http.py chokepoint; credential headers masked BOTH
                        ways, bodies truncated/droppable; record() never raises and
                        only successful writes increment .count
+poe.py                POE proof-of-exploitation grading (POE-0..3): evidence quotes
+                      validated against DECODED proxy bodies (gzip/deflate); read-only
+                      annotation via FindingStore.annotate_poe — orthogonal to
+                      confidence, never promotes
 inventory.py           AssetInventory: host->service surface map (inventory.json),
                        passive fingerprints from every response + surface_scan /
                        asset feeds; atomic saves, RLock (swarm-safe)
@@ -225,7 +229,12 @@ tools/
   authsession.py         Auth session handling for tools
   confirm.py             Interactive approval gating
   http.py                HTTP tool
-  postex.py              Post-exploitation tooling
+  postex.py              Post-exploitation tooling + internal-network primitives
+                         (internal_sweep / kerberoast / bloodhound_collect — each
+                         gated on RoE scope + explicit authorized_internal + adapter
+                         availability; credential material masked to previews)
+  proto_fuzz.py          Bounded deterministic TCP/UDP/gRPC mutation battery for
+                         non-HTTP services; scope-checked per case, fail closed
   skill_tools.py         Tools for invoking the skill library
   template_search.py     Template/finding search
   verify_tool.py         Verification tool wrapper
