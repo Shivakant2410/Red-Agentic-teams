@@ -912,12 +912,14 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         # Validate the ENTIRE bounded batch before writing any row. A mixed batch
         # must not partially persist in-scope records before discovering an
         # out-of-scope browser tab later in the same request.
-        from .config import ConfigError, load_engagement
+        from .retest import engagement_from_scope_json
         from .scope import ScopeGuard, ScopeViolation
         try:
-            engagement = load_engagement(run_dir / "engagement.yaml")
-        except (ConfigError, OSError, ValueError) as exc:
-            raise HTTPException(409, f"run engagement cannot be loaded for scope validation: {type(exc).__name__}")
+            # Rebuild the exact immutable RoE snapshot used when this run was
+            # armed; never consult a live engagement file that may have drifted.
+            engagement = engagement_from_scope_json(run_dir)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise HTTPException(409, f"run has no valid frozen scope.json: {type(exc).__name__}")
         guard = ScopeGuard(engagement)
         accepted = []
         skipped = 0
