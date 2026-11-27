@@ -24,6 +24,7 @@ import {
   type Tone,
 } from "./Bits";
 import { EventFeed } from "./EventFeed";
+import { EvidencePanel } from "./EvidencePanel";
 import { FindingsTable } from "./FindingsTable";
 import { AssetsPanel } from "./AssetsPanel";
 import { KillChainList } from "./KillChainList";
@@ -428,6 +429,7 @@ export default function MissionControl() {
             <FindingsTable findings={findings} />
             <KillChainList stages={detail?.killchain} />
             <ReflectionsFeed reflections={detail?.reflections} />
+            <EvidencePanel runId={runId} findings={findings} />
           </div>
         </section>
 

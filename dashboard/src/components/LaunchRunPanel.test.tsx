@@ -25,8 +25,12 @@ describe("LaunchRunPanel (URL-first)", () => {
 
   /** Fill everything EXCEPT the listed fields, then try to launch. */
   async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
-    await user.type(screen.getByLabelText(/target url/i), "https://demo.testfire.net");
-    await user.type(screen.getByLabelText(/objective/i), "Assess the authorized web app");
+    const target = screen.getByLabelText(/target url/i);
+    const objective = screen.getByPlaceholderText(/Choose an engagement type above/i);
+    await user.clear(target);
+    await user.type(target, "https://demo.testfire.net");
+    await user.clear(objective);
+    await user.type(objective, "Assess the authorized web app");
     await user.type(screen.getByLabelText(/^authorized by/i), "Shivakant, security owner");
     await user.type(screen.getByLabelText(/^ticket/i), "ROE-2026-041");
     await user.click(screen.getByLabelText(/confirm authorization/i));

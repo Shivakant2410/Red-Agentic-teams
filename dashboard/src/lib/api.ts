@@ -163,6 +163,37 @@ export const api = {
       { method: "POST", body: JSON.stringify({ approve }) },
     ),
 
+  /** Read-only evidence surfaces backed by the run's durable artifacts. */
+  getGraph: (runId: string) =>
+    request<Record<string, unknown>>(`/api/runs/${encodeURIComponent(runId)}/graph`),
+
+  getTraffic: (runId: string, after = 0, limit = 200) =>
+    request<Record<string, unknown>>(
+      `/api/runs/${encodeURIComponent(runId)}/traffic?after=${after}&limit=${limit}`,
+    ),
+
+  getProxy: (runId: string) =>
+    request<Record<string, unknown>>(`/api/runs/${encodeURIComponent(runId)}/proxy`),
+
+  getCoverage: (runId: string) =>
+    request<Record<string, unknown>>(`/api/runs/${encodeURIComponent(runId)}/coverage`),
+
+  getInventory: (runId: string) =>
+    request<Record<string, unknown>>(`/api/runs/${encodeURIComponent(runId)}/inventory`),
+
+  getReconLive: (runId: string) =>
+    request<Record<string, unknown>>(`/api/runs/${encodeURIComponent(runId)}/recon/live`),
+
+  getPoe: (runId: string) =>
+    request<Record<string, unknown>>(`/api/runs/${encodeURIComponent(runId)}/poe`),
+
+  /** Explicit operator action: replay one stored proof under the run's frozen RoE. */
+  retestRun: (runId: string, body: { finding_id: string; trials?: number; need?: number }) =>
+    request<Record<string, unknown>>(`/api/runs/${encodeURIComponent(runId)}/retest`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   bench: () => request<import("./types").BenchBoard>("/api/bench"),
 };
 
