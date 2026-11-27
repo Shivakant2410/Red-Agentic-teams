@@ -945,6 +945,14 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
             written += 1
         return {"ok": True, "written": written, "skipped": skipped}
 
+    @app.get("/api/runs/{run_id}/poe")
+    def run_poe(run_id: str) -> dict:
+        # Read-only report. redteam.poe.grade_run re-reads each finding's exact
+        # evidence_ref sequence; it never searches other exchanges or promotes a
+        # finding's confidence/lifecycle state.
+        from .poe import grade_run
+        return grade_run(require_run(run_id))
+
     # -- API: live recon view (any.run-style) -------------------------------------
     # Read-only over run artifacts: the browser controller refreshes
     # recon_live/latest.jpg + events.jsonl on every navigate/click/fill/
