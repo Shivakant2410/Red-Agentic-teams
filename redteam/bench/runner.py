@@ -339,7 +339,7 @@ def run_paired(target_name: str, out: str, objective: str,
         f"| Out-of-scope refusal violation | {metrics['out_of_scope_refusal_violation_pct']}% |",
         "", "Missing cost or refusal instrumentation is reported as null, never zero.",
     ]
-    (out_dir / "paired-scorecard.md").write_text("\\n".join(lines), encoding="utf-8")
+    (out_dir / "paired-scorecard.md").write_text("\n".join(lines), encoding="utf-8")
     return report
 
 
