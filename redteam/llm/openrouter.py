@@ -77,6 +77,7 @@ class ModelRouter:
         self._session = session
         self._candidates: list[str] = []
         self._context_lens: dict[str, int] = {}
+        self._pricing: dict[str, dict[str, str]] = {}
         self._pools: dict[str, list[str]] = {"cheap": [], "strong": []}
         # model_id -> consecutive 429 count this run. Reset to 0 on any non-429 response
         # (success or a different kind of failure) so a model gets a fresh chance later —
@@ -111,6 +112,10 @@ class ModelRouter:
                 if self._cfg.require_tool_support and not _supports_tools(m):
                     continue
                 ids.append(mid)
+                pricing = m.get("pricing") or {}
+                if isinstance(pricing, dict):
+                    self._pricing[mid] = {str(k): str(v) for k, v in pricing.items()
+                                          if k in ("prompt", "completion")}
                 ctx = m.get("context_length") or (m.get("top_provider") or {}).get("context_length")
                 if isinstance(ctx, int):
                     self._context_lens[mid] = ctx
@@ -128,6 +133,9 @@ class ModelRouter:
         self._candidates = ids
         self._pools = classify_pools(ids, self._context_lens)
         return ids
+
+    def pricing_for(self, model: str) -> dict[str, str]:
+        return dict(self._pricing.get(model, {}))
 
     def candidates_for(self, role: str) -> list[str]:
         if not self._candidates:
