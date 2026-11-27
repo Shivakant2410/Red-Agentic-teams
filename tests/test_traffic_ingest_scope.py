@@ -30,9 +30,7 @@ def harness(tmp_path, monkeypatch):
     run_id = "run-ingest-scope-test"
     run_dir = tmp_path / run_id
     run_dir.mkdir()
-    # Fix a YAML indentation typo at the fixture source boundary, so the stored
-    # artifact is exactly the valid engagement the API loads.
-    (run_dir / "engagement.yaml").write_text(ENGAGEMENT.replace(" ticket:", "ticket:"), encoding="utf-8")
+    (run_dir / "engagement.yaml").write_text(ENGAGEMENT, encoding="utf-8")
     monkeypatch.setenv("RED_INGEST_TOKEN", "test-ingest-token")
     client = TestClient(create_app(runs_root=tmp_path, dashboard_dir=None))
     return client, run_dir, run_id
