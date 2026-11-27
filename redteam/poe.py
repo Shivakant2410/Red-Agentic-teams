@@ -82,7 +82,7 @@ def decode_body(body: str | bytes | None, encoding: str = "") -> str:
     else:
         raw = bytes(body)
 
-    if raw[:2] == b"\\x1f\\x8b":
+    if raw[:2] == b"\x1f\x8b":
         try:
             return gzip.decompress(raw).decode("utf-8", errors="replace")
         except Exception:
@@ -104,10 +104,10 @@ def _header(headers: dict, name: str) -> str:
 def _haystacks(rec: dict) -> tuple[str, str]:
     """(response_blob, request_blob) — decoded body + headers, for quote search."""
     def _blob(headers, body):
-        hs = "\\n".join(f"{k}: {v}" for k, v in (headers or {}).items())
+        hs = "\n".join(f"{k}: {v}" for k, v in (headers or {}).items())
         encoding = _header(headers or {}, "content-encoding")
         decoded = decode_body(body, encoding)
-        return hs + "\\n" + decoded
+        return hs + "\n" + decoded
     resp = _blob(rec.get("resp_headers"), rec.get("resp_body"))
     req = _blob(rec.get("req_headers"), rec.get("req_body"))
     return resp, req
