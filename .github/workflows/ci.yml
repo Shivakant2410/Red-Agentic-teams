@@ -28,3 +28,23 @@ jobs:
         run: python -m playwright install --with-deps chromium
       - name: Full test suite
         run: python -m pytest -q
+
+  dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Install dashboard dependencies
+        run: npm ci
+      - name: Dashboard unit tests
+        run: npm test
+      - name: Build dashboard
+        run: npm run build
