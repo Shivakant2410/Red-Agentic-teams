@@ -12,7 +12,7 @@ ENGAGEMENT = """
 name: Ingest Lab
 client: local-test
 authorized_by: operator
- ticket: test-ticket
+ticket: test-ticket
 starts: "2020-01-01"
 ends: "2099-12-31"
 scope:
@@ -85,3 +85,23 @@ def test_short_lived_recorders_share_monotonic_sequence_numbers(tmp_path):
     third = TrafficRecorder(path)
     third.record_http(method="GET", url="http://127.0.0.1/c", status=200, elapsed_ms=1)
     assert [row["seq"] for row in read_traffic(path)] == [1, 2, 3]
+
+
+def test_poe_endpoint_uses_the_finding_bound_exchange_only(harness):
+    client, run_dir, run_id = harness
+    traffic_rows = [
+        {"seq": 1, "kind": "http", "resp_headers": {}, "resp_body": "ordinary response"},
+        {"seq": 2, "kind": "http", "resp_headers": {}, "resp_body": "privileged=true"},
+    ]
+    (run_dir / "traffic.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in traffic_rows), encoding="utf-8")
+    (run_dir / "findings.json").write_text(json.dumps([{
+        "id": "finding-1", "title": "cross-tenant read", "confidence": "confirmed",
+        "evidence_ref": 1, "quotes": ["privileged=true"],
+    }]), encoding="utf-8")
+
+    response = client.get(f"/api/runs/{run_id}/poe")
+    assert response.status_code == 200
+    report = response.json()
+    assert report["findings"][0]["level"] == "poe0"
+    assert report["findings"][0]["verified"] is False
