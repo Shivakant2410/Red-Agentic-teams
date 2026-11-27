@@ -84,7 +84,7 @@ class KaliSandbox:
         self._eng = engagement
         self._cfg = engagement.sandbox
         self._audit = audit
-        self._container_name = _scoped_container_name(self._container_name, run_id)
+        self._container_name = _scoped_container_name(self._cfg.container_name, run_id)
         self._plan: EgressPlan | None = None
         self._started = False
         # requirement-driven tool layer: set by ensure_tools() before start()
