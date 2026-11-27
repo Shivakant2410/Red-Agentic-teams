@@ -48,3 +48,41 @@ jobs:
         run: npm test
       - name: Build dashboard
         run: npm run build
+
+  wheel-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build --wheel
+      - name: Install wheel and import packaged entrypoints
+        run: |
+          python -m pip install dist/*.whl
+          cd /tmp
+          python -c "import redteam, redteam.recon_v2, redteam.mission, redteam.brain, redteam.pi, redteam.sc, redteam.sid, agentic_setup.usage"
+
+  rust-kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test computational kernel
+        run: cargo test --manifest-path kernel/Cargo.toml --locked
+
+  lab-docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build deterministic lab container
+        run: docker build -t redteam-campaign-lab-ci -f Dockerfile .
+        working-directory: lab
+      - name: Validate sandbox entrypoint shell
+        run: bash -n redteam/sandbox/entrypoint.sh
