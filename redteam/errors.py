@@ -7,9 +7,9 @@ from typing import Any
 
 _LOG = logging.getLogger("redteam.runtime")
 _REDACT_PATTERNS = (
-    (re.compile(r"(?i)\\b(bearer|basic)\\s+[^\\s,;]+"), r"\\1 <redacted>"),
-    (re.compile(r"(?i)(authorization|cookie|set-cookie|password|token|api[_-]?key)(\\s*[:=]\\s*)[^\\s,;]+"), r"\\1\\2<redacted>"),
-    (re.compile(r"(?i)([?&](?:access_token|refresh_token|token|key|secret|code)=)[^&#\\s]+"), r"\\1<redacted>"),
+    (re.compile(r"(?i)\b(bearer|basic)\s+[^\s,;]+"), r"\1 <redacted>"),
+    (re.compile(r"(?i)(authorization|cookie|set-cookie|password|token|api[_-]?key)(\s*[:=]\s*)[^\s,;]+"), r"\1\2<redacted>"),
+    (re.compile(r"(?i)([?&](?:access_token|refresh_token|token|key|secret|code)=)[^&#\s]+"), r"\1<redacted>"),
 )
 
 
