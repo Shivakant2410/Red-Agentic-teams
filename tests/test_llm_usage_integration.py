@@ -60,3 +60,36 @@ def test_daily_usage_limit_blocks_before_provider_request(tmp_path):
         _gateway(provider, store, daily_limit=1).chat(
             [{"role": "user", "content": "hello"}], role="analysis")
     assert provider.called == 0
+
+
+def test_legacy_openrouter_client_records_provider_reported_cost(tmp_path, monkeypatch):
+    from redteam.config import LlmConfig
+    from redteam.llm.openrouter import OpenRouterClient
+
+    class Response:
+        status_code = 200
+        headers = {}
+        text = ""
+        def json(self):
+            return {"id": "resp-123", "choices": [{
+                "message": {"role": "assistant", "content": "ok"},
+                "finish_reason": "stop",
+            }], "usage": {"prompt_tokens": 12, "completion_tokens": 4, "cost": "0.0007"}}
+
+    class Session:
+        def __init__(self): self.headers = {}
+        def post(self, *args, **kwargs): return Response()
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    store = UsageStore(tmp_path / "usage.sqlite3", run_id="legacy-run")
+    client = OpenRouterClient(LlmConfig(), usage_store=store)
+    client._session = Session()
+    client.router.candidates_for = lambda role: ["test/model"]
+    client.router.pricing_for = lambda model: {"prompt": "0.1", "completion": "0.2"}
+
+    result = client.chat([{"role": "user", "content": "hello"}], role="analysis")
+    summary = store.summary_all()
+    assert result.message["content"] == "ok"
+    assert summary.requests == 1
+    assert summary.known_cost_usd == pytest.approx(0.0007)
+    assert summary.unknown_cost_requests == 0
