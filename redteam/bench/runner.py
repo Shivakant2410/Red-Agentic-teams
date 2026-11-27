@@ -305,7 +305,7 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False,
                           cost_tokens=tokens, elapsed_s=elapsed)
 
     report = (objective_card.to_markdown()
-              + "\\n\\n---\\n\\n#### Secondary: vulnerability coverage (not the goal)\\n\\n"
+              + "\n\n---\n\n#### Secondary: vulnerability coverage (not the goal)\n\n"
               + vuln_card.to_markdown())
     (out_dir / "scorecard.md").write_text(report, encoding="utf-8")
     print(report)
