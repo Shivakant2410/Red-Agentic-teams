@@ -320,8 +320,10 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
             else:
                 # Origin-form request to a proxy is nonsense; answer, don't guess.
                 self._reply(400, b"evidence proxy: origin-form requests are not valid here\n")
-        except (ConnectionError, socket.timeout, ssl.SSLError):
+        except (ConnectionError, socket.timeout, ssl.SSLError) as exc:
             self.proxy.stats.bump("errors")
+            record_suppressed_error(self.proxy.audit, "proxy", "handle_client_disconnect", exc,
+                                    severity="info")
         except Exception as exc:  # one bad connection must never kill the server
             self.proxy.stats.bump("errors")
             self._record_error(exc)
@@ -681,6 +683,7 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
                 resp_headers=evidence_headers, resp_body=self._text(evidence_body))
         except Exception as exc:
             self.proxy.stats.bump("errors")
+            record_suppressed_error(self.proxy.audit, "proxy", "forward_exchange", exc)
             self.proxy.traffic.record_http(
                 method=method, url=url, status=0,
                 elapsed_ms=int((time.monotonic() - start) * 1000),
@@ -732,15 +735,21 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
                 try:
                     import brotli  # optional
                     return brotli.decompress(raw)
-                except Exception:
+                except Exception as exc:
+                    record_suppressed_error(self.proxy.audit, "proxy", "decode_brotli_body", exc,
+                                            severity="info")
                     return raw
             if "zstd" in enc:
                 try:
                     import zstandard  # optional
                     return zstandard.ZstdDecompressor().decompress(raw)
-                except Exception:
+                except Exception as exc:
+                    record_suppressed_error(self.proxy.audit, "proxy", "decode_zstd_body", exc,
+                                            severity="info")
                     return raw
-        except Exception:
+        except Exception as exc:
+            record_suppressed_error(self.proxy.audit, "proxy", "decode_response_body", exc,
+                                    severity="info")
             return raw
         return raw
 
