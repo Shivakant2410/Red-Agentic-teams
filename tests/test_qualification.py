@@ -1,6 +1,6 @@
 import pytest
 
-from agentic_setup.qualification import QualificationStore
+from redteam.llm.preflight import QualificationStore
 
 
 def test_qualification_is_phase_specific_and_replaces_prior_score(tmp_path):
