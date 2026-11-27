@@ -317,7 +317,7 @@ class WorldModel:
         if _SECRET_VALUE.search(path):
             path = "/<redacted>"
         path = re.sub(r"/[0-9a-fA-F]{24,}(?=/|$)", "/{opaque}", path)
-        path = re.sub(r"/\\d{2,}(?=/|$)", "/{id}", path)
+        path = re.sub(r"/\d{2,}(?=/|$)", "/{id}", path)
         return host_ref[:_MAX_KEY], path[:600]
 
     def ingest_recon_store(self, evidence_store, *, limit: int = 2000) -> int:
