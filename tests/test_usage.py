@@ -1,6 +1,6 @@
 import pytest
 
-from agentic_setup.usage import UsageLimitExceeded, UsageStore
+from redteam.llm.usage import UsageLimitExceeded, UsageStore
 
 
 def test_usage_ledger_tracks_tokens_cost_and_model_totals(tmp_path):
@@ -66,3 +66,18 @@ def test_usage_summary_rejects_unknown_period(tmp_path, period):
 
     with pytest.raises(ValueError, match="Period"):
         store.summary(period)
+
+
+def test_shared_ledger_isolates_run_summaries_but_shares_daily_limit(tmp_path):
+    path = tmp_path / "shared-usage.sqlite3"
+    first = UsageStore(path, run_id="run-a")
+    second = UsageStore(path, run_id="run-b")
+    first_id = first.reserve_request("analysis", "vendor/model", 10)
+    first.record_success(first_id, {"prompt_tokens": 10, "completion_tokens": 2, "cost": "0.01"}, {}, None)
+    second_id = second.reserve_request("analysis", "vendor/model", 10)
+    second.record_success(second_id, {"prompt_tokens": 20, "completion_tokens": 3, "cost": "0.02"}, {}, None)
+    assert first.summary_all().requests == 1
+    assert first.summary_all().known_cost_usd == pytest.approx(0.01)
+    assert second.summary_all().requests == 1
+    assert second.summary_all().known_cost_usd == pytest.approx(0.02)
+    assert UsageStore(path).summary_all().requests == 2

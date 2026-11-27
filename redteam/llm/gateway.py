@@ -84,9 +84,12 @@ class LLMGateway:
     the mapping is empty or lacks the provider's env var name.
     """
 
-    def __init__(self, cfg: LlmConfig, audit=None, credentials=None, timeout=None):
+    def __init__(self, cfg: LlmConfig, audit=None, credentials=None, timeout=None,
+                 usage_store=None, daily_limit: int = 1000):
         self._cfg = cfg
         self._audit = audit
+        self._usage_store = usage_store
+        self._daily_limit = max(1, int(daily_limit))
         # Opt-in per-request read timeout (seconds) for OpenAI-compatible
         # providers. None = provider default (120s). Local CPU-only backends
         # (ollama on a small box) can exceed 120s on ONE completion once the
@@ -127,6 +130,30 @@ class LLMGateway:
         # (provider.name, model) -> consecutive-429 count this run (circuit breaker).
         self._consecutive_429s: dict[tuple[str, str], int] = {}
         self._lock = threading.Lock()
+
+    def _reserve_usage(self, role: str, provider_name: str, model: str):
+        if self._usage_store is None:
+            return None
+        return self._usage_store.reserve_request(role, f"{provider_name}/{model}", self._daily_limit)
+
+    def _record_usage_failure(self, request_id) -> None:
+        if request_id is None:
+            return
+        try:
+            self._usage_store.record_failure(request_id)
+        except Exception as exc:
+            from ..errors import record_suppressed_error
+            record_suppressed_error(self._audit, "llm_gateway", "record_usage_failure", exc)
+
+    def _record_usage_success(self, request_id, provider, model: str, result) -> None:
+        if request_id is None:
+            return
+        try:
+            pricing = provider.pricing_for(model) if callable(getattr(provider, "pricing_for", None)) else {}
+            self._usage_store.record_success(request_id, result.usage or {}, pricing, None)
+        except Exception as exc:
+            from ..errors import record_suppressed_error
+            record_suppressed_error(self._audit, "llm_gateway", "record_usage_success", exc)
 
     # -- introspection ----------------------------------------------------------
 
@@ -192,12 +219,15 @@ class LLMGateway:
             if provider is None:
                 continue
             key = (provider_name, model)
+            request_id = self._reserve_usage(role, provider_name, model)
             try:
                 result = provider.chat(messages, tools, model)
+                self._record_usage_success(request_id, provider, model, result)
                 with self._lock:
                     self._consecutive_429s[key] = 0
                 return result
             except ProviderError as exc:
+                self._record_usage_failure(request_id)
                 if exc.status == 429:
                     with self._lock:
                         self._consecutive_429s[key] = self._consecutive_429s.get(key, 0) + 1
@@ -211,6 +241,7 @@ class LLMGateway:
                 last_error = exc
                 continue
             except Exception as exc:   # transport failure / malformed body — rotate
+                self._record_usage_failure(request_id)
                 self._log("llm.rotate", model=f"{provider_name}/{model}",
                           reason=f"transport:{type(exc).__name__}")
                 last_error = exc
@@ -226,7 +257,8 @@ class LLMGateway:
             self._audit.record(event, **fields)
 
 
-def build_llm_client(cfg: LlmConfig, audit=None, credentials: Mapping[str, str] | None = None):
+def build_llm_client(cfg: LlmConfig, audit=None, credentials: Mapping[str, str] | None = None,
+                     usage_store=None, daily_limit: int = 1000):
     """Factory used by run.py / server: legacy single-provider config -> Gen-1 client
     (byte-for-byte behavior); multi-provider config -> LLMGateway.
 
@@ -235,8 +267,9 @@ def build_llm_client(cfg: LlmConfig, audit=None, credentials: Mapping[str, str] 
     override always writes an effective engagement WITH a providers block, so per-run
     keys never reach the legacy path)."""
     if not cfg.providers:
-        return OpenRouterClient(cfg, audit=audit)
+        return OpenRouterClient(cfg, audit=audit, usage_store=usage_store, daily_limit=daily_limit)
     # REDTEAM_LLM_TIMEOUT: operator opt-in for slow local backends (seconds).
     raw = os.environ.get("REDTEAM_LLM_TIMEOUT", "").strip()
     return LLMGateway(cfg, audit=audit, credentials=credentials,
-                      timeout=int(raw) if raw else None)
+                      timeout=int(raw) if raw else None,
+                      usage_store=usage_store, daily_limit=daily_limit)

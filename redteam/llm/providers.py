@@ -240,6 +240,7 @@ class OpenAICompatProvider:
         self._session.headers.update(headers)
         self._pools: dict[str, list[str]] = {"cheap": [], "strong": []}
         self._context_lens: dict[str, int] = {}
+        self._pricing: dict[str, dict[str, str]] = {}
         self._discovered = False
 
     @property
@@ -275,6 +276,10 @@ class OpenAICompatProvider:
             if self.cfg.require_tool_support and not _supports_tools(m):
                 continue
             ids.append(mid)
+            pricing = m.get("pricing") or {}
+            if isinstance(pricing, dict):
+                self._pricing[mid] = {str(k): str(v) for k, v in pricing.items()
+                                      if k in ("prompt", "completion")}
             ctx = m.get("context_length") or (m.get("top_provider") or {}).get("context_length")
             if isinstance(ctx, int):
                 self._context_lens[mid] = ctx
@@ -289,6 +294,9 @@ class OpenAICompatProvider:
         self._pools = classify_pools(ids, self._context_lens)
         self._discovered = True
         return ids
+
+    def pricing_for(self, model: str) -> dict[str, str]:
+        return dict(self._pricing.get(model, {}))
 
     def candidates_for(self, role: str) -> list[str]:
         if not self._discovered:
@@ -373,6 +381,10 @@ class AnthropicProvider:
     def _log(self, event: str, **fields) -> None:
         if self._audit:
             self._audit.record(event, provider=self.cfg.name, **fields)
+
+    def pricing_for(self, model: str) -> dict[str, str]:
+        # Anthropic responses do not include a stable per-model price catalog here.
+        return {}
 
     def discover(self) -> list[str]:
         ids: list[str] = []

@@ -244,12 +244,27 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False,
     manifest_path = out_dir / "manifest.json"
     tokens = 0
     cost_usd = None
+    usage_summary = None
     if manifest_path.exists():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         tokens = manifest.get("tokens", 0)
         measured_cost = manifest.get("cost_usd")
         if isinstance(measured_cost, (int, float)) and measured_cost >= 0:
             cost_usd = float(measured_cost)
+    try:
+        from ..llm.usage import UsageStore
+        usage_db = Path(os.environ.get("REDTEAM_USAGE_DB", str(out_dir / "llm-usage.sqlite3"))).expanduser()
+        usage = UsageStore(usage_db, run_id=out_dir.name).summary_all()
+        usage_summary = {
+            "requests": usage.requests, "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "known_cost_usd": usage.known_cost_usd,
+            "unknown_cost_requests": usage.unknown_cost_requests,
+        }
+        cost_usd = (usage.known_cost_usd if usage.unknown_cost_requests == 0 else None)
+    except Exception:
+        # An unavailable ledger must not be represented as zero-dollar usage.
+        cost_usd = None
 
     # --- PRIMARY: the red-team scoreboard (objective reached, by what path) ---
     from ..access import AccessGraph
@@ -295,7 +310,7 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False,
         "met_ids": list(objective_card.met_ids),
         "missed_ids": list(objective_card.missed_ids),
         "confirmed_findings": confirmed,
-        "cost_usd": cost_usd,
+        "cost_usd": cost_usd, "usage_summary": usage_summary,
         # Refusal traps are intentionally None until the harness emits explicit
         # trap-attempt and out-of-scope-violation events; absence is not zero.
         "refusal_traps_total": None, "refusal_violations": None,

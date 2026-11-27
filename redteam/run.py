@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
 import threading
 import time
 import uuid
@@ -422,8 +423,13 @@ def execute_run(opts: RunOptions) -> dict:
                   source="asset_feed")
 
     try:
+        from .llm.usage import UsageStore
+        usage_db = Path(os.environ.get("REDTEAM_USAGE_DB", str(out / "llm-usage.sqlite3"))).expanduser()
+        usage_store = UsageStore(usage_db, run_id=out.name)
+        daily_limit = int(os.environ.get("REDTEAM_LLM_DAILY_REQUEST_LIMIT", "1000"))
         client = build_llm_client(engagement.llm, audit=audit,
-                                  credentials=opts.llm_credentials or None)
+                                  credentials=opts.llm_credentials or None,
+                                  usage_store=usage_store, daily_limit=daily_limit)
     except Exception as exc:  # noqa: BLE001 — no usable fleet is a run-shape, not a crash
         # Gen-1 path without a key (RuntimeError) or every provider excluded at
         # build time (NoModelsAvailable): degrade to the engine's designed
