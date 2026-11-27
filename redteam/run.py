@@ -350,6 +350,8 @@ def execute_run(opts: RunOptions) -> dict:
         pass  # coverage degrades honestly without it; the run must not die here
     from .knowledge import KnowledgeGraph
     graph = KnowledgeGraph(out / "graph.json")
+    from .world_model import WorldModel
+    world_model = WorldModel(graph, audit=audit)
     # The bandit's learned win-rates are cross-ENGAGEMENT state (like the memory dir
     # below), not per-run state — a fixed path, not out_dir, so technique selection
     # keeps improving across many runs instead of resetting every time.
@@ -541,6 +543,7 @@ def execute_run(opts: RunOptions) -> dict:
         ctx = ToolContext(scope=scope, limiter=limiter, audit=audit, findings=findings,
                           approve=approver,
                           sandbox=sandbox, browser=browser, graph=graph,
+                          world_model=world_model,
                           sessions=SessionStore(), skills=skills,
                           access=access, objective=engagement.objective,
                           killchain=killchain, events=bus,

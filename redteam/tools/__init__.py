@@ -40,6 +40,7 @@ class ToolContext:
     sandbox: Optional[object] = None   # KaliSandbox | None
     browser: Optional[object] = None   # BrowserController | None
     graph: Optional[object] = None     # KnowledgeGraph | None (target surface)
+    world_model: Optional[object] = None  # WorldModel | None (typed projection over graph)
     sessions: Optional[object] = None  # SessionStore | None
     skills: Optional[object] = None    # SkillLibrary | None
     access: Optional[object] = None    # AccessGraph | None (what WE hold)

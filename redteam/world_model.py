@@ -12,8 +12,12 @@ and the existing verification pipeline retain their own authority.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+from urllib.parse import urlsplit
 from typing import Any
+
+from .errors import record_suppressed_error
 
 WORLD_MODEL_SCHEMA_VERSION = 1
 
@@ -175,8 +179,8 @@ class WorldModel:
         if self.audit is not None:
             try:
                 self.audit.record("world_model.fact_recorded", **result, source=source)
-            except Exception:
-                pass
+            except Exception as exc:
+                record_suppressed_error(self.audit, "world_model", "audit_fact_recorded", exc)
         return result
 
     def record_principal(
@@ -295,6 +299,141 @@ class WorldModel:
             source=source, evidence_refs=evidence_refs,
             epistemic_state=epistemic_state,
         )
+
+    @staticmethod
+    def _route_path(url: str) -> tuple[str, str] | None:
+        """Return a credential-free host and route path; query strings are omitted."""
+        try:
+            parsed = urlsplit(str(url))
+            host = (parsed.hostname or "").lower().rstrip(".")
+            if parsed.scheme not in ("http", "https") or not host:
+                return None
+            port = parsed.port
+        except (TypeError, ValueError):
+            return None
+        default_port = 443 if parsed.scheme == "https" else 80
+        host_ref = f"{host}:{port}" if port and port != default_port else host
+        path = parsed.path or "/"
+        if _SECRET_VALUE.search(path):
+            path = "/<redacted>"
+        path = re.sub(r"/[0-9a-fA-F]{24,}(?=/|$)", "/{opaque}", path)
+        path = re.sub(r"/\d{2,}(?=/|$)", "/{id}", path)
+        return host_ref[:_MAX_KEY], path[:600]
+
+    def ingest_recon_store(self, evidence_store, *, limit: int = 2000) -> int:
+        """Project observed RECON V2 assets into typed application components."""
+        if evidence_store is None or not callable(getattr(evidence_store, "query", None)):
+            return 0
+        accepted = {"domain", "subdomain", "host", "ip", "service", "endpoint",
+                    "page", "technology", "api_spec"}
+        layers = {"domain": "network", "subdomain": "network", "host": "network",
+                  "ip": "network", "service": "service", "endpoint": "application",
+                  "page": "application", "technology": "application", "api_spec": "application"}
+        count = 0
+        for obs in evidence_store.query(limit=limit):
+            kind = str(getattr(obs, "kind", "") or "")
+            subject = str(getattr(obs, "subject", "") or "")
+            if kind not in accepted or not subject:
+                continue
+            if "://" in subject:
+                route = self._route_path(subject)
+                if route is None:
+                    continue
+                subject = f"{route[0]}{route[1]}"
+            refs = list(getattr(obs, "evidence_refs", []) or [])
+            if not refs:
+                refs = [{"evidence_id": f"recon:{getattr(obs, 'id', subject)}",
+                         "kind": "recon_observation"}]
+            tool = str(getattr(obs, "tool", "") or "recon_v2")[:80]
+            self.record_component(
+                f"recon:{kind}:{subject}", component_type=kind,
+                layer=layers[kind], evidence_refs=refs,
+                source=f"recon_v2:{tool}", epistemic_state="observed",
+            )
+            count += 1
+        return count
+
+    def ingest_traffic_records(self, records: list[dict] | None, *, limit: int = 2000) -> int:
+        """Project browser/proxy/extension exchanges without retaining raw payloads."""
+        count = 0
+        for row in (records or [])[:limit]:
+            if not isinstance(row, dict):
+                continue
+            route = self._route_path(row.get("url", ""))
+            if route is None:
+                continue
+            try:
+                seq = int(row.get("seq") or 0)
+            except (TypeError, ValueError):
+                continue
+            if seq <= 0:
+                continue
+            host_ref, path = route
+            source = str(row.get("source") or row.get("tool") or "traffic")[:80]
+            refs = [{"evidence_id": f"traffic_seq:{seq}", "kind": "http_exchange",
+                     "source": source, "tool": str(row.get("tool") or source)[:80]}]
+            method = str(row.get("method") or "GET").upper()[:12]
+            self.record_component(
+                f"traffic:host:{host_ref}", component_type="http_host", layer="network",
+                evidence_refs=refs, source=f"traffic:{source}", epistemic_state="observed",
+            )
+            self.record_component(
+                f"traffic:endpoint:{host_ref}:{method}:{path}",
+                component_type="http_endpoint", layer="application",
+                evidence_refs=refs, source=f"traffic:{source}", epistemic_state="observed",
+            )
+            try:
+                status = int(row.get("status") or 0)
+            except (TypeError, ValueError):
+                status = 0
+            if status in (401, 403):
+                self.record_trust_boundary(
+                    f"http-auth-boundary:{host_ref}:{path}",
+                    source_layer="client", destination_layer="application",
+                    control=f"HTTP {status} response observed at {method} {path}",
+                    evidence_refs=refs, source=f"traffic:{source}",
+                    epistemic_state="inferred",
+                )
+            count += 1
+        return count
+
+    def refresh_from_sources(self, evidence_store=None, traffic_path=None) -> dict:
+        """Refresh the typed projection from the run's existing evidence sources."""
+        recon_count = self.ingest_recon_store(evidence_store)
+        traffic_count = 0
+        if traffic_path is not None:
+            try:
+                from .traffic import read_traffic
+                traffic_count = self.ingest_traffic_records(
+                    read_traffic(traffic_path, after=0, limit=5000), limit=5000)
+            except (OSError, ValueError) as exc:
+                record_suppressed_error(self.audit, "world_model", "refresh_traffic", exc)
+        return {"recon_components": recon_count, "traffic_components": traffic_count}
+
+    def compact_projection(self, *, max_facts: int = 80, max_chars: int = 6000) -> dict:
+        """Small typed projection for thesis generation; no raw bodies or cookies."""
+        allowed_attrs = {
+            "role", "tenant_ref", "entity_type", "component_type", "layer",
+            "name", "source_layer", "destination_layer", "control", "action",
+            "from_state", "to_state", "outcome", "state", "epistemic_state",
+        }
+        facts = []
+        for node in self.graph.nodes():
+            if getattr(node, "kind", "") not in WORLD_MODEL_KINDS:
+                continue
+            attrs = _safe_value(getattr(node, "attrs", {}) or {})
+            fact = {
+                "id": getattr(node, "id", ""), "kind": node.kind,
+                "key": node.key,
+                "epistemic_state": attrs.get("epistemic_state", "observed"),
+                "evidence_ref_ids": list(attrs.get("evidence_ref_ids", []))[:8],
+                "attributes": {k: v for k, v in attrs.items() if k in allowed_attrs},
+            }
+            candidate = facts + [fact]
+            if len(candidate) > max_facts or len(json.dumps(candidate, ensure_ascii=False)) > max_chars:
+                break
+            facts.append(fact)
+        return {"schema_version": WORLD_MODEL_SCHEMA_VERSION, "facts": facts}
 
     def snapshot(self) -> dict:
         """Return a compact, deterministic projection; never includes raw secrets."""
