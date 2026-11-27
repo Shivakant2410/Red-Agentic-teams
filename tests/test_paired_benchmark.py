@@ -61,3 +61,17 @@ def test_existing_high_signal_targets_all_have_paired_controls():
         assert patched.objective == vulnerable.objective
     fetcher = get_target("ladder-3")
     assert 8892 not in fetcher.extra_ports
+
+
+def test_oob_and_jwt_targets_have_paired_controls_and_oob_metrics():
+    from redteam.bench.targets import get_target
+
+    oob = get_target("lab-oob")
+    oob_control = get_target("lab-oob", "patched")
+    jwt = get_target("lab-session-jwt")
+    jwt_control = get_target("lab-session-jwt", "patched")
+    assert oob.metrics_path == "/__bench/metrics"
+    assert 8898 not in oob.extra_ports
+    assert "vulnerable" in oob.cmd and "patched" in oob_control.cmd
+    assert "unsafe" in jwt.cmd and "strict" in jwt_control.cmd
+    assert oob_control.ground_truth == [] and jwt_control.ground_truth == []
