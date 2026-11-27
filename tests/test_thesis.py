@@ -91,3 +91,33 @@ def test_briefing_renders_chain_and_prove():
     b = theses_briefing([t])
     assert "chain:" in b and "prove by:" in b and "drop if:" in b
     assert "falsifiable belief" in b.lower()
+
+
+def test_generate_theses_prefers_compact_world_model_over_raw_digest():
+    import json
+
+    class _Msg:
+        def __init__(self, content): self.message = {"content": content}
+
+    class _Client:
+        def __init__(self): self.messages = None
+        def chat(self, messages, tools=None, role=None):
+            self.messages = messages
+            return _Msg(json.dumps([_deep()]))
+
+    client = _Client()
+    projection = {"schema_version": 1, "facts": [{
+        "id": "app_component:orders", "kind": "app_component",
+        "key": "https://m.test/orders/status", "epistemic_state": "observed",
+        "evidence_ref_ids": ["traffic_seq:9"],
+        "attributes": {"component_type": "http_endpoint", "layer": "application"},
+    }]}
+    out = generate_theses(
+        client, lens="logic", evidence_digest="RAW-8KB-DUMP-MUST-NOT-BE-SENT",
+        evidence_keys=_KEYS, objective_text="test",
+        world_model_projection=projection,
+    )
+    prompt = client.messages[1]["content"]
+    assert out and "TYPED WORLD MODEL" in prompt
+    assert "traffic_seq:9" in prompt
+    assert "RAW-8KB-DUMP-MUST-NOT-BE-SENT" not in prompt
