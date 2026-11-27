@@ -160,9 +160,11 @@ class ModelRouter:
 
 
 class OpenRouterClient:
-    def __init__(self, cfg: LlmConfig, audit=None):
+    def __init__(self, cfg: LlmConfig, audit=None, usage_store=None, daily_limit: int = 1000):
         self._cfg = cfg
         self._audit = audit
+        self._usage_store = usage_store
+        self._daily_limit = max(1, int(daily_limit))
         api_key = os.environ.get(cfg.api_key_env, "")
         if not api_key:
             raise RuntimeError(
@@ -177,6 +179,30 @@ class OpenRouterClient:
         })
         self.router = ModelRouter(cfg, self._session)
 
+    def _reserve_usage(self, role: str, model: str):
+        if self._usage_store is None:
+            return None
+        return self._usage_store.reserve_request(role, model, self._daily_limit)
+
+    def _record_usage_failure(self, request_id) -> None:
+        if request_id is None:
+            return
+        try:
+            self._usage_store.record_failure(request_id)
+        except Exception as exc:
+            from ..errors import record_suppressed_error
+            record_suppressed_error(self._audit, "openrouter", "record_usage_failure", exc)
+
+    def _record_usage_success(self, request_id, model: str, usage: dict, response_id=None) -> None:
+        if request_id is None:
+            return
+        try:
+            self._usage_store.record_success(
+                request_id, usage or {}, self.router.pricing_for(model), response_id)
+        except Exception as exc:
+            from ..errors import record_suppressed_error
+            record_suppressed_error(self._audit, "openrouter", "record_usage_success", exc)
+
     def _log(self, event: str, **fields) -> None:
         if self._audit:
             self._audit.record(event, **fields)
@@ -188,6 +214,7 @@ class OpenRouterClient:
         last_error: Exception | None = None
 
         for attempt, model in enumerate(candidates[: self.router.exhausted_after]):
+            request_id = self._reserve_usage(role, model)
             payload = {
                 "model": model,
                 "messages": messages,
@@ -209,11 +236,13 @@ class OpenRouterClient:
                     data=json.dumps(payload), timeout=120,
                 )
             except requests.RequestException as exc:
+                self._record_usage_failure(request_id)
                 last_error = exc
                 self._log("llm.transport_error", model=model, error=str(exc))
                 continue
 
             if resp.status_code in (429, 402, 403, 404, 500, 502, 503):
+                self._record_usage_failure(request_id)
                 retry_after = resp.headers.get("retry-after")
                 self._log("llm.rotate", model=model, status=resp.status_code,
                           retry_after=retry_after)
@@ -231,6 +260,7 @@ class OpenRouterClient:
                 continue
 
             if resp.status_code >= 400:
+                self._record_usage_failure(request_id)
                 last_error = RuntimeError(f"{resp.status_code}: {resp.text[:300]}")
                 self._log("llm.error", model=model, status=resp.status_code)
                 self.router.on_other_result(model)
@@ -246,6 +276,7 @@ class OpenRouterClient:
             has_content = bool((message.get("content") or "").strip())
             has_calls = bool(message.get("tool_calls"))
             if not has_content and not has_calls:
+                self._record_usage_failure(request_id)
                 self._log("llm.degenerate", model=model,
                           finish_reason=choice.get("finish_reason"))
                 self.router.on_other_result(model)   # it answered — not quota-exhausted
@@ -253,6 +284,7 @@ class OpenRouterClient:
                 continue
 
             self.router.on_other_result(model)   # a real success clears any cooldown
+            self._record_usage_success(request_id, model, body.get("usage") or {}, body.get("id"))
             self._log("llm.ok", model=model, finish_reason=choice.get("finish_reason"),
                       usage=body.get("usage"))
             return ChatResult(
