@@ -900,12 +900,30 @@ class Orchestrator:
         the run is lifted by theses, never dependent on them)."""
         try:
             digest, keys = self._evidence_digest()
-            if not digest:
+            world_model = getattr(self._ctx, "world_model", None)
+            projection = None
+            if world_model is not None:
+                traffic_path = (self._run_dir / "traffic.jsonl") if self._run_dir else None
+                refresh = world_model.refresh_from_sources(
+                    getattr(self._ctx, "evidence_store", None), traffic_path)
+                projection = world_model.compact_projection()
+                facts = projection.get("facts", [])
+                if facts:
+                    # The typed projection replaces the old raw text digest in
+                    # the model prompt. Keep its keys only for thesis grounding.
+                    digest = ""
+                    for fact in facts:
+                        if fact.get("key"):
+                            keys.add(str(fact["key"]))
+                        keys.update(str(ref) for ref in fact.get("evidence_ref_ids", []))
+                self._ctx.audit.record(
+                    "world_model.refreshed", lens=lens, facts=len(facts), **refresh)
+            if not digest and not (projection and projection.get("facts")):
                 return ""
             theses = generate_theses(
                 self._client, lens=lens, evidence_digest=digest,
                 evidence_keys=keys, objective_text=objective,
-                log=self._ctx.audit.record)
+                log=self._ctx.audit.record, world_model_projection=projection)
             if not theses:
                 return ""
             # Persist the inspectable artifact next to the run's other evidence.
