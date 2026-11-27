@@ -161,8 +161,12 @@ def grade_run(run_dir: str | Path) -> dict:
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict):
             continue
-        result = grade(directory / "traffic.jsonl", row.get("evidence_ref", 0),
-                       row.get("quotes") or [])
+        try:
+            evidence_ref = int(row.get("evidence_ref") or 0)
+        except (TypeError, ValueError):
+            evidence_ref = 0
+        quotes = row.get("quotes") if isinstance(row.get("quotes"), list) else []
+        result = grade(directory / "traffic.jsonl", evidence_ref, quotes)
         findings.append({
             "id": row.get("id", ""),
             "title": row.get("title", ""),
