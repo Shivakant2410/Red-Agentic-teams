@@ -21,6 +21,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as _dt
+import hmac
+import ipaddress
 import json
 import os
 import re
@@ -31,7 +33,7 @@ from pathlib import Path
 import yaml
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -458,10 +460,62 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
               f"previous process (manifest/snapshot marked terminal)", flush=True)
     registry = RunRegistry(runs_root)
     app = FastAPI(title="red-team control plane", version=VERSION, docs_url=None, redoc_url=None)
+
+    def _loopback_host(host: str) -> bool:
+        if host.lower() == "localhost":
+            return True
+        try:
+            return ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            return False
+
+    bind_host = control_plane[0] if control_plane else "127.0.0.1"
+    api_token = os.environ.get("RED_API_TOKEN", "").strip()
+    if api_token and len(api_token) < 32:
+        raise RuntimeError("RED_API_TOKEN must contain at least 32 characters")
+    if not api_token and not _loopback_host(bind_host):
+        raise RuntimeError("RED_API_TOKEN is required when binding the control plane beyond loopback")
+
+    configured_origins = os.environ.get("RED_CORS_ORIGINS")
+    if configured_origins is None:
+        allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    else:
+        allowed_origins = [item.strip().rstrip("/") for item in configured_origins.split(",") if item.strip()]
+    if "*" in allowed_origins:
+        raise RuntimeError("RED_CORS_ORIGINS must be an explicit origin allowlist; wildcard is forbidden")
     app.add_middleware(
-        CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
-        allow_headers=["*"], expose_headers=["*"],
+        CORSMiddleware, allow_origins=allowed_origins,
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+        expose_headers=["Content-Type"], allow_credentials=False,
     )
+
+    @app.middleware("http")
+    async def require_api_token(request, call_next):
+        path = request.url.path
+        if (not path.startswith("/api/") or path == "/api/health"
+                or path == "/api/traffic/ingest" or request.method == "OPTIONS"):
+            return await call_next(request)
+        if api_token:
+            supplied = request.headers.get("authorization", "")
+            bearer = supplied[7:].strip() if supplied.lower().startswith("bearer ") else ""
+            if bearer and hmac.compare_digest(bearer, api_token):
+                return await call_next(request)
+            # Same-origin dashboard calls do not need a token: browser Origin and
+            # Host must match exactly. Cross-origin/API clients must use Bearer.
+            origin = request.headers.get("origin", "")
+            host = request.headers.get("host", "")
+            try:
+                parsed_origin = __import__("urllib.parse", fromlist=["urlsplit"]).urlsplit(origin)
+                if origin and parsed_origin.netloc.lower() == host.lower() and parsed_origin.scheme == request.url.scheme:
+                    return await call_next(request)
+            except ValueError:
+                pass
+            return JSONResponse({"detail": "API token required"}, status_code=401)
+        client_host = request.client.host if request.client else ""
+        if client_host in ("testclient", "testserver") or _loopback_host(client_host):
+            return await call_next(request)
+        return JSONResponse({"detail": "set RED_API_TOKEN for remote API access"}, status_code=503)
 
     # -- helpers ---------------------------------------------------------------
 
