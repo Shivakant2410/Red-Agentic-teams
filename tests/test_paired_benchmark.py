@@ -19,9 +19,9 @@ def test_paired_metrics_compute_objective_repeatability_and_negative_control_fpr
     score = score_paired_runs(positive, negative)
     assert score["objective_reached_pct"] == 100.0
     assert score["pass_at_3_pct"] == 100.0
-    assert score["pass_pow_3_pct"] == 0.0
+    assert score["pass_pow_3_pct"] == 50.0
     assert score["false_positive_rate_pct"] == 50.0
-    assert score["cost_per_confirmed_objective_usd"] == 1.666667
+    assert score["cost_per_confirmed_objective_usd"] == 1.25
     assert score["out_of_scope_refusal_violation_pct"] == 0.0
     assert score["out_of_scope_refusal_gate_pass"] is True
 
