@@ -23,7 +23,9 @@ trusted control path, everything else stays default-DROP.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -66,11 +68,23 @@ def _run(cmd: list[str], timeout: int | None = None) -> subprocess.CompletedProc
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
 
+def _scoped_container_name(configured: str, run_id: str) -> str:
+    """Derive a Docker-safe, collision-resistant container name for one run."""
+    if not run_id:
+        return configured
+    base = re.sub(r"[^a-zA-Z0-9_.-]+", "-", configured or "redteam-kali").strip("-._")
+    slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", run_id).strip("-._") or "run"
+    digest = hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:8]
+    # Docker container names are kept below 64 chars, including the stable suffix.
+    return f"{base[:32]}-{slug[:14]}-{digest}"[:63].rstrip("-._")
+
+
 class KaliSandbox:
-    def __init__(self, engagement: Engagement, audit=None):
+    def __init__(self, engagement: Engagement, audit=None, run_id: str = ""):
         self._eng = engagement
         self._cfg = engagement.sandbox
         self._audit = audit
+        self._container_name = _scoped_container_name(self._cfg.container_name, run_id)
         self._plan: EgressPlan | None = None
         self._started = False
         # requirement-driven tool layer: set by ensure_tools() before start()
@@ -209,13 +223,13 @@ class KaliSandbox:
 
         self._ensure_network()
         # Remove any stale container with the same name.
-        _run(["docker", "rm", "-f", self._cfg.container_name])
+        _run(["docker", "rm", "-f", self._container_name])
 
         allowed = " ".join(self._plan.allowed_cidrs)
         dns = " ".join(self._cfg.dns)
         cmd = [
             "docker", "run", "-d",
-            "--name", self._cfg.container_name,
+            "--name", self._container_name,
             "--network", self._cfg.network_name,
             "--cap-add=NET_ADMIN",           # required to install the egress firewall
             "--cap-drop=ALL",                # drop everything else
@@ -238,8 +252,8 @@ class KaliSandbox:
                 cmd += ["-e", f"{var}={proxy_url}"]
             cmd += ["-e", "NO_PROXY=localhost,127.0.0.1,::1"]
         cmd += [self._image or self._cfg.image]
-        self._log("sandbox.start", image=self._cfg.image, allowed_cidrs=self._plan.allowed_cidrs,
-                  proxy=proxy_url or None)
+        self._log("sandbox.start", container=self._container_name, image=self._cfg.image,
+                  allowed_cidrs=self._plan.allowed_cidrs, proxy=proxy_url or None)
         proc = _run(cmd, timeout=120)
         if proc.returncode != 0:
             raise SandboxError(f"docker run failed:\n{proc.stderr[-2000:]}")
@@ -248,7 +262,7 @@ class KaliSandbox:
             self._install_ca(ca_cert)
 
         # Confirm the entrypoint reached "ready" (egress installed) before we proceed.
-        logs = _run(["docker", "logs", self._cfg.container_name], timeout=30)
+        logs = _run(["docker", "logs", self._container_name], timeout=30)
         if "ready" not in (logs.stdout + logs.stderr):
             self.stop()
             raise SandboxError(
@@ -297,8 +311,8 @@ class KaliSandbox:
         name = "rt-evidence-proxy-ca.crt"
         target = f"/usr/local/share/ca-certificates/{name}"
         cp = _run(["docker", "cp", str(ca_cert),
-                   f"{self._cfg.container_name}:{target}"], timeout=30)
-        upd = _run(["docker", "exec", "-u", "root", self._cfg.container_name,
+                   f"{self._container_name}:{target}"], timeout=30)
+        upd = _run(["docker", "exec", "-u", "root", self._container_name,
                     "update-ca-certificates"], timeout=120)
         ok = cp.returncode == 0 and upd.returncode == 0
         self._log("sandbox.proxy_ca", installed=ok, target=target)
@@ -321,7 +335,7 @@ class KaliSandbox:
         # path", which would break every exec. `cd` inside the container is
         # immune to host-side path translation.
         docker_cmd = [
-            "docker", "exec", "-u", "operator", self._cfg.container_name,
+            "docker", "exec", "-u", "operator", self._container_name,
             "bash", "-lc", f"cd /work 2>/dev/null; {command}",
         ]
         self._log("sandbox.exec", command=command)
@@ -336,6 +350,6 @@ class KaliSandbox:
                           stderr=proc.stderr, timed_out=False)
 
     def stop(self) -> None:
-        _run(["docker", "rm", "-f", self._cfg.container_name])
-        self._log("sandbox.stop", container=self._cfg.container_name)
+        _run(["docker", "rm", "-f", self._container_name])
+        self._log("sandbox.stop", container=self._container_name)
         self._started = False
