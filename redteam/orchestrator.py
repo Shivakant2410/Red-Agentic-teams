@@ -104,7 +104,8 @@ def sync_inventory_into_graph(inventory, graph) -> dict:
     try:
         rows = inventory.iter_services()
     except Exception as exc:   # a broken inventory must never break the run
-        return {"bridged": 0, "skipped_unanswered": 0, "error": str(exc)[:200]}
+        record_suppressed_error(None, "orchestrator", "bridge_inventory", exc)
+        return {"bridged": 0, "skipped_unanswered": 0, "error": type(exc).__name__}
     for host, svc in rows:
         try:
             status = svc.get("status_last")
@@ -141,7 +142,9 @@ def sync_inventory_into_graph(inventory, graph) -> dict:
                 evidence_refs=[_inv_evidence_ref(host, inv_key, svc)],
             )
             bridged += 1
-        except Exception:
+        except Exception as exc:
+            record_suppressed_error(None, "orchestrator", "bridge_inventory_row", exc,
+                                    severity="info", host=host)
             skipped += 1   # one bad row must not poison the bridge
     return {"bridged": bridged, "skipped_unanswered": skipped}
 
@@ -598,7 +601,9 @@ class DriftPlusPenaltyScheduler:
         if self._belief is not None:
             try:
                 risk = float(self._belief.risk_score())
-            except Exception:
+            except Exception as exc:
+                record_suppressed_error(None, "orchestrator", "read_belief_risk", exc,
+                                        severity="info")
                 risk = 0.0   # a broken POMDP degrades to raw-queue-only, never blocks
         return max(raw, risk * self._scale)
 
@@ -607,7 +612,9 @@ class DriftPlusPenaltyScheduler:
             return 0.0
         try:
             return float(self._belief.risk_score())
-        except Exception:
+        except Exception as exc:
+            record_suppressed_error(None, "orchestrator", "snapshot_belief_risk", exc,
+                                    severity="info")
             return 0.0
 
     # -- NoiseBudget-compatible accounting -------------------------------------------
@@ -682,7 +689,9 @@ class DriftPlusPenaltyScheduler:
             if self._bandit is not None:
                 try:
                     draw = float(self._bandit.sample(technique, bucket))
-                except Exception:
+                except Exception as exc:
+                    record_suppressed_error(None, "orchestrator", "sample_bandit_prior", exc,
+                                            severity="info", technique=technique, bucket=bucket)
                     draw = None
             progress = (draw / cost) if draw is not None else 1.0
             entry = {"technique": technique, "bucket": bucket, "cost": cost,
@@ -869,7 +878,9 @@ class Orchestrator:
                     rows.append(n)
                     if len(rows) >= cap:
                         break
-            except Exception:
+            except Exception as exc:
+                record_suppressed_error(self._ctx.audit, "orchestrator", "sample_graph_nodes", exc,
+                                        severity="info", node_kind=kind)
                 return
             if rows:
                 lines.append(f"{label} ({len(rows)}{'+' if len(rows) >= cap else ''}):")
@@ -1295,7 +1306,9 @@ class Orchestrator:
                 if self._budget is not None:
                     try:
                         self._budget.check()
-                    except Exception:
+                    except Exception as exc:
+                        record_suppressed_error(self._ctx.audit, "orchestrator", "check_worker_budget", exc,
+                                                severity="info", worker_id=worker_id)
                         break
                 technique = TECHNIQUES.get(claimed.technique)
                 desc = technique.description if technique else claimed.technique
@@ -1315,7 +1328,9 @@ class Orchestrator:
                     try:
                         from .synthesis import brief
                         idea_brief = "\n\n" + brief(idea)
-                    except Exception:
+                    except Exception as exc:
+                        record_suppressed_error(self._ctx.audit, "orchestrator", "format_synthesis_brief", exc,
+                                                severity="info", technique=claimed.technique)
                         idea_brief = ""
                 exploit = self._make_specialist(
                     profile, agent_name=f"{profile.name}-w{worker_id}",
@@ -1545,7 +1560,9 @@ class Orchestrator:
         try:
             return {"registry": self._research.registry.stats(),
                     "forum": self._research.forum.stats()}
-        except Exception:
+        except Exception as exc:
+            record_suppressed_error(self._ctx.audit, "orchestrator", "read_research_summary", exc,
+                                    severity="info")
             return {}
 
     def _run_access_loop(self, objective: str, on_text=None) -> str:
@@ -1952,7 +1969,9 @@ class Orchestrator:
         if self._budget is not None:
             try:
                 self._budget.check()
-            except Exception:
+            except Exception as exc:
+                record_suppressed_error(self._ctx.audit, "orchestrator", "check_reflection_budget", exc,
+                                        severity="info")
                 return   # out of budget — skip the strategist, reflection is optional
         tail = []
         try:
@@ -1971,7 +1990,9 @@ class Orchestrator:
                     if n.id not in self._confirmed_seen:
                         self._confirmed_seen.add(n.id)
                         confirmed.append(n.technique)
-            except Exception:
+            except Exception as exc:
+                record_suppressed_error(self._ctx.audit, "orchestrator", "read_confirmed_chain", exc,
+                                        severity="info")
                 confirmed = []
         self._strategy.observe_round(round_no + 1, self._round_claims, confirmed)
         self._round_claims = []
@@ -2047,5 +2068,6 @@ class Orchestrator:
         try:
             return self._attack_tree.apply_strategy(prioritize=press,
                                                     deprioritize=avoid)
-        except Exception:
+        except Exception as exc:
+            record_suppressed_error(self._ctx.audit, "orchestrator", "apply_strategy_state", exc)
             return 0
