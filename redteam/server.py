@@ -909,25 +909,51 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         if supplied != expected:
             raise HTTPException(401, "invalid ingest token")
         run_dir = require_run(body.run_id)
-        from .traffic import TrafficRecorder
-        rec = TrafficRecorder(run_dir / "traffic.jsonl")
-        written, skipped = 0, 0
-        for e in body.entries[:200]:          # bound a single batch
-            url = (e.url or "").strip()
+        # Validate the ENTIRE bounded batch before writing any row. A mixed batch
+        # must not partially persist in-scope records before discovering an
+        # out-of-scope browser tab later in the same request.
+        from .retest import engagement_from_scope_json
+        from .scope import ScopeGuard, ScopeViolation
+        try:
+            # Rebuild the exact immutable RoE snapshot used when this run was
+            # armed; never consult a live engagement file that may have drifted.
+            engagement = engagement_from_scope_json(run_dir)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise HTTPException(409, f"run has no valid frozen scope.json: {type(exc).__name__}")
+        guard = ScopeGuard(engagement)
+        accepted = []
+        skipped = 0
+        for entry in body.entries[:200]:
+            url = (entry.url or "").strip()
             if not url.lower().startswith(("http://", "https://")):
                 skipped += 1
                 continue
             try:
-                rec.record_http(
-                    method=(e.method or "GET"), url=url, status=int(e.status or 0),
-                    elapsed_ms=int(e.elapsed_ms or 0), tool="browser-extension",
-                    source="extension",
-                    req_headers=e.req_headers or {}, req_body=e.req_body or "",
-                    resp_headers=e.resp_headers or {}, resp_body=e.resp_body or "")
-                written += 1
-            except Exception:
-                skipped += 1
+                guard.check(url)
+            except (ScopeViolation, ValueError) as exc:
+                raise HTTPException(400, f"out-of-scope capture rejected: {str(exc)[:240]}")
+            accepted.append((entry, url))
+
+        from .traffic import TrafficRecorder
+        rec = TrafficRecorder(run_dir / "traffic.jsonl")
+        written = 0
+        for entry, url in accepted:
+            rec.record_http(
+                method=(entry.method or "GET"), url=url, status=int(entry.status or 0),
+                elapsed_ms=int(entry.elapsed_ms or 0), tool="browser-extension",
+                source="extension", req_headers=entry.req_headers or {},
+                req_body=entry.req_body or "", resp_headers=entry.resp_headers or {},
+                resp_body=entry.resp_body or "")
+            written += 1
         return {"ok": True, "written": written, "skipped": skipped}
+
+    @app.get("/api/runs/{run_id}/poe")
+    def run_poe(run_id: str) -> dict:
+        # Read-only report. redteam.poe.grade_run re-reads each finding's exact
+        # evidence_ref sequence; it never searches other exchanges or promotes a
+        # finding's confidence/lifecycle state.
+        from .poe import grade_run
+        return grade_run(require_run(run_id))
 
     # -- API: live recon view (any.run-style) -------------------------------------
     # Read-only over run artifacts: the browser controller refreshes

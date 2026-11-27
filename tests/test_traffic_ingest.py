@@ -14,16 +14,23 @@ import redteam.server as s
 def client(monkeypatch):
     monkeypatch.setenv("RED_INGEST_TOKEN", "tok-abc")
     root = Path(tempfile.mkdtemp())
-    (root / "20261123-000000-run").mkdir(parents=True)
+    run_dir = root / "20261123-000000-run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "scope.json").write_text(json.dumps({
+        "allowed_hosts": ["127.0.0.1"], "excluded_hosts": [],
+        "allowed_ports": [8000], "allowed_schemes": ["http", "https"],
+        "max_requests_per_second": 10, "max_total_requests": 100,
+        "allow_private_ranges": False,
+    }), encoding="utf-8")
     return TestClient(s.create_app(root)), root, "20261123-000000-run"
 
 
 def _batch(run_id):
     return {"run_id": run_id, "entries": [
-        {"method": "GET", "url": "https://shop.example/api/v2/user", "status": 200,
+        {"method": "GET", "url": "http://127.0.0.1:8000/api/v2/user", "status": 200,
          "resp_headers": {"content-type": "application/json"},
          "resp_body": '{"id":42,"login":"me"}'},
-        {"method": "POST", "url": "https://shop.example/api/v2/offers", "status": 201,
+        {"method": "POST", "url": "http://127.0.0.1:8000/api/v2/offers", "status": 201,
          "resp_body": '{"ok":true}'},
     ]}
 
@@ -50,7 +57,7 @@ def test_ingest_writes_to_run_traffic(client):
     rows = [json.loads(l) for l in (root / rid / "traffic.jsonl").read_text().splitlines()]
     assert len(rows) == 2
     assert all(row["source"] == "extension" for row in rows)
-    assert rows[0]["url"] == "https://shop.example/api/v2/user"
+    assert rows[0]["url"] == "http://127.0.0.1:8000/api/v2/user"
 
 
 def test_skips_non_http_urls(client):
@@ -58,7 +65,7 @@ def test_skips_non_http_urls(client):
     batch = {"run_id": rid, "entries": [
         {"method": "GET", "url": "data:image/png;base64,xxx", "status": 200},
         {"method": "GET", "url": "chrome://version", "status": 200},
-        {"method": "GET", "url": "https://shop.example/ok", "status": 200},
+        {"method": "GET", "url": "http://127.0.0.1:8000/ok", "status": 200},
     ]}
     r = c.post("/api/traffic/ingest", json=batch,
                headers={"Authorization": "Bearer tok-abc"})

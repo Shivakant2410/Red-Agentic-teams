@@ -63,15 +63,45 @@ def _clip(body: str | None, limit: int, record_bodies: bool) -> str:
 
 
 class TrafficRecorder:
-    """Append-only, thread-safe JSONL traffic log for one run."""
+    """Append-only, thread-safe JSONL traffic log for one run.
+
+    Recorder instances for the same path share a process-local lock and sequence
+    allocator. This matters for the control-plane ingest route, which creates a
+    short-lived recorder while the run's long-lived recorder may also be active.
+    """
+
+    _registry_lock = threading.Lock()
+    _path_locks: dict[str, threading.Lock] = {}
+    _path_sequences: dict[str, int] = {}
+
+    @staticmethod
+    def _last_sequence(path: Path) -> int:
+        if not path.exists():
+            return 0
+        latest = 0
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    try:
+                        row = json.loads(line)
+                        latest = max(latest, int(row.get("seq") or 0))
+                    except (ValueError, TypeError, json.JSONDecodeError):
+                        continue
+        except OSError:
+            return latest
+        return latest
 
     def __init__(self, path: str | Path, max_body_bytes: int = DEFAULT_BODY_LIMIT,
                  record_bodies: bool = True):
         self._path = Path(path)
-        self._lock = threading.Lock()
+        self._path_key = str(self._path.resolve())
+        with self._registry_lock:
+            self._lock = self._path_locks.setdefault(self._path_key, threading.Lock())
+            if self._path_key not in self._path_sequences:
+                self._path_sequences[self._path_key] = self._last_sequence(self._path)
+            self._seq = self._path_sequences[self._path_key]
         self._max_body = max(0, int(max_body_bytes))
         self._bodies = bool(record_bodies)
-        self._seq = 0
         self.count = 0
         # Best-effort: a read-only disk / weird parent must not prevent CONSTRUCTING
         # the recorder (record() swallows the later open failure — run survives).
@@ -113,10 +143,12 @@ class TrafficRecorder:
         # vanished directory, or any serialization surprise is swallowed here.
         try:
             with self._lock:
-                self._seq += 1
-                rec["seq"] = self._seq
+                seq = max(self._seq, self._path_sequences.get(self._path_key, 0)) + 1
+                rec["seq"] = seq
                 with self._path.open("a", encoding="utf-8") as fh:
                     fh.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+                self._seq = seq
+                self._path_sequences[self._path_key] = seq
                 self.count += 1   # only written records count — the operator briefs off this
         except Exception:
             pass
