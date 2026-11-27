@@ -39,6 +39,12 @@ _SECRET_KEY = re.compile(
 _MAX_KEY = 240
 _MAX_TEXT = 1200
 _MAX_REFS = 32
+_SECRET_VALUE = re.compile(
+    r"(?i)(?:\\b(?:bearer|basic)\\s+[^\\s,;]{12,}|"
+    r"\\beyJ[A-Za-z0-9_-]{8,}\\.eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\b|"
+    r"\\b(?:sk|rk|pk|gh[pousr]|xox[baprs])[-_][A-Za-z0-9_-]{16,}\\b|"
+    r"\\bAKIA[0-9A-Z]{16}\\b|\\b[A-Za-z0-9_-]{48,}\\b"
+)
 
 
 class WorldModelError(ValueError):
@@ -76,7 +82,8 @@ def _safe_value(value: Any, depth: int = 0) -> Any:
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
-        return value[:_MAX_TEXT]
+        clipped = value[:_MAX_TEXT]
+        return "<withheld>" if _SECRET_VALUE.search(clipped) else clipped
     if isinstance(value, (list, tuple)):
         return [_safe_value(v, depth + 1) for v in list(value)[:32]]
     if isinstance(value, dict):
@@ -155,6 +162,7 @@ class WorldModel:
         node = self.graph.observe(
             kind, key, attrs=safe_attrs, source=source,
             relate_to=relate_to, relation=relation, evidence_refs=refs,
+            edge_evidence=refs if relate_to else None,
         )
         result = {
             "id": getattr(node, "id", f"{kind}:{key}"),
@@ -191,10 +199,14 @@ class WorldModel:
         source: str, owner_ref: str = "", tenant_ref: str = "",
         attributes: dict | None = None, epistemic_state: str = "observed",
     ) -> dict:
-        attrs = {"entity_type": _text(entity_type, "entity_type", 120)}
+        # Caller metadata is merged first; reserved identity fields are written
+        # last so an untrusted attribute map cannot overwrite the typed contract.
+        attrs = _safe_value(attributes or {})
+        if not isinstance(attrs, dict):
+            raise WorldModelError("attributes must be an object")
+        attrs["entity_type"] = _text(entity_type, "entity_type", 120)
         if tenant_ref:
             attrs["tenant_ref"] = _text(tenant_ref, "tenant_ref", _MAX_KEY)
-        attrs.update(_safe_value(attributes or {}))
         return self._record(
             BUSINESS_ENTITY, entity_ref, attrs, source=source,
             evidence_refs=evidence_refs, epistemic_state=epistemic_state,
