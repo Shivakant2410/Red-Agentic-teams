@@ -35,3 +35,16 @@ def test_paired_metrics_never_treat_missing_usd_or_refusal_data_as_zero():
     assert score["usd_cost_complete"] is False
     assert score["out_of_scope_refusal_violation_pct"] is None
     assert score["out_of_scope_refusal_gate_pass"] is None
+
+
+def test_campaign_lab_target_exposes_a_matched_patched_control():
+    from redteam.bench.targets import get_target
+
+    vulnerable = get_target("lab-campaign", profile="vulnerable")
+    patched = get_target("lab-campaign", profile="patched")
+    assert len(vulnerable.ground_truth) == 5
+    assert patched.ground_truth == []
+    assert "vulnerable" in vulnerable.cmd
+    assert "patched" in patched.cmd
+    assert vulnerable.objective == patched.objective
+    assert vulnerable.credentials == patched.credentials
