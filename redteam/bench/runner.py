@@ -241,6 +241,11 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False,
     finally:
         if target_proc is not None:
             target_proc.terminate()
+            try:
+                target_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                target_proc.kill()
+                target_proc.wait(timeout=2)
         elif target.is_compose:
             _stop_compose(target)
         else:
