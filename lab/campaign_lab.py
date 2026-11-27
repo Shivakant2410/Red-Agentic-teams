@@ -141,6 +141,7 @@ STATE = LabState()
 CONTROL_TOKEN = ""
 SCENARIOS: set[str] = set()
 PORT = 8901
+PATCHED_PROFILE = False
 
 
 def session_token(username: str) -> str:
@@ -309,6 +310,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(401, {"error": "invalid credentials"})
 
         if "S-REPLAN" in SCENARIOS and path == "/api/password/reset":
+            if PATCHED_PROFILE and session_user(self.headers) != "admin":
+                return self._send(403, {"error": "reset requires an authenticated admin session"})
             ok = (body.get("username") == "admin"
                   and body.get("answer", "").strip().lower() == GROUND_TRUTH["pet_answer"].lower()
                   and body.get("nonce") == GROUND_TRUTH["reset_nonce"])
@@ -324,12 +327,18 @@ class Handler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------ scenarios
     def _orders(self, q: str) -> None:
-        # VULNERABLE (S-INJ): q is formatted straight into the SQL statement.
-        sql = ("SELECT id, customer, item, total FROM orders "
-               f"WHERE customer LIKE '%{q}%' ORDER BY id")
+        if PATCHED_PROFILE:
+            sql = ("SELECT id, customer, item, total FROM orders "
+                   "WHERE customer LIKE ? ORDER BY id")
+            params = (f"%{q}%",)
+        else:
+            # Vulnerable profile: q is formatted straight into the SQL statement.
+            sql = ("SELECT id, customer, item, total FROM orders "
+                   f"WHERE customer LIKE '%{q}%' ORDER BY id")
+            params = ()
         with STATE.lock:
             try:
-                rows = STATE.db.execute(sql).fetchall()
+                rows = STATE.db.execute(sql, params).fetchall()
             except sqlite3.OperationalError:
                 return self._send(200, {"orders": [], "error": "search failed"})
         orders = [{"id": r[0], "customer": r[1], "item": r[2], "total": r[3]} for r in rows]
@@ -342,8 +351,9 @@ class Handler(BaseHTTPRequestHandler):
         note = NOTES.get(note_id)
         if not note:
             return self._send(404, {"error": "no such note"})
-        # VULNERABLE (S-AUTHZ): only authentication is checked — the note's
-        # owner is never compared with the requester (broken owner check).
+        if PATCHED_PROFILE and note["visibility"] != "public" and note["owner"] != user:
+            return self._send(403, {"error": "not authorized for this note"})
+        # Vulnerable profile omits the owner comparison above.
         return self._send(200, {"id": note_id, "owner": note["owner"],
                                 "visibility": note["visibility"], "body": note["body"]})
 
@@ -357,13 +367,15 @@ class Handler(BaseHTTPRequestHandler):
         if not items or total <= 0:
             return self._send(400, {"error": "cart empty"})
         applied: list[str] = []
-        # VULNERABLE (S-BIZ): every coupon in the array is applied sequentially
-        # (stacking), although the terms allow exactly ONE application per
-        # customer; there is also no legal-floor check on the final total.
-        for code in coupons:
+        if PATCHED_PROFILE and len(coupons) > 1:
+            return self._send(400, {"error": "coupon stacking is not permitted"})
+        # Vulnerable profile applies every coupon sequentially.
+        for code in (coupons[:1] if PATCHED_PROFILE else coupons):
             if code == GROUND_TRUTH["coupon_code"]:
                 total = round(total * 0.75, 2)
                 applied.append(code)
+        if PATCHED_PROFILE and total < GROUND_TRUTH["legit_single_coupon_total"]:
+            return self._send(400, {"error": "checkout total below the permitted floor"})
         with STATE.lock:
             STATE.order_counter += 1
             order_id = f"ord-{STATE.order_counter}"
@@ -375,12 +387,14 @@ class Handler(BaseHTTPRequestHandler):
     def _files(self, name: str | None) -> None:
         if not name:
             return self._send(200, {"files": ["manual.txt", "changelog.txt"]})
-        # VULNERABLE (S-CHAIN): the name is joined onto the base directory and
-        # only normalized — no containment check, so ../ traversal escapes.
+        # The patched profile enforces containment under the virtual file root.
         virtual = posixpath.normpath(posixpath.join("/srv/labfiles", name))
+        base = "/srv/labfiles"
+        if PATCHED_PROFILE and not (virtual == base or virtual.startswith(base + "/")):
+            return self._send(403, {"error": "path escapes the file root"})
         content = VFS_FILES.get(virtual)
-        if content is None:
-            # tolerate absolute-style targets that normalize outside the base
+        if content is None and not PATCHED_PROFILE:
+            # Vulnerable profile tolerates absolute-style targets outside the root.
             for path, doc in VFS_FILES.items():
                 if virtual.endswith(path) or path.endswith(virtual):
                     content = doc
@@ -391,12 +405,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
-    global CONTROL_TOKEN, SCENARIOS, PORT
+    global CONTROL_TOKEN, SCENARIOS, PORT, PATCHED_PROFILE
     parser = argparse.ArgumentParser()
     parser.add_argument("port", type=int, nargs="?", default=8901)
     parser.add_argument("--scenarios", default="S-INJ,S-AUTHZ,S-BIZ,S-CHAIN,S-REPLAN")
     parser.add_argument("--control-token", default="")
+    parser.add_argument("--profile", choices=("vulnerable", "patched"), default="vulnerable")
     args = parser.parse_args()
+    PATCHED_PROFILE = args.profile == "patched"
     PORT = args.port
     SCENARIOS = {s.strip().upper() for s in args.scenarios.split(",") if s.strip()}
     CONTROL_TOKEN = args.control_token or "ctl-local-" + hashlib.sha256(
