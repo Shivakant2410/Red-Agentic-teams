@@ -39,6 +39,7 @@ import time
 from pathlib import Path
 
 from ..ratelimit import RequestBudgetExceeded
+from ..errors import record_suppressed_error
 from ..scope import ScopeGuard, ScopeViolation
 from . import ToolContext
 
@@ -163,7 +164,6 @@ class BrowserController:
                 "headless": headless,
                 "channel": os.environ.get("RED_BROWSER_CHANNEL", "chrome"),
                 "args": [
-                    "--disable-blink-features=AutomationControlled",
                     "--no-first-run",
                     "--no-default-browser-check",
                 ],
@@ -186,13 +186,8 @@ class BrowserController:
             # the browser verifies certificates as usual.
             context = self._browser.new_context(**context_kwargs)
 
-        # Strip the navigator.webdriver flag before any page script runs.
-        try:
-            context.add_init_script(
-                "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
-            )
-        except Exception:
-            pass
+        # Keep the browser's automation signals intact; do not disguise the
+        # test client or attempt to evade interactive anti-automation controls.
 
         self._page = context.pages[0] if context.pages else context.new_page()
         self._page.route("**/*", self._route)
@@ -212,8 +207,8 @@ class BrowserController:
                 self._store, url, title=title, status=status,
                 console_errors=list(self.console_errors[-5:]),
                 tool="browser")
-        except Exception:
-            pass
+        except Exception as exc:
+            record_suppressed_error(self._audit, "browser", "record_page_observation", exc)
 
     def _route(self, route):
         url = route.request.url
@@ -266,8 +261,8 @@ class BrowserController:
     def _on_request(self, request):
         try:
             self._net_entry(request)
-        except Exception:  # noqa: BLE001 — capture must never break the page
-            pass
+        except Exception as exc:  # noqa: BLE001 — capture must never break the page
+            record_suppressed_error(self._audit, "browser", "capture_request", exc)
 
     def _on_response(self, response):
         try:
@@ -279,13 +274,15 @@ class BrowserController:
             entry["status"] = response.status
             try:
                 headers = dict(response.headers)
-            except Exception:
+            except Exception as exc:
                 headers = {}
+                record_suppressed_error(self._audit, "browser", "read_response_headers", exc)
             try:
                 from ..traffic import _mask_headers
                 entry["resp_headers"] = _mask_headers(headers)
-            except Exception:
+            except Exception as exc:
                 entry["resp_headers"] = {}   # honest gap over fake data
+                record_suppressed_error(self._audit, "browser", "mask_response_headers", exc)
             ctype = str(headers.get("content-type", ""))
             entry["content_type"] = ctype[:120]
             # Body capture: only safely-collectable text-ish payloads.
@@ -294,8 +291,10 @@ class BrowserController:
             if ctype.lower().startswith(_TEXTUAL_CONTENT_TYPES) and small:
                 try:
                     entry["resp_body"] = response.text()[:_RING_BODY_CLIP]
-                except Exception:
+                except Exception as exc:
                     entry["resp_body"] = ""   # streamed/redirected: honest gap
+                    record_suppressed_error(self._audit, "browser", "capture_response_body", exc,
+                                            severity="info")
             if self._record_traffic and \
                     entry["resource_type"] in _TRAFFIC_RESOURCE_TYPES:
                 try:
@@ -305,10 +304,10 @@ class BrowserController:
                         tool="browser", source="browser",
                         req_headers={}, req_body=entry["post_data"] or None,
                         resp_headers=headers, resp_body=entry["resp_body"] or None)
-                except Exception:
-                    pass   # telemetry must never break the run
-        except Exception:  # noqa: BLE001
-            pass
+                except Exception as exc:
+                    record_suppressed_error(self._audit, "browser", "record_http_exchange", exc)
+        except Exception as exc:  # noqa: BLE001
+            record_suppressed_error(self._audit, "browser", "process_response_event", exc)
 
     def _on_requestfailed(self, failure):
         try:
@@ -321,8 +320,8 @@ class BrowserController:
             entry["error"] = ("scope-denied (out of RoE; not sent)"
                               if blocked else str(failure.failure)[:160])
             entry["status"] = 0
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            record_suppressed_error(self._audit, "browser", "process_request_failure", exc)
 
     def _on_console(self, msg):
         try:
@@ -337,8 +336,8 @@ class BrowserController:
                 if len(self._console) > _CONSOLE_RING:
                     del self._console[:len(self._console) - _CONSOLE_RING]
             self._note_console_error(f"{msg.type}: {(msg.text or '')[:300]}")
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            record_suppressed_error(self._audit, "browser", "capture_console_event", exc)
 
     def _on_pageerror(self, error):
         try:
@@ -351,8 +350,8 @@ class BrowserController:
                 if len(self._console) > _CONSOLE_RING:
                     del self._console[:len(self._console) - _CONSOLE_RING]
             self._note_console_error(f"pageerror: {str(error)[:300]}")
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            record_suppressed_error(self._audit, "browser", "capture_page_error", exc)
 
     def _note_console_error(self, entry: str) -> None:
         """De-duplicated console/page-error feed surfaced to the agent via
@@ -382,8 +381,9 @@ class BrowserController:
             title = ""
             try:
                 title = self._page.title()[:160]
-            except Exception:
-                pass
+            except Exception as exc:
+                record_suppressed_error(self._audit, "browser", "read_live_page_title", exc,
+                                        severity="info")
             self._page.screenshot(path=str(self._live_dir / "latest.jpg"),
                                   type="jpeg", quality=60, timeout=8000)
             event = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -394,8 +394,8 @@ class BrowserController:
                 fh.write(json.dumps(event, default=str) + "\n")
             with open(self._live_dir / "latest.json", "w", encoding="utf-8") as fh:
                 json.dump(event, fh)
-        except Exception:
-            pass
+        except Exception as exc:
+            record_suppressed_error(self._audit, "browser", "write_live_view", exc)
 
     # -- agent-facing actions ---------------------------------------------------------
 
@@ -493,8 +493,9 @@ class BrowserController:
             self._page.press(ps, "Enter")
         try:
             self._page.wait_for_load_state("networkidle", timeout=20000)
-        except Exception:
-            pass
+        except Exception as exc:
+            record_suppressed_error(self._audit, "browser", "wait_for_login_navigation", exc,
+                                    severity="info")
 
         # Success heuristic: we left the login URL and no password field remains.
         left_login = login_url.rstrip("/") not in self._page.url.rstrip("/")
@@ -679,14 +680,14 @@ class BrowserController:
             if self._page is not None:
                 try:
                     self._page.context.close()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    record_suppressed_error(self._audit, "browser", "close_page_context", exc)
             if self._browser:
                 self._browser.close()
             if self._pw:
                 self._pw.stop()
-        except Exception:
-            pass
+        except Exception as exc:
+            record_suppressed_error(self._audit, "browser", "close_controller", exc)
 
 
 class _BrowserTool:
