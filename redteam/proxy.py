@@ -69,6 +69,8 @@ import time
 from http.client import HTTPConnection, HTTPSConnection
 from pathlib import Path
 
+from .errors import record_suppressed_error
+
 # Hop-by-hop headers (RFC 7230 §6.1) — never forwarded, never recorded as if they
 # crossed the exchange. accept-encoding is rewritten to identity: the traffic log
 # is OPERATOR-FACING EVIDENCE, and a gzipped body is evidence nobody can read.
@@ -226,6 +228,7 @@ class RunCA:
             import ipaddress as _ip
             san_names.append(x509.IPAddress(_ip.ip_address(host)))
         except ValueError:
+            # Expected for DNS hostnames: the DNS SAN above is authoritative.
             pass
         leaf = (x509.CertificateBuilder()
                 .subject_name(x509.Name([
@@ -375,16 +378,18 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
                 f"Content-Length: {len(body)}\r\nConnection: close\r\n{extra}\r\n")
         try:
             self.request.sendall(head.encode() + body)
-        except (ConnectionError, socket.timeout):
-            pass
+        except (ConnectionError, socket.timeout) as exc:
+            record_suppressed_error(self.proxy.audit, "proxy", "reply_http_client", exc,
+                                    severity="info")
 
     def _reply_connect_ok(self) -> None:
         """Minimal 200 for CONNECT — no Connection header: the tunnel that follows
         has nothing to do with HTTP connection semantics."""
         try:
             self.request.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-        except (ConnectionError, socket.timeout):
-            pass
+        except (ConnectionError, socket.timeout) as exc:
+            record_suppressed_error(self.proxy.audit, "proxy", "reply_connect_client", exc,
+                                    severity="info")
 
     # -- plain HTTP ------------------------------------------------------------
 
@@ -527,8 +532,9 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
         try:
             self._forward_exchange(method, target, url, fwd, body,
                                    tls_client=True, sock=tls_sock)
-        except (ConnectionError, socket.timeout, ssl.SSLError):
-            pass
+        except (ConnectionError, socket.timeout, ssl.SSLError) as exc:
+            record_suppressed_error(self.proxy.audit, "proxy", "forward_tls_exchange", exc,
+                                    severity="info")
         finally:
             # The response is only guaranteed to be on the wire once the TLS
             # socket closes — see the docstring. Close ALWAYS, even after an
@@ -536,8 +542,9 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
             # the honest shape of a failed exchange).
             try:
                 tls_sock.close()
-            except OSError:
-                pass
+            except OSError as exc:
+                record_suppressed_error(self.proxy.audit, "proxy", "close_tls_client_socket", exc,
+                                        severity="info")
         return True
 
     def _passthrough_tunnel(self, target, sni: str) -> None:
@@ -559,8 +566,9 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
         finally:
             try:
                 upstream.close()
-            except OSError:
-                pass
+            except OSError as exc:
+                record_suppressed_error(self.proxy.audit, "proxy", "close_tunnel_upstream", exc,
+                                        severity="info")
         elapsed = int((time.monotonic() - start) * 1000)
         self.proxy.stats.bump("tunnels")
         self.proxy.stats.add_bytes(up, down)
@@ -572,8 +580,8 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
                 req_headers={"sni": sni or "(none)", "mode": "passthrough",
                              "bytes_up": str(up), "bytes_down": str(down)},
                 resp_body="")
-        except Exception:
-            pass
+        except Exception as exc:
+            record_suppressed_error(self.proxy.audit, "proxy", "record_tunnel_metadata", exc)
 
     @staticmethod
     def _splice(a, b) -> tuple[int, int]:
@@ -595,8 +603,9 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
                         other = b if s is a else a
                         try:
                             other.shutdown(socket.SHUT_WR)
-                        except OSError:
-                            pass
+                        except OSError as exc:
+                            record_suppressed_error(None, "proxy", "half_close_peer_socket", exc,
+                                                    severity="info")
                         continue
                     if s is a:
                         b.sendall(data)
@@ -604,8 +613,8 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
                     else:
                         a.sendall(data)
                         down += len(data)
-        except (ConnectionError, OSError):
-            pass
+        except (ConnectionError, OSError) as exc:
+            record_suppressed_error(None, "proxy", "splice_connection", exc, severity="info")
         return up, down
 
     # -- shared forward/record ---------------------------------------------------
@@ -796,11 +805,7 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
         self._reply(status, f"evidence proxy: {error}\n".encode())
 
     def _record_error(self, exc: Exception) -> None:
-        if self.proxy.audit is not None:
-            try:
-                self.proxy.audit.record("proxy.error", error=f"{type(exc).__name__}: {exc}")
-            except Exception:
-                pass
+        record_suppressed_error(self.proxy.audit, "proxy", "connection_handler", exc)
 
 
 class _ProxyServer(socketserver.ThreadingTCPServer):
@@ -856,8 +861,8 @@ class EvidenceProxy:
             try:
                 self._audit.record("proxy.start", mode=self.mode, port=self.port,
                                    ca_fingerprint=self._ca.fingerprint if self._ca else "")
-            except Exception:
-                pass
+            except Exception as exc:
+                record_suppressed_error(self._audit, "proxy", "audit_proxy_start", exc)
 
     def stop(self) -> None:
         if self._server is None:
@@ -865,15 +870,15 @@ class EvidenceProxy:
         try:
             self._server.shutdown()
             self._server.server_close()
-        except Exception:
-            pass
+        except Exception as exc:
+            record_suppressed_error(self._audit, "proxy", "shutdown_proxy_server", exc)
         self._server = None
         self._thread = None
         if self._audit is not None:
             try:
                 self._audit.record("proxy.stop", **self.stats.to_dict())
-            except Exception:
-                pass
+            except Exception as exc:
+                record_suppressed_error(self._audit, "proxy", "audit_proxy_stop", exc)
 
     # -- introspection -----------------------------------------------------------
 
