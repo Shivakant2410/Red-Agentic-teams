@@ -459,7 +459,7 @@ def run_verify_pass(engagement: Engagement, tools: dict[str, Tool], ctx: ToolCon
         try:
             credit_confirmed_findings(ctx)
         except Exception as exc:
-            ctx.audit.record("credit.failed", error=str(exc))
+            record_suppressed_error(ctx.audit, "orchestrator", "credit_failed", exc)
         return 0
     ctx.audit.record("verify_pass.start", pending=len(pending))
     subset = {n: tools[n] for n in VERIFY.tool_names if n in tools}
@@ -488,7 +488,7 @@ def run_verify_pass(engagement: Engagement, tools: dict[str, Tool], ctx: ToolCon
     try:
         credit_confirmed_findings(ctx)
     except Exception as exc:   # collection must never crash the pipeline
-        ctx.audit.record("credit.failed", error=str(exc))
+        record_suppressed_error(ctx.audit, "orchestrator", "credit_failed", exc)
     return remaining
 
 
@@ -1234,7 +1234,7 @@ class Orchestrator:
                     "synthesis.round", round=round_no, ideas=len(idea_map),
                     top=[f"{t} on {tg}" for (t, tg) in list(idea_map)[:3]])
         except Exception as exc:
-            self._ctx.audit.record("synthesis.error", stage="round", error=str(exc))
+            record_suppressed_error(self._ctx.audit, "orchestrator", "synthesis_round", exc, stage="round")
         if self._noise is not None:
             self._noise.reset()   # per-ROUND allowance: throttled by current pressure
             self._emit("scheduler.state", round=round_no,
@@ -1381,7 +1381,7 @@ class Orchestrator:
                 try:
                     summary = fut.result() or summary
                 except Exception as exc:
-                    self._ctx.audit.record("orchestrator.swarm_worker_error", error=str(exc))
+                    record_suppressed_error(self._ctx.audit, "orchestrator", "swarm_worker", exc)
         return summary
 
     # -- Phase C1: collective-intelligence plumbing (redteam/swarm/, ADR-001) -----
@@ -1443,16 +1443,16 @@ class Orchestrator:
                                         ts=self._research_ts()),
                             agent)
                 except Exception as exc:
-                    self._ctx.audit.record("research.error", stage="synthesis_evidence",
-                                           hypothesis_id=hyp.hypothesis_id, error=str(exc))
+                    record_suppressed_error(self._ctx.audit, "orchestrator", "research_synthesis_evidence", exc,
+                                            hypothesis_id=hyp.hypothesis_id)
             return hyp, False
         except SwarmError as exc:      # registry-level issue (e.g. malformed target)
-            self._ctx.audit.record("research.error", stage="claim",
-                                   technique=node.technique, error=str(exc))
+            record_suppressed_error(self._ctx.audit, "orchestrator", "research_claim", exc,
+                                    technique=node.technique)
             return None, False
         except Exception as exc:       # forum/journal trouble must never break a run
-            self._ctx.audit.record("research.error", stage="claim",
-                                   technique=node.technique, error=str(exc))
+            record_suppressed_error(self._ctx.audit, "orchestrator", "research_claim", exc,
+                                    technique=node.technique)
             return None, False
 
     def _research_note_for(self, hyp) -> str:
@@ -1507,11 +1507,11 @@ class Orchestrator:
                 self._research.registry.release(
                     hyp_id, agent, reason="attempt produced no proof")
         except SwarmError as exc:
-            self._ctx.audit.record("research.error", stage="after_attempt",
-                                   hypothesis_id=hyp_id, error=str(exc))
+            record_suppressed_error(self._ctx.audit, "orchestrator", "research_after_attempt", exc,
+                                    hypothesis_id=hyp_id)
         except Exception as exc:
-            self._ctx.audit.record("research.error", stage="after_attempt",
-                                   hypothesis_id=hyp_id, error=str(exc))
+            record_suppressed_error(self._ctx.audit, "orchestrator", "research_after_attempt", exc,
+                                    hypothesis_id=hyp_id)
 
     def _research_ts(self) -> str:
         from datetime import datetime, timezone
@@ -1548,12 +1548,11 @@ class Orchestrator:
                 except SwarmError as exc:
                     # An invalid mirror (e.g. a stale finding promoted after the
                     # hypothesis moved on) is an audit note, not a run failure.
-                    self._ctx.audit.record("research.mirror_skipped",
-                                           hypothesis_id=hyp_id, finding_id=f.id,
-                                           error=str(exc))
+                    record_suppressed_error(self._ctx.audit, "orchestrator", "research_mirror_skipped", exc,
+                                            severity="info", hypothesis_id=hyp_id, finding_id=f.id)
                     self._research_verdicts_seen[f.id] = current
         except Exception as exc:
-            self._ctx.audit.record("research.error", stage="mirror", error=str(exc))
+            record_suppressed_error(self._ctx.audit, "orchestrator", "research_mirror", exc)
         return mirrored
 
     def _research_summary(self) -> dict:
@@ -1766,7 +1765,7 @@ class Orchestrator:
         try:
             credit_confirmed_findings(self._ctx)
         except Exception as exc:
-            self._ctx.audit.record("credit.failed", error=str(exc))
+            self._record_suppressed_error(ctx.audit, "orchestrator", "credit_failed", exc)
 
         confirmed_count = len([f for f in self._ctx.findings.all()
                                if f.confidence == "confirmed"])
@@ -1798,7 +1797,7 @@ class Orchestrator:
             for idea in synthesize(self._ctx):
                 ideas[(idea.technique, idea.target)] = idea
         except Exception as exc:
-            self._ctx.audit.record("mission.synthesis.error", error=str(exc))
+            record_suppressed_error(self._ctx.audit, "orchestrator", "mission_synthesis", exc)
         candidates = [n for n in self._attack_tree.actionable(limit=max(limit * 4, limit))
                       if n.status == TODO]
         # Match the classic loop's drift-plus-penalty ordering when configured;
@@ -1890,8 +1889,8 @@ class Orchestrator:
                 self._research.registry.release(
                     hyp_id, agent, reason="mission task ended without a finding")
         except Exception as exc:
-            self._ctx.audit.record("research.error", stage="mission_attempt",
-                                   hypothesis_id=hyp_id, error=str(exc))
+            record_suppressed_error(self._ctx.audit, "orchestrator", "mission_research_attempt", exc,
+                                    hypothesis_id=hyp_id)
 
     def mission_reconcile_after_verification(self) -> dict:
         """Apply the classic loop's reusable post-verification joins.
@@ -1949,8 +1948,8 @@ class Orchestrator:
         try:
             self._reflect_on_round(objective, round_no)
         except Exception as exc:
-            self._ctx.audit.record("orchestrator.reflection_error",
-                                   round=round_no + 1, error=str(exc))
+            record_suppressed_error(self._ctx.audit, "orchestrator", "reflection", exc,
+                                    round=round_no + 1)
 
     def mission_objective_achieved(self) -> bool | None:
         """Return the structured objective result, or None when no criteria exist."""
