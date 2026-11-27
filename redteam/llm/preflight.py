@@ -23,7 +23,11 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+
+from ..persistence import locked_json_update
 
 import requests
 
@@ -222,3 +226,61 @@ def run_preflight(provider: str, model: str = "", base_url: str = "",
     result.ok = (result.reachable and result.model_found
                  and result.tool_call_ok and result.args_parsed)
     return result
+
+
+PHASES = ("planning", "analysis", "verification", "reporting")
+
+
+@dataclass(frozen=True)
+class Qualification:
+    model_id: str
+    phase: str
+    score: float
+    run_id: str
+    evaluator_version: str
+    evaluated_at: str
+
+
+class QualificationStore:
+    """Persistent per-model, per-phase qualification scores used by the operator."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = Path(path)
+
+    def all(self) -> list[Qualification]:
+        if not self.path.exists():
+            return []
+        payload = json.loads(self.path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            raise ValueError("Qualification file must contain a JSON list")
+        return [Qualification(**item) for item in payload]
+
+    def add(self, model_id: str, phase: str, score: float, run_id: str,
+            evaluator_version: str) -> Qualification:
+        if phase not in PHASES:
+            raise ValueError(f"Unknown phase '{phase}'. Choose from: {', '.join(PHASES)}")
+        if not model_id.strip():
+            raise ValueError("Model id cannot be empty")
+        if not 0 <= score <= 1:
+            raise ValueError("Score must be between 0 and 1")
+        if not run_id.strip() or not evaluator_version.strip():
+            raise ValueError("Run id and evaluator version are required")
+        qualification = Qualification(
+            model_id=model_id, phase=phase, score=score, run_id=run_id,
+            evaluator_version=evaluator_version,
+            evaluated_at=datetime.now(timezone.utc).isoformat(),
+        )
+        def replace_record(current):
+            if current is None:
+                current = []
+            if not isinstance(current, list):
+                raise ValueError("Qualification file must contain a JSON list")
+            records = [item for item in current
+                       if (item.get("model_id"), item.get("phase")) != (model_id, phase)]
+            records.append(asdict(qualification))
+            return records
+        locked_json_update(self.path, replace_record, default=[])
+        return qualification
+
+    def for_phase(self, phase: str) -> list[Qualification]:
+        return [record for record in self.all() if record.phase == phase]
