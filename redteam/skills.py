@@ -24,6 +24,8 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from .persistence import atomic_write_json
+
 _PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 
 
@@ -184,6 +186,5 @@ class SkillLibrary:
     def _flush(self) -> None:
         if not self._path:
             return
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps([asdict(s) for s in self._skills.values()],
-                                         indent=2, ensure_ascii=False), encoding="utf-8")
+        atomic_write_json(self._path, [asdict(s) for s in self._skills.values()],
+                          indent=2, ensure_ascii=False)
