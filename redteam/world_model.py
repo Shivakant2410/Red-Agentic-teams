@@ -40,10 +40,10 @@ _MAX_KEY = 240
 _MAX_TEXT = 1200
 _MAX_REFS = 32
 _SECRET_VALUE = re.compile(
-    r"(?i)(?:\\b(?:bearer|basic)\\s+[^\\s,;]{12,}|"
-    r"\\beyJ[A-Za-z0-9_-]{8,}\\.eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\b|"
-    r"\\b(?:sk|rk|pk|gh[pousr]|xox[baprs])[-_][A-Za-z0-9_-]{16,}\\b|"
-    r"\\bAKIA[0-9A-Z]{16}\\b|\\b[A-Za-z0-9_-]{48,}\\b"
+    r"(?i)(?:\b(?:bearer|basic)\s+[^\s,;]{12,}|"
+    r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b|"
+    r"\b(?:sk|rk|pk|gh[pousr]|xox[baprs])[-_][A-Za-z0-9_-]{16,}\b|"
+    r"\bAKIA[0-9A-Z]{16}\b|\b[A-Za-z0-9_-]{48,}\b"
 )
 
 
