@@ -478,7 +478,7 @@ def execute_run(opts: RunOptions) -> dict:
 
         if use_sandbox:
             from .sandbox.docker_kali import KaliSandbox, SandboxError
-            sandbox = KaliSandbox(engagement, audit=audit)
+            sandbox = KaliSandbox(engagement, audit=audit, run_id=out.name)
             try:
                 # requirement-driven tool layer BEFORE start: the container's
                 # egress is default-DROP, so packages must arrive via the
