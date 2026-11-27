@@ -68,6 +68,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from .persistence import atomic_write_json, atomic_write_text_locked, file_lock
+
 SUCCESS, FAILURE, CAUTION = "success", "failure", "caution"
 DERIVED, IMPORTED, OBSERVED = "derived", "imported", "observed"
 _ALLOWED_PROVENANCE = (DERIVED, IMPORTED, OBSERVED)
@@ -129,16 +131,14 @@ def _load_key(path: str | Path | None) -> bytes:
     if path is None:
         return secrets.token_bytes(32)      # in-process integrity only
     key_path = Path(str(path) + ".key")
-    if key_path.exists():
-        return bytes.fromhex(key_path.read_text(encoding="utf-8").strip())
-    key = secrets.token_bytes(32)
-    key_path.parent.mkdir(parents=True, exist_ok=True)
-    key_path.write_text(key.hex(), encoding="utf-8")
-    try:
-        os.chmod(key_path, 0o600)
-    except OSError:
-        pass
-    return key
+    # Multiple run workers may initialize the same store concurrently. Lock the
+    # check-and-create transaction so every process uses the same HMAC key.
+    with file_lock(key_path):
+        if key_path.exists():
+            return bytes.fromhex(key_path.read_text(encoding="utf-8").strip())
+        key = secrets.token_bytes(32)
+        atomic_write_text_locked(key_path, key.hex(), mode=0o600)
+        return key
 
 
 @dataclass
@@ -180,8 +180,7 @@ class LocalJSONBackend:
             return []
 
     def save(self, rows: list[dict]) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
+        atomic_write_json(self._path, rows, indent=2, ensure_ascii=False)
 
 
 class ExperienceStore:
