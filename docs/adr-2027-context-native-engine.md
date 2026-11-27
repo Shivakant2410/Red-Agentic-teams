@@ -17,7 +17,7 @@ This is an additive evolution of the current architecture, not a replacement fra
 - `AttackThesis` remains the human-auditable hypothesis artifact, extended with references to world-model facts and explicit falsifiers.
 - `AttackTree` and `MissionScheduler` remain scheduling authorities. The world model may enrich and rank candidate work, but cannot authorize or widen scope.
 - `VerifyFindingIndependentlyTool` remains the only authority that can promote a finding to confirmed.
-- The existing `redteam/pi/` engine and `pi_oracle` independent-verification path are reused for web-to-AI cases; no parallel PI verifier is introduced.
+- AI red-team capabilities are a separate product boundary: migrate `brain/`, `llmred/`, `pi/`, `sc/`, `sid/`, `ea/`, `oh/`, `kernel_bridge.py`, `kernel/`, and `skills/*/ai_*` into the top-level `ai_redteam/` package. The web engine retains only a narrow, typed adapter at independent verification; it does not import AI suites into its default runtime or CI dependency graph.
 
 ## Current baseline (verified against main)
 
@@ -251,15 +251,17 @@ These are static-reachability classifications from the stated roots (`server.py`
 
 ### A. Integrate as product capabilities — 53 modules, approximately 13,600 LOC
 
+**Package boundary decision:** these AI capabilities are not to remain nested under the web engine's `redteam/` namespace. Move their implementation packages to top-level `ai_redteam/` (including the 61 AI-specific test files under that package's test tree), while retaining one narrow compatibility adapter from `redteam/tools/independent_verify.py` to the AI suite's deterministic oracle. The adapter must be optional and typed; ordinary web-engine startup and CI must not import or install the full AI suite. The migration must preserve public imports temporarily, then remove aliases only after import-graph and test evidence proves no supported callers remain.
+
 | Capability | Inventory | Intended integration |
 |---|---:|---|
-| Campaign Brain (`redteam/brain/`) | 7 files / 1,315 LOC | Introduce an `ai_campaign` run driver backed by `FamilyOrchestrator`; persist its `TargetProfile` per approved target fingerprint and expose campaign state/results through run events and APIs. |
-| Core LLM red-team (`redteam/llmred/`) | 11 / 2,974 LOC | Make objective × strategy campaigns, multi-seed pass^k, and version-aware regression selectable capabilities under the campaign driver. |
-| OWASP LLM01 Prompt Injection (`redteam/pi/`) | 8 / 2,252 LOC | Register as the PI family lane, retaining earned-resistance oracles, multi-turn techniques, independent evidence, and bounded budgets. |
-| OWASP LLM03 Supply Chain / MCP (`redteam/sc/`) | 9 / 2,484 LOC | Register as the supply-chain lane; MCP tool-poisoning and rug-pull checks run only against explicitly configured local/test or authorized tenant fixtures. |
-| OWASP LLM02 Sensitive Information Disclosure (`redteam/sid/`) | 8 / 1,799 LOC | Register as the disclosure lane with canary-based, non-exfiltrating controls and deterministic oracles. |
-| OWASP LLM06 Excessive Agency (`redteam/ea/`) | 4 / 987 LOC | Register as the agency-boundary lane; tool effects stay synthetic or explicitly approval-gated. |
-| OWASP LLM05 Output Handling (`redteam/oh/`) | 4 / 903 LOC | Register as the output-handling lane; validate downstream consumers in local/test fixtures, not arbitrary third-party services. |
+| Campaign Brain (`ai_redteam/brain/`) | 7 files / 1,315 LOC | Introduce an `ai_campaign` run driver backed by `FamilyOrchestrator`; persist its `TargetProfile` per approved target fingerprint and expose campaign state/results through run events and APIs. |
+| Core LLM red-team (`ai_redteam/llmred/`) | 11 / 2,974 LOC | Make objective × strategy campaigns, multi-seed pass^k, and version-aware regression selectable capabilities under the campaign driver. |
+| OWASP LLM01 Prompt Injection (`ai_redteam/pi/`) | 8 / 2,252 LOC | Register as the PI family lane, retaining earned-resistance oracles, multi-turn techniques, independent evidence, and bounded budgets. |
+| OWASP LLM03 Supply Chain / MCP (`ai_redteam/sc/`) | 9 / 2,484 LOC | Register as the supply-chain lane; MCP tool-poisoning and rug-pull checks run only against explicitly configured local/test or authorized tenant fixtures. |
+| OWASP LLM02 Sensitive Information Disclosure (`ai_redteam/sid/`) | 8 / 1,799 LOC | Register as the disclosure lane with canary-based, non-exfiltrating controls and deterministic oracles. |
+| OWASP LLM06 Excessive Agency (`ai_redteam/ea/`) | 4 / 987 LOC | Register as the agency-boundary lane; tool effects stay synthetic or explicitly approval-gated. |
+| OWASP LLM05 Output Handling (`ai_redteam/oh/`) | 4 / 903 LOC | Register as the output-handling lane; validate downstream consumers in local/test fixtures, not arbitrary third-party services. |
 | Agent hardening + network recon (`redteam/capabilities.py`, `redteam/portscan.py`) | 2 / 279 LOC | Apply taint/capability checks to the agent's own tool boundary; expose TCP discovery only through the existing ScopeGuard, rate limiter, request budget, and engagement port allowlist. |
 
 **Driver/API shape:** add `ai_campaign` as a first-class, explicitly selected run mode rather than silently running all AI lanes on every ordinary web assessment. The launch contract should select permitted lanes, target adapter, model/provider profile, per-lane and total budgets, and fixture/tenant identity. `FamilyOrchestrator` owns deterministic lane sequencing and shared campaign budget; the server owns authorization, run lifecycle, persistence, and event streaming; the dashboard owns launch configuration and honest lane-level progress/results. Keep the ordinary `execute_run` path stable and compose the new driver through the existing run registry and stop/approval controls.
