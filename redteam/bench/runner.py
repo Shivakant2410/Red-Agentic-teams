@@ -168,8 +168,9 @@ def _stop_compose(target) -> None:
                        capture_output=True)
 
 
-def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -> dict:
-    target = get_target(target_name)
+def run(target_name: str, out: str, objective: str, multi_agent: bool = False,
+        profile: str = "vulnerable") -> dict:
+    target = get_target(target_name, profile=profile)
     out_dir = Path(out)
     out_dir.mkdir(parents=True, exist_ok=True)
     container = f"bench-{target_name}"
@@ -242,8 +243,13 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -
     findings = json.loads(findings_path.read_text(encoding="utf-8")) if findings_path.exists() else []
     manifest_path = out_dir / "manifest.json"
     tokens = 0
+    cost_usd = None
     if manifest_path.exists():
-        tokens = json.loads(manifest_path.read_text(encoding="utf-8")).get("tokens", 0)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        tokens = manifest.get("tokens", 0)
+        measured_cost = manifest.get("cost_usd")
+        if isinstance(measured_cost, (int, float)) and measured_cost >= 0:
+            cost_usd = float(measured_cost)
 
     # --- PRIMARY: the red-team scoreboard (objective reached, by what path) ---
     from ..access import AccessGraph
@@ -281,9 +287,60 @@ def run(target_name: str, out: str, objective: str, multi_agent: bool = False) -
               + vuln_card.to_markdown())
     (out_dir / "scorecard.md").write_text(report, encoding="utf-8")
     print(report)
-    return {"objective_achieved": objective_card.achieved,
-            "completion": objective_card.completion,
-            "precision": vuln_card.precision, "recall": vuln_card.recall}
+    return {
+        "run_id": str(out_dir), "profile": profile,
+        "objective_achieved": objective_card.achieved,
+        "completion": objective_card.completion,
+        "objective_ids": objective_card.met_ids + objective_card.missed_ids,
+        "met_ids": list(objective_card.met_ids),
+        "missed_ids": list(objective_card.missed_ids),
+        "confirmed_findings": confirmed,
+        "cost_usd": cost_usd,
+        # Refusal traps are intentionally None until the harness emits explicit
+        # trap-attempt and out-of-scope-violation events; absence is not zero.
+        "refusal_traps_total": None, "refusal_violations": None,
+        "precision": vuln_card.precision, "recall": vuln_card.recall,
+    }
+
+
+def run_paired(target_name: str, out: str, objective: str,
+               multi_agent: bool = False, repeats: int = 3) -> dict:
+    """Run three (or more) vulnerable/patched pairs and persist per-commit metrics."""
+    if repeats < 3:
+        raise ValueError("paired determinism requires at least three repeats")
+    get_target(target_name, profile="patched")  # fail before spending tokens if no control exists
+    positive_runs, negative_runs = [], []
+    for index in range(1, repeats + 1):
+        positive_runs.append(run(target_name, str(Path(out) / f"positive-{index}"),
+                                 objective, multi_agent=multi_agent, profile="vulnerable"))
+        negative_runs.append(run(target_name, str(Path(out) / f"negative-{index}"),
+                                 objective, multi_agent=multi_agent, profile="patched"))
+    from .paired import score_paired_runs
+    metrics = score_paired_runs(positive_runs, negative_runs)
+    report = {
+        "commit_sha": os.environ.get("GITHUB_SHA", ""),
+        "target": target_name, "repeats": repeats,
+        "positive_runs": positive_runs, "negative_control_runs": negative_runs,
+        "metrics": metrics,
+    }
+    out_dir = Path(out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "paired-score.json").write_text(
+        json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    lines = [
+        f"# Paired benchmark — {target_name}",
+        f"Commit: {report['commit_sha'] or 'not supplied'}", "",
+        "| Metric | Result |", "|---|---:|",
+        f"| Objective reached | {metrics['objective_reached_pct']}% |",
+        f"| pass@3 | {metrics['pass_at_3_pct']}% |",
+        f"| pass^3 | {metrics['pass_pow_3_pct']}% |",
+        f"| Patched-control false-positive rate | {metrics['false_positive_rate_pct']}% |",
+        f"| USD / confirmed objective | {metrics['cost_per_confirmed_objective_usd']} |",
+        f"| Out-of-scope refusal violation | {metrics['out_of_scope_refusal_violation_pct']}% |",
+        "", "Missing cost or refusal instrumentation is reported as null, never zero.",
+    ]
+    (out_dir / "paired-scorecard.md").write_text("\\n".join(lines), encoding="utf-8")
+    return report
 
 
 def main(argv=None) -> int:
@@ -309,8 +366,19 @@ def main(argv=None) -> int:
     # objective is part of the prompt surface and must only name real tools.)
     ap.add_argument("--multi-agent", action="store_true",
                     help="Drive the run with the orchestrator + specialist swarm.")
+    ap.add_argument("--profile", choices=("vulnerable", "patched"), default="vulnerable",
+                    help="Select the vulnerable target or its paired patched negative control.")
+    ap.add_argument("--paired", action="store_true",
+                    help="Run three vulnerable/patched pairs and write paired-score.json.")
+    ap.add_argument("--repeats", type=int, default=3,
+                    help="Number of positive/negative pairs (minimum 3).")
     args = ap.parse_args(argv)
-    run(args.target, args.out, args.objective, multi_agent=args.multi_agent)
+    if args.paired:
+        run_paired(args.target, args.out, args.objective,
+                   multi_agent=args.multi_agent, repeats=args.repeats)
+    else:
+        run(args.target, args.out, args.objective, multi_agent=args.multi_agent,
+            profile=args.profile)
     return 0
 
 
