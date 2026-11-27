@@ -257,10 +257,11 @@ LOGIC_SYSTEM = (
 )
 
 
-def generate_theses(client, *, lens: str, evidence_digest: str,
+def generate_theses(client, *, lens: str, evidence_digest: str = "",
                     evidence_keys: set[str] | None = None,
                     objective_text: str = "", max_theses: int = 6,
-                    log: Callable[..., None] | None = None) -> list[AttackThesis]:
+                    log: Callable[..., None] | None = None,
+                    world_model_projection: dict | None = None) -> list[AttackThesis>:
     """One LLM call that turns recon evidence into ranked attack theses.
 
     lens: "exploit" (technical primitives) or "logic" (business-logic/chaining).
@@ -268,11 +269,19 @@ def generate_theses(client, *, lens: str, evidence_digest: str,
     on this layer — it is lifted by it, exactly like reflection.py).
     """
     system = LOGIC_SYSTEM if lens == "logic" else EXPLOIT_SYSTEM
-    user = (f"OBJECTIVE: {objective_text}\n\n"
-            f"RECON EVIDENCE (what we actually observed on the target):\n"
-            f"{evidence_digest}\n\n"
-            f"Return up to {max_theses} theses as a strict JSON array now, "
-            f"best/highest-impact first.")
+    facts = (world_model_projection or {}).get("facts", [])
+    if facts:
+        evidence_label = "TYPED WORLD MODEL (compact, evidence-backed facts; inferred facts remain labelled):"
+        evidence_content = json.dumps(world_model_projection, ensure_ascii=False,
+                                       sort_keys=True)[:7000]
+    else:
+        evidence_label = "RECON EVIDENCE (what we actually observed on the target):"
+        evidence_content = evidence_digest[:8000]
+    user = (f"OBJECTIVE: {objective_text}\\n\\n"
+            f"{evidence_label}\\n{evidence_content}\\n\\n"
+            f"Use only the attached evidence references; do not invent principals, ownership, "
+            f"workflow states, or trust boundaries. Return up to {max_theses} theses "
+            f"as a strict JSON array now, best/highest-impact first.")
     messages = [{"role": "system", "content": system},
                 {"role": "user", "content": user}]
     try:
