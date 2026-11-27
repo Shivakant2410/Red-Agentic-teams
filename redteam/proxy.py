@@ -800,8 +800,8 @@ class _ProxyHandler(socketserver.BaseRequestHandler):
             try:
                 self.proxy.audit.record("proxy.denied", url=url, method=method,
                                         reason=error, outcome="refused")
-            except Exception:
-                pass
+            except Exception as exc:
+                record_suppressed_error(self.proxy.audit, "proxy", "audit_scope_denial", exc)
         self._reply(status, f"evidence proxy: {error}\n".encode())
 
     def _record_error(self, exc: Exception) -> None:
