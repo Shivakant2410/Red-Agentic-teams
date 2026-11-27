@@ -164,7 +164,7 @@ class UsageStore:
                        COALESCE(SUM(completion_tokens), 0),
                        COALESCE(SUM(CASE WHEN cost_usd IS NOT NULL
                                          THEN CAST(cost_usd AS REAL) ELSE 0 END), 0),
-                       COALESCE(SUM(CASE WHEN status = 'success' AND cost_usd IS NULL
+                       COALESCE(SUM(CASE WHEN cost_usd IS NULL
                                          THEN 1 ELSE 0 END), 0)
                 FROM requests WHERE {column} = ?
                 """,
