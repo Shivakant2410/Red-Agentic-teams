@@ -76,6 +76,8 @@ import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol
+
+from .persistence import atomic_write_json
 from urllib.parse import urlsplit
 
 # -- bucket (context) derivation ---------------------------------------------------
@@ -186,8 +188,7 @@ class LocalJSONBanditBackend:
             return []
 
     def save(self, rows: list[dict]) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+        atomic_write_json(self._path, rows, indent=2)
 
 
 def make_sync_handler(bandit: "BanditStore", own_source: str = ""):
