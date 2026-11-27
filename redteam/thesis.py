@@ -277,8 +277,8 @@ def generate_theses(client, *, lens: str, evidence_digest: str = "",
     else:
         evidence_label = "RECON EVIDENCE (what we actually observed on the target):"
         evidence_content = evidence_digest[:8000]
-    user = (f"OBJECTIVE: {objective_text}\\n\\n"
-            f"{evidence_label}\\n{evidence_content}\\n\\n"
+    user = (f"OBJECTIVE: {objective_text}\n\n"
+            f"{evidence_label}\n{evidence_content}\n\n"
             f"Use only the attached evidence references; do not invent principals, ownership, "
             f"workflow states, or trust boundaries. Return up to {max_theses} theses "
             f"as a strict JSON array now, best/highest-impact first.")
