@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 
 import pytest
 
+from redteam.knowledge import KnowledgeGraph
+
 from redteam.world_model import (
     BUSINESS_ENTITY, PRINCIPAL, TRUST_BOUNDARY, WORKFLOW_TRANSITION,
     WorldModel, WorldModelError,
@@ -202,3 +204,66 @@ def test_principal_rejects_token_shaped_session_material():
             "test-user-a", role="member", session_ref="Bearer " + "x" * 80,
             evidence_refs=_refs("obs-credential"), source="browser",
         )
+
+
+def test_entity_reserved_fields_cannot_be_overwritten_by_attributes():
+    graph = _Graph()
+    model = WorldModel(graph)
+    model.record_entity(
+        "fixture-2", entity_type="invoice", tenant_ref="tenant-a",
+        attributes={"entity_type": "attacker-controlled", "tenant_ref": "tenant-b"},
+        evidence_refs=_refs("obs-reserved"), source="browser",
+    )
+    attrs = graph.rows[(BUSINESS_ENTITY, "fixture-2")].attrs
+    assert attrs["entity_type"] == "invoice"
+    assert attrs["tenant_ref"] == "tenant-a"
+
+
+def test_secret_values_are_redacted_even_under_benign_keys():
+    graph = _Graph()
+    model = WorldModel(graph)
+    model.record_entity(
+        "fixture-secret-value", entity_type="workspace",
+        attributes={
+            "display_label": "Bearer abcdefghijklmnopqrstuvwxyz0123456789",
+            "description": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signaturevalue123456",
+            "safe_label": "staging workspace",
+        },
+        evidence_refs=_refs("obs-secret-value"), source="browser",
+    )
+    attrs = graph.rows[(BUSINESS_ENTITY, "fixture-secret-value")].attrs
+    assert attrs["display_label"] == "<withheld>"
+    assert attrs["description"] == "<withheld>"
+    assert attrs["safe_label"] == "staging workspace"
+
+
+def test_real_knowledge_graph_round_trip_preserves_node_and_edge_provenance(tmp_path):
+    path = tmp_path / "graph.json"
+    graph = KnowledgeGraph(path)
+    model = WorldModel(graph)
+    model.record_principal(
+        "principal:test-a", role="member", evidence_refs=_refs("principal-observation"),
+        source="browser_accessibility",
+    )
+    model.record_entity(
+        "entity:invoice-17", entity_type="invoice", owner_ref="principal:test-a",
+        tenant_ref="tenant:test", evidence_refs=_refs("ownership-observation"),
+        source="browser_workflow",
+    )
+
+    edge = graph.edge_attrs(
+        f"{PRINCIPAL}:principal:test-a", "owns_or_controls",
+        f"{BUSINESS_ENTITY}:entity:invoice-17",
+    )
+    assert edge["evidence_refs"][0]["evidence_id"] == "ownership-observation"
+
+    reloaded = KnowledgeGraph(path)
+    entity = next(n for n in reloaded.nodes(BUSINESS_ENTITY) if n.key == "entity:invoice-17")
+    assert entity.attrs["entity_type"] == "invoice"
+    assert entity.attrs["tenant_ref"] == "tenant:test"
+    assert entity.evidence_refs[0]["evidence_id"] == "ownership-observation"
+    reloaded_edge = reloaded.edge_attrs(
+        f"{PRINCIPAL}:principal:test-a", "owns_or_controls",
+        f"{BUSINESS_ENTITY}:entity:invoice-17",
+    )
+    assert reloaded_edge["evidence_refs"][0]["evidence_id"] == "ownership-observation"
