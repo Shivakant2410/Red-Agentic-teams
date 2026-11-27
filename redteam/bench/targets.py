@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from .scoring import GroundTruthVuln
@@ -43,6 +43,10 @@ class BenchTarget:
     # Ports the target itself serves but that are not host/container_port (e.g.
     # Fetcher's hidden internal service) — must be IN SCOPE or the chain is illegal.
     extra_ports: list[int] = field(default_factory=list)
+    # Paired negative-control launch configuration. A patched profile uses the
+    # same fixture and objective, but an empty vulnerability ground-truth list.
+    control_cmd: list[str] = field(default_factory=list)
+    control_env: dict = field(default_factory=dict)
 
     @property
     def is_compose(self) -> bool:
@@ -433,6 +437,42 @@ LAB_LEDGER = BenchTarget(
     },
 )
 
+LAB_CAMPAIGN = BenchTarget(
+    name="CampaignLab (five multi-step web objectives)",
+    container_port=8900, host_port=8900,
+    base_url="http://127.0.0.1:8900",
+    cmd=[sys.executable, str(_LAB_DIR / "campaign_lab.py"), "8900",
+         "--scenarios", "S-INJ,S-AUTHZ,S-BIZ,S-CHAIN,S-REPLAN", "--profile", "vulnerable"],
+    control_cmd=[sys.executable, str(_LAB_DIR / "campaign_lab.py"), "8900",
+                 "--scenarios", "S-INJ,S-AUTHZ,S-BIZ,S-CHAIN,S-REPLAN", "--profile", "patched"],
+    credentials={"alice": {"password": "pw-alice", "login_url": "/api/session"},
+                 "bob": {"password": "pw-bob", "login_url": "/api/session"}},
+    ground_truth=[
+        GroundTruthVuln("campaign-sqli-backup-code", "injection", "CWE-89", "/api/orders", "critical"),
+        GroundTruthVuln("campaign-cross-principal-note", "idor", "CWE-639", "/api/notes/", "high"),
+        GroundTruthVuln("campaign-coupon-stacking", "business_logic", "CWE-840", "/api/checkout", "high"),
+        GroundTruthVuln("campaign-path-traversal-chain", "path_traversal", "CWE-22", "/api/files", "critical"),
+        GroundTruthVuln("campaign-weak-reset-chain", "authentication", "CWE-640", "/api/password/reset", "critical"),
+    ],
+    objective={
+        "name": "CampaignLab: prove five multi-step web objectives",
+        "description": "Map the app, authenticate as a low-privilege principal when needed, "
+                       "and prove the planted objective chains with concrete evidence.",
+        "success_criteria": [
+            {"id": "backup_code", "kind": "data_access", "target": "backup-code",
+             "description": "Retrieve the backup code through SQL injection"},
+            {"id": "cross_principal_note", "kind": "data_access", "target": "alice-private-note",
+             "description": "Read Alice's private note as Bob"},
+            {"id": "coupon_floor", "kind": "business_impact", "target": "checkout-total",
+             "description": "Apply stacked coupons to cross the legal checkout floor"},
+            {"id": "admin_chain", "kind": "privilege", "target": "admin-session",
+             "description": "Use path traversal to chain into an admin session"},
+            {"id": "replan_reset", "kind": "privilege", "target": "admin-session-reset",
+             "description": "Reset the admin password using the weak recovery flow"},
+        ],
+    },
+)
+
 LAB_FETCHER = BenchTarget(
     name="L3 Hard: Fetcher (SSRF chain -> internal secret)",
     container_port=8893, host_port=8893,
@@ -462,10 +502,20 @@ LAB_FETCHER = BenchTarget(
 
 REGISTRY = {"juice-shop": JUICE_SHOP, "dvwa": DVWA, "xben-001": XBEN_001,
             "lab-idor": LAB_IDOR, "lab-forum": LAB_FORUM,
-            "ladder-1": LAB_BLOGMENT, "ladder-2": LAB_TRACKR, "ladder-3": LAB_FETCHER}
+            "ladder-1": LAB_BLOGMENT, "ladder-2": LAB_TRACKR, "ladder-3": LAB_FETCHER,
+            "lab-campaign": LAB_CAMPAIGN}
 
 
-def get_target(name: str) -> BenchTarget:
+def get_target(name: str, profile: str = "vulnerable") -> BenchTarget:
     if name not in REGISTRY:
         raise KeyError(f"unknown benchmark target {name!r}; known: {list(REGISTRY)}")
-    return REGISTRY[name]
+    if profile not in ("vulnerable", "patched"):
+        raise ValueError("profile must be 'vulnerable' or 'patched'")
+    target = REGISTRY[name]
+    if profile == "vulnerable":
+        return target
+    if not target.control_cmd:
+        raise ValueError(f"target {name!r} has no paired patched negative-control fixture")
+    return replace(target, name=f"{target.name} [patched control]",
+                   cmd=list(target.control_cmd), env={**target.env, **target.control_env},
+                   ground_truth=[])
