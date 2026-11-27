@@ -26,7 +26,7 @@ describe("LaunchRunPanel (URL-first)", () => {
   /** Fill everything EXCEPT the listed fields, then try to launch. */
   async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
     const target = screen.getByLabelText(/target url/i);
-    const objective = screen.getByLabelText(/objective/i);
+    const objective = screen.getByPlaceholderText(/Choose an engagement type above/i);
     await user.clear(target);
     await user.type(target, "https://demo.testfire.net");
     await user.clear(objective);
