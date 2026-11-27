@@ -467,7 +467,9 @@ class BrowserController:
                     el = self._page.query_selector(s)
                     if el and el.is_visible():
                         return s
-                except Exception:
+                except Exception as exc:
+                    record_suppressed_error(self._audit, "browser", "find_login_selector", exc,
+                                            severity="info", selector=s)
                     continue
             return ""
 
@@ -539,7 +541,9 @@ class BrowserController:
             try:
                 el = self._page.query_selector(sel)
                 return bool(el and el.is_visible())
-            except Exception:
+            except Exception as exc:
+                record_suppressed_error(self._audit, "browser", "check_session_marker", exc,
+                                        severity="info", selector=sel)
                 return False
 
         if logged_in_selector:
@@ -576,7 +580,9 @@ class BrowserController:
                     el.click(timeout=3000)
                     self._page.wait_for_timeout(500)
                     return
-            except Exception:
+            except Exception as exc:
+                record_suppressed_error(self._audit, "browser", "dismiss_consent_banner", exc,
+                                        severity="info", selector=sel)
                 continue
 
     def content(self, max_chars: int = 8000) -> dict:
@@ -703,6 +709,7 @@ class _BrowserTool:
         except RequestBudgetExceeded as exc:
             return f"STOP: {exc}"
         except Exception as exc:
+            record_suppressed_error(ctx.audit, "browser_tool", type(self).__name__, exc)
             return f"BROWSER ERROR: {exc}"
 
 
