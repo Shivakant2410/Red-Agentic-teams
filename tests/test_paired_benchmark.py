@@ -48,3 +48,16 @@ def test_campaign_lab_target_exposes_a_matched_patched_control():
     assert "patched" in patched.cmd
     assert vulnerable.objective == patched.objective
     assert vulnerable.credentials == patched.credentials
+
+
+def test_existing_high_signal_targets_all_have_paired_controls():
+    from redteam.bench.targets import get_target
+
+    for name in ("lab-idor", "ladder-1", "ladder-2", "ladder-3", "lab-workflow"):
+        vulnerable = get_target(name, "vulnerable")
+        patched = get_target(name, "patched")
+        assert vulnerable.control_cmd
+        assert patched.ground_truth == []
+        assert patched.objective == vulnerable.objective
+    fetcher = get_target("ladder-3")
+    assert 8892 not in fetcher.extra_ports

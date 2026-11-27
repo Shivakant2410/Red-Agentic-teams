@@ -175,6 +175,8 @@ LAB_IDOR = BenchTarget(
     base_url="http://127.0.0.1:8899",
     cmd=[sys.executable, str(_LAB_DIR / "server.py"), "8899"],
     env={"LAB_AUTHZ_PROFILE": "broken-owner-check"},
+    control_cmd=[sys.executable, str(_LAB_DIR / "server.py"), "8899"],
+    control_env={"LAB_AUTHZ_PROFILE": "strict-owner-check"},
     ground_truth=[
         GroundTruthVuln("labidor-cross-tenant-read", "idor", "CWE-639",
                         "/api/records/", "critical"),
@@ -294,6 +296,9 @@ LAB_BLOGMENT = BenchTarget(
     cmd=[sys.executable, str(_LAB_DIR / "blogment.py"), "8895"],
     env={"BLOGMENT_REFLECT_PROFILE": "raw",
          "BLOGMENT_BACKUP_PROFILE": "exposed"},
+    control_cmd=[sys.executable, str(_LAB_DIR / "blogment.py"), "8895"],
+    control_env={"BLOGMENT_REFLECT_PROFILE": "escaped",
+                 "BLOGMENT_BACKUP_PROFILE": "hidden"},
     ground_truth=[
         GroundTruthVuln("blogment-reflected-xss", "xss", "CWE-79", "/search", "medium"),
         GroundTruthVuln("blogment-backup-exposure", "sensitive_data", "CWE-200",
@@ -321,6 +326,8 @@ LAB_TRACKR = BenchTarget(
     cmd=[sys.executable, str(_LAB_DIR / "trackr.py"), "8894"],
     env={"TRACKR_COOKIE_TRUST": "1",
          "TRACKR_EXPORT_NOOWN": "1"},
+    control_cmd=[sys.executable, str(_LAB_DIR / "trackr.py"), "8894"],
+    control_env={"TRACKR_COOKIE_TRUST": "0", "TRACKR_EXPORT_NOOWN": "0"},
     credentials={"dev-a": {"password": "pw-a", "login_url": "/login",
                            "token_field": "token"},
                  "dev-b": {"password": "pw-b", "login_url": "/login",
@@ -437,6 +444,29 @@ LAB_LEDGER = BenchTarget(
     },
 )
 
+LAB_WORKFLOW = BenchTarget(
+    name="Widgetmill: multi-step coupon state-skip",
+    container_port=8896, host_port=8896,
+    base_url="http://127.0.0.1:8896",
+    cmd=[sys.executable, str(_LAB_DIR / "workflow.py"), "8896"],
+    control_cmd=[sys.executable, str(_LAB_DIR / "workflow.py"), "8896"],
+    control_env={"WORKFLOW_PROFILE": "enforced"},
+    credentials={"alice": {"password": "pw-alice", "login_url": "/login", "token_field": "token"},
+                 "bob": {"password": "pw-bob", "login_url": "/login", "token_field": "token"}},
+    ground_truth=[GroundTruthVuln("widgetmill-double-coupon", "business_logic", "CWE-840",
+                                  "/coupon/apply", "high")],
+    objective={
+        "name": "Widgetmill: prove one-shot coupon state can be replayed",
+        "description": "Authenticate as a normal user, measure the cart, apply the public "
+                       "coupon once, measure again, replay it, and prove the second state "
+                       "transition was accepted when it should be one-shot.",
+        "success_criteria": [
+            {"id": "coupon_double_redeem", "kind": "business_impact", "target": "cart-total",
+             "description": "Second application is accepted and reduces the same session cart again"},
+        ],
+    },
+)
+
 LAB_CAMPAIGN = BenchTarget(
     name="CampaignLab (five multi-step web objectives)",
     container_port=8900, host_port=8900,
@@ -480,7 +510,10 @@ LAB_FETCHER = BenchTarget(
     cmd=[sys.executable, str(_LAB_DIR / "fetcher.py"), "8893", "8892"],
     env={"FETCHER_SSRF_PROFILE": "open",
          "FETCHER_DEBUG_PROFILE": "on"},
-    extra_ports=[8892],
+    control_cmd=[sys.executable, str(_LAB_DIR / "fetcher.py"), "8893", "8892"],
+    control_env={"FETCHER_SSRF_PROFILE": "closed", "FETCHER_DEBUG_PROFILE": "off"},
+    # The internal service on 8892 is reachable only through the app's SSRF sink;
+    # it is deliberately NOT an agent-authorized target port.
     ground_truth=[
         GroundTruthVuln("fetcher-ssrf", "ssrf", "CWE-918", "/api/import", "critical"),
         GroundTruthVuln("fetcher-debug-token-disclosure", "sensitive_data", "CWE-200",
@@ -503,7 +536,7 @@ LAB_FETCHER = BenchTarget(
 REGISTRY = {"juice-shop": JUICE_SHOP, "dvwa": DVWA, "xben-001": XBEN_001,
             "lab-idor": LAB_IDOR, "lab-forum": LAB_FORUM,
             "ladder-1": LAB_BLOGMENT, "ladder-2": LAB_TRACKR, "ladder-3": LAB_FETCHER,
-            "lab-campaign": LAB_CAMPAIGN}
+            "lab-campaign": LAB_CAMPAIGN, "lab-workflow": LAB_WORKFLOW}
 
 
 def get_target(name: str, profile: str = "vulnerable") -> BenchTarget:
