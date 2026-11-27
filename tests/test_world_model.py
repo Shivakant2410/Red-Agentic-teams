@@ -267,3 +267,45 @@ def test_real_knowledge_graph_round_trip_preserves_node_and_edge_provenance(tmp_
         f"{BUSINESS_ENTITY}:entity:invoice-17",
     )
     assert reloaded_edge["evidence_refs"][0]["evidence_id"] == "ownership-observation"
+
+
+def test_traffic_ingest_creates_components_and_inferred_auth_boundary():
+    graph = _Graph()
+    model = WorldModel(graph)
+    count = model.ingest_traffic_records([{
+        "seq": 41, "url": "https://app.test/api/users/123?access_token=secret-value",
+        "method": "GET", "status": 403, "source": "browser-extension",
+        "resp_body": "must never enter the world model",
+    }])
+    projection = model.compact_projection()
+    serialized = repr(projection)
+    assert count == 1
+    assert "traffic:endpoint:app.test:GET:/api/users/{id}" in serialized
+    assert "http-auth-boundary:app.test:/api/users/{id}" in serialized
+    assert "secret-value" not in serialized
+    assert "must never enter" not in serialized
+    boundary = next(f for f in projection["facts"] if f["kind"] == TRUST_BOUNDARY)
+    assert boundary["epistemic_state"] == "inferred"
+    assert boundary["evidence_ref_ids"] == ["traffic_seq:41"]
+
+
+def test_recon_store_ingest_uses_observation_refs_and_drops_query_string():
+    from types import SimpleNamespace
+
+    class Store:
+        def query(self, limit=2000):
+            return [SimpleNamespace(
+                id="obs-7", kind="endpoint",
+                subject="https://app.test/api/orders?token=do-not-copy",
+                tool="crawler", provenance="active",
+                evidence_refs=[{"ref": "recon-artifact-7", "kind": "tool"}],
+            )]
+
+    graph = _Graph()
+    model = WorldModel(graph)
+    assert model.ingest_recon_store(Store()) == 1
+    projection = model.compact_projection()
+    serialized = repr(projection)
+    assert "app.test/api/orders" in serialized
+    assert "do-not-copy" not in serialized
+    assert "recon-artifact-7" in serialized
