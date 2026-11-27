@@ -909,24 +909,40 @@ def create_app(runs_root: Path, dashboard_dir: Path | None = None,
         if supplied != expected:
             raise HTTPException(401, "invalid ingest token")
         run_dir = require_run(body.run_id)
-        from .traffic import TrafficRecorder
-        rec = TrafficRecorder(run_dir / "traffic.jsonl")
-        written, skipped = 0, 0
-        for e in body.entries[:200]:          # bound a single batch
-            url = (e.url or "").strip()
+        # Validate the ENTIRE bounded batch before writing any row. A mixed batch
+        # must not partially persist in-scope records before discovering an
+        # out-of-scope browser tab later in the same request.
+        from .config import ConfigError, load_engagement
+        from .scope import ScopeGuard, ScopeViolation
+        try:
+            engagement = load_engagement(run_dir / "engagement.yaml")
+        except (ConfigError, OSError, ValueError) as exc:
+            raise HTTPException(409, f"run engagement cannot be loaded for scope validation: {type(exc).__name__}")
+        guard = ScopeGuard(engagement)
+        accepted = []
+        skipped = 0
+        for entry in body.entries[:200]:
+            url = (entry.url or "").strip()
             if not url.lower().startswith(("http://", "https://")):
                 skipped += 1
                 continue
             try:
-                rec.record_http(
-                    method=(e.method or "GET"), url=url, status=int(e.status or 0),
-                    elapsed_ms=int(e.elapsed_ms or 0), tool="browser-extension",
-                    source="extension",
-                    req_headers=e.req_headers or {}, req_body=e.req_body or "",
-                    resp_headers=e.resp_headers or {}, resp_body=e.resp_body or "")
-                written += 1
-            except Exception:
-                skipped += 1
+                guard.check(url)
+            except (ScopeViolation, ValueError) as exc:
+                raise HTTPException(400, f"out-of-scope capture rejected: {str(exc)[:240]}")
+            accepted.append((entry, url))
+
+        from .traffic import TrafficRecorder
+        rec = TrafficRecorder(run_dir / "traffic.jsonl")
+        written = 0
+        for entry, url in accepted:
+            rec.record_http(
+                method=(entry.method or "GET"), url=url, status=int(entry.status or 0),
+                elapsed_ms=int(entry.elapsed_ms or 0), tool="browser-extension",
+                source="extension", req_headers=entry.req_headers or {},
+                req_body=entry.req_body or "", resp_headers=entry.resp_headers or {},
+                resp_body=entry.resp_body or "")
+            written += 1
         return {"ok": True, "written": written, "skipped": skipped}
 
     # -- API: live recon view (any.run-style) -------------------------------------
