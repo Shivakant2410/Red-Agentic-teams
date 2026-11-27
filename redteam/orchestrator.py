@@ -67,6 +67,7 @@ from .thesis import generate_theses, theses_briefing, write_theses
 from .swarm import (AWAITING_VERIFICATION, CONFIRMED, REFUTED, EvidenceRef,
                     ResearchBundle, SwarmError, weakness_for_technique)
 from .tools import ToolContext, Tool
+from .errors import record_suppressed_error
 
 
 def sync_inventory_into_graph(inventory, graph) -> dict:
@@ -218,8 +219,8 @@ def _looks_workflow_shaped(graph) -> bool:
     try:
         if any(True for _ in graph.nodes(PARAMETER)):
             return True
-    except Exception:
-        pass
+    except Exception as exc:
+        record_suppressed_error(None, "orchestrator", "inspect_graph_parameters", exc)
     return False
 
 
@@ -740,8 +741,9 @@ class Orchestrator:
         try:
             if getattr(ctx, "detection", None) is not self._detection:
                 ctx.detection = self._detection
-        except Exception:
-            pass   # a frozen/odd ctx must never block construction — the hook just no-ops
+        except Exception as exc:
+            record_suppressed_error(getattr(ctx, "audit", None), "orchestrator",
+                                    "attach_detection_context", exc, severity="info")
         # Per-round OPSEC budget (docs/multi-gambit.md §3.4): None/0 = unlimited
         # spend (exact legacy behavior); a positive value drives the
         # DriftPlusPenaltyScheduler — per-round allowance, drift-plus-penalty claim
@@ -927,17 +929,16 @@ class Orchestrator:
                         boost = getattr(self._attack_tree, "_strategy_boost", None)
                         if boost is not None:
                             boost[f"{t.technique}@{t.target}"] = 50.0 + 50.0 * float(t.score)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        record_suppressed_error(self._ctx.audit, "orchestrator",
+                                                "apply_thesis_priority", exc)
             if on_text and theses:
                 on_text(f"[thesis:{lens}] top bet ({theses[0].score:.2f}): "
                         f"{theses[0].belief[:140]}")
             return theses_briefing(theses)
         except Exception as exc:
-            try:
-                self._ctx.audit.record("thesis.error", lens=lens, error=str(exc))
-            except Exception:
-                pass
+            record_suppressed_error(self._ctx.audit, "orchestrator",
+                                    "generate_thesis_brief", exc, lens=lens)
             return ""
 
     # -- Phase 3: mission task-level execution -----------------------------------
@@ -1158,8 +1159,9 @@ class Orchestrator:
         if bus is not None:
             try:
                 bus.emit(etype, role="orchestrator", **fields)
-            except Exception:
-                pass
+            except Exception as exc:
+                record_suppressed_error(self._ctx.audit, "orchestrator",
+                                        "emit_event", exc, event_type=etype)
 
     def _phase(self, phase: str, **extra) -> None:
         self._ctx.audit.record("orchestrator.phase", phase=phase, **extra)
@@ -1779,8 +1781,9 @@ class Orchestrator:
             if idea is not None:
                 try:
                     title += " — " + brief(idea, max_chars=900)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    record_suppressed_error(self._ctx.audit, "orchestrator",
+                                            "format_attack_idea", exc)
             selected.append({
                 "title": title[:1800],
                 "role": "exploit",
@@ -1936,8 +1939,8 @@ class Orchestrator:
         tail = []
         try:
             tail = self._ctx.audit.read_all()[-120:]
-        except Exception:
-            pass
+        except Exception as exc:
+            record_suppressed_error(self._ctx.audit, "orchestrator", "read_audit_tail", exc)
         # Phase B5 — evidence in, deterministic decay out: what the swarm claimed
         # this round (its own claim loop) and what the tree confirmed (only NEWLY
         # completed nodes — confirmed_chain() repeats, the ledger must not), then
@@ -2009,8 +2012,9 @@ class Orchestrator:
                 (out_dir / "strategy.json").write_text(
                     json.dumps(self._strategy.to_dict(), indent=2,
                                ensure_ascii=False), encoding="utf-8")
-            except Exception:
-                pass
+            except Exception as exc:
+                record_suppressed_error(self._ctx.audit, "orchestrator",
+                                        "persist_strategy_state", exc)
 
     def _apply_strategy_state(self) -> int:
         """Phase B5 — the strategy object is the ONLY writer of tree nudges: restore
