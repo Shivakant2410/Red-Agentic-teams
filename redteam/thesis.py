@@ -261,7 +261,7 @@ def generate_theses(client, *, lens: str, evidence_digest: str = "",
                     evidence_keys: set[str] | None = None,
                     objective_text: str = "", max_theses: int = 6,
                     log: Callable[..., None] | None = None,
-                    world_model_projection: dict | None = None) -> list[AttackThesis>:
+                    world_model_projection: dict | None = None) -> list[AttackThesis]:
     """One LLM call that turns recon evidence into ranked attack theses.
 
     lens: "exploit" (technical primitives) or "logic" (business-logic/chaining).
